@@ -139,8 +139,11 @@ KEY-
 
 ## 체크리스트
 - [ ] 커밋 메시지 규칙을 지켰다
-- [ ] 다른 파트가 쓰는 API·메시지 형식을 바꿨다면 계약 문서를 갱신했다
+- [ ] 다른 파트가 쓰는 API·메시지 형식을 바꿨다면 변경된 부분의 명세서를 갱신했다
+- [ ] 다른 파트의 코드를 건드리지 않았다. 불가피하게 건드렸다면 해당 파트 담당자에게 양해를 구했다
 - [ ] 로컬에서 빌드와 테스트가 통과했다
+- [ ] `.env` 를 커밋하지 않았다
+- [ ] Jira 이슈 체크를 했다
 ```
 
 ### MR 은 같은 파트 1명 이상의 승인을 받고 머지한다
@@ -190,20 +193,6 @@ _[java-naver]_
 `naver-java-convention.md` 를 따르고, 검사는 Checkstyle 로 자동화한다. Python, TypeScript 등 다른 언어의 스타일 규칙은 파트별로 정해서 이 섹션에 추가한다.
 
 ## 도구 설정
-
-### 커밋 메시지는 commit-msg 훅으로 검사한다
-_[commit-msg-hook]_
-
-`.githooks/commit-msg` 에 두고, 저장소를 받은 뒤 한 번 실행한다: `git config core.hooksPath .githooks`
-
-```sh
-#!/bin/sh
-msg=$(head -n1 "$1")
-echo "$msg" | grep -qE '^(Merge|Revert) ' && exit 0
-echo "$msg" | grep -qE '^(feat|fix|refactor|docs|test|chore): .+$' && exit 0
-echo "커밋 메시지 형식: 타입: 요약   예) feat: 대화창 스트리밍 표시" >&2
-exit 1
-```
 
 ### `master` 와 `develop` 은 보호 브랜치로 설정한다
 _[protected-branches]_
