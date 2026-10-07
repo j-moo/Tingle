@@ -2,7 +2,7 @@
 
 v0.1.0, 2026.10.07
 
-자율 프로젝트 6인 팀의 GitLab 저장소 사용 규칙이다. 각 규칙에는 `[rule-id]` 를 붙여서 MR 리뷰에서 링크로 가리킬 수 있게 한다. 이슈 관리 규칙은 `jira-convention.md` 를 따르고, 예시의 `KEY` 는 실제 Jira 프로젝트 키로 바꾼다.
+자율 프로젝트 6인 팀의 GitLab 저장소 사용 규칙이다. 각 규칙에는 `[rule-id]` 를 붙여서 MR 리뷰에서 링크로 가리킬 수 있게 한다. 이슈 관리 규칙은 `jira-convention.md` 를 따른다. Jira 프로젝트 키는 `S15P31E106` 이다.
 
 ## 파일 공통 요건
 
@@ -46,7 +46,7 @@ _[branch-model]_
 
 작업 브랜치는 항상 `develop` 에서 따고 `develop` 으로 MR 을 올린다.
 
-### 작업 브랜치 이름은 `{파트}-{타입}/요약-KEY-번호` 로 짓는다
+### 작업 브랜치 이름은 `{파트}-{타입}/요약-S15P31E106-번호` 로 짓는다
 _[branch-name]_
 
 - 파트: `ai` `be` `fe` `infra`
@@ -59,16 +59,16 @@ _[branch-name]_
 ```
 feature/login
 순철-작업
-fe-feature/KEY-23-dialog-streaming
+fe-feature/S15P31E106-23-dialog-streaming
 fe-feature/dialog-streaming
 ```
 
 좋은 예:
 
 ```
-fe-feature/dialog-streaming-KEY-23
-be-fix/secret-leak-KEY-41
-ai-feature/multi-lora-serving-KEY-30
+fe-feature/dialog-streaming-S15P31E106-23
+be-fix/secret-leak-S15P31E106-41
+ai-feature/multi-lora-serving-S15P31E106-30
 ```
 
 ### 작업 브랜치 하나에는 이슈 하나만 담는다
@@ -89,7 +89,7 @@ _[commit-format]_
 수정
 fix bug
 feat: 대화창
-feat: 대화창 문장 단위 스트리밍 표시 (KEY-23)
+feat: 대화창 문장 단위 스트리밍 표시 (S15P31E106-23)
 ```
 
 좋은 예:
@@ -111,23 +111,23 @@ _[atomic-commit]_
 
 ## Merge Request
 
-### MR 제목은 `[파트] 요약 KEY-번호` 로 쓴다
+### MR 제목은 `[파트] 요약 S15P31E106-번호` 로 쓴다
 _[mr-title]_
 
 이슈 키는 브랜치 이름과 같이 요약 뒤에 쓴다. GitLab–Jira 연동으로 이 MR 이 Jira 이슈에 연결된다.
 
 ```
-[FE] 대화창 스트리밍 표시 KEY-23
+[FE] 대화창 스트리밍 표시 S15P31E106-23
 ```
 
-### MR 본문은 템플릿을 채운다
+### MR 본문은 자동 설명에 템플릿을 덧붙여 쓴다
 _[mr-template]_
 
-`.gitlab/merge_request_templates/Default.md` 에 둔다.
+MR 을 만들면 GitLab 이 커밋 메시지로 설명을 자동으로 채운다. 설명 편집기 위 템플릿 선택 드롭다운에서 `MR` 템플릿을 고르면 기존 설명을 덮어쓸 수 있으므로, 자동 설명을 먼저 복사해 두고 템플릿을 고른 뒤 `## 변경 내용` 아래에 붙여넣는다. 템플릿은 `.gitlab/merge_request_templates/MR.md` 에 둔다. 이름을 `Default.md` 로 하면 자동 설명 대신 템플릿만 채워지므로 쓰지 않는다.
 
 ```markdown
 ## 이슈
-KEY-
+S15P31E106-
 
 ## 변경 내용
 -
