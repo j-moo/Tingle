@@ -4,7 +4,7 @@
 S15P31E106/
 ├─ .gitlab/
 │  └─ merge_request_templates/
-│     └─ Default.md
+│     └─ MR.md
 ├─ convention/
 │  ├─ gitlab-convention.md
 │  ├─ jira-convention.md
@@ -16,7 +16,7 @@ S15P31E106/
 
 ## MR 체크리스트
 
-MR 을 올리기 전에 확인한다. MR 템플릿(`.gitlab/merge_request_templates/Default.md`)에도 같은 목록이 있다.
+MR 을 올리기 전에 확인한다. MR 템플릿(`.gitlab/merge_request_templates/MR.md`)에도 같은 목록이 있다.
 
 - [ ] 커밋 메시지 규칙을 지켰다
 - [ ] 다른 파트가 쓰는 API·메시지 형식을 바꿨다면 변경된 부분의 명세서를 갱신했다
