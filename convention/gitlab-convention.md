@@ -127,7 +127,7 @@ MR 을 만들면 GitLab 이 커밋 메시지로 설명을 자동으로 채운다
 
 ```markdown
 ## 이슈
-S15P31E106-
+Closes S15P31E106-
 
 ## 변경 내용
 -
@@ -156,8 +156,16 @@ _[squash-to-develop]_
 
 Squash 커밋 메시지는 `[commit-format]` 을 따른다. GitLab 은 기본으로 MR 제목을 Squash 커밋 메시지로 쓰므로, 머지할 때 이슈 키를 뺀 `타입: 요약` 으로 고친다. `develop` → `master` 는 일반 Merge commit 으로 머지한다.
 
-### MR 을 올리면 Jira 이슈를 리뷰 중으로, 머지되면 완료로 옮긴다
+### MR 설명에 `Closes S15P31E106-번호` 를 쓰면 머지 시 이슈가 자동으로 완료된다
 _[mr-jira-sync]_
+
+GitLab–Jira 연동의 Jira 전환 기능으로, MR 이 `develop` 에 머지되면 설명에 적은 이슈가 완료로 옮겨진다. 닫기 키워드는 `Closes` `Fixes` `Resolves` 를 쓸 수 있다. MR 제목의 이슈 키는 링크만 걸리고 상태는 바뀌지 않으므로, 완료시킬 이슈는 반드시 설명에 쓴다.
+
+```
+Closes S15P31E106-23
+```
+
+한 이슈를 여러 MR 로 나눠 작업하면 마지막 MR 에만 `Closes` 를 쓰고, 나머지 MR 에는 이슈 키만 적는다. MR 을 올리면 이슈는 담당자가 직접 리뷰 중으로 옮긴다.
 
 ## 코드 리뷰
 
@@ -202,7 +210,7 @@ GitLab 프로젝트 Settings > Repository > Protected branches 에서 두 브랜
 ### GitLab 과 Jira 를 연동한다
 _[gitlab-jira-integration]_
 
-GitLab 프로젝트 Settings > Integrations > Jira 를 설정하면 브랜치 이름과 MR 제목의 이슈 키가 Jira 이슈에 연결된다. 설정은 팀장이 한다.
+GitLab 프로젝트 설정 > 연동 > Jira issues 를 설정하면 브랜치 이름과 MR 제목의 이슈 키가 Jira 이슈에 연결된다. `[mr-jira-sync]` 를 위해 같은 화면에서 Jira 전환 활성화를 켜고 "완료로 이동" 을 고른다. 설정은 팀장이 한다.
 
 ### Java 프로젝트는 CI 에서 Checkstyle 을 돌린다
 _[ci-checkstyle]_
