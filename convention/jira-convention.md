@@ -201,7 +201,7 @@ _[daily-sync]_
 ### MR 이 `develop` 에 머지되어야 완료다
 _[definition-of-done]_
 
-아래를 모두 만족해야 완료로 옮긴다.
+아래를 모두 만족해야 완료다. MR 설명에 `Closes S15P31E106-번호` 를 쓰면 머지 시 자동으로 완료로 옮겨진다 (gitlab-convention.md `[mr-jira-sync]`).
 
 - 이슈의 완료 조건을 모두 확인함
 - MR 이 승인되어 `develop` 에 머지됨
