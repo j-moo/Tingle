@@ -5,10 +5,11 @@ S15P31E106/
 ├─ .gitlab/
 │  └─ merge_request_templates/
 │     └─ MR.md
-├─ convention/
-│  ├─ gitlab-convention.md
-│  ├─ jira-convention.md
-│  └─ naver-java-convention.md
+├─ docs/
+│  └─ convention/
+│     ├─ gitlab-convention.md
+│     ├─ jira-convention.md
+│     └─ naver-java-convention.md
 ├─ .gitattributes
 ├─ .gitignore
 └─ README.md
