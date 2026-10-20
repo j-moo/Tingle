@@ -247,7 +247,7 @@ _[gitlab-jira-integration]_
 
 GitLab의 Jira issues 연동에서 이슈 링크와 완료 전환을 설정한다. 설정은 팀장이 맡고, 실제 메뉴·지원 범위에 맞춰 적용한다. 테스트용 Story와 MR로 `develop` 병합 시 링크·상태 전환을 확인하고 설정 확인일·확인자·결과 링크를 관련 Jira 이슈에 남긴다. 보호 브랜치·승인 설정도 같은 방식으로 확인한다. 이 문서의 규칙만으로 실제 설정 완료를 의미하지 않는다.
 
-### Java 프로젝트는 CI 에서 Checkstyle 을 돌린다
+### Java 프로젝트는 Jenkins CI 에서 Checkstyle 을 돌린다
 _[ci-checkstyle]_
 
 규칙 파일은 네이버 저장소의 `naver-checkstyle-rules.xml` 과 `naver-checkstyle-suppressions.xml` 을 `config/checkstyle/` 에 둔다. Checkstyle 버전은 8.24 이상으로 지정한다.
@@ -264,4 +264,4 @@ checkstyle {
 }
 ```
 
-`.gitlab-ci.yml` 의 MR 파이프라인에서 `./gradlew checkstyleMain` 을 실행하고, 실패하면 머지하지 않는다.
+저장소 최상위 `Jenkinsfile` 의 MR 파이프라인에서 `./gradlew checkstyleMain` 을 실행하고, 실패하면 머지하지 않는다. Jenkins 는 GitLab Webhook 으로 MR 이벤트를 받고 결과를 MR 에 표시한다. GitLab 프로젝트 설정에서 "파이프라인이 성공해야 머지 가능" 을 켠다.
