@@ -1,6 +1,6 @@
 # Tingle(팅글) ERD·테이블 정의
 
-1.1.0-review / 수정 2026-10-21 11:47 KST. **24개 테이블·164개 컬럼**, PostgreSQL·JPA 기준. 물리 외래 키는 없으며 아래 관계는 서비스가 검사하는 논리 참조다. 검토 SQL을 실제 DB에 실행하지 않았다.
+1.1.0-review / 수정 2026-10-21 11:47 KST. **24개 테이블·165개 컬럼**, PostgreSQL·JPA 기준. 물리 외래 키는 없으며 아래 관계는 서비스가 검사하는 논리 참조다. 검토 SQL을 실제 DB에 실행하지 않았다.
 
 [API](../contracts/api/README.md) / [SQL](schema.sql) / [ERDCloud 가져오기 SQL](erdcloud-import.sql) / [기계판독 정의](tables.json) / [기존안·수정안 비교](changes-20261021.md) / [기능 대응표](../specifications/coverage.md)
 
@@ -16,7 +16,7 @@
 
 | 테이블 | 쓰는 곳 | 컬럼 수 |
 | --- | --- | ---: |
-| `app_users` | 회원·단일 소셜 로그인 계정 | 6 |
+| `app_users` | 회원·단일 소셜 로그인 계정 | 7 |
 | `refresh_tokens` | 리프레시 토큰·회전 계열; 인증 담당과 조정할 초안 | 7 |
 | `user_consents` | 약관·선택적 AI 분석 동의 이벤트 | 6 |
 | `profiles` | 회원 프로필과 사진 한 장 | 10 |
@@ -56,6 +56,7 @@ erDiagram
         text status
         timestamptz created_at
         timestamptz signup_completed_at
+        text email
     }
     refresh_tokens {
         bigint token_id PK
@@ -309,6 +310,7 @@ erDiagram
 | `status` | ACTIVE / SUSPENDED / WITHDRAWN | 불가 |
 | `created_at` | 최초 계정 생성 | 불가 |
 | `signup_completed_at` | 최초 전체 가입 완료; 완료 전 NULL | 가능 |
+| `email` | 소셜 이메일, 연락용. 식별에 쓰지 않고 응답에 넣지 않음. 개인정보 수집(PRIVACY) 동의 회원만 저장 | 가능 |
 
 중복 금지 조합: provider + provider_subject.
 

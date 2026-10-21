@@ -32,7 +32,7 @@ public class PublicProfile {
 	private String drinkingFrequency;
 	@Column(columnDefinition = "text")
 	private String religion;
-	@Column(name = "image_url", columnDefinition = "text")
+	@Column(columnDefinition = "text")
 	private String imageUrl;
 
 	public PublicProfile(Long userId, String nickname, LocalDate birthDate, String gender) {
