@@ -2,8 +2,8 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Tingle(팅글) 전체 API 계약",
-    "version": "1.1.0-review",
-    "description": "24개 테이블·162개 컬럼 기준 검토 초안. 현재 API 68개. 관리자9개·사진 처리 조회1개는 x-excluded-operations에 기존안으로 보존. 팀 합의·서버/DB 적용·실행 검증 완료를 뜻하지 않음."
+    "version": "1.2.0-auth-review",
+    "description": "24개 테이블·162개 컬럼 기준 API 계약. 활성68개, 제외/폐기11개(기존10개+통합signup). 인증 담당 연락의 약관 분리·새 토큰 응답을 반영한 초안이며 AUTH-OPEN-01~06은 합의 전이다. 로그인 코드·DB·노션·팀 승인·실제 연동 완료를 뜻하지 않음."
   },
   "servers": [
     {
@@ -20,8 +20,8 @@
     "/api/v1/auth/{provider}": {
       "post": {
         "operationId": "socialLogin",
-        "summary": "소셜 로그인 (수정 2026-10-21 11:24)",
-        "description": "앱에서 받은 소셜 제공자 토큰을 검증하고 서비스 로그인 토큰을 발급합니다.\n\n### 처리 규칙\n\n- 소셜 공급자와 검증된 공급자 사용자 식별값을 app_users에 함께 저장하고 두 값의 조합을 고유하게 관리함.\n\n- 별도 social_accounts/login_sessions 테이블은 만들지 않음.\n\n- 회원 식별은 JWT sub를 사용함.\n\n- 가입 상태는 약관·키링·프로필·설문·조건·동기화 데이터를 조회해 계산함.\n\n- sid 세션·다중 로그인 제한·로그아웃 즉시 폐기 범위는 인증 담당과 정할 사항이며 ERD 축소만으로 토큰 보안을 바꾸지 않음.\n\n### 이번 API 변경\n\n경로·기존 요청/응답은 유지하고 내부 저장 방식만 변경함.\n\n### 유지하는 기능 계약\n\n앱이 구글·카카오·네이버 SDK로 받은 토큰을 보내면, 서버가 검증하고 서비스 토큰을 발급한다. 처음 로그인한 사람은 가입 미완료 회원으로 만들어진다.",
+        "summary": "소셜 로그인 (수정 2026-10-21 14:16)",
+        "description": "앱이 받은 공급자 증명을 서버가 검증해 서비스 토큰을 발급한다.\n\n### 처리 규칙\n\n- Google ID token, Kakao/Naver access token을 token 필드로 받는다. provider+검증된 provider_subject로 식별하며 이메일·이름으로 계정을 합치지 않는다.\n- app_users와 refresh_tokens를 사용한다. 별도 social_accounts/login_sessions 테이블을 복원하지 않는다.\n- 가입 흐름은 약관 → 키링 → 프로필 → 설문 → 희망 조건 → 키링 반영 → READY다. 짧은 설명 이름을 실제 enum 값으로 바꾸지 않는다.\n- 현재 소스에 있는 sid=refresh family 검증·로그아웃 즉시 폐기는 AUTH-OPEN-03 합의 대상으로 구분한다. 문서 동기화를 이유로 기존 폐기 검사를 없애지 않는다.\n\n### 응답과 호환성\n\n새 응답은 accessToken, refreshToken, tokenType, accessTokenExpiresAt, refreshTokenExpiresAt, onboardingStatus다. 시각은 UTC ISO 8601이며 tokenType은 Bearer다. 기존 accessTokenExpiresIn·signupCompleted 병행 제공와 전환 시점은 AUTH-OPEN-01 합의 필요다. 현재 스키마를 과거 앱 호환 완료로 취급하지 않는다.",
         "tags": [
           "AUTH"
         ],
@@ -69,8 +69,10 @@
                 "example": {
                   "accessToken": "example-access-token",
                   "refreshToken": "example-refresh-token",
-                  "accessTokenExpiresIn": 1800,
-                  "signupCompleted": false
+                  "tokenType": "Bearer",
+                  "accessTokenExpiresAt": "2026-10-21T00:30:00Z",
+                  "refreshTokenExpiresAt": "2026-11-04T00:00:00Z",
+                  "onboardingStatus": "AGREEMENT_REQUIRED"
                 }
               }
             }
@@ -379,14 +381,18 @@
             }
           }
         },
-        "x-implementation-status": "NOT_IMPLEMENTED_IN_INSPECTED_REFS",
-        "x-inspected-auth-contract": "7020a08",
-        "x-inspected-backend-commit": "93b39a3",
+        "x-implementation-status": "SOURCE_PRESENT_INTEGRATION_UNVERIFIED",
+        "x-inspected-auth-contract": "80310e6b6a1a169a89bdda85947a006815e2965e",
+        "x-inspected-backend-commit": "4f691085ea2bbf6ef1c7e5f2ff3e4152de98e45b",
         "x-notion-page": "https://app.notion.com/p/3fec91ccb6608136b254f15817f50a6b",
         "x-contract-status": "REVIEW_REQUIRED",
         "x-storage-design": "lean24-162",
-        "x-reviewed-at": "2026-10-21 11:47 KST",
-        "x-confirmation-required": [],
+        "x-reviewed-at": "2026-10-21 14:16 KST",
+        "x-confirmation-required": [
+          "AUTH-OPEN-01",
+          "AUTH-OPEN-03",
+          "AUTH-OPEN-05"
+        ],
         "x-change-history": [
           {
             "date": "2026-10-21",
@@ -394,6 +400,18 @@
             "previousDescription": "google ID token / kakao·naver access token 검증. provider+subject만 식별. 이메일·이름 동일해도 통합하지 않음. 성공 뒤 onboarding을 조회한다.",
             "revised": "소셜 공급자와 검증된 공급자 사용자 식별값을 app_users에 함께 저장하고 두 값의 조합을 고유하게 관리함. 별도 social_accounts/login_sessions 테이블은 만들지 않음. 회원 식별은 JWT sub를 사용함. 가입 상태는 약관·키링·프로필·설문·조건·동기화 데이터를 조회해 계산함. sid 세션·다중 로그인 제한·로그아웃 즉시 폐기 범위는 인증 담당과 정할 사항이며 ERD 축소만으로 토큰 보안을 바꾸지 않음.",
             "apiImpact": "경로·기존 요청/응답은 유지하고 내부 저장 방식만 변경함."
+          },
+          {
+            "date": "2026-10-21",
+            "updatedAtKst": "2026-10-21 14:16",
+            "previousDescription": "앱에서 받은 소셜 제공자 토큰을 검증하고 서비스 로그인 토큰을 발급합니다.\n\n### 처리 규칙\n\n- 소셜 공급자와 검증된 공급자 사용자 식별값을 app_users에 함께 저장하고 두 값의 조합을 고유하게 관리함.\n\n- 별도 social_accounts/login_sessions 테이블은 만들지 않음.\n\n- 회원 식별은 JWT sub를 사용함.\n\n- 가입 상태는 약관·키링·프로필·설문·조건·동기화 데이터를 조회해 계산함.\n\n- sid 세션·다중 로그인 제한·로그아웃 즉시 폐기 범위는 인증 담당과 정할 사항이며 ERD 축소만으로 토큰 보안을 바꾸지 않음.\n\n### 이번 API 변경\n\n경로·기존 요청/응답은 유지하고 내부 저장 방식만 변경함.\n\n### 유지하는 기능 계약\n\n앱이 구글·카카오·네이버 SDK로 받은 토큰을 보내면, 서버가 검증하고 서비스 토큰을 발급한다. 처음 로그인한 사람은 가입 미완료 회원으로 만들어진다.",
+            "revised": "앱이 받은 공급자 증명을 서버가 검증해 서비스 토큰을 발급한다.\n\n### 처리 규칙\n\n- Google ID token, Kakao/Naver access token을 token 필드로 받는다. provider+검증된 provider_subject로 식별하며 이메일·이름으로 계정을 합치지 않는다.\n- app_users와 refresh_tokens를 사용한다. 별도 social_accounts/login_sessions 테이블을 복원하지 않는다.\n- 가입 흐름은 약관 → 키링 → 프로필 → 설문 → 희망 조건 → 키링 반영 → READY다. 짧은 설명 이름을 실제 enum 값으로 바꾸지 않는다.\n- 현재 소스에 있는 sid=refresh family 검증·로그아웃 즉시 폐기는 AUTH-OPEN-03 합의 대상으로 구분한다. 문서 동기화를 이유로 기존 폐기 검사를 없애지 않는다.\n\n### 응답과 호환성\n\n새 응답은 accessToken, refreshToken, tokenType, accessTokenExpiresAt, refreshTokenExpiresAt, onboardingStatus다. 시각은 UTC ISO 8601이며 tokenType은 Bearer다. 기존 accessTokenExpiresIn·signupCompleted 병행 제공와 전환 시점은 AUTH-OPEN-01 합의 필요다. 현재 스키마를 과거 앱 호환 완료로 취급하지 않는다.",
+            "apiImpact": "인증 담당 연락 및 최신 소스 기준 명세 동기화. 구현 코드 수정·FE 합의·통합 검증은 수행하지 않음.",
+            "previousInspection": {
+              "x-implementation-status": "NOT_IMPLEMENTED_IN_INSPECTED_REFS",
+              "x-inspected-auth-contract": "7020a08",
+              "x-inspected-backend-commit": "93b39a3"
+            }
           }
         ]
       }
@@ -401,8 +419,8 @@
     "/api/v1/auth/token/refresh": {
       "post": {
         "operationId": "refreshTokens",
-        "summary": "토큰 재발급",
-        "description": "앱이 보관한 리프레시 토큰으로 새 서비스 토큰을 요청한다.\n\n### 처리 규칙\n\n- 앱이 보관한 리프레시 토큰으로 새 서비스 토큰을 요청한다.\n\n- 회전·재사용 감지·로그아웃 범위는 인증 담당의 확정 계약을 따른다.\n\n### 유지하는 기능 계약\n\n액세스 토큰이 만료되면 리프레시 토큰으로 새 토큰을 받는다.",
+        "summary": "토큰 재발급 (수정 2026-10-21 14:16)",
+        "description": "앱이 보관한 refreshToken으로 새 서비스 토큰을 요청한다. 만료된 access 헤더 때문에 공개 재발급 요청을 차단하지 않는 인증 담당 구현을 따른다.\n\n### 응답과 호환성\n\n새 응답은 accessToken, refreshToken, tokenType, accessTokenExpiresAt, refreshTokenExpiresAt, onboardingStatus다. 시각은 UTC ISO 8601이며 tokenType은 Bearer다. 기존 accessTokenExpiresIn·signupCompleted 병행 제공와 전환 시점은 AUTH-OPEN-01 합의 필요다. 현재 스키마를 과거 앱 호환 완료로 취급하지 않는다.\n\n### 합의 필요\n\n- 현재 구현은 refresh를 회전하며 같은 회원의 요청을 회원 행 잠금으로 직렬화한다. DB에는 SHA-256 해시를 보관한다.\n- 30초 내 응답 유실 재시도 때 새 토큰을 다시 발급하고 직전 유실 토큰은 폐기한다. 그 외 재사용의 회원 전체 폐기와 기기별 family 범위는 AUTH-OPEN-03에서 합의한다.\n- 동시 요청의 갱신 공유, 오류별 자동 갱신 분기, 실제 응답 유실/순서 역전 통합 검증을 문서 수정만으로 완료 처리하지 않는다.",
         "tags": [
           "AUTH"
         ],
@@ -436,8 +454,10 @@
                 "example": {
                   "accessToken": "example-access-token",
                   "refreshToken": "example-refresh-token",
-                  "accessTokenExpiresIn": 1800,
-                  "signupCompleted": false
+                  "tokenType": "Bearer",
+                  "accessTokenExpiresAt": "2026-10-21T00:30:00Z",
+                  "refreshTokenExpiresAt": "2026-11-04T00:00:00Z",
+                  "onboardingStatus": "AGREEMENT_REQUIRED"
                 }
               }
             }
@@ -709,21 +729,39 @@
             }
           }
         },
-        "x-implementation-status": "NOT_IMPLEMENTED_IN_INSPECTED_REFS",
-        "x-inspected-auth-contract": "7020a08",
-        "x-inspected-backend-commit": "93b39a3",
+        "x-implementation-status": "SOURCE_PRESENT_INTEGRATION_UNVERIFIED",
+        "x-inspected-auth-contract": "80310e6b6a1a169a89bdda85947a006815e2965e",
+        "x-inspected-backend-commit": "4f691085ea2bbf6ef1c7e5f2ff3e4152de98e45b",
         "x-notion-page": "https://app.notion.com/p/3fec91ccb6608185a106e4753f53c439",
         "x-contract-status": "REVIEW_REQUIRED",
         "x-storage-design": "lean24-162",
-        "x-reviewed-at": "2026-10-21 11:47 KST",
-        "x-confirmation-required": []
+        "x-reviewed-at": "2026-10-21 14:16 KST",
+        "x-confirmation-required": [
+          "AUTH-OPEN-01",
+          "AUTH-OPEN-03",
+          "AUTH-OPEN-04"
+        ],
+        "x-change-history": [
+          {
+            "date": "2026-10-21",
+            "updatedAtKst": "2026-10-21 14:16",
+            "previousDescription": "앱이 보관한 리프레시 토큰으로 새 서비스 토큰을 요청한다.\n\n### 처리 규칙\n\n- 앱이 보관한 리프레시 토큰으로 새 서비스 토큰을 요청한다.\n\n- 회전·재사용 감지·로그아웃 범위는 인증 담당의 확정 계약을 따른다.\n\n### 유지하는 기능 계약\n\n액세스 토큰이 만료되면 리프레시 토큰으로 새 토큰을 받는다.",
+            "revised": "앱이 보관한 refreshToken으로 새 서비스 토큰을 요청한다. 만료된 access 헤더 때문에 공개 재발급 요청을 차단하지 않는 인증 담당 구현을 따른다.\n\n### 응답과 호환성\n\n새 응답은 accessToken, refreshToken, tokenType, accessTokenExpiresAt, refreshTokenExpiresAt, onboardingStatus다. 시각은 UTC ISO 8601이며 tokenType은 Bearer다. 기존 accessTokenExpiresIn·signupCompleted 병행 제공와 전환 시점은 AUTH-OPEN-01 합의 필요다. 현재 스키마를 과거 앱 호환 완료로 취급하지 않는다.\n\n### 합의 필요\n\n- 현재 구현은 refresh를 회전하며 같은 회원의 요청을 회원 행 잠금으로 직렬화한다. DB에는 SHA-256 해시를 보관한다.\n- 30초 내 응답 유실 재시도 때 새 토큰을 다시 발급하고 직전 유실 토큰은 폐기한다. 그 외 재사용의 회원 전체 폐기와 기기별 family 범위는 AUTH-OPEN-03에서 합의한다.\n- 동시 요청의 갱신 공유, 오류별 자동 갱신 분기, 실제 응답 유실/순서 역전 통합 검증을 문서 수정만으로 완료 처리하지 않는다.",
+            "apiImpact": "인증 담당 연락 및 최신 소스 기준 명세 동기화. 구현 코드 수정·FE 합의·통합 검증은 수행하지 않음.",
+            "previousInspection": {
+              "x-implementation-status": "NOT_IMPLEMENTED_IN_INSPECTED_REFS",
+              "x-inspected-auth-contract": "7020a08",
+              "x-inspected-backend-commit": "93b39a3"
+            }
+          }
+        ]
       }
     },
     "/api/v1/auth/logout": {
       "post": {
         "operationId": "logout",
-        "summary": "현재 세션 로그아웃 (수정 2026-10-21 11:24)",
-        "description": "본인의 리프레시 토큰을 검증해 로그인 자격을 폐기하는 설계입니다. 즉시 폐기 범위는 합의가 필요합니다.\n\n### 처리 규칙\n\n- login_sessions/sid 컬럼·테이블은 이번 ERD에 없음.\n\n- 리프레시 토큰의 계열(family_id)과 사용/폐기 상태로 회전·재사용을 관리하는 초안임.\n\n- 기존 설명의 “access JWT sid도 즉시 거절”은 현재 ERD만으로 보장할 수 없음.\n\n### 확인할 사항\n\n- refreshToken으로 호출하는 기존 경로는 보존하되 즉시 access token 무효화·현재 로그인 범위·멱등성은 인증 담당 합의 전 미확정으로 표시함. 즉시 폐기가 이미 구현되었다고 표시하지 않음.\n\n### 이번 API 변경\n\nrefreshToken으로 호출하는 기존 경로는 보존하되 즉시 access token 무효화·현재 로그인 범위·멱등성은 인증 담당 합의 전 미확정으로 표시함. 즉시 폐기가 이미 구현되었다고 표시하지 않음.",
+        "summary": "현재 로그인 로그아웃 (수정 2026-10-21 14:16)",
+        "description": "요청은 {refreshToken}, 성공은 본문 없는204다. access가 만료돼도 refresh로 현재 로그인 계열을 찾아 로그아웃하는 구현을 기록한다. 같은 토큰의 반복 요청·만료 refresh로도 해당 family를 종료한다. 존재하지 않는 refresh는401 INVALID_REFRESH_TOKEN이다.\n\n### 합의 필요\n\n현재 소스는 해당 family의 refresh를 폐기하고 같은 sid의 access도 즉시 거절한다. 다른 기기는 유지한다. 이 방식의 공식 채택과 전체 폐기의 적용 범위는 AUTH-OPEN-03이며, 기존 보안 동작은 임의로 제거하지 않는다.",
         "tags": [
           "AUTH"
         ],
@@ -1017,15 +1055,16 @@
             }
           }
         },
-        "x-implementation-status": "NOT_IMPLEMENTED_IN_INSPECTED_REFS",
-        "x-inspected-auth-contract": "7020a08",
-        "x-inspected-backend-commit": "93b39a3",
+        "x-implementation-status": "SOURCE_PRESENT_INTEGRATION_UNVERIFIED",
+        "x-inspected-auth-contract": "80310e6b6a1a169a89bdda85947a006815e2965e",
+        "x-inspected-backend-commit": "4f691085ea2bbf6ef1c7e5f2ff3e4152de98e45b",
         "x-notion-page": "https://app.notion.com/p/3ffc91ccb6608089b245d8cdda63d67c",
         "x-contract-status": "REVIEW_REQUIRED",
         "x-storage-design": "lean24-162",
-        "x-reviewed-at": "2026-10-21 11:47 KST",
+        "x-reviewed-at": "2026-10-21 14:16 KST",
         "x-confirmation-required": [
-          "refreshToken으로 호출하는 기존 경로는 보존하되 즉시 access token 무효화·현재 로그인 범위·멱등성은 인증 담당 합의 전 미확정으로 표시함. 즉시 폐기가 이미 구현되었다고 표시하지 않음."
+          "refreshToken으로 호출하는 기존 경로는 보존하되 즉시 access token 무효화·현재 로그인 범위·멱등성은 인증 담당 합의 전 미확정으로 표시함. 즉시 폐기가 이미 구현되었다고 표시하지 않음.",
+          "AUTH-OPEN-03"
         ],
         "x-change-history": [
           {
@@ -1034,6 +1073,18 @@
             "previousDescription": "신규 통합 제안이며 아직 구현되지 않음. 액세스 토큰 만료 후에도 본인 refresh 자격을 서버에서 검증해 해당 세션/family를 폐기한다. public은 JWT 미요구 의미이며 refresh 소유 검증 생략이 아님. 탈취 재사용 판정은 refresh 계약과 동일, 앱 자기신고 userId/sessionId는 받지 않음. 폐기 성공 뒤 기존 JWT의 sid도 보호 API에서 거절. 다른 세션은 유지. 상세 응답/멱등 정책은35번 합의 필요.",
             "revised": "login_sessions/sid 컬럼·테이블은 이번 ERD에 없음. 리프레시 토큰의 계열(family_id)과 사용/폐기 상태로 회전·재사용을 관리하는 초안임. 기존 설명의 “access JWT sid도 즉시 거절”은 현재 ERD만으로 보장할 수 없음.",
             "apiImpact": "refreshToken으로 호출하는 기존 경로는 보존하되 즉시 access token 무효화·현재 로그인 범위·멱등성은 인증 담당 합의 전 미확정으로 표시함. 즉시 폐기가 이미 구현되었다고 표시하지 않음."
+          },
+          {
+            "date": "2026-10-21",
+            "updatedAtKst": "2026-10-21 14:16",
+            "previousDescription": "본인의 리프레시 토큰을 검증해 로그인 자격을 폐기하는 설계입니다. 즉시 폐기 범위는 합의가 필요합니다.\n\n### 처리 규칙\n\n- login_sessions/sid 컬럼·테이블은 이번 ERD에 없음.\n\n- 리프레시 토큰의 계열(family_id)과 사용/폐기 상태로 회전·재사용을 관리하는 초안임.\n\n- 기존 설명의 “access JWT sid도 즉시 거절”은 현재 ERD만으로 보장할 수 없음.\n\n### 확인할 사항\n\n- refreshToken으로 호출하는 기존 경로는 보존하되 즉시 access token 무효화·현재 로그인 범위·멱등성은 인증 담당 합의 전 미확정으로 표시함. 즉시 폐기가 이미 구현되었다고 표시하지 않음.\n\n### 이번 API 변경\n\nrefreshToken으로 호출하는 기존 경로는 보존하되 즉시 access token 무효화·현재 로그인 범위·멱등성은 인증 담당 합의 전 미확정으로 표시함. 즉시 폐기가 이미 구현되었다고 표시하지 않음.",
+            "revised": "요청은 {refreshToken}, 성공은 본문 없는204다. access가 만료돼도 refresh로 현재 로그인 계열을 찾아 로그아웃하는 구현을 기록한다. 같은 토큰의 반복 요청·만료 refresh로도 해당 family를 종료한다. 존재하지 않는 refresh는401 INVALID_REFRESH_TOKEN이다.\n\n### 합의 필요\n\n현재 소스는 해당 family의 refresh를 폐기하고 같은 sid의 access도 즉시 거절한다. 다른 기기는 유지한다. 이 방식의 공식 채택과 전체 폐기의 적용 범위는 AUTH-OPEN-03이며, 기존 보안 동작은 임의로 제거하지 않는다.",
+            "apiImpact": "인증 담당 연락 및 최신 소스 기준 명세 동기화. 구현 코드 수정·FE 합의·통합 검증은 수행하지 않음.",
+            "previousInspection": {
+              "x-implementation-status": "NOT_IMPLEMENTED_IN_INSPECTED_REFS",
+              "x-inspected-auth-contract": "7020a08",
+              "x-inspected-backend-commit": "93b39a3"
+            }
           }
         ]
       }
@@ -1307,11 +1358,198 @@
         "x-confirmation-required": []
       }
     },
+    "/api/v1/users/me/agreements": {
+      "post": {
+        "operationId": "submitAgreements",
+        "summary": "약관 동의 저장 (수정 2026-10-21 14:16)",
+        "tags": [
+          "AUTH"
+        ],
+        "x-functional-ids": [
+          "AUTH-02"
+        ],
+        "x-auth-role": "user",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgreementConsentInput"
+              },
+              "example": {
+                "agreements": [
+                  {
+                    "type": "TERMS",
+                    "version": "2026-10-19",
+                    "agreed": true
+                  },
+                  {
+                    "type": "PRIVACY",
+                    "version": "2026-10-19",
+                    "agreed": true
+                  },
+                  {
+                    "type": "ADULT",
+                    "version": "2026-10-19",
+                    "agreed": true
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "정상 응답",
+            "headers": {
+              "X-Request-Id": {
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              },
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "민감 응답 no-store"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgreementConsentResult"
+                },
+                "example": {
+                  "onboardingStatus": "KEYRING_REQUIRED"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "INVALID_REQUEST / REQUIRED_AGREEMENT_MISSING",
+            "headers": {
+              "X-Request-Id": {
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              },
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "민감 응답 no-store"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "code": "INVALID_REQUEST",
+                  "message": "요청을 확인해 주세요."
+                }
+              }
+            },
+            "x-error-codes": [
+              "INVALID_REQUEST",
+              "REQUIRED_AGREEMENT_MISSING"
+            ]
+          },
+          "401": {
+            "description": "UNAUTHORIZED; 만료·위조·폐기 구분과 앱 자동 갱신 규칙은 AUTH-OPEN-04 합의 필요",
+            "headers": {
+              "X-Request-Id": {
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              },
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "민감 응답 no-store"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "code": "UNAUTHORIZED",
+                  "message": "로그인이 필요합니다."
+                }
+              }
+            },
+            "x-error-codes": [
+              "UNAUTHORIZED"
+            ]
+          },
+          "409": {
+            "description": "AGREEMENT_VERSION_OUTDATED",
+            "headers": {
+              "X-Request-Id": {
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              },
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "민감 응답 no-store"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "code": "AGREEMENT_VERSION_OUTDATED",
+                  "message": "요청을 확인해 주세요."
+                }
+              }
+            },
+            "x-error-codes": [
+              "AGREEMENT_VERSION_OUTDATED"
+            ]
+          }
+        },
+        "x-source-auth-contract": "https://lab.ssafy.com/s15-final/S15P31E106/-/blob/80310e6b6a1a169a89bdda85947a006815e2965e/docs/contracts/api/auth.md",
+        "x-change-history": [
+          {
+            "date": "2026-10-21",
+            "updatedAtKst": "2026-10-21 14:16",
+            "previousDescription": "",
+            "revised": "로그인 직후 첫 가입 단계에서 약관 조회로 표시한 항목의 선택을 저장한다. Bearer 인증이 필요하며 AGREEMENT_REQUIRED 단계부터 호출한다. userId를 요청으로 받지 않고 검증한 JWT sub를 사용한다.\n\n### 요청·응답\n\n- 요청 {agreements:[{type,version,agreed}]}, 성공200 {onboardingStatus}다. type/version은 매번 GET /api/v1/agreements로 조회한 값을 보낸다.\n- 필수 항목 false는400 REQUIRED_AGREEMENT_MISSING, 중복 type/형식 오류는400 INVALID_REQUEST다.\n- 현재 없는 항목·빠진 항목·빈 목록·버전 불일치는409 AGREEMENT_VERSION_OUTDATED다. 최신 목록을 다시 보여 준 뒤 재요청한다.\n- 같은 버전·선택 재전송은 현재 상태를 반환하며 같은 이력을 중복 추가하지 않는다. 필수 항목 철회는 이 API에서 허용하지 않는다.\n- user_consents에 문서 버전·선택·기록 시각을 남긴다. 가입·프로필 동작을 한 요청으로 합치지 않는다.\n\n### 구현과 목표 단계 구분\n\n정책상 약관 다음은 KEYRING_REQUIRED다. 현재 로그인 소스가 키링·설문·조건·동기화 검사를 생략해 PROFILE_REQUIRED 또는 READY를 반환하는 한계는 AUTH-OPEN-06에 남긴다. 이 예시는 정책 계약이며 모든 가입 게이트의 구현 완료 증거가 아니다.",
+            "apiImpact": "인증 담당 연락 및 최신 소스 기준 명세 동기화. 구현 코드 수정·FE 합의·통합 검증은 수행하지 않음.",
+            "previousInspection": {}
+          }
+        ],
+        "description": "로그인 직후 첫 가입 단계에서 약관 조회로 표시한 항목의 선택을 저장한다. Bearer 인증이 필요하며 AGREEMENT_REQUIRED 단계부터 호출한다. userId를 요청으로 받지 않고 검증한 JWT sub를 사용한다.\n\n### 요청·응답\n\n- 요청 {agreements:[{type,version,agreed}]}, 성공200 {onboardingStatus}다. type/version은 매번 GET /api/v1/agreements로 조회한 값을 보낸다.\n- 필수 항목 false는400 REQUIRED_AGREEMENT_MISSING, 중복 type/형식 오류는400 INVALID_REQUEST다.\n- 현재 없는 항목·빠진 항목·빈 목록·버전 불일치는409 AGREEMENT_VERSION_OUTDATED다. 최신 목록을 다시 보여 준 뒤 재요청한다.\n- 같은 버전·선택 재전송은 현재 상태를 반환하며 같은 이력을 중복 추가하지 않는다. 필수 항목 철회는 이 API에서 허용하지 않는다.\n- user_consents에 문서 버전·선택·기록 시각을 남긴다. 가입·프로필 동작을 한 요청으로 합치지 않는다.\n\n### 구현과 목표 단계 구분\n\n정책상 약관 다음은 KEYRING_REQUIRED다. 현재 로그인 소스가 키링·설문·조건·동기화 검사를 생략해 PROFILE_REQUIRED 또는 READY를 반환하는 한계는 AUTH-OPEN-06에 남긴다. 이 예시는 정책 계약이며 모든 가입 게이트의 구현 완료 증거가 아니다.",
+        "x-reviewed-at": "2026-10-21 14:16 KST",
+        "x-inspected-auth-contract": "80310e6b6a1a169a89bdda85947a006815e2965e",
+        "x-inspected-backend-commit": "4f691085ea2bbf6ef1c7e5f2ff3e4152de98e45b",
+        "x-implementation-status": "SOURCE_PRESENT_INTEGRATION_UNVERIFIED",
+        "x-contract-status": "REVIEW_REQUIRED",
+        "x-confirmation-required": [
+          "AUTH-OPEN-04",
+          "AUTH-OPEN-06"
+        ]
+      }
+    },
     "/api/v1/users/me/onboarding": {
       "get": {
         "operationId": "getOnboarding",
-        "summary": "다음 미완료 단계 조회 (수정 2026-10-21 11:24)",
-        "description": "사용자가 가입 과정에서 다음으로 완료할 단계를 조회합니다.\n\n### 처리 규칙\n\n- 가입 단계를 별도 상태 컬럼으로 저장하지 않고 한 서비스에서 동의·등록키링·프로필·완료 응답/분석·희망 조건·ACK 버전을 확인해 계산함.\n\n- 약관 단계를 선행시키며 AGREEMENT_REQUIRED→KEYRING_REQUIRED→PROFILE_REQUIRED→SURVEY_REQUIRED→PREFERENCES_REQUIRED→SYNC_PENDING→READY 순서임.\n\n- 동기화는 서버 설정 버전과 유효한 기기 저장 ACK를 비교함.\n\n### 확인할 사항\n\n- ERD의 bigint는 내부 저장 타입이다. 기존 API의 UUID 표현을 자동으로 숫자 ID로 바꾸지 않으며 외부 식별자 형식·매핑은 호출자와 확정해야 한다.\n\n### 이번 API 변경\n\n기존 응답의 진행 정보는 유지하되 nextStep의 값과 로그인 응답 onboardingStatus를 같은 단계 값으로 통일해야 함. signupCompleted만으로 홈 이동을 결정하지 않음.",
+        "summary": "다음 미완료 단계 조회 (수정 2026-10-21 14:16)",
+        "description": "사용자가 가입 과정에서 다음으로 완료할 단계를 조회합니다.\n\n### 처리 규칙\n\n- 가입 단계를 별도 상태 컬럼으로 저장하지 않고 한 서비스에서 동의·등록키링·프로필·완료 응답/분석·희망 조건·ACK 버전을 확인해 계산함.\n\n- 약관 단계를 선행시키며 AGREEMENT_REQUIRED→KEYRING_REQUIRED→PROFILE_REQUIRED→SURVEY_REQUIRED→PREFERENCES_REQUIRED→SYNC_PENDING→READY 순서임.\n\n- 동기화는 서버 설정 버전과 유효한 기기 저장 ACK를 비교함.\n\n### 확인할 사항\n\n- ERD의 bigint는 내부 저장 타입이다. 기존 API의 UUID 표현을 자동으로 숫자 ID로 바꾸지 않으며 외부 식별자 형식·매핑은 호출자와 확정해야 한다.\n\n### 이번 API 변경\n\n기존 응답의 진행 정보는 유지하되 nextStep의 값과 로그인 응답 onboardingStatus를 같은 단계 값으로 통일해야 함. signupCompleted만으로 홈 이동을 결정하지 않음.\n\n### 인증 동기화 확인 사항\n\nAUTH-OPEN-06: 현재 소스의 단계 조회는5개 필드만 구현했고 일부 가입 게이트를 생략한다. 전체 가입/설문 진행도/설정 버전 계약과 필수 nullable 응답은 후속 검토하며 문서 동기화를 실행 검증 완료로 표시하지 않는다.",
         "tags": [
           "AUTH"
         ],
@@ -1395,7 +1633,7 @@
             ]
           },
           "401": {
-            "description": "35번 UNAUTHORIZED / 43번 구현 AUTH_REQUIRED·ACCESS_TOKEN_EXPIRED·ACCESS_TOKEN_INVALID·SESSION_REVOKED; 상세 분기와 적용 범위는 auth-recheck.md",
+            "description": "UNAUTHORIZED; 만료·위조·폐기 구분과 앱 자동 갱신 규칙은 AUTH-OPEN-04 합의 필요",
             "headers": {
               "X-Request-Id": {
                 "schema": {
@@ -1417,21 +1655,12 @@
                 },
                 "example": {
                   "code": "UNAUTHORIZED",
-                  "message": "35번 UNAUTHORIZED / 43번 구현 AUTH_REQUIRED·ACCESS_TOKEN_EXPIRED·ACCESS_TOKEN_INVALID·SESSION_REVOKED; 상세 분기와 적용 범위는 auth-recheck.md",
-                  "requestId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
-                  "retryable": false,
-                  "fields": [
-                    "revision"
-                  ]
+                  "message": "로그인이 필요합니다."
                 }
               }
             },
             "x-error-codes": [
-              "UNAUTHORIZED",
-              "AUTH_REQUIRED",
-              "ACCESS_TOKEN_EXPIRED",
-              "ACCESS_TOKEN_INVALID",
-              "SESSION_REVOKED"
+              "UNAUTHORIZED"
             ]
           },
           "403": {
@@ -1651,15 +1880,16 @@
             ]
           }
         },
-        "x-implementation-status": "NOT_IMPLEMENTED_IN_INSPECTED_REFS",
-        "x-inspected-auth-contract": "7020a08",
-        "x-inspected-backend-commit": "93b39a3",
+        "x-implementation-status": "PARTIAL_SOURCE_ONBOARDING_GATES_AND_FIELDS_MISSING",
+        "x-inspected-auth-contract": "80310e6b6a1a169a89bdda85947a006815e2965e",
+        "x-inspected-backend-commit": "4f691085ea2bbf6ef1c7e5f2ff3e4152de98e45b",
         "x-notion-page": "https://app.notion.com/p/3ffc91ccb66080c9b134c1fb3c93f5ca",
         "x-contract-status": "REVIEW_REQUIRED",
         "x-storage-design": "lean24-162",
-        "x-reviewed-at": "2026-10-21 11:47 KST",
+        "x-reviewed-at": "2026-10-21 14:16 KST",
         "x-confirmation-required": [
-          "ERD의 bigint는 내부 저장 타입이다. 기존 API의 UUID 표현을 자동으로 숫자 ID로 바꾸지 않으며 외부 식별자 형식·매핑은 호출자와 확정해야 한다."
+          "ERD의 bigint는 내부 저장 타입이다. 기존 API의 UUID 표현을 자동으로 숫자 ID로 바꾸지 않으며 외부 식별자 형식·매핑은 호출자와 확정해야 한다.",
+          "AUTH-OPEN-06"
         ],
         "x-change-history": [
           {
@@ -1668,6 +1898,18 @@
             "previousDescription": "가입 미완료 허용. 키링→프로필→설문→희망조건→동기화 순서. 설문 완료와 계산 정보 충분 여부를 구별. signupCompleted만으로 홈 이동 금지.",
             "revised": "가입 단계를 별도 상태 컬럼으로 저장하지 않고 한 서비스에서 동의·등록키링·프로필·완료 응답/분석·희망 조건·ACK 버전을 확인해 계산함. 약관 단계를 선행시키며 AGREEMENT_REQUIRED→KEYRING_REQUIRED→PROFILE_REQUIRED→SURVEY_REQUIRED→PREFERENCES_REQUIRED→SYNC_PENDING→READY 순서임. 동기화는 서버 설정 버전과 유효한 기기 저장 ACK를 비교함.",
             "apiImpact": "기존 응답의 진행 정보는 유지하되 nextStep의 값과 로그인 응답 onboardingStatus를 같은 단계 값으로 통일해야 함. signupCompleted만으로 홈 이동을 결정하지 않음."
+          },
+          {
+            "date": "2026-10-21",
+            "updatedAtKst": "2026-10-21 14:16",
+            "previousDescription": "사용자가 가입 과정에서 다음으로 완료할 단계를 조회합니다.\n\n### 처리 규칙\n\n- 가입 단계를 별도 상태 컬럼으로 저장하지 않고 한 서비스에서 동의·등록키링·프로필·완료 응답/분석·희망 조건·ACK 버전을 확인해 계산함.\n\n- 약관 단계를 선행시키며 AGREEMENT_REQUIRED→KEYRING_REQUIRED→PROFILE_REQUIRED→SURVEY_REQUIRED→PREFERENCES_REQUIRED→SYNC_PENDING→READY 순서임.\n\n- 동기화는 서버 설정 버전과 유효한 기기 저장 ACK를 비교함.\n\n### 확인할 사항\n\n- ERD의 bigint는 내부 저장 타입이다. 기존 API의 UUID 표현을 자동으로 숫자 ID로 바꾸지 않으며 외부 식별자 형식·매핑은 호출자와 확정해야 한다.\n\n### 이번 API 변경\n\n기존 응답의 진행 정보는 유지하되 nextStep의 값과 로그인 응답 onboardingStatus를 같은 단계 값으로 통일해야 함. signupCompleted만으로 홈 이동을 결정하지 않음.",
+            "revised": "사용자가 가입 과정에서 다음으로 완료할 단계를 조회합니다.\n\n### 처리 규칙\n\n- 가입 단계를 별도 상태 컬럼으로 저장하지 않고 한 서비스에서 동의·등록키링·프로필·완료 응답/분석·희망 조건·ACK 버전을 확인해 계산함.\n\n- 약관 단계를 선행시키며 AGREEMENT_REQUIRED→KEYRING_REQUIRED→PROFILE_REQUIRED→SURVEY_REQUIRED→PREFERENCES_REQUIRED→SYNC_PENDING→READY 순서임.\n\n- 동기화는 서버 설정 버전과 유효한 기기 저장 ACK를 비교함.\n\n### 확인할 사항\n\n- ERD의 bigint는 내부 저장 타입이다. 기존 API의 UUID 표현을 자동으로 숫자 ID로 바꾸지 않으며 외부 식별자 형식·매핑은 호출자와 확정해야 한다.\n\n### 이번 API 변경\n\n기존 응답의 진행 정보는 유지하되 nextStep의 값과 로그인 응답 onboardingStatus를 같은 단계 값으로 통일해야 함. signupCompleted만으로 홈 이동을 결정하지 않음.\n\n### 인증 동기화 확인 사항\n\nAUTH-OPEN-06: 현재 소스의 단계 조회는5개 필드만 구현했고 일부 가입 게이트를 생략한다. 전체 가입/설문 진행도/설정 버전 계약과 필수 nullable 응답은 후속 검토하며 문서 동기화를 실행 검증 완료로 표시하지 않는다.",
+            "apiImpact": "인증 담당 연락 및 최신 소스 기준 명세 동기화. 구현 코드 수정·FE 합의·통합 검증은 수행하지 않음.",
+            "previousInspection": {
+              "x-implementation-status": "NOT_IMPLEMENTED_IN_INSPECTED_REFS",
+              "x-inspected-auth-contract": "7020a08",
+              "x-inspected-backend-commit": "93b39a3"
+            }
           }
         ]
       }
@@ -3446,8 +3688,8 @@
     "/api/v1/users/me/profile": {
       "get": {
         "operationId": "getMyProfile",
-        "summary": "본인 프로필 조회 (수정 2026-10-21 11:21)",
-        "description": "내 프로필과 현재 사진 정보를 조회합니다.\n\n### 처리 규칙\n\n- 현재 프로필은 profiles 한 행에 저장하고 사진은 image_url 한 개 또는 null로 관리함.\n\n- nickname_key는 정규화한 닉네임 중복 비교용으로 남김.\n\n- 별도 profile_version·updated_at·사진 행은 두지 않음.\n\n- 필요한 설정 변경은 settings_version을 증가시키고 동기화 사본을 갱신함.\n\n### 확인할 사항\n\n- ERD의 bigint는 내부 저장 타입이다. 기존 API의 UUID 표현을 자동으로 숫자 ID로 바꾸지 않으며 외부 식별자 형식·매핑은 호출자와 확정해야 한다.\n\n- 프로필 profileVersion/ETag/If-Match 중복 구조는 제외한다. 설문 revision과 If-Match 규칙은 유지한다.\n\n### 이번 API 변경\n\n응답 photoId는 imageUrl로 바꾸고 hasProfilePhoto·completed는 저장값에서 계산함. profileVersion과 이를 전제로 한 프로필 ETag/If-Match 필수 규칙은 이 수정안에서 제외함. 설문의 revision/If-Match에는 영향 없음. 동시 프로필 수정 충돌 정책이 필요하면 별도 버전 필드 도입 여부부터 결정함.",
+        "summary": "본인 프로필 조회 (수정 2026-10-21 14:16)",
+        "description": "내 프로필과 현재 사진 정보를 조회합니다.\n\n### 처리 규칙\n\n- 현재 프로필은 profiles 한 행에 저장하고 사진은 image_url 한 개 또는 null로 관리함.\n\n- nickname_key는 정규화한 닉네임 중복 비교용으로 남김.\n\n- 별도 profile_version·updated_at·사진 행은 두지 않음.\n\n- 필요한 설정 변경은 settings_version을 증가시키고 동기화 사본을 갱신함.\n\n### 확인할 사항\n\n- ERD의 bigint는 내부 저장 타입이다. 기존 API의 UUID 표현을 자동으로 숫자 ID로 바꾸지 않으며 외부 식별자 형식·매핑은 호출자와 확정해야 한다.\n\n- 프로필 profileVersion/ETag/If-Match 중복 구조는 제외한다. 설문 revision과 If-Match 규칙은 유지한다.\n\n### 이번 API 변경\n\n응답 photoId는 imageUrl로 바꾸고 hasProfilePhoto·completed는 저장값에서 계산함. profileVersion과 이를 전제로 한 프로필 ETag/If-Match 필수 규칙은 이 수정안에서 제외함. 설문의 revision/If-Match에는 영향 없음. 동시 프로필 수정 충돌 정책이 필요하면 별도 버전 필드 도입 여부부터 결정함.\n\n### 인증 동기화 확인 사항\n\nAUTH-OPEN-06: 현재 소스의 ProfileResponse NON_NULL 설정은 사진이 없을 때 imageUrl 등 필수 nullable 키를 생략한다. 이 문서의 필수 nullable 계약은 유지하며 코드 수정과 통합 검증은 별도다.",
         "tags": [
           "PRO"
         ],
@@ -3531,7 +3773,7 @@
             ]
           },
           "401": {
-            "description": "35번 UNAUTHORIZED / 43번 구현 AUTH_REQUIRED·ACCESS_TOKEN_EXPIRED·ACCESS_TOKEN_INVALID·SESSION_REVOKED; 상세 분기와 적용 범위는 auth-recheck.md",
+            "description": "UNAUTHORIZED; 만료·위조·폐기 구분과 앱 자동 갱신 규칙은 AUTH-OPEN-04 합의 필요",
             "headers": {
               "X-Request-Id": {
                 "schema": {
@@ -3553,21 +3795,12 @@
                 },
                 "example": {
                   "code": "UNAUTHORIZED",
-                  "message": "35번 UNAUTHORIZED / 43번 구현 AUTH_REQUIRED·ACCESS_TOKEN_EXPIRED·ACCESS_TOKEN_INVALID·SESSION_REVOKED; 상세 분기와 적용 범위는 auth-recheck.md",
-                  "requestId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
-                  "retryable": false,
-                  "fields": [
-                    "revision"
-                  ]
+                  "message": "로그인이 필요합니다."
                 }
               }
             },
             "x-error-codes": [
-              "UNAUTHORIZED",
-              "AUTH_REQUIRED",
-              "ACCESS_TOKEN_EXPIRED",
-              "ACCESS_TOKEN_INVALID",
-              "SESSION_REVOKED"
+              "UNAUTHORIZED"
             ]
           },
           "403": {
@@ -3790,10 +4023,11 @@
         "x-notion-page": "https://app.notion.com/p/3ffc91ccb660802a8f86eccdb6e9db7b",
         "x-contract-status": "REVIEW_REQUIRED",
         "x-storage-design": "lean24-162",
-        "x-reviewed-at": "2026-10-21 11:47 KST",
+        "x-reviewed-at": "2026-10-21 14:16 KST",
         "x-confirmation-required": [
           "ERD의 bigint는 내부 저장 타입이다. 기존 API의 UUID 표현을 자동으로 숫자 ID로 바꾸지 않으며 외부 식별자 형식·매핑은 호출자와 확정해야 한다.",
-          "프로필 profileVersion/ETag/If-Match 중복 구조는 제외한다. 설문 revision과 If-Match 규칙은 유지한다."
+          "프로필 profileVersion/ETag/If-Match 중복 구조는 제외한다. 설문 revision과 If-Match 규칙은 유지한다.",
+          "AUTH-OPEN-06"
         ],
         "x-change-history": [
           {
@@ -3802,13 +4036,24 @@
             "previousDescription": "가입 미완료 허용. 요청의 If-Match는 이 GET에서 요구하지 않음. 응답 ETag만 반환.",
             "revised": "현재 프로필은 profiles 한 행에 저장하고 사진은 image_url 한 개 또는 null로 관리함. nickname_key는 정규화한 닉네임 중복 비교용으로 남김. 별도 profile_version·updated_at·사진 행은 두지 않음. 필요한 설정 변경은 settings_version을 증가시키고 동기화 사본을 갱신함.",
             "apiImpact": "응답 photoId는 imageUrl로 바꾸고 hasProfilePhoto·completed는 저장값에서 계산함. profileVersion과 이를 전제로 한 프로필 ETag/If-Match 필수 규칙은 이 수정안에서 제외함. 설문의 revision/If-Match에는 영향 없음. 동시 프로필 수정 충돌 정책이 필요하면 별도 버전 필드 도입 여부부터 결정함."
+          },
+          {
+            "date": "2026-10-21",
+            "updatedAtKst": "2026-10-21 14:16",
+            "previousDescription": "내 프로필과 현재 사진 정보를 조회합니다.\n\n### 처리 규칙\n\n- 현재 프로필은 profiles 한 행에 저장하고 사진은 image_url 한 개 또는 null로 관리함.\n\n- nickname_key는 정규화한 닉네임 중복 비교용으로 남김.\n\n- 별도 profile_version·updated_at·사진 행은 두지 않음.\n\n- 필요한 설정 변경은 settings_version을 증가시키고 동기화 사본을 갱신함.\n\n### 확인할 사항\n\n- ERD의 bigint는 내부 저장 타입이다. 기존 API의 UUID 표현을 자동으로 숫자 ID로 바꾸지 않으며 외부 식별자 형식·매핑은 호출자와 확정해야 한다.\n\n- 프로필 profileVersion/ETag/If-Match 중복 구조는 제외한다. 설문 revision과 If-Match 규칙은 유지한다.\n\n### 이번 API 변경\n\n응답 photoId는 imageUrl로 바꾸고 hasProfilePhoto·completed는 저장값에서 계산함. profileVersion과 이를 전제로 한 프로필 ETag/If-Match 필수 규칙은 이 수정안에서 제외함. 설문의 revision/If-Match에는 영향 없음. 동시 프로필 수정 충돌 정책이 필요하면 별도 버전 필드 도입 여부부터 결정함.",
+            "revised": "내 프로필과 현재 사진 정보를 조회합니다.\n\n### 처리 규칙\n\n- 현재 프로필은 profiles 한 행에 저장하고 사진은 image_url 한 개 또는 null로 관리함.\n\n- nickname_key는 정규화한 닉네임 중복 비교용으로 남김.\n\n- 별도 profile_version·updated_at·사진 행은 두지 않음.\n\n- 필요한 설정 변경은 settings_version을 증가시키고 동기화 사본을 갱신함.\n\n### 확인할 사항\n\n- ERD의 bigint는 내부 저장 타입이다. 기존 API의 UUID 표현을 자동으로 숫자 ID로 바꾸지 않으며 외부 식별자 형식·매핑은 호출자와 확정해야 한다.\n\n- 프로필 profileVersion/ETag/If-Match 중복 구조는 제외한다. 설문 revision과 If-Match 규칙은 유지한다.\n\n### 이번 API 변경\n\n응답 photoId는 imageUrl로 바꾸고 hasProfilePhoto·completed는 저장값에서 계산함. profileVersion과 이를 전제로 한 프로필 ETag/If-Match 필수 규칙은 이 수정안에서 제외함. 설문의 revision/If-Match에는 영향 없음. 동시 프로필 수정 충돌 정책이 필요하면 별도 버전 필드 도입 여부부터 결정함.\n\n### 인증 동기화 확인 사항\n\nAUTH-OPEN-06: 현재 소스의 단계 조회는5개 필드만 구현했고 일부 가입 게이트를 생략한다. 전체 가입/설문 진행도/설정 버전 계약과 필수 nullable 응답은 후속 검토하며 문서 동기화를 실행 검증 완료로 표시하지 않는다.",
+            "apiImpact": "인증 담당 연락 및 최신 소스 기준 명세 동기화. 구현 코드 수정·FE 합의·통합 검증은 수행하지 않음.",
+            "previousInspection": {}
           }
-        ]
+        ],
+        "x-inspected-auth-contract": "80310e6b6a1a169a89bdda85947a006815e2965e",
+        "x-inspected-backend-commit": "4f691085ea2bbf6ef1c7e5f2ff3e4152de98e45b",
+        "x-implementation-status": "SOURCE_PRESENT_INTEGRATION_UNVERIFIED"
       },
       "patch": {
         "operationId": "saveProfileDraft",
-        "summary": "프로필 초안·수정 저장 (수정 저장 (수정 2026-10-21 11:21)",
-        "description": "가입 중인 프로필 초안을 저장하거나 허용된 프로필 정보를 수정합니다.\n\n### 처리 규칙\n\n- 현재 프로필은 profiles 한 행에 저장하고 사진은 image_url 한 개 또는 null로 관리함.\n\n- nickname_key는 정규화한 닉네임 중복 비교용으로 남김.\n\n- 별도 profile_version·updated_at·사진 행은 두지 않음.\n\n- 필요한 설정 변경은 settings_version을 증가시키고 동기화 사본을 갱신함.\n\n### 확인할 사항\n\n- ERD의 bigint는 내부 저장 타입이다. 기존 API의 UUID 표현을 자동으로 숫자 ID로 바꾸지 않으며 외부 식별자 형식·매핑은 호출자와 확정해야 한다.\n\n- 프로필 profileVersion/ETag/If-Match 중복 구조는 제외한다. 설문 revision과 If-Match 규칙은 유지한다.\n\n- 정책 합의 항목: POL-02. 기존의 미합의 조건을 이 문서만으로 활성화하지 않는다.\n\n### 이번 API 변경\n\n응답 photoId는 imageUrl로 바꾸고 hasProfilePhoto·completed는 저장값에서 계산함. profileVersion과 이를 전제로 한 프로필 ETag/If-Match 필수 규칙은 이 수정안에서 제외함. 설문의 revision/If-Match에는 영향 없음. 동시 프로필 수정 충돌 정책이 필요하면 별도 버전 필드 도입 여부부터 결정함.",
+        "summary": "프로필 초안·수정 저장 (수정 2026-10-21 14:16)",
+        "description": "가입 중인 프로필 초안을 저장하거나 허용된 프로필 정보를 수정합니다.\n\n### 처리 규칙\n\n- 현재 프로필은 profiles 한 행에 저장하고 사진은 image_url 한 개 또는 null로 관리함.\n\n- nickname_key는 정규화한 닉네임 중복 비교용으로 남김.\n\n- 별도 profile_version·updated_at·사진 행은 두지 않음.\n\n- 필요한 설정 변경은 settings_version을 증가시키고 동기화 사본을 갱신함.\n\n### 확인할 사항\n\n- ERD의 bigint는 내부 저장 타입이다. 기존 API의 UUID 표현을 자동으로 숫자 ID로 바꾸지 않으며 외부 식별자 형식·매핑은 호출자와 확정해야 한다.\n\n- 프로필 profileVersion/ETag/If-Match 중복 구조는 제외한다. 설문 revision과 If-Match 규칙은 유지한다.\n\n- 정책 합의 항목: POL-02. 기존의 미합의 조건을 이 문서만으로 활성화하지 않는다.\n\n### 이번 API 변경\n\n응답 photoId는 imageUrl로 바꾸고 hasProfilePhoto·completed는 저장값에서 계산함. profileVersion과 이를 전제로 한 프로필 ETag/If-Match 필수 규칙은 이 수정안에서 제외함. 설문의 revision/If-Match에는 영향 없음. 동시 프로필 수정 충돌 정책이 필요하면 별도 버전 필드 도입 여부부터 결정함.\n\n### 인증 담당 연락 반영\n\n약관 동의와 분리한 PATCH 경로를 유지한다. 통합 signup 경로는 활성 목록에서 제거한다. 저장 후 다음 단계는 단계 조회로 확인하며 프로필 완료만으로 전체 가입 READY를 의미하지 않는다.\n\n### 합의 필요: AUTH-OPEN-02\n\n현재 소스의 성별·생년월일 변경 거부는422 PROFILE_FIELD_LOCKED다. 이 이름과 잠금 기산점(프로필 완료/전체 가입 완료), 재수락·매칭 영향은 임시안이며 POL-02 합의 전 확정하지 않는다. POLICY_UNRESOLVED와 같은 의미로 섞지 않는다. 그 외 PATCH/사진 URL/필수 nullable 계약은 유지하며 구현과의 차이는 AUTH-OPEN-05·06에 기록한다.",
         "tags": [
           "PRO"
         ],
@@ -3896,7 +4141,7 @@
             ]
           },
           "401": {
-            "description": "35번 UNAUTHORIZED / 43번 구현 AUTH_REQUIRED·ACCESS_TOKEN_EXPIRED·ACCESS_TOKEN_INVALID·SESSION_REVOKED; 상세 분기와 적용 범위는 auth-recheck.md",
+            "description": "UNAUTHORIZED; 만료·위조·폐기 구분과 앱 자동 갱신 규칙은 AUTH-OPEN-04 합의 필요",
             "headers": {
               "X-Request-Id": {
                 "schema": {
@@ -3918,21 +4163,12 @@
                 },
                 "example": {
                   "code": "UNAUTHORIZED",
-                  "message": "35번 UNAUTHORIZED / 43번 구현 AUTH_REQUIRED·ACCESS_TOKEN_EXPIRED·ACCESS_TOKEN_INVALID·SESSION_REVOKED; 상세 분기와 적용 범위는 auth-recheck.md",
-                  "requestId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
-                  "retryable": false,
-                  "fields": [
-                    "revision"
-                  ]
+                  "message": "로그인이 필요합니다."
                 }
               }
             },
             "x-error-codes": [
-              "UNAUTHORIZED",
-              "AUTH_REQUIRED",
-              "ACCESS_TOKEN_EXPIRED",
-              "ACCESS_TOKEN_INVALID",
-              "SESSION_REVOKED"
+              "UNAUTHORIZED"
             ]
           },
           "403": {
@@ -4045,7 +4281,7 @@
             ]
           },
           "422": {
-            "description": "POLICY_UNRESOLVED",
+            "description": "POLICY_UNRESOLVED / PROFILE_FIELD_LOCKED (임시 코드, AUTH-OPEN-02 합의 필요)",
             "headers": {
               "X-Request-Id": {
                 "schema": {
@@ -4077,8 +4313,12 @@
               }
             },
             "x-error-codes": [
-              "POLICY_UNRESOLVED"
-            ]
+              "POLICY_UNRESOLVED",
+              "PROFILE_FIELD_LOCKED"
+            ],
+            "x-provisional-error-codes": {
+              "PROFILE_FIELD_LOCKED": "AGREEMENT_REQUIRED: AUTH-OPEN-02/POL-02"
+            }
           },
           "429": {
             "description": "RATE_LIMITED",
@@ -4168,11 +4408,14 @@
         "x-notion-page": "https://app.notion.com/p/3ffc91ccb66080139badf8221717b3eb",
         "x-contract-status": "REVIEW_REQUIRED",
         "x-storage-design": "lean24-162",
-        "x-reviewed-at": "2026-10-21 11:47 KST",
+        "x-reviewed-at": "2026-10-21 14:16 KST",
         "x-confirmation-required": [
           "ERD의 bigint는 내부 저장 타입이다. 기존 API의 UUID 표현을 자동으로 숫자 ID로 바꾸지 않으며 외부 식별자 형식·매핑은 호출자와 확정해야 한다.",
           "프로필 profileVersion/ETag/If-Match 중복 구조는 제외한다. 설문 revision과 If-Match 규칙은 유지한다.",
-          "정책 합의 항목: POL-02. 기존의 미합의 조건을 이 문서만으로 활성화하지 않는다."
+          "정책 합의 항목: POL-02. 기존의 미합의 조건을 이 문서만으로 활성화하지 않는다.",
+          "AUTH-OPEN-02",
+          "AUTH-OPEN-05",
+          "AUTH-OPEN-06"
         ],
         "x-change-history": [
           {
@@ -4181,395 +4424,19 @@
             "previousDescription": "키링 등록 필수. NFC 정규화 후 닉네임 ASCII앞뒤 공백 제거·ASCII대소문자 무시 unique. 소개 공백뿐이면 null, LF최대3. 완료 후 gender/birthDate 변경은POL-02까지422. 공개값 저장은 profileVersion 및 settingsVersion 증가.",
             "revised": "현재 프로필은 profiles 한 행에 저장하고 사진은 image_url 한 개 또는 null로 관리함. nickname_key는 정규화한 닉네임 중복 비교용으로 남김. 별도 profile_version·updated_at·사진 행은 두지 않음. 필요한 설정 변경은 settings_version을 증가시키고 동기화 사본을 갱신함.",
             "apiImpact": "응답 photoId는 imageUrl로 바꾸고 hasProfilePhoto·completed는 저장값에서 계산함. profileVersion과 이를 전제로 한 프로필 ETag/If-Match 필수 규칙은 이 수정안에서 제외함. 설문의 revision/If-Match에는 영향 없음. 동시 프로필 수정 충돌 정책이 필요하면 별도 버전 필드 도입 여부부터 결정함."
-          }
-        ]
-      }
-    },
-    "/api/v1/auth/signup": {
-      "post": {
-        "operationId": "completeProfile",
-        "summary": "회원가입 (수정 2026-10-21 11:24)",
-        "description": "로그인한 회원의 생년월일 등 가입 정보를 저장합니다. 약관·프로필 분리 계약은 확인이 필요합니다.\n\n### 처리 규칙\n\n- ERD의 실제 생년월일 birth_date에 맞춰 birthYear 대신 birthDate(YYYY-MM-DD)를 사용함.\n\n- 나이는 한국 날짜 기준 계산하며 별도 나이 컬럼은 없음.\n\n- 동의는 user_consents, 프로필은 profiles에 저장함.\n\n- 약관→키링→프로필→설문→조건→기기 반영 순서와 최초 전체 완료 시각을 기준으로 완료 여부를 판단함.\n\n### 확인할 사항\n\n- ERD의 bigint는 내부 저장 타입이다. 기존 API의 UUID 표현을 자동으로 숫자 ID로 바꾸지 않으며 외부 식별자 형식·매핑은 호출자와 확정해야 한다.\n\n### 이번 API 변경\n\n기존 요청의 birthYear는 birthDate로 바꾸는 수정안임. 기존 통합 가입 API의 약관 동의·프로필 저장 분리는 인증 담당과 경로/DTO를 맞춰야 함. 임의 생일을 채워 과거 연도를 변환하지 않음. 이 명세 수정만으로 기존 인증 구현 변경 완료를 뜻하지 않음.\n\n### 유지하는 기능 계약\n\n소셜 로그인에서 signupCompleted: false를 받은 회원이 기본 정보를 입력하고 약관에 동의해 가입을 완료한다.",
-        "tags": [
-          "AUTH"
-        ],
-        "x-functional-ids": [
-          "AUTH-02",
-          "PRO-01"
-        ],
-        "x-auth-role": "user",
-        "parameters": [],
-        "responses": {
-          "200": {
-            "description": "정상 응답",
-            "headers": {
-              "X-Request-Id": {
-                "schema": {
-                  "type": "string",
-                  "format": "uuid"
-                }
-              },
-              "Cache-Control": {
-                "schema": {
-                  "type": "string"
-                },
-                "description": "민감 응답 no-store"
-              }
-            },
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/SignupResult"
-                },
-                "example": {
-                  "userId": 1,
-                  "nickname": "example",
-                  "signupCompleted": false
-                }
-              }
-            }
           },
-          "400": {
-            "description": "INVALID_REQUEST / REQUIRED_AGREEMENT_MISSING / INVALID_NICKNAME",
-            "headers": {
-              "X-Request-Id": {
-                "schema": {
-                  "type": "string",
-                  "format": "uuid"
-                }
-              },
-              "Cache-Control": {
-                "schema": {
-                  "type": "string"
-                },
-                "description": "민감 응답 no-store"
-              }
-            },
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                },
-                "example": {
-                  "code": "INVALID_REQUEST",
-                  "message": "INVALID_REQUEST / REQUIRED_AGREEMENT_MISSING / INVALID_NICKNAME",
-                  "requestId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
-                  "retryable": false,
-                  "fields": [
-                    "revision"
-                  ]
-                }
-              }
-            },
-            "x-error-codes": [
-              "INVALID_REQUEST",
-              "REQUIRED_AGREEMENT_MISSING",
-              "INVALID_NICKNAME"
-            ]
-          },
-          "401": {
-            "description": "35번 UNAUTHORIZED / 43번 구현 AUTH_REQUIRED·ACCESS_TOKEN_EXPIRED·ACCESS_TOKEN_INVALID·SESSION_REVOKED; 상세 분기와 적용 범위는 auth-recheck.md",
-            "headers": {
-              "X-Request-Id": {
-                "schema": {
-                  "type": "string",
-                  "format": "uuid"
-                }
-              },
-              "Cache-Control": {
-                "schema": {
-                  "type": "string"
-                },
-                "description": "민감 응답 no-store"
-              }
-            },
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                },
-                "example": {
-                  "code": "UNAUTHORIZED",
-                  "message": "35번 UNAUTHORIZED / 43번 구현 AUTH_REQUIRED·ACCESS_TOKEN_EXPIRED·ACCESS_TOKEN_INVALID·SESSION_REVOKED; 상세 분기와 적용 범위는 auth-recheck.md",
-                  "requestId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
-                  "retryable": false,
-                  "fields": [
-                    "revision"
-                  ]
-                }
-              }
-            },
-            "x-error-codes": [
-              "UNAUTHORIZED",
-              "AUTH_REQUIRED",
-              "ACCESS_TOKEN_EXPIRED",
-              "ACCESS_TOKEN_INVALID",
-              "SESSION_REVOKED"
-            ]
-          },
-          "403": {
-            "description": "FORBIDDEN / KEYRING_REQUIRED / UNDER_AGE",
-            "headers": {
-              "X-Request-Id": {
-                "schema": {
-                  "type": "string",
-                  "format": "uuid"
-                }
-              },
-              "Cache-Control": {
-                "schema": {
-                  "type": "string"
-                },
-                "description": "민감 응답 no-store"
-              }
-            },
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                },
-                "example": {
-                  "code": "FORBIDDEN",
-                  "message": "FORBIDDEN / KEYRING_REQUIRED / UNDER_AGE",
-                  "requestId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
-                  "retryable": false,
-                  "fields": [
-                    "revision"
-                  ]
-                }
-              }
-            },
-            "x-error-codes": [
-              "FORBIDDEN",
-              "KEYRING_REQUIRED",
-              "UNDER_AGE"
-            ]
-          },
-          "404": {
-            "description": "RESOURCE_NOT_FOUND",
-            "headers": {
-              "X-Request-Id": {
-                "schema": {
-                  "type": "string",
-                  "format": "uuid"
-                }
-              },
-              "Cache-Control": {
-                "schema": {
-                  "type": "string"
-                },
-                "description": "민감 응답 no-store"
-              }
-            },
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                },
-                "example": {
-                  "code": "RESOURCE_NOT_FOUND",
-                  "message": "RESOURCE_NOT_FOUND",
-                  "requestId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
-                  "retryable": false,
-                  "fields": [
-                    "revision"
-                  ]
-                }
-              }
-            },
-            "x-error-codes": [
-              "RESOURCE_NOT_FOUND"
-            ]
-          },
-          "409": {
-            "description": "REVISION_CONFLICT / NICKNAME_DUPLICATED / AGREEMENT_VERSION_OUTDATED / ALREADY_SIGNED_UP",
-            "headers": {
-              "X-Request-Id": {
-                "schema": {
-                  "type": "string",
-                  "format": "uuid"
-                }
-              },
-              "Cache-Control": {
-                "schema": {
-                  "type": "string"
-                },
-                "description": "민감 응답 no-store"
-              }
-            },
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                },
-                "example": {
-                  "code": "REVISION_CONFLICT",
-                  "message": "REVISION_CONFLICT / NICKNAME_DUPLICATED / AGREEMENT_VERSION_OUTDATED / ALREADY_SIGNED_UP",
-                  "requestId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
-                  "retryable": false,
-                  "fields": [
-                    "revision"
-                  ]
-                }
-              }
-            },
-            "x-error-codes": [
-              "REVISION_CONFLICT",
-              "NICKNAME_DUPLICATED",
-              "AGREEMENT_VERSION_OUTDATED",
-              "ALREADY_SIGNED_UP"
-            ]
-          },
-          "422": {
-            "description": "POLICY_UNRESOLVED",
-            "headers": {
-              "X-Request-Id": {
-                "schema": {
-                  "type": "string",
-                  "format": "uuid"
-                }
-              },
-              "Cache-Control": {
-                "schema": {
-                  "type": "string"
-                },
-                "description": "민감 응답 no-store"
-              }
-            },
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                },
-                "example": {
-                  "code": "POLICY_UNRESOLVED",
-                  "message": "POLICY_UNRESOLVED",
-                  "requestId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
-                  "retryable": false,
-                  "fields": [
-                    "revision"
-                  ]
-                }
-              }
-            },
-            "x-error-codes": [
-              "POLICY_UNRESOLVED"
-            ]
-          },
-          "429": {
-            "description": "RATE_LIMITED",
-            "headers": {
-              "X-Request-Id": {
-                "schema": {
-                  "type": "string",
-                  "format": "uuid"
-                }
-              },
-              "Cache-Control": {
-                "schema": {
-                  "type": "string"
-                },
-                "description": "민감 응답 no-store"
-              }
-            },
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                },
-                "example": {
-                  "code": "RATE_LIMITED",
-                  "message": "RATE_LIMITED",
-                  "requestId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
-                  "retryable": false,
-                  "fields": [
-                    "revision"
-                  ]
-                }
-              }
-            },
-            "x-error-codes": [
-              "RATE_LIMITED"
-            ]
-          },
-          "503": {
-            "description": "SERVICE_UNAVAILABLE",
-            "headers": {
-              "X-Request-Id": {
-                "schema": {
-                  "type": "string",
-                  "format": "uuid"
-                }
-              },
-              "Cache-Control": {
-                "schema": {
-                  "type": "string"
-                },
-                "description": "민감 응답 no-store"
-              }
-            },
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                },
-                "example": {
-                  "code": "SERVICE_UNAVAILABLE",
-                  "message": "SERVICE_UNAVAILABLE",
-                  "requestId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
-                  "retryable": false,
-                  "fields": [
-                    "revision"
-                  ]
-                }
-              }
-            },
-            "x-error-codes": [
-              "SERVICE_UNAVAILABLE"
-            ]
-          }
-        },
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/Signup"
-              },
-              "example": {
-                "nickname": "산책친구",
-                "gender": "FEMALE",
-                "birthDate": "2000-01-01",
-                "agreements": [
-                  {
-                    "type": "TERMS",
-                    "version": "2026-10-20",
-                    "agreed": true
-                  }
-                ]
-              }
-            }
-          }
-        },
-        "x-implementation-status": "NOT_IMPLEMENTED_IN_INSPECTED_REFS",
-        "x-inspected-auth-contract": "7020a08",
-        "x-inspected-backend-commit": "93b39a3",
-        "x-notion-page": "https://app.notion.com/p/3fec91ccb66081cbada7f22b11333f75",
-        "x-contract-status": "REVIEW_REQUIRED",
-        "x-storage-design": "lean24-162",
-        "x-reviewed-at": "2026-10-21 11:47 KST",
-        "x-confirmation-required": [
-          "ERD의 bigint는 내부 저장 타입이다. 기존 API의 UUID 표현을 자동으로 숫자 ID로 바꾸지 않으며 외부 식별자 형식·매핑은 호출자와 확정해야 한다."
-        ],
-        "x-change-history": [
           {
             "date": "2026-10-21",
-            "updatedAtKst": "2026-10-21 11:24",
-            "previousDescription": "등록 키링 필요. birthDate 한국 날짜 기준 만19세. 약관 현재 항목·버전 모두 일치, 필수 동의 true. 완료 후 다음 단계는 onboarding 재조회. 기존 birthYear 계약 대체. 팀원35번과의 호환을 위해 Idempotency-Key 필수 요구를 추가하지 않는다. 응답 유실 재요청의 ALREADY_SIGNED_UP은 성공으로 간주하고 onboarding을 재조회한다. 가입 완료 상태는 서버 회원 원본에서 즉시 반영하며 기존 토큰을 재발급하도록 강제하지 않는다.",
-            "revised": "ERD의 실제 생년월일 birth_date에 맞춰 birthYear 대신 birthDate(YYYY-MM-DD)를 사용함. 나이는 한국 날짜 기준 계산하며 별도 나이 컬럼은 없음. 동의는 user_consents, 프로필은 profiles에 저장함. 약관→키링→프로필→설문→조건→기기 반영 순서와 최초 전체 완료 시각을 기준으로 완료 여부를 판단함.",
-            "apiImpact": "기존 요청의 birthYear는 birthDate로 바꾸는 수정안임. 기존 통합 가입 API의 약관 동의·프로필 저장 분리는 인증 담당과 경로/DTO를 맞춰야 함. 임의 생일을 채워 과거 연도를 변환하지 않음. 이 명세 수정만으로 기존 인증 구현 변경 완료를 뜻하지 않음."
+            "updatedAtKst": "2026-10-21 14:16",
+            "previousDescription": "가입 중인 프로필 초안을 저장하거나 허용된 프로필 정보를 수정합니다.\n\n### 처리 규칙\n\n- 현재 프로필은 profiles 한 행에 저장하고 사진은 image_url 한 개 또는 null로 관리함.\n\n- nickname_key는 정규화한 닉네임 중복 비교용으로 남김.\n\n- 별도 profile_version·updated_at·사진 행은 두지 않음.\n\n- 필요한 설정 변경은 settings_version을 증가시키고 동기화 사본을 갱신함.\n\n### 확인할 사항\n\n- ERD의 bigint는 내부 저장 타입이다. 기존 API의 UUID 표현을 자동으로 숫자 ID로 바꾸지 않으며 외부 식별자 형식·매핑은 호출자와 확정해야 한다.\n\n- 프로필 profileVersion/ETag/If-Match 중복 구조는 제외한다. 설문 revision과 If-Match 규칙은 유지한다.\n\n- 정책 합의 항목: POL-02. 기존의 미합의 조건을 이 문서만으로 활성화하지 않는다.\n\n### 이번 API 변경\n\n응답 photoId는 imageUrl로 바꾸고 hasProfilePhoto·completed는 저장값에서 계산함. profileVersion과 이를 전제로 한 프로필 ETag/If-Match 필수 규칙은 이 수정안에서 제외함. 설문의 revision/If-Match에는 영향 없음. 동시 프로필 수정 충돌 정책이 필요하면 별도 버전 필드 도입 여부부터 결정함.",
+            "revised": "가입 중인 프로필 초안을 저장하거나 허용된 프로필 정보를 수정합니다.\n\n### 처리 규칙\n\n- 현재 프로필은 profiles 한 행에 저장하고 사진은 image_url 한 개 또는 null로 관리함.\n\n- nickname_key는 정규화한 닉네임 중복 비교용으로 남김.\n\n- 별도 profile_version·updated_at·사진 행은 두지 않음.\n\n- 필요한 설정 변경은 settings_version을 증가시키고 동기화 사본을 갱신함.\n\n### 확인할 사항\n\n- ERD의 bigint는 내부 저장 타입이다. 기존 API의 UUID 표현을 자동으로 숫자 ID로 바꾸지 않으며 외부 식별자 형식·매핑은 호출자와 확정해야 한다.\n\n- 프로필 profileVersion/ETag/If-Match 중복 구조는 제외한다. 설문 revision과 If-Match 규칙은 유지한다.\n\n- 정책 합의 항목: POL-02. 기존의 미합의 조건을 이 문서만으로 활성화하지 않는다.\n\n### 이번 API 변경\n\n응답 photoId는 imageUrl로 바꾸고 hasProfilePhoto·completed는 저장값에서 계산함. profileVersion과 이를 전제로 한 프로필 ETag/If-Match 필수 규칙은 이 수정안에서 제외함. 설문의 revision/If-Match에는 영향 없음. 동시 프로필 수정 충돌 정책이 필요하면 별도 버전 필드 도입 여부부터 결정함.\n\n### 인증 담당 연락 반영\n\n약관 동의와 분리한 PATCH 경로를 유지한다. 통합 signup 경로는 활성 목록에서 제거한다. 저장 후 다음 단계는 단계 조회로 확인하며 프로필 완료만으로 전체 가입 READY를 의미하지 않는다.\n\n### 합의 필요: AUTH-OPEN-02\n\n현재 소스의 성별·생년월일 변경 거부는422 PROFILE_FIELD_LOCKED다. 이 이름과 잠금 기산점(프로필 완료/전체 가입 완료), 재수락·매칭 영향은 임시안이며 POL-02 합의 전 확정하지 않는다. POLICY_UNRESOLVED와 같은 의미로 섞지 않는다. 그 외 PATCH/사진 URL/필수 nullable 계약은 유지하며 구현과의 차이는 AUTH-OPEN-05·06에 기록한다.",
+            "apiImpact": "인증 담당 연락 및 최신 소스 기준 명세 동기화. 구현 코드 수정·FE 합의·통합 검증은 수행하지 않음.",
+            "previousInspection": {}
           }
-        ]
+        ],
+        "x-inspected-auth-contract": "80310e6b6a1a169a89bdda85947a006815e2965e",
+        "x-inspected-backend-commit": "4f691085ea2bbf6ef1c7e5f2ff3e4152de98e45b",
+        "x-implementation-status": "SOURCE_PRESENT_INTEGRATION_UNVERIFIED"
       }
     },
     "/api/v1/users/me/profile/photos": {
@@ -26504,6 +26371,7 @@
       "TokenPair": {
         "type": "object",
         "additionalProperties": false,
+        "description": "로그인 담당이 구현한 새 응답 형식으로 동기화한 초안. AUTH-OPEN-01: 기존 accessTokenExpiresIn/signupCompleted의 병행 제공 여부·전환 시점은 합의 전이며, 기존 앱과의 호환이 보장됐다는 뜻은 아니다.",
         "properties": {
           "accessToken": {
             "type": "string",
@@ -26515,14 +26383,20 @@
             "minLength": 1,
             "description": "액세스 토큰 재발급에 사용하는 리프레시 토큰"
           },
-          "accessTokenExpiresIn": {
-            "type": "integer",
-            "minimum": 1,
-            "description": "액세스 토큰 만료까지 남은 초"
+          "tokenType": {
+            "type": "string",
+            "const": "Bearer",
+            "description": "Authorization 헤더에 사용하는 인증 스킴"
           },
-          "signupCompleted": {
-            "type": "boolean",
-            "description": "가입 완료 여부"
+          "accessTokenExpiresAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "액세스 토큰 만료 시각(UTC ISO 8601). 기기 시계만으로 서버의 만료 판단을 대체하지 않는다."
+          },
+          "refreshTokenExpiresAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "리프레시 토큰 만료 시각(UTC ISO 8601)"
           },
           "onboardingStatus": {
             "type": "string",
@@ -26535,23 +26409,83 @@
               "SYNC_PENDING",
               "READY"
             ],
-            "description": "추가 합의가 필요한 선택 확장. 제공할 때 nextStep과 같은 계산 서비스를 사용함."
+            "description": "다음 미완료 가입 단계. 로그인 onboardingStatus와 단계 조회 nextStep은 같은 계산 서비스를 사용한다."
           }
         },
         "required": [
           "accessToken",
           "refreshToken",
-          "accessTokenExpiresIn",
-          "signupCompleted"
+          "tokenType",
+          "accessTokenExpiresAt",
+          "refreshTokenExpiresAt",
+          "onboardingStatus"
         ],
         "examples": [
           {
             "accessToken": "example-access-token",
             "refreshToken": "example-refresh-token",
-            "accessTokenExpiresIn": 1800,
-            "signupCompleted": false
+            "tokenType": "Bearer",
+            "accessTokenExpiresAt": "2026-10-21T00:30:00Z",
+            "refreshTokenExpiresAt": "2026-11-04T00:00:00Z",
+            "onboardingStatus": "AGREEMENT_REQUIRED"
           }
-        ]
+        ],
+        "x-contract-status": "IMPLEMENTATION_ALIGNED_COMPATIBILITY_PENDING",
+        "x-confirmation-required": [
+          "AUTH-OPEN-01"
+        ],
+        "x-previous-schema": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "accessToken": {
+              "type": "string",
+              "minLength": 1,
+              "description": "서비스 API 호출에 사용하는 액세스 토큰"
+            },
+            "refreshToken": {
+              "type": "string",
+              "minLength": 1,
+              "description": "액세스 토큰 재발급에 사용하는 리프레시 토큰"
+            },
+            "accessTokenExpiresIn": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "액세스 토큰 만료까지 남은 초"
+            },
+            "signupCompleted": {
+              "type": "boolean",
+              "description": "가입 완료 여부"
+            },
+            "onboardingStatus": {
+              "type": "string",
+              "enum": [
+                "AGREEMENT_REQUIRED",
+                "KEYRING_REQUIRED",
+                "PROFILE_REQUIRED",
+                "SURVEY_REQUIRED",
+                "PREFERENCES_REQUIRED",
+                "SYNC_PENDING",
+                "READY"
+              ],
+              "description": "추가 합의가 필요한 선택 확장. 제공할 때 nextStep과 같은 계산 서비스를 사용함."
+            }
+          },
+          "required": [
+            "accessToken",
+            "refreshToken",
+            "accessTokenExpiresIn",
+            "signupCompleted"
+          ],
+          "examples": [
+            {
+              "accessToken": "example-access-token",
+              "refreshToken": "example-refresh-token",
+              "accessTokenExpiresIn": 1800,
+              "signupCompleted": false
+            }
+          ]
+        }
       },
       "Agreement": {
         "type": "object",
@@ -27114,7 +27048,8 @@
             ]
           }
         ],
-        "description": "노션의 호환 가입 요청 nickname/gender/birthDate/agreements. 생활정보·소개는 프로필 초안 저장 계약에 있다. 이 네 필드만으로 전체 가입 단계/READY를 판정하지 않으며 약관/프로필 분리 경로와 최종 검증 책임은 인증 담당·FE 합의 필요."
+        "description": "폐기한 POST /api/v1/auth/signup의 과거 DTO. 활성 계약에서 사용하지 않는다. 노션의 호환 가입 요청 nickname/gender/birthDate/agreements. 생활정보·소개는 프로필 초안 저장 계약에 있다. 이 네 필드만으로 전체 가입 단계/READY를 판정하지 않으며 약관/프로필 분리 경로와 최종 검증 책임은 인증 담당·FE 합의 필요.",
+        "deprecated": true
       },
       "SignupResult": {
         "type": "object",
@@ -27146,7 +27081,9 @@
             "nickname": "example",
             "signupCompleted": false
           }
-        ]
+        ],
+        "deprecated": true,
+        "description": "폐기한 POST /api/v1/auth/signup의 과거 DTO. 활성 계약에서 사용하지 않는다. "
       },
       "NicknameAvailability": {
         "type": "object",
@@ -30590,6 +30527,70 @@
           {
             "imageUrl": "https://example.com/authorized-profile-photo.webp",
             "hasProfilePhoto": true
+          }
+        ]
+      },
+      "AgreementConsentInput": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "agreements": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AgreementChoice"
+            },
+            "description": "약관 조회에서 표시한 모든 항목의 type/version/agreed. 항목 종류는 앱에 고정하지 않는다. 빈 목록·항목 누락·구버전은 업무 검증에서 409 AGREEMENT_VERSION_OUTDATED."
+          }
+        },
+        "required": [
+          "agreements"
+        ],
+        "examples": [
+          {
+            "agreements": [
+              {
+                "type": "TERMS",
+                "version": "2026-10-19",
+                "agreed": true
+              },
+              {
+                "type": "PRIVACY",
+                "version": "2026-10-19",
+                "agreed": true
+              },
+              {
+                "type": "ADULT",
+                "version": "2026-10-19",
+                "agreed": true
+              }
+            ]
+          }
+        ]
+      },
+      "AgreementConsentResult": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "onboardingStatus": {
+            "type": "string",
+            "enum": [
+              "AGREEMENT_REQUIRED",
+              "KEYRING_REQUIRED",
+              "PROFILE_REQUIRED",
+              "SURVEY_REQUIRED",
+              "PREFERENCES_REQUIRED",
+              "SYNC_PENDING",
+              "READY"
+            ],
+            "description": "다음 미완료 가입 단계. 로그인 onboardingStatus와 단계 조회 nextStep은 같은 계산 서비스를 사용한다."
+          }
+        },
+        "required": [
+          "onboardingStatus"
+        ],
+        "examples": [
+          {
+            "onboardingStatus": "KEYRING_REQUIRED"
           }
         ]
       }
@@ -34600,6 +34601,402 @@
           }
         ]
       }
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/auth/signup",
+      "reason": "로그인 담당 변경에 따라 활성 계약에서 제거. 약관 동의와 프로필 PATCH로 분리. 예전 요청·응답은 이력으로만 보존하며 현행 서버에 경로를 유지하라는 요구가 아니다.",
+      "operation": {
+        "operationId": "completeProfile",
+        "summary": "회원가입 (수정 2026-10-21 11:24)",
+        "description": "로그인한 회원의 생년월일 등 가입 정보를 저장합니다. 약관·프로필 분리 계약은 확인이 필요합니다.\n\n### 처리 규칙\n\n- ERD의 실제 생년월일 birth_date에 맞춰 birthYear 대신 birthDate(YYYY-MM-DD)를 사용함.\n\n- 나이는 한국 날짜 기준 계산하며 별도 나이 컬럼은 없음.\n\n- 동의는 user_consents, 프로필은 profiles에 저장함.\n\n- 약관→키링→프로필→설문→조건→기기 반영 순서와 최초 전체 완료 시각을 기준으로 완료 여부를 판단함.\n\n### 확인할 사항\n\n- ERD의 bigint는 내부 저장 타입이다. 기존 API의 UUID 표현을 자동으로 숫자 ID로 바꾸지 않으며 외부 식별자 형식·매핑은 호출자와 확정해야 한다.\n\n### 이번 API 변경\n\n기존 요청의 birthYear는 birthDate로 바꾸는 수정안임. 기존 통합 가입 API의 약관 동의·프로필 저장 분리는 인증 담당과 경로/DTO를 맞춰야 함. 임의 생일을 채워 과거 연도를 변환하지 않음. 이 명세 수정만으로 기존 인증 구현 변경 완료를 뜻하지 않음.\n\n### 유지하는 기능 계약\n\n소셜 로그인에서 signupCompleted: false를 받은 회원이 기본 정보를 입력하고 약관에 동의해 가입을 완료한다.",
+        "tags": [
+          "AUTH"
+        ],
+        "x-functional-ids": [
+          "AUTH-02",
+          "PRO-01"
+        ],
+        "x-auth-role": "user",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "정상 응답",
+            "headers": {
+              "X-Request-Id": {
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              },
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "민감 응답 no-store"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SignupResult"
+                },
+                "example": {
+                  "userId": 1,
+                  "nickname": "example",
+                  "signupCompleted": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "INVALID_REQUEST / REQUIRED_AGREEMENT_MISSING / INVALID_NICKNAME",
+            "headers": {
+              "X-Request-Id": {
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              },
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "민감 응답 no-store"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "code": "INVALID_REQUEST",
+                  "message": "INVALID_REQUEST / REQUIRED_AGREEMENT_MISSING / INVALID_NICKNAME",
+                  "requestId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+                  "retryable": false,
+                  "fields": [
+                    "revision"
+                  ]
+                }
+              }
+            },
+            "x-error-codes": [
+              "INVALID_REQUEST",
+              "REQUIRED_AGREEMENT_MISSING",
+              "INVALID_NICKNAME"
+            ]
+          },
+          "401": {
+            "description": "35번 UNAUTHORIZED / 43번 구현 AUTH_REQUIRED·ACCESS_TOKEN_EXPIRED·ACCESS_TOKEN_INVALID·SESSION_REVOKED; 상세 분기와 적용 범위는 auth-recheck.md",
+            "headers": {
+              "X-Request-Id": {
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              },
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "민감 응답 no-store"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "code": "UNAUTHORIZED",
+                  "message": "35번 UNAUTHORIZED / 43번 구현 AUTH_REQUIRED·ACCESS_TOKEN_EXPIRED·ACCESS_TOKEN_INVALID·SESSION_REVOKED; 상세 분기와 적용 범위는 auth-recheck.md",
+                  "requestId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+                  "retryable": false,
+                  "fields": [
+                    "revision"
+                  ]
+                }
+              }
+            },
+            "x-error-codes": [
+              "UNAUTHORIZED",
+              "AUTH_REQUIRED",
+              "ACCESS_TOKEN_EXPIRED",
+              "ACCESS_TOKEN_INVALID",
+              "SESSION_REVOKED"
+            ]
+          },
+          "403": {
+            "description": "FORBIDDEN / KEYRING_REQUIRED / UNDER_AGE",
+            "headers": {
+              "X-Request-Id": {
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              },
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "민감 응답 no-store"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "code": "FORBIDDEN",
+                  "message": "FORBIDDEN / KEYRING_REQUIRED / UNDER_AGE",
+                  "requestId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+                  "retryable": false,
+                  "fields": [
+                    "revision"
+                  ]
+                }
+              }
+            },
+            "x-error-codes": [
+              "FORBIDDEN",
+              "KEYRING_REQUIRED",
+              "UNDER_AGE"
+            ]
+          },
+          "404": {
+            "description": "RESOURCE_NOT_FOUND",
+            "headers": {
+              "X-Request-Id": {
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              },
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "민감 응답 no-store"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "code": "RESOURCE_NOT_FOUND",
+                  "message": "RESOURCE_NOT_FOUND",
+                  "requestId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+                  "retryable": false,
+                  "fields": [
+                    "revision"
+                  ]
+                }
+              }
+            },
+            "x-error-codes": [
+              "RESOURCE_NOT_FOUND"
+            ]
+          },
+          "409": {
+            "description": "REVISION_CONFLICT / NICKNAME_DUPLICATED / AGREEMENT_VERSION_OUTDATED / ALREADY_SIGNED_UP",
+            "headers": {
+              "X-Request-Id": {
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              },
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "민감 응답 no-store"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "code": "REVISION_CONFLICT",
+                  "message": "REVISION_CONFLICT / NICKNAME_DUPLICATED / AGREEMENT_VERSION_OUTDATED / ALREADY_SIGNED_UP",
+                  "requestId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+                  "retryable": false,
+                  "fields": [
+                    "revision"
+                  ]
+                }
+              }
+            },
+            "x-error-codes": [
+              "REVISION_CONFLICT",
+              "NICKNAME_DUPLICATED",
+              "AGREEMENT_VERSION_OUTDATED",
+              "ALREADY_SIGNED_UP"
+            ]
+          },
+          "422": {
+            "description": "POLICY_UNRESOLVED",
+            "headers": {
+              "X-Request-Id": {
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              },
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "민감 응답 no-store"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "code": "POLICY_UNRESOLVED",
+                  "message": "POLICY_UNRESOLVED",
+                  "requestId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+                  "retryable": false,
+                  "fields": [
+                    "revision"
+                  ]
+                }
+              }
+            },
+            "x-error-codes": [
+              "POLICY_UNRESOLVED"
+            ]
+          },
+          "429": {
+            "description": "RATE_LIMITED",
+            "headers": {
+              "X-Request-Id": {
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              },
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "민감 응답 no-store"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "code": "RATE_LIMITED",
+                  "message": "RATE_LIMITED",
+                  "requestId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+                  "retryable": false,
+                  "fields": [
+                    "revision"
+                  ]
+                }
+              }
+            },
+            "x-error-codes": [
+              "RATE_LIMITED"
+            ]
+          },
+          "503": {
+            "description": "SERVICE_UNAVAILABLE",
+            "headers": {
+              "X-Request-Id": {
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              },
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "민감 응답 no-store"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "code": "SERVICE_UNAVAILABLE",
+                  "message": "SERVICE_UNAVAILABLE",
+                  "requestId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+                  "retryable": false,
+                  "fields": [
+                    "revision"
+                  ]
+                }
+              }
+            },
+            "x-error-codes": [
+              "SERVICE_UNAVAILABLE"
+            ]
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Signup"
+              },
+              "example": {
+                "nickname": "산책친구",
+                "gender": "FEMALE",
+                "birthDate": "2000-01-01",
+                "agreements": [
+                  {
+                    "type": "TERMS",
+                    "version": "2026-10-20",
+                    "agreed": true
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "x-implementation-status": "NOT_IMPLEMENTED_IN_INSPECTED_REFS",
+        "x-inspected-auth-contract": "7020a08",
+        "x-inspected-backend-commit": "93b39a3",
+        "x-notion-page": "https://app.notion.com/p/3fec91ccb66081cbada7f22b11333f75",
+        "x-contract-status": "REVIEW_REQUIRED",
+        "x-storage-design": "lean24-162",
+        "x-reviewed-at": "2026-10-21 11:47 KST",
+        "x-confirmation-required": [
+          "ERD의 bigint는 내부 저장 타입이다. 기존 API의 UUID 표현을 자동으로 숫자 ID로 바꾸지 않으며 외부 식별자 형식·매핑은 호출자와 확정해야 한다."
+        ],
+        "x-change-history": [
+          {
+            "date": "2026-10-21",
+            "updatedAtKst": "2026-10-21 11:24",
+            "previousDescription": "등록 키링 필요. birthDate 한국 날짜 기준 만19세. 약관 현재 항목·버전 모두 일치, 필수 동의 true. 완료 후 다음 단계는 onboarding 재조회. 기존 birthYear 계약 대체. 팀원35번과의 호환을 위해 Idempotency-Key 필수 요구를 추가하지 않는다. 응답 유실 재요청의 ALREADY_SIGNED_UP은 성공으로 간주하고 onboarding을 재조회한다. 가입 완료 상태는 서버 회원 원본에서 즉시 반영하며 기존 토큰을 재발급하도록 강제하지 않는다.",
+            "revised": "ERD의 실제 생년월일 birth_date에 맞춰 birthYear 대신 birthDate(YYYY-MM-DD)를 사용함. 나이는 한국 날짜 기준 계산하며 별도 나이 컬럼은 없음. 동의는 user_consents, 프로필은 profiles에 저장함. 약관→키링→프로필→설문→조건→기기 반영 순서와 최초 전체 완료 시각을 기준으로 완료 여부를 판단함.",
+            "apiImpact": "기존 요청의 birthYear는 birthDate로 바꾸는 수정안임. 기존 통합 가입 API의 약관 동의·프로필 저장 분리는 인증 담당과 경로/DTO를 맞춰야 함. 임의 생일을 채워 과거 연도를 변환하지 않음. 이 명세 수정만으로 기존 인증 구현 변경 완료를 뜻하지 않음."
+          }
+        ],
+        "deprecated": true,
+        "x-retired-at": "2026-10-21 14:16 KST",
+        "x-replaced-by": [
+          "POST /api/v1/users/me/agreements",
+          "PATCH /api/v1/users/me/profile"
+        ]
+      }
     }
   ],
   "x-open-contracts": [
@@ -34609,5 +35006,14 @@
     "약관 동의·프로필 저장 분리 경로/DTO",
     "사진 업로드/소유권/전달/실제 파일 삭제",
     "IoT37 증명/ACK 및 정책 POL 미정 항목"
-  ]
+  ],
+  "x-auth-sync": {
+    "reviewedAtKst": "2026-10-21 14:16 KST",
+    "backendCommit": "4f691085ea2bbf6ef1c7e5f2ff3e4152de98e45b",
+    "authContractCommit": "80310e6b6a1a169a89bdda85947a006815e2965e",
+    "agreementStatus": "AUTH-OPEN-01~06_PENDING",
+    "codeChanged": false,
+    "databaseChanged": false,
+    "notionUpdated": false
+  }
 }

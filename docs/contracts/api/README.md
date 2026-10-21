@@ -1,8 +1,8 @@
 # Tingle(팅글) API 명세서
 
-1.1.0-review / 수정 2026-10-21 11:47 KST
+1.2.0-auth-review / 수정 2026-10-21 14:16 KST
 
-노션에서 검토한 **24개 테이블·162개 컬럼** 설계를 반영한 계약 초안이다. 현재 구현 대상으로 정리한 API는 **68개**, 범위에서 제외한 기존안은 **10개**다. 문서 정리와 팀 합의·실제 구현·DB 적용·배포 완료를 구분한다.
+노션에서 검토한 **24개 테이블·162개 컬럼** 설계를 반영한 계약 초안이다. 현재 구현 대상으로 정리한 API는 **68개**, 범위에서 제외·폐기한 기존안은 **11개**다. 문서 정리와 팀 합의·실제 구현·DB 적용·배포 완료를 구분한다.
 
 - [OpenAPI: 요청/응답 타입·필수값·예시](openapi.json)
 - [기존안·수정안과 API별 변경 이력](changes-20261021.md)
@@ -14,16 +14,16 @@
 
 - Spring Boot·JPA·PostgreSQL 기준이다. Flyway·H2는 사용하지 않는다. local은 update, test는 create-drop이며 dev/prod 스키마 운영과 Docker·인프라는 준비 후 정한다.
 - 앱은 제공자 증명을 서버에 전달해 자체 access/refresh를 발급받고 OS 보호 저장소에 보관한다. 서버는 JWT 주체와 현재 권한을 검증한다. 앱이 보낸 회원번호를 인증 근거로 사용하지 않는다.
-- 기존 소셜·refresh 요청과 토큰 응답 필수4개는 유지한다. sid·login_sessions는 확정 모델이 아니다. logout 즉시 access 폐기와 refresh 회전/30초 유실 재시도는 [인증 확인 사항](auth-recheck.md)의 미확정 조건을 먼저 해결한다. 테이블 축소를 이유로 인증 보장을 생략하지 않는다.
+- 소셜·refresh 요청은 유지하고 새 토큰 응답6개(accessToken/refreshToken/tokenType/accessTokenExpiresAt/refreshTokenExpiresAt/onboardingStatus)를 구현 기준 초안으로 반영했다. 기존 accessTokenExpiresIn/signupCompleted의 병행 유지·전환은 AUTH-OPEN-01 합의 필요다. sid/로그아웃/회전 범위는 AUTH-OPEN-03·04를 확인하며 보안 검사를 임의 제거하지 않는다.
 - 공개 UUID 계약은 내부 bigint 변경으로 자동 교체하지 않는다. 자원별 매핑·형식은 FE/AI/IoT와 확인할 사항이다. 상대의 내부 회원번호·생년월일·소셜ID·원응답·기기 자격은 공개 DTO에서 제외한다.
-- 가입 단계는 AGREEMENT_REQUIRED → KEYRING_REQUIRED → PROFILE_REQUIRED → SURVEY_REQUIRED → PREFERENCES_REQUIRED → SYNC_PENDING → READY다. nextStep과 선택 확장 onboardingStatus는 같은 서비스에서 계산한다. 기존 signup의 약관/프로필 분리 경로·DTO는 합의 전 새 API로 발명하지 않는다.
+- 가입 단계는 AGREEMENT_REQUIRED → KEYRING_REQUIRED → PROFILE_REQUIRED → SURVEY_REQUIRED → PREFERENCES_REQUIRED → SYNC_PENDING → READY다. nextStep과 onboardingStatus는 같은 서비스에서 계산한다. POST /users/me/agreements + PATCH /users/me/profile로 분리하며 기존 POST /auth/signup은 폐기했다. 현재 코드의 미구현 가입 게이트는 AUTH-OPEN-06으로 구분한다.
 - 서버가 단계별 호출·소유권을 검사한다. 키링 등록/조회 등 가입 진행 API는 해당 단계에 허용하되 모든 후속 API를 일괄 허용하지 않는다.
 - 성공 응답은 감싸지 않는다. 목록은 items 객체를 사용한다. 오류의 필수값은 code,message이며 추적 정보는 선택 확장이다. 상태 코드는 endpoint별 OpenAPI 계약을 따른다.
 - UTC ISO8601 시각을 주고받으며 나이는 Asia/Seoul 날짜로 계산한다. 만19세 이상, 윤일생은 평년3월1일에 나이가 바뀐다. 현재시각이 기한과 같아지면 만료다.
 - 닉네임은 NFC·앞뒤 ASCII공백 제거 후2~20자, 한글·영문·숫자·공백이다. 소개는 보이는 글자200개·LF3개 이하이며 text로 저장한다. FE/BE 분할 규칙을 동일하게 확인한다.
 - 조건 헤더는 설문 revision 등 실제 조건부 갱신을 하는 경로에 적용한다. 프로필 profileVersion/ETag/If-Match 필수 구조는 제외한다. JSON 미정의 필드는 거절하고 문항 응답은 해당 버전 파일 schema로 추가 검사한다.
 - 기존 Idempotency-Key 요청 계약은 유지하지만 별도 idempotency_records 테이블을 요구하지 않는다. 자원별 업무 키·유일 제약과 원자 저장으로 같은 입력 재시도를 판정한다. 안전한 응답 재현을 보장하지 못하는 경로의 헤더 제거/대체는 호출자와 합의한다.
-- 민감 응답은 Cache-Control:no-store. 토큰·생년월일·원응답·메시지·기기 자격을 로그에 기록하지 않는다. 401 만료 시 공유 갱신1회, 명시적 위조/폐기/403은 자동 갱신하지 않는 앱 계약을 유지한다.
+- 민감 응답은 Cache-Control:no-store. 토큰·생년월일·원응답·메시지·기기 자격을 로그에 기록하지 않는다. 401 만료 시 공유 갱신과 명시적 위조/폐기/403의 처리 구분은 필요하다. 현재 인증 소스의 UNAUTHORIZED 단일 코드와 앱 갱신 조건의 차이는 AUTH-OPEN-04 합의 전이며 양쪽 방식이 이미 일치한다고 표현하지 않는다.
 
 ## 기능별 저장·시간 기준
 
@@ -48,6 +48,21 @@
 
 확정 계약 검토 → 저장소 명세 교차 검토 → 관련 구현과 로컬 검증 → 가상 키링 통합 → 실제 외부/실물/배포 검증 순으로 진행한다. 현재 단계는 문서 반영이다. DB DDL 실행·원격 게시·MR 병합은 하지 않았다. 실제 개발 이력은 다른 BE 팀원의 docs 위치·양식을 확인한 후 맞춘다.
 
+## 인증 담당 연락 반영 및 합의 필요
+
+약관 동의 API 추가·통합 signup 폐기·새 토큰 응답을 반영했다. 현재 구현과 기존 앱의 호환을 구분한다.
+
+| ID | 합의할 내용 | 현재 처리 |
+| --- | --- | --- |
+| AUTH-OPEN-01 | 새 토큰6개 필드 채택·기존 accessTokenExpiresIn/signupCompleted 병행 유지·전환 시점 | 구현된 새 응답을 명세 초안에 반영. 구형 필드 미제공은 호환 승인 완료가 아님 |
+| AUTH-OPEN-02 | 422 PROFILE_FIELD_LOCKED 이름·잠금 시작 시점·POL-02 변경 허용 정책 | 임시 코드로 표시. 기존 POLICY_UNRESOLVED와 구분 |
+| AUTH-OPEN-03 | sid=refresh family 채택·로그아웃/탈취의 기기별·전체 폐기 범위·30초 유실 재시도 | 구현을 기록하되 기존 폐기 검사를 임의 제거하지 않음 |
+| AUTH-OPEN-04 | 401 만료·위조·폐기 구분과 앱 자동 갱신 조건 | 현재 코드 UNAUTHORIZED와 통합 명세의 갱신 분기 차이를 미정으로 남김 |
+| AUTH-OPEN-05 | app_users.email·물리 FK 및 text/길이 차이, 인증/생활정보 전송 코드 | ERD/DDL 변경 없음. 현재4개 테이블명은 일치하지만 email/FK1개는 별도 조정 |
+| AUTH-OPEN-06 | 미구현 가입 게이트·단계 조회 추가 필드·프로필 필수 nullable/미정의 필드 검증 | 코드의 부분 구현과 목표 계약을 구분. 프로필 완료만으로 READY 처리하지 않는 정책 유지 |
+
+상세 요청·응답/구현 차이와 인계 순서는 [인증 확인 사항](auth-recheck.md)을 따른다. 노션은 이번에 수정하지 않았으며 저장소의 신규/변경 계약은 노션과 후속 동기화가 필요하다.
+
 ## 기존 38번 계약과의 적용 기준
 
 전송 필드·필수값·HTTP 상태·오류 코드는 이 디렉터리의 OpenAPI를 기준으로 한다. 기존 38번 `encounters-proposals.md`는 상태·시간·동시성 흐름을 보완한다. 두 문서를 함께 검토한 뒤 서버와 앱의 오류 분기를 같은 배포 단위로 맞춘다. 문서 변경만으로 기존 구현의 호환성이 보장되지는 않는다.
@@ -67,19 +82,19 @@
 
 | Method | Path | 기능 | 요청 → 성공 응답 | operationId |
 | --- | --- | --- | --- | --- |
-| POST | `/api/v1/auth/{provider}` | 소셜 로그인 (수정 2026-10-21 11:24) | TokenRequest → 200 TokenPair | `socialLogin` |
-| POST | `/api/v1/auth/token/refresh` | 토큰 재발급 | RefreshRequest → 200 TokenPair | `refreshTokens` |
-| POST | `/api/v1/auth/logout` | 현재 세션 로그아웃 (수정 2026-10-21 11:24) | RefreshRequest → 204 본문 없음 | `logout` |
+| POST | `/api/v1/auth/{provider}` | 소셜 로그인 (수정 2026-10-21 14:16) | TokenRequest → 200 TokenPair | `socialLogin` |
+| POST | `/api/v1/auth/token/refresh` | 토큰 재발급 (수정 2026-10-21 14:16) | RefreshRequest → 200 TokenPair | `refreshTokens` |
+| POST | `/api/v1/auth/logout` | 현재 로그인 로그아웃 (수정 2026-10-21 14:16) | RefreshRequest → 204 본문 없음 | `logout` |
 | GET | `/api/v1/agreements` | 약관 조회 | 없음 → 200 Agreements | `listAgreements` |
-| GET | `/api/v1/users/me/onboarding` | 다음 미완료 단계 조회 (수정 2026-10-21 11:24) | 없음 → 200 Onboarding | `getOnboarding` |
+| POST | `/api/v1/users/me/agreements` | 약관 동의 저장 (수정 2026-10-21 14:16) | AgreementConsentInput → 200 AgreementConsentResult | `submitAgreements` |
+| GET | `/api/v1/users/me/onboarding` | 다음 미완료 단계 조회 (수정 2026-10-21 14:16) | 없음 → 200 Onboarding | `getOnboarding` |
 | GET | `/api/v1/users/nickname-availability` | 닉네임 중복 확인 | 없음 → 200 NicknameAvailability | `checkNickname` |
 | GET | `/api/v1/keyrings/purchase-info` | 구매 안내 | 없음 → 200 PurchaseInfo | `purchaseInfo` |
 | POST | `/api/v1/keyrings/registration-challenges` | 등록 증명 challenge 발급 | 없음 → 201 Challenge | `createRegistrationChallenge` |
 | POST | `/api/v1/keyrings` | 키링 소유 증명 후 등록 | RegisterKeyring → 201 Keyring | `registerKeyring` |
 | GET | `/api/v1/keyrings` | 본인 키링 조회 | 없음 → 200 Keyrings | `listKeyrings` |
-| GET | `/api/v1/users/me/profile` | 본인 프로필 조회 (수정 2026-10-21 11:21) | 없음 → 200 Profile | `getMyProfile` |
-| PATCH | `/api/v1/users/me/profile` | 프로필 초안·수정 저장 (수정 저장 (수정 2026-10-21 11:21) | ProfileDraft → 200 Profile | `saveProfileDraft` |
-| POST | `/api/v1/auth/signup` | 회원가입 (수정 2026-10-21 11:24) | Signup → 200 SignupResult | `completeProfile` |
+| GET | `/api/v1/users/me/profile` | 본인 프로필 조회 (수정 2026-10-21 14:16) | 없음 → 200 Profile | `getMyProfile` |
+| PATCH | `/api/v1/users/me/profile` | 프로필 초안·수정 저장 (수정 2026-10-21 14:16) | ProfileDraft → 200 Profile | `saveProfileDraft` |
 | POST | `/api/v1/users/me/profile/photos` | 사진 업로드·처리 시작 (수정 2026-10-21 11:12) | ImageUrlInput → 200 CurrentPhoto | `uploadPhoto` |
 | DELETE | `/api/v1/users/me/profile/photo` | 현재 사진 삭제 (수정 2026-10-21 11:24) | 없음 → 204 본문 없음 | `deletePhoto` |
 | PUT | `/api/v1/users/me/preferences` | 양방향 기본 희망 조건 저장 (수정 2026-10-21 11:12) | Preferences → 200 Preferences | `setPreferences` |
@@ -152,3 +167,4 @@
 | POST | `/admin/v1/releases/{releaseId}/publish` | 검증된 버전 불변 게시 (수정 2026-10-21 11:23) | 불변 버전 파일 운영으로 단순화. 관리자 실시간 게시/롤백 보류 |
 | POST | `/admin/v1/releases/{releaseId}/approvals` | 작성자 외 검토 승인 (수정 2026-10-21 11:23) | 불변 버전 파일 운영으로 단순화. 관리자 실시간 게시/롤백 보류 |
 | PUT | `/admin/v1/release-channels/current` | 신규 세션 기본 버전 전환·롤백 (수정 2026-10-21 11:23) | 불변 버전 파일 운영으로 단순화. 관리자 실시간 게시/롤백 보류 |
+| POST | `/api/v1/auth/signup` | 통합 가입 (폐기 2026-10-21 14:16) | 약관 동의와 프로필 PATCH로 대체 |
