@@ -1,0 +1,303 @@
+-- ERDCloud table/column import preparation; not verified in ERDCloud.
+-- No FK constraints: logical relations are documented in columns-24.md.
+
+-- 회원·단일 소셜 로그인 계정
+CREATE TABLE app_users (
+    user_id bigint NOT NULL,
+    provider text NOT NULL,
+    provider_subject text NOT NULL,
+    status text NOT NULL,
+    created_at timestamptz NOT NULL,
+    signup_completed_at timestamptz,
+    CONSTRAINT pk_app_users PRIMARY KEY (user_id),
+    CONSTRAINT uq_app_users_1 UNIQUE (provider, provider_subject)
+);
+
+-- 리프레시 토큰·회전 계열; 인증 담당과 조정할 초안
+CREATE TABLE refresh_tokens (
+    token_id bigint NOT NULL,
+    user_id bigint NOT NULL,
+    family_id uuid NOT NULL,
+    token_hash bytea NOT NULL,
+    expires_at timestamptz NOT NULL,
+    used_at timestamptz,
+    revoked_at timestamptz,
+    CONSTRAINT pk_refresh_tokens PRIMARY KEY (token_id),
+    CONSTRAINT uq_refresh_tokens_1 UNIQUE (token_hash)
+);
+
+-- 약관·선택적 AI 분석 동의 이벤트
+CREATE TABLE user_consents (
+    consent_id bigint NOT NULL,
+    user_id bigint NOT NULL,
+    consent_type text NOT NULL,
+    document_version text NOT NULL,
+    agreed boolean NOT NULL,
+    recorded_at timestamptz NOT NULL,
+    CONSTRAINT pk_user_consents PRIMARY KEY (consent_id)
+);
+
+-- 회원 프로필과 사진 한 장
+CREATE TABLE profiles (
+    user_id bigint NOT NULL,
+    nickname text,
+    nickname_key text,
+    birth_date date,
+    gender text,
+    smoking_status text,
+    drinking_frequency text,
+    religion text,
+    introduction text,
+    image_url text,
+    CONSTRAINT pk_profiles PRIMARY KEY (user_id),
+    CONSTRAINT uq_profiles_1 UNIQUE (nickname_key)
+);
+
+-- 회원별 희망 조건·매칭 설정·키링 반영 버전
+CREATE TABLE matching_settings (
+    user_id bigint NOT NULL,
+    desired_genders text[],
+    age_min integer,
+    age_max integer,
+    matching_enabled boolean NOT NULL,
+    require_partner_photo boolean NOT NULL,
+    settings_version bigint NOT NULL,
+    CONSTRAINT pk_matching_settings PRIMARY KEY (user_id)
+);
+
+-- 실물 키링 식별·검증 정보; 37번 계약 확인
+CREATE TABLE keyrings (
+    device_id bigint NOT NULL,
+    serial_hash bytea NOT NULL,
+    verification_key_ref text NOT NULL,
+    firmware_version text NOT NULL,
+    CONSTRAINT pk_keyrings PRIMARY KEY (device_id),
+    CONSTRAINT uq_keyrings_1 UNIQUE (serial_hash)
+);
+
+-- 기기 소유 연결 이력
+CREATE TABLE keyring_bindings (
+    binding_id bigint NOT NULL,
+    device_id bigint NOT NULL,
+    user_id bigint NOT NULL,
+    bound_at timestamptz NOT NULL,
+    unbound_at timestamptz,
+    CONSTRAINT pk_keyring_bindings PRIMARY KEY (binding_id)
+);
+
+-- 일회성 키링 등록 검증; 37번 계약 확인
+CREATE TABLE registration_challenges (
+    challenge_id bigint NOT NULL,
+    user_id bigint NOT NULL,
+    nonce_hash bytea NOT NULL,
+    expires_at timestamptz NOT NULL,
+    consumed_at timestamptz,
+    CONSTRAINT pk_registration_challenges PRIMARY KEY (challenge_id),
+    CONSTRAINT uq_registration_challenges_1 UNIQUE (nonce_hash)
+);
+
+-- 설정 동기화 요청과 기기 저장 확인
+CREATE TABLE keyring_sync_runs (
+    sync_run_id bigint NOT NULL,
+    binding_id bigint NOT NULL,
+    snapshot_id bigint NOT NULL,
+    payload_hash bytea NOT NULL,
+    status text NOT NULL,
+    acknowledged_at timestamptz,
+    CONSTRAINT pk_keyring_sync_runs PRIMARY KEY (sync_run_id),
+    CONSTRAINT uq_keyring_sync_runs_1 UNIQUE (binding_id, snapshot_id)
+);
+
+-- 설문 회차·문항별 응답·재개 상태
+CREATE TABLE survey_responses (
+    response_id bigint NOT NULL,
+    user_id bigint NOT NULL,
+    version_code text NOT NULL,
+    client_request_id uuid NOT NULL,
+    response_json jsonb NOT NULL,
+    revision bigint NOT NULL,
+    completed_at timestamptz,
+    CONSTRAINT pk_survey_responses PRIMARY KEY (response_id),
+    CONSTRAINT uq_survey_responses_1 UNIQUE (user_id, client_request_id)
+);
+
+-- 개인 성향 계산 결과·재계산 이력
+CREATE TABLE analysis_results (
+    result_id bigint NOT NULL,
+    response_id bigint NOT NULL,
+    version_code text NOT NULL,
+    outcome text NOT NULL,
+    result_json jsonb NOT NULL,
+    CONSTRAINT pk_analysis_results PRIMARY KEY (result_id),
+    CONSTRAINT uq_analysis_results_1 UNIQUE (response_id, version_code)
+);
+
+-- 키링·오프라인 만남 당시의 설정 보존
+CREATE TABLE settings_snapshots (
+    snapshot_id bigint NOT NULL,
+    user_id bigint NOT NULL,
+    settings_version bigint NOT NULL,
+    analysis_result_id bigint NOT NULL,
+    snapshot_json jsonb NOT NULL,
+    created_at timestamptz NOT NULL,
+    CONSTRAINT pk_settings_snapshots PRIMARY KEY (snapshot_id),
+    CONSTRAINT uq_settings_snapshots_1 UNIQUE (user_id, settings_version)
+);
+
+-- 동일 회원 쌍·동시 처리 잠금·거절 제한
+CREATE TABLE user_pairs (
+    pair_id bigint NOT NULL,
+    user_low bigint NOT NULL,
+    user_high bigint NOT NULL,
+    declined_until timestamptz,
+    declined_proposal_id bigint,
+    CONSTRAINT pk_user_pairs PRIMARY KEY (pair_id),
+    CONSTRAINT uq_user_pairs_1 UNIQUE (user_low, user_high)
+);
+
+-- 양쪽 제출을 묶는 만남·최종 판정
+CREATE TABLE encounters (
+    encounter_id bigint NOT NULL,
+    pair_id bigint NOT NULL,
+    event_key text NOT NULL,
+    occurred_at timestamptz NOT NULL,
+    opportunity_expires_at timestamptz NOT NULL,
+    counterpart_deadline_at timestamptz NOT NULL,
+    status text NOT NULL,
+    evaluation_version_code text,
+    evaluation_json jsonb,
+    CONSTRAINT pk_encounters PRIMARY KEY (encounter_id),
+    CONSTRAINT uq_encounters_1 UNIQUE (pair_id, event_key)
+);
+
+-- 각 기기의 제출·재전송·증명
+CREATE TABLE encounter_submissions (
+    receipt_id bigint NOT NULL,
+    encounter_id bigint NOT NULL,
+    binding_id bigint NOT NULL,
+    snapshot_id bigint NOT NULL,
+    submission_id uuid NOT NULL,
+    proof_json jsonb NOT NULL,
+    received_at timestamptz NOT NULL,
+    CONSTRAINT pk_encounter_submissions PRIMARY KEY (receipt_id),
+    CONSTRAINT uq_encounter_submissions_1 UNIQUE (binding_id, submission_id),
+    CONSTRAINT uq_encounter_submissions_2 UNIQUE (encounter_id, binding_id)
+);
+
+-- 제안·고정 두 사람의 선택·방 연결
+CREATE TABLE match_proposals (
+    proposal_id bigint NOT NULL,
+    pair_id bigint NOT NULL,
+    encounter_id bigint NOT NULL,
+    low_decision text,
+    high_decision text,
+    low_decided_at timestamptz,
+    high_decided_at timestamptz,
+    status text NOT NULL,
+    created_at timestamptz NOT NULL,
+    expires_at timestamptz NOT NULL,
+    chat_room_id bigint,
+    CONSTRAINT pk_match_proposals PRIMARY KEY (proposal_id),
+    CONSTRAINT uq_match_proposals_1 UNIQUE (encounter_id)
+);
+
+-- 7일 대화와 종료 후 30일 보관
+CREATE TABLE chat_rooms (
+    chat_room_id bigint NOT NULL,
+    pair_id bigint NOT NULL,
+    created_at timestamptz NOT NULL,
+    expires_at timestamptz NOT NULL,
+    closed_at timestamptz,
+    delete_at timestamptz,
+    last_sequence bigint NOT NULL,
+    CONSTRAINT pk_chat_rooms PRIMARY KEY (chat_room_id)
+);
+
+-- 참여자별 입장·두 안내의 표시 확인
+CREATE TABLE chat_members (
+    chat_room_id bigint NOT NULL,
+    user_id bigint NOT NULL,
+    left_at timestamptz,
+    first_notice_acked_at timestamptz,
+    end_notice_acked_at timestamptz,
+    CONSTRAINT pk_chat_members PRIMARY KEY (chat_room_id, user_id)
+);
+
+-- 메시지와 순서·재전송 키
+CREATE TABLE chat_messages (
+    message_id bigint NOT NULL,
+    chat_room_id bigint NOT NULL,
+    sender_id bigint NOT NULL,
+    client_message_id uuid NOT NULL,
+    sequence bigint NOT NULL,
+    body text NOT NULL,
+    created_at timestamptz NOT NULL,
+    CONSTRAINT pk_chat_messages PRIMARY KEY (message_id),
+    CONSTRAINT uq_chat_messages_1 UNIQUE (chat_room_id, sender_id, client_message_id),
+    CONSTRAINT uq_chat_messages_2 UNIQUE (chat_room_id, sequence)
+);
+
+-- 방향성 차단과 해제
+CREATE TABLE user_blocks (
+    block_id bigint NOT NULL,
+    blocker_id bigint NOT NULL,
+    blocked_id bigint NOT NULL,
+    created_at timestamptz NOT NULL,
+    CONSTRAINT pk_user_blocks PRIMARY KEY (block_id),
+    CONSTRAINT uq_user_blocks_1 UNIQUE (blocker_id, blocked_id)
+);
+
+-- 신고 접수와 처리 상태
+CREATE TABLE reports (
+    report_id bigint NOT NULL,
+    reporter_id bigint NOT NULL,
+    target_type text NOT NULL,
+    target_id bigint NOT NULL,
+    reason text NOT NULL,
+    detail text,
+    status text NOT NULL,
+    created_at timestamptz NOT NULL,
+    CONSTRAINT pk_reports PRIMARY KEY (report_id)
+);
+
+-- AI 생성 결과와 위험 분석 결과 한 곳
+CREATE TABLE ai_results (
+    job_id bigint NOT NULL,
+    kind text NOT NULL,
+    user_id bigint NOT NULL,
+    target_id bigint NOT NULL,
+    result_json jsonb NOT NULL,
+    model_version text NOT NULL,
+    prompt_version text NOT NULL,
+    created_at timestamptz NOT NULL,
+    CONSTRAINT pk_ai_results PRIMARY KEY (job_id)
+);
+
+-- 앱 설치별 푸시 전달 주소
+CREATE TABLE push_installations (
+    installation_id bigint NOT NULL,
+    client_installation_id uuid NOT NULL,
+    user_id bigint NOT NULL,
+    platform text NOT NULL,
+    token_ciphertext text NOT NULL,
+    updated_at timestamptz NOT NULL,
+    CONSTRAINT pk_push_installations PRIMARY KEY (installation_id),
+    CONSTRAINT uq_push_installations_1 UNIQUE (client_installation_id)
+);
+
+-- 안내·AI·삭제의 실제 예약·실패 재시도
+CREATE TABLE background_jobs (
+    job_id bigint NOT NULL,
+    job_type text NOT NULL,
+    business_key text NOT NULL,
+    payload jsonb NOT NULL,
+    status text NOT NULL,
+    run_at timestamptz NOT NULL,
+    attempts integer NOT NULL,
+    lease_until timestamptz,
+    last_error_code text,
+    result_json jsonb,
+    finished_at timestamptz,
+    CONSTRAINT pk_background_jobs PRIMARY KEY (job_id),
+    CONSTRAINT uq_background_jobs_1 UNIQUE (business_key)
+);

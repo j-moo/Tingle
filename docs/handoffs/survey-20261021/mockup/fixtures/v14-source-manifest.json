@@ -1,0 +1,72 @@
+{
+  "documentRevision": "SIS-HANDOFF-20261020-03",
+  "capturedAtKST": "2026-10-20 11:55:08+09:00",
+  "scope": "Local SIS-Q-1.1-100 snapshot. Publication and physical keyring verification are separate.",
+  "files": [
+    {
+      "file": "data100.mjs",
+      "snapshotFile": "data100.mjs",
+      "sha256": "44aced472a2671bd5f63546c37884e465144c92c0450b7d5a95d6b3b51114043",
+      "bytes": 20283
+    },
+    {
+      "file": "engine100.mjs",
+      "snapshotFile": "engine100.mjs",
+      "sha256": "1b45d79d88b90bc407170acab69b32e29ad1efbf034fdb8536128a3051436893",
+      "bytes": 14406
+    },
+    {
+      "file": "initial-profiles.mjs",
+      "snapshotFile": "initial-profiles.mjs",
+      "sha256": "9ce40316e9c02052469bf9aa1f4e96ce6abacb2c95cd5120f9a677f2bdfa606f",
+      "bytes": 9528
+    },
+    {
+      "file": "record100.mjs",
+      "snapshotFile": "record100.mjs",
+      "sha256": "44767ef9876e5c4315b8893732ed0613ab0ef379415eb7a2190134907475bb73",
+      "bytes": 1367
+    },
+    {
+      "file": "wording100.mjs",
+      "snapshotFile": "wording100.mjs",
+      "sha256": "b101b30b0b4325089e67938bc1e01b49999a02abade9da0c5892323c091046f5",
+      "bytes": 14149
+    },
+    {
+      "file": "age100.mjs",
+      "snapshotFile": "age100.mjs",
+      "sha256": "8572c1903b9c1248a3d488a5922c688960292a18164d77da32d6d8443751d19e",
+      "bytes": 511
+    },
+    {
+      "file": "app100.mjs",
+      "snapshotFile": "transfer-contract-source.mjs.txt",
+      "sha256": "7866cbc3502528162f90a0f24e647edcf3a0248543843f60277e4f6b0a44e99f",
+      "bytes": 33426
+    },
+    {
+      "file": "../README.md",
+      "snapshotFile": "site-README.md",
+      "sha256": "8e980789cfc0d1d96c3410c36149af7b860035ce45fa8e620702965b761d772f",
+      "bytes": 18457
+    }
+  ],
+  "publication": {
+    "id": "appgdep_6ad6d82b4fa881918157b30e081a5c8b",
+    "project_id": "appgprj_6ad57bdfd11c8191b2a509ac56019bcf",
+    "title": "Suddenly I See — 마음의 모양",
+    "version_id": "appgprj_6ad57bdfd11c8191b2a509ac56019bcf~appgver_62935c6723c081919b46411a602fb57e",
+    "type": "publish",
+    "status": "succeeded",
+    "url": "https://suddenly-see-heart-e106.rusidpia.chatgpt.site",
+    "has_mcp": false,
+    "screenshot_asset_pointer": null,
+    "provider_deployment_id": "site---6ad57bdfd11c8191b2a509ac56019bcf",
+    "failure_message": null,
+    "env_set_revision": 0,
+    "updated_at": "2026-10-20T02:55:51.922187+00:00",
+    "version_number": 14,
+    "commit_sha": "b211d141ad7a678749b690ab183fee3639487be4"
+  }
+}
