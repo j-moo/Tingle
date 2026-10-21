@@ -1,0 +1,8 @@
+# 로컬 개발. compose.yaml 의 PostgreSQL 을 자동으로 띄우고 테이블을 엔티티에 맞춰 추가한다.
+spring:
+  docker:
+    compose:
+      enabled: true
+  jpa:
+    hibernate:
+      ddl-auto: update

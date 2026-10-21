@@ -1,0 +1,5 @@
+# 테스트. Testcontainers 의 테스트 전용 DB에 테이블을 새로 만들고 끝나면 지운다.
+spring:
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
