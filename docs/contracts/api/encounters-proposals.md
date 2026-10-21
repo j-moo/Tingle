@@ -29,7 +29,7 @@
 
 Base path는 /api/v1이다. 인증 헤더는 Authorization: Bearer accessToken이며 서버의 인증 사용자만 신뢰한다. 요청의 userId로 본인을 지정하지 않는다. 가입 완료와 관련 기기·제안 소유권을 서버에서 검사한다.
 
-성공은 200과 본문 DTO, 오류는 code·message 형식이다. 필드명은 camelCase, 시각은 UTC ISO 8601이다. 서버 현재 시각은 주입한 Clock을 사용한다. 외부 자원 ID는 string 초안이며 예시는 UUID다. 내부 회원번호 Long과 구분하고 최종 ID 전략은 초기 구성과 맞춘다.
+성공은 200과 본문 DTO, 오류는 code·message 형식이다. 필드명은 camelCase, 시각은 UTC ISO 8601이다. 서버 현재 시각은 주입한 Clock을 사용한다. 제안 proposalId는 1 이상의 integer(int64) 숫자이며 DB proposal_id와 동일하다. 별도 공개 UUID나 매핑 컬럼을 두지 않는다. UUID 형식인 Idempotency-Key·세션 family ID는 그대로 유지한다.
 
 401·403 및 토큰 갱신은 35번 계약을 따른다. 35번의 UNAUTHORIZED와 v0.2.1 컨벤션의 세분 오류·세션 폐기는 아직 차이가 있으므로 이번 계약에서 FE 갱신 동작을 새로 확정하지 않는다. 요청 추적 ID는 X-Request-Id 헤더로 전달하는 안이다.
 
@@ -155,7 +155,7 @@ limit은 기본 20·최대 100을 제안한다. 정렬은 createdAt 내림차순
 
 ```json
 {
-  "proposalId": "60000000-0000-4000-8000-000000000001",
+  "proposalId": 1001,
   "status": "PENDING",
   "myDecision": "NONE",
   "createdAt": "2026-10-20T02:00:00Z",
@@ -206,11 +206,11 @@ limit은 기본 20·최대 100을 제안한다. 정렬은 createdAt 내림차순
 | POST /match-proposals/{proposalId}/accept | 본문 없음, Idempotency-Key 헤더 | 한쪽이면 대기, 기한 내 양쪽이면 ACCEPTED |
 | POST /match-proposals/{proposalId}/decline | 본문 없음, Idempotency-Key 헤더 | REJECTED와 해당 쌍 30일 제한 |
 
-Idempotency-Key는 앱이 만든 UUID 초안이다. 사용자·메서드·경로에 묶고 같은 명령 재전송에는 같은 키를 유지한다. 다른 제안·다른 선택에는 새 키를 사용한다. 서버는 업무 상태·고유 제약으로도 중복을 막아 키 보관 만료로 선택·제안이 재생성되지 않게 한다.
+수락·거절의 Idempotency-Key는 UUID 필수다. 사용자별 최초 실제 선택의 키를 low_request_key/high_request_key에 선택·시각과 원자 저장하고 제안 보관 동안 유지한다. 같은 키를 다른 제안·다른 선택에 재사용하면 409 IDEMPOTENCY_CONFLICT다. 같은 선택의 재시도는 현재 상태를 반환하며 최초 시각·30일 제한을 연장하지 않는다. 이미 선택한 뒤 새 키로 같은 선택을 보내면 상태만 반환하고 새 키는 저장·소비하지 않는다. 사용자 행→쌍→제안 순서로 잠가 다른 제안 간 키 경합도 직렬화한다. 키는 사용자별이므로 다른 사용자와 같아도 된다. 과거 응답 바이트를 재생하는 방식은 아니다.
 
 ```json
 {
-  "proposalId": "60000000-0000-4000-8000-000000000001",
+  "proposalId": 1001,
   "status": "WAITING_FOR_OTHER",
   "myDecision": "ACCEPT",
   "createdAt": "2026-10-20T02:00:00Z",
@@ -349,7 +349,7 @@ noticeType 코드명과 (chatRoomId, userId, noticeType) 업무 키는 계약 �
 - 채팅 담당: §8의 생성 업무 키·기존 활성 방 재사용·영속화·실패 재시도와 profile 조회 경로, 메시지/소켓 종료 및 조기 종료·자동 종료 후 재매칭을 합의한다. 전체 채팅 API와 삭제 작업은 Epic 32의 후속 범위다.
 - 49·50번: 첫 입장 상태/ACK·안내 채널·예약/전달/수신 상태·중복 방지·늦은 입장/종료 안내 계약을 합의한다. 안내 구현 담당 배정과 계약·통합 검증 완료는 별개다.
 - BE·AI·PM: 종료 후 30일 보관 목적·권한·메시지/파일/AI 사본/로그/백업별 삭제 범위·검증을 합의한다.
-- BE: 기간 정책 소급·멱등 키 보관기간·기한 경계와 잠금 방식 확정.
+- BE: 기간 정책 소급과 실제 채팅 연결 검토. 제안 선택 키 보관·잠금·기한 경계는 본 문서와 로컬 구현에서 검증.
 - 기본 BE와 FE·IOT 각각의 교차 검토. AI 근거 응답 형식을 추가하면 AI 영향 검토도 포함.
 - Jira contract Watcher 등록은 확인 필요. 이 로컬 초안 작성으로 실제 구독·승인이 완료된 것은 아니다.
 
@@ -357,7 +357,7 @@ noticeType 코드명과 (chatRoomId, userId, noticeType) 업무 키는 계약 �
 
 ### 현재 구현과의 차이
 
-43번 로컬 구현은 제안 ACCEPTED까지이며 실제 채팅방이 없어 chatAvailable=false·chatRoomId=null을 반환한다. §8의 채팅 수명·안내·삭제 계약은 후속 구현 요구이며 실행 검증 결과가 아니다. 인증 35번과의 오류 코드·sid/세션 모델, 37번 기기 증명 스키마, 멱등 키별 응답 보관 등 미합의 항목도 구현 완료로 표시하지 않는다.
+43번 로컬 구현은 제안 ACCEPTED까지이며 실제 채팅방이 없어 chatAvailable=false·chatRoomId=null을 반환한다. §8의 채팅 수명·안내·삭제 계약은 후속 구현 요구이며 실행 검증 결과가 아니다. MR16 형식의 sid/refresh_tokens 가족 세션을 검사한다. 실제 소셜 로그인·MR16 전체 병합, 37번 기기 증명 수신·배포는 검증 범위 밖이다.
 
 ## 12 변경 이력
 

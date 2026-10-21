@@ -35,3 +35,23 @@ spring:
       hibernate:
         # enum 컬럼에 CHECK 제약을 만들지 않는다 (선택지 추가 시 기존 DB 호환, 클래스 주석 참고)
         dialect: com.e106.tingle.global.jpa.NoColumnCheckPostgreSqlDialect
+
+app:
+  auth:
+    jwt-secret: ${JWT_SECRET}
+    issuer: tingle
+    audience: mobile-app
+  proposals:
+    decline-days: 30
+
+  agreement:
+    items:
+      - type: TERMS
+        version: "2026-10-19"
+        required: true
+      - type: PRIVACY
+        version: "2026-10-19"
+        required: true
+      - type: ADULT
+        version: "2026-10-19"
+        required: true

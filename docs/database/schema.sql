@@ -214,6 +214,8 @@ CREATE TABLE match_proposals (
     high_decision text,
     low_decided_at timestamptz,
     high_decided_at timestamptz,
+    low_request_key uuid,
+    high_request_key uuid,
     status text NOT NULL,
     created_at timestamptz NOT NULL,
     expires_at timestamptz NOT NULL,
@@ -225,7 +227,9 @@ CREATE TABLE match_proposals (
     CONSTRAINT ck_match_proposals_3 CHECK ((low_decision IS NULL)=(low_decided_at IS NULL)),
     CONSTRAINT ck_match_proposals_4 CHECK ((high_decision IS NULL)=(high_decided_at IS NULL)),
     CONSTRAINT ck_match_proposals_5 CHECK (status IN ('PENDING','WAITING_FOR_OTHER','ACCEPTED','REJECTED','EXPIRED')),
-    CONSTRAINT ck_match_proposals_6 CHECK (expires_at=created_at+interval '24 hours')
+    CONSTRAINT ck_match_proposals_6 CHECK (expires_at=created_at+interval '24 hours'),
+    CONSTRAINT ck_match_proposals_7 CHECK ((low_decision IS NULL)=(low_request_key IS NULL)),
+    CONSTRAINT ck_match_proposals_8 CHECK ((high_decision IS NULL)=(high_request_key IS NULL))
 );
 
 -- 7일 대화와 종료 후 30일 보관
@@ -361,3 +365,6 @@ CREATE INDEX ix_ai_results_1 ON ai_results (kind, target_id);
 CREATE INDEX ix_push_installations_1 ON push_installations (user_id);
 CREATE INDEX ix_background_jobs_1 ON background_jobs (run_at, job_id) WHERE status='PENDING';
 CREATE INDEX ix_background_jobs_2 ON background_jobs (lease_until) WHERE status='RUNNING';
+
+CREATE INDEX ix_match_proposals_low_request ON match_proposals (low_request_key);
+CREATE INDEX ix_match_proposals_high_request ON match_proposals (high_request_key);

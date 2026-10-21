@@ -13924,7 +13924,7 @@
             ]
           },
           "403": {
-            "description": "FORBIDDEN",
+            "description": "ONBOARDING_REQUIRED / FORBIDDEN",
             "headers": {
               "X-Request-Id": {
                 "schema": {
@@ -13945,8 +13945,8 @@
                   "$ref": "#/components/schemas/Error"
                 },
                 "example": {
-                  "code": "FORBIDDEN",
-                  "message": "FORBIDDEN",
+                  "code": "ONBOARDING_REQUIRED",
+                  "message": "가입을 완료해 주세요.",
                   "requestId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
                   "retryable": false,
                   "fields": [
@@ -13956,6 +13956,7 @@
               }
             },
             "x-error-codes": [
+              "ONBOARDING_REQUIRED",
               "FORBIDDEN"
             ]
           },
@@ -14160,7 +14161,7 @@
       "get": {
         "operationId": "getProposal",
         "summary": "제안 상태 조회 (수정 2026-10-21 11:21)",
-        "description": "매칭 제안의 선택 상태·만료 시각·채팅 가능 여부를 조회합니다.\n\n### 처리 규칙\n\n- 제안의 두 당사자 선택과 선택 시각을 match_proposals 한 행에 저장함.\n\n- 별도 proposal_decisions 테이블이나 resolved_at을 만들지 않음.\n\n- 거절은 첫 DECLINE 시각, 상호 수락은 두 ACCEPT 중 늦은 시각, 만료는 expires_at을 기준으로 판단함.\n\n- user_pairs로 쌍 단위 잠금·거절 후 30일 제한을 관리함.\n\n- 방 생성 후속 작업은 별도 outbox 테이블 대신 같은 트랜잭션에 background_jobs로 남김.\n\n- 실제 방이 준비되기 전 chatAvailable=false인 기존 동작은 유지함.\n\n### 확인할 사항\n\n- ERD의 bigint는 내부 저장 타입이다. 기존 API의 UUID 표현을 자동으로 숫자 ID로 바꾸지 않으며 외부 식별자 형식·매핑은 호출자와 확정해야 한다.\n\n### 이번 API 변경\n\n경로·기존 요청/응답은 유지하고 내부 저장 방식만 변경함.\n\n### 유지하는 기능 계약\n\n제안 상태 조회",
+        "description": "매칭 제안의 선택 상태·만료 시각·채팅 가능 여부를 조회합니다.\n\n### 처리 규칙\n\n- 제안의 두 당사자 선택과 선택 시각을 match_proposals 한 행에 저장함.\n\n- 별도 proposal_decisions 테이블이나 resolved_at을 만들지 않음.\n\n- 거절은 첫 DECLINE 시각, 상호 수락은 두 ACCEPT 중 늦은 시각, 만료는 expires_at을 기준으로 판단함.\n\n- user_pairs로 쌍 단위 잠금·거절 후 30일 제한을 관리함.\n\n- 방 생성 후속 작업은 별도 outbox 테이블 대신 같은 트랜잭션에 background_jobs로 남김.\n\n- 실제 방이 준비되기 전 chatAvailable=false인 기존 동작은 유지함.\n\n### 확인할 사항\n\n제안 proposalId는 DB proposal_id와 같은 양수 integer(int64)로 확정. 기타 자원 ID는 별도 계약 유지.\n\n### 이번 API 변경\n\n경로·기존 요청/응답은 유지하고 내부 저장 방식만 변경함.\n\n### 유지하는 기능 계약\n\n제안 상태 조회",
         "tags": [
           "PROP"
         ],
@@ -14174,8 +14175,9 @@
             "in": "path",
             "required": true,
             "schema": {
-              "type": "string",
-              "format": "uuid"
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
             }
           }
         ],
@@ -14202,7 +14204,7 @@
                   "$ref": "#/components/schemas/Proposal"
                 },
                 "example": {
-                  "proposalId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+                  "proposalId": 1001,
                   "status": "WAITING_FOR_OTHER",
                   "myDecision": "ACCEPT",
                   "createdAt": "2026-10-20T05:00:00Z",
@@ -14290,7 +14292,7 @@
             ]
           },
           "403": {
-            "description": "FORBIDDEN",
+            "description": "ONBOARDING_REQUIRED / FORBIDDEN",
             "headers": {
               "X-Request-Id": {
                 "schema": {
@@ -14311,8 +14313,8 @@
                   "$ref": "#/components/schemas/Error"
                 },
                 "example": {
-                  "code": "FORBIDDEN",
-                  "message": "FORBIDDEN",
+                  "code": "ONBOARDING_REQUIRED",
+                  "message": "가입을 완료해 주세요.",
                   "requestId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
                   "retryable": false,
                   "fields": [
@@ -14322,6 +14324,7 @@
               }
             },
             "x-error-codes": [
+              "ONBOARDING_REQUIRED",
               "FORBIDDEN"
             ]
           },
@@ -14511,7 +14514,7 @@
         "x-storage-design": "lean24-162",
         "x-reviewed-at": "2026-10-21 11:47 KST",
         "x-confirmation-required": [
-          "ERD의 bigint는 내부 저장 타입이다. 기존 API의 UUID 표현을 자동으로 숫자 ID로 바꾸지 않으며 외부 식별자 형식·매핑은 호출자와 확정해야 한다."
+          "제안 proposalId는 DB와 같은 양수 integer(int64)로 확정. 기타 자원 ID는 별도 계약 유지."
         ],
         "x-change-history": [
           {
@@ -14528,7 +14531,7 @@
       "get": {
         "operationId": "getProposalProfile",
         "summary": "수락 전 최신 공개 프로필 (수정 2026-10-21 11:21)",
-        "description": "유효한 매칭 제안의 상대가 공개한 최신 프로필을 조회합니다.\n\n### 처리 규칙\n\n- 현재 공개값은 profiles.image_url을 포함한 최신 프로필에서 읽음.\n\n- 나이·사진 존재 여부는 계산하고 상대의 내부 회원 번호·실제 생년월일·희망 조건·원응답은 공개하지 않음.\n\n- 유효 제안/활성방의 당사자 확인과 삭제된 사진의 즉시 미표시 규칙을 유지함.\n\n### 확인할 사항\n\n- profileVersion과 profileImageId를 제외하고 imageUrl(현재 사진을 보여 주는 허용된 URL) 또는 null을 반환하는 수정안임. hasProfilePhoto는 image_url 존재에서 계산함. DB에는 짧게 만료되는 서명 URL을 영구 저장하지 않으며 접근 제어 URL 발급/전달 방식은 사진 계약 확인 사항임.\n\n- ERD의 bigint는 내부 저장 타입이다. 기존 API의 UUID 표현을 자동으로 숫자 ID로 바꾸지 않으며 외부 식별자 형식·매핑은 호출자와 확정해야 한다.\n\n- 정책 합의 항목: POL-05. 기존의 미합의 조건을 이 문서만으로 활성화하지 않는다.\n\n### 이번 API 변경\n\nprofileVersion과 profileImageId를 제외하고 imageUrl(현재 사진을 보여 주는 허용된 URL) 또는 null을 반환하는 수정안임. hasProfilePhoto는 image_url 존재에서 계산함. DB에는 짧게 만료되는 서명 URL을 영구 저장하지 않으며 접근 제어 URL 발급/전달 방식은 사진 계약 확인 사항임.\n\n### 오류·응답 호환성\n\n제안 없음·타인 접근은 404 RESOURCE_NOT_FOUND, 종료된 본인 제안의 접근은 410 PROPOSAL_EXPIRED다. 기존 409 PROFILE_ACCESS_ENDED를 사용하지 않는다. PublicProfile은 imageUrl과 hasProfilePhoto를 사용하며 proposalId·profileVersion·profileImageId를 포함하지 않는다.",
+        "description": "유효한 매칭 제안의 상대가 공개한 최신 프로필을 조회합니다.\n\n### 처리 규칙\n\n- 현재 공개값은 profiles.image_url을 포함한 최신 프로필에서 읽음.\n\n- 나이·사진 존재 여부는 계산하고 상대의 내부 회원 번호·실제 생년월일·희망 조건·원응답은 공개하지 않음.\n\n- 유효 제안/활성방의 당사자 확인과 삭제된 사진의 즉시 미표시 규칙을 유지함.\n\n### 확인할 사항\n\n- profileVersion과 profileImageId를 제외하고 imageUrl(현재 사진을 보여 주는 허용된 URL) 또는 null을 반환하는 수정안임. hasProfilePhoto는 image_url 존재에서 계산함. DB에는 짧게 만료되는 서명 URL을 영구 저장하지 않으며 접근 제어 URL 발급/전달 방식은 사진 계약 확인 사항임.\n\n제안 proposalId는 DB proposal_id와 같은 양수 integer(int64)로 확정. 기타 자원 ID는 별도 계약 유지.\n\n- 정책 합의 항목: POL-05. 기존의 미합의 조건을 이 문서만으로 활성화하지 않는다.\n\n### 이번 API 변경\n\nprofileVersion과 profileImageId를 제외하고 imageUrl(현재 사진을 보여 주는 허용된 URL) 또는 null을 반환하는 수정안임. hasProfilePhoto는 image_url 존재에서 계산함. DB에는 짧게 만료되는 서명 URL을 영구 저장하지 않으며 접근 제어 URL 발급/전달 방식은 사진 계약 확인 사항임.\n\n### 오류·응답 호환성\n\n제안 없음·타인 접근은 404 RESOURCE_NOT_FOUND, 종료된 본인 제안의 접근은 410 PROPOSAL_EXPIRED다. 기존 409 PROFILE_ACCESS_ENDED를 사용하지 않는다. PublicProfile은 imageUrl과 hasProfilePhoto를 사용하며 proposalId·profileVersion·profileImageId를 포함하지 않는다.",
         "tags": [
           "PROP"
         ],
@@ -14542,8 +14545,9 @@
             "in": "path",
             "required": true,
             "schema": {
-              "type": "string",
-              "format": "uuid"
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
             }
           }
         ],
@@ -14660,7 +14664,7 @@
             ]
           },
           "403": {
-            "description": "FORBIDDEN",
+            "description": "ONBOARDING_REQUIRED / FORBIDDEN",
             "headers": {
               "X-Request-Id": {
                 "schema": {
@@ -14681,8 +14685,8 @@
                   "$ref": "#/components/schemas/Error"
                 },
                 "example": {
-                  "code": "FORBIDDEN",
-                  "message": "FORBIDDEN",
+                  "code": "ONBOARDING_REQUIRED",
+                  "message": "가입을 완료해 주세요.",
                   "requestId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
                   "retryable": false,
                   "fields": [
@@ -14692,6 +14696,7 @@
               }
             },
             "x-error-codes": [
+              "ONBOARDING_REQUIRED",
               "FORBIDDEN"
             ]
           },
@@ -14919,7 +14924,7 @@
         "x-reviewed-at": "2026-10-21 11:47 KST",
         "x-confirmation-required": [
           "profileVersion과 profileImageId를 제외하고 imageUrl(현재 사진을 보여 주는 허용된 URL) 또는 null을 반환하는 수정안임. hasProfilePhoto는 image_url 존재에서 계산함. DB에는 짧게 만료되는 서명 URL을 영구 저장하지 않으며 접근 제어 URL 발급/전달 방식은 사진 계약 확인 사항임.",
-          "ERD의 bigint는 내부 저장 타입이다. 기존 API의 UUID 표현을 자동으로 숫자 ID로 바꾸지 않으며 외부 식별자 형식·매핑은 호출자와 확정해야 한다.",
+          "제안 proposalId는 DB와 같은 양수 integer(int64)로 확정. 기타 자원 ID는 별도 계약 유지.",
           "정책 합의 항목: POL-05. 기존의 미합의 조건을 이 문서만으로 활성화하지 않는다."
         ],
         "x-change-history": [
@@ -14937,7 +14942,7 @@
       "post": {
         "operationId": "acceptProposal",
         "summary": "제안 수락 (수정 2026-10-21 11:22)",
-        "description": "받은 매칭 제안을 수락합니다. 양쪽이 수락하면 채팅방 생성을 진행합니다.\n\n### 처리 규칙\n\n- 제안의 두 당사자 선택과 선택 시각을 match_proposals 한 행에 저장함.\n\n- 별도 proposal_decisions 테이블이나 resolved_at을 만들지 않음.\n\n- 거절은 첫 DECLINE 시각, 상호 수락은 두 ACCEPT 중 늦은 시각, 만료는 expires_at을 기준으로 판단함.\n\n- user_pairs로 쌍 단위 잠금·거절 후 30일 제한을 관리함.\n\n- 방 생성 후속 작업은 별도 outbox 테이블 대신 같은 트랜잭션에 background_jobs로 남김.\n\n- 실제 방이 준비되기 전 chatAvailable=false인 기존 동작은 유지함.\n\n### 확인할 사항\n\n- ERD의 bigint는 내부 저장 타입이다. 기존 API의 UUID 표현을 자동으로 숫자 ID로 바꾸지 않으며 외부 식별자 형식·매핑은 호출자와 확정해야 한다.\n\n### 이번 API 변경\n\n경로·기존 요청/응답은 유지하고 내부 저장 방식만 변경함.\n\n### 유지하는 기능 계약\n\n최초결정고정. 동일수락멱등. pair→proposal 잠금·기한재검사. 사진옵션변경으로거절금지. 상호수락커밋후durable background_jobs로방생성, 실제준비전chatAvailable=false.\n\n### 오류 호환성\n\n제안 없음·타인 접근은 404 RESOURCE_NOT_FOUND, 마감 정각부터 새 선택은 410 PROPOSAL_EXPIRED다. 기존 409 PROPOSAL_EXPIRED는 사용하지 않는다. 상태 충돌은 409 PROPOSAL_STATE_CONFLICT로 구분한다.",
+        "description": "받은 매칭 제안을 수락합니다. 양쪽이 수락하면 채팅방 생성을 진행합니다.\n\n### 처리 규칙\n\n- 제안의 두 당사자 선택과 선택 시각을 match_proposals 한 행에 저장함.\n\n- 별도 proposal_decisions 테이블이나 resolved_at을 만들지 않음.\n\n- 거절은 첫 DECLINE 시각, 상호 수락은 두 ACCEPT 중 늦은 시각, 만료는 expires_at을 기준으로 판단함.\n\n- user_pairs로 쌍 단위 잠금·거절 후 30일 제한을 관리함.\n\n- 방 생성 후속 작업은 별도 outbox 테이블 대신 같은 트랜잭션에 background_jobs로 남김.\n\n- 실제 방이 준비되기 전 chatAvailable=false인 기존 동작은 유지함.\n\n### 확인할 사항\n\n제안 proposalId는 DB proposal_id와 같은 양수 integer(int64)로 확정. 기타 자원 ID는 별도 계약 유지.\n\n### 이번 API 변경\n\n경로·기존 요청/응답은 유지하고 내부 저장 방식만 변경함.\n\n### 유지하는 기능 계약\n\n최초결정고정. 동일수락멱등. pair→proposal 잠금·기한재검사. 사진옵션변경으로거절금지. 상호수락커밋후durable background_jobs로방생성, 실제준비전chatAvailable=false.\n\n### 오류 호환성\n\n제안 없음·타인 접근은 404 RESOURCE_NOT_FOUND, 마감 정각부터 새 선택은 410 PROPOSAL_EXPIRED다. 기존 409 PROPOSAL_EXPIRED는 사용하지 않는다. 상태 충돌은 409 PROPOSAL_STATE_CONFLICT로 구분한다.\n최초 실제 선택 키를 사용자별로 제안 보관 동안 유지. 같은 키를 다른 제안·다른 선택에 재사용하면 409 IDEMPOTENCY_CONFLICT. 동일 선택 재시도는 현재 상태 반환; 새 키 재시도는 새 키를 소비하지 않음. 최초 결정시각·30일 제한 유지.",
         "tags": [
           "PROP"
         ],
@@ -14952,8 +14957,9 @@
             "in": "path",
             "required": true,
             "schema": {
-              "type": "string",
-              "format": "uuid"
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
             }
           },
           {
@@ -14989,7 +14995,7 @@
                   "$ref": "#/components/schemas/Proposal"
                 },
                 "example": {
-                  "proposalId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+                  "proposalId": 1001,
                   "status": "WAITING_FOR_OTHER",
                   "myDecision": "ACCEPT",
                   "createdAt": "2026-10-20T05:00:00Z",
@@ -15077,7 +15083,7 @@
             ]
           },
           "403": {
-            "description": "FORBIDDEN",
+            "description": "ONBOARDING_REQUIRED / FORBIDDEN",
             "headers": {
               "X-Request-Id": {
                 "schema": {
@@ -15098,8 +15104,8 @@
                   "$ref": "#/components/schemas/Error"
                 },
                 "example": {
-                  "code": "FORBIDDEN",
-                  "message": "FORBIDDEN",
+                  "code": "ONBOARDING_REQUIRED",
+                  "message": "가입을 완료해 주세요.",
                   "requestId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
                   "retryable": false,
                   "fields": [
@@ -15109,6 +15115,7 @@
               }
             },
             "x-error-codes": [
+              "ONBOARDING_REQUIRED",
               "FORBIDDEN"
             ]
           },
@@ -15336,7 +15343,7 @@
         "x-storage-design": "lean24-162",
         "x-reviewed-at": "2026-10-21 11:47 KST",
         "x-confirmation-required": [
-          "ERD의 bigint는 내부 저장 타입이다. 기존 API의 UUID 표현을 자동으로 숫자 ID로 바꾸지 않으며 외부 식별자 형식·매핑은 호출자와 확정해야 한다."
+          "제안 proposalId는 DB와 같은 양수 integer(int64)로 확정. 기타 자원 ID는 별도 계약 유지."
         ],
         "x-change-history": [
           {
@@ -15353,7 +15360,7 @@
       "post": {
         "operationId": "declineProposal",
         "summary": "제안 거절 (수정 2026-10-21 11:22)",
-        "description": "받은 매칭 제안을 거절하고 같은 상대에 대한 제한 기간을 기록합니다.\n\n### 처리 규칙\n\n- 제안의 두 당사자 선택과 선택 시각을 match_proposals 한 행에 저장함.\n\n- 별도 proposal_decisions 테이블이나 resolved_at을 만들지 않음.\n\n- 거절은 첫 DECLINE 시각, 상호 수락은 두 ACCEPT 중 늦은 시각, 만료는 expires_at을 기준으로 판단함.\n\n- user_pairs로 쌍 단위 잠금·거절 후 30일 제한을 관리함.\n\n- 방 생성 후속 작업은 별도 outbox 테이블 대신 같은 트랜잭션에 background_jobs로 남김.\n\n- 실제 방이 준비되기 전 chatAvailable=false인 기존 동작은 유지함.\n\n### 확인할 사항\n\n- ERD의 bigint는 내부 저장 타입이다. 기존 API의 UUID 표현을 자동으로 숫자 ID로 바꾸지 않으며 외부 식별자 형식·매핑은 호출자와 확정해야 한다.\n\n### 이번 API 변경\n\n경로·기존 요청/응답은 유지하고 내부 저장 방식만 변경함.\n\n### 유지하는 기능 계약\n\n동일거절멱등. pair 제한은처음거절시각+720시간, 반복연장금지. 자동만료는제한없음.\n\n### 오류 호환성\n\n제안 없음·타인 접근은 404 RESOURCE_NOT_FOUND, 마감 정각부터 새 선택은 410 PROPOSAL_EXPIRED다. 기존 409 PROPOSAL_EXPIRED는 사용하지 않는다. 상태 충돌은 409 PROPOSAL_STATE_CONFLICT로 구분한다.",
+        "description": "받은 매칭 제안을 거절하고 같은 상대에 대한 제한 기간을 기록합니다.\n\n### 처리 규칙\n\n- 제안의 두 당사자 선택과 선택 시각을 match_proposals 한 행에 저장함.\n\n- 별도 proposal_decisions 테이블이나 resolved_at을 만들지 않음.\n\n- 거절은 첫 DECLINE 시각, 상호 수락은 두 ACCEPT 중 늦은 시각, 만료는 expires_at을 기준으로 판단함.\n\n- user_pairs로 쌍 단위 잠금·거절 후 30일 제한을 관리함.\n\n- 방 생성 후속 작업은 별도 outbox 테이블 대신 같은 트랜잭션에 background_jobs로 남김.\n\n- 실제 방이 준비되기 전 chatAvailable=false인 기존 동작은 유지함.\n\n### 확인할 사항\n\n제안 proposalId는 DB proposal_id와 같은 양수 integer(int64)로 확정. 기타 자원 ID는 별도 계약 유지.\n\n### 이번 API 변경\n\n경로·기존 요청/응답은 유지하고 내부 저장 방식만 변경함.\n\n### 유지하는 기능 계약\n\n동일거절멱등. pair 제한은처음거절시각+720시간, 반복연장금지. 자동만료는제한없음.\n\n### 오류 호환성\n\n제안 없음·타인 접근은 404 RESOURCE_NOT_FOUND, 마감 정각부터 새 선택은 410 PROPOSAL_EXPIRED다. 기존 409 PROPOSAL_EXPIRED는 사용하지 않는다. 상태 충돌은 409 PROPOSAL_STATE_CONFLICT로 구분한다.\n최초 실제 선택 키를 사용자별로 제안 보관 동안 유지. 같은 키를 다른 제안·다른 선택에 재사용하면 409 IDEMPOTENCY_CONFLICT. 동일 선택 재시도는 현재 상태 반환; 새 키 재시도는 새 키를 소비하지 않음. 최초 결정시각·30일 제한 유지.",
         "tags": [
           "PROP"
         ],
@@ -15367,8 +15374,9 @@
             "in": "path",
             "required": true,
             "schema": {
-              "type": "string",
-              "format": "uuid"
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
             }
           },
           {
@@ -15404,7 +15412,7 @@
                   "$ref": "#/components/schemas/Proposal"
                 },
                 "example": {
-                  "proposalId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+                  "proposalId": 1001,
                   "status": "WAITING_FOR_OTHER",
                   "myDecision": "ACCEPT",
                   "createdAt": "2026-10-20T05:00:00Z",
@@ -15492,7 +15500,7 @@
             ]
           },
           "403": {
-            "description": "FORBIDDEN",
+            "description": "ONBOARDING_REQUIRED / FORBIDDEN",
             "headers": {
               "X-Request-Id": {
                 "schema": {
@@ -15513,8 +15521,8 @@
                   "$ref": "#/components/schemas/Error"
                 },
                 "example": {
-                  "code": "FORBIDDEN",
-                  "message": "FORBIDDEN",
+                  "code": "ONBOARDING_REQUIRED",
+                  "message": "가입을 완료해 주세요.",
                   "requestId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
                   "retryable": false,
                   "fields": [
@@ -15524,6 +15532,7 @@
               }
             },
             "x-error-codes": [
+              "ONBOARDING_REQUIRED",
               "FORBIDDEN"
             ]
           },
@@ -15751,7 +15760,7 @@
         "x-storage-design": "lean24-162",
         "x-reviewed-at": "2026-10-21 11:47 KST",
         "x-confirmation-required": [
-          "ERD의 bigint는 내부 저장 타입이다. 기존 API의 UUID 표현을 자동으로 숫자 ID로 바꾸지 않으며 외부 식별자 형식·매핑은 호출자와 확정해야 한다."
+          "제안 proposalId는 DB와 같은 양수 integer(int64)로 확정. 기타 자원 ID는 별도 계약 유지."
         ],
         "x-change-history": [
           {
@@ -15768,7 +15777,7 @@
       "post": {
         "operationId": "requestExplanation",
         "summary": "실제 매칭 근거 설명 (수정 2026-10-21 11:13)",
-        "description": "해당 매칭 제안이 만들어진 이유를 설명하는 작업을 요청합니다.\n\n### 처리 규칙\n\n- 별도 설명 테이블 대신 ai_results에 kind=MATCH_EXPLANATION, target_id=제안 번호로 저장하고 job_id로 생성 작업과 연결함.\n\n- 당시 encounters.evaluation_json·평가 버전·양쪽 설정 사본을 근거로 사용함.\n\n- matchingEvaluationId는 별도 평가 테이블의 번호로 취급하지 않으며 호환용 식별 방식은 내부 평가 API와 함께 확정해야 함.\n\n- 실패 시 규칙 문장 대체와 현재 조회 권한 검사는 유지함.\n\n### 확인할 사항\n\n- 경로와 설명 본문·대체 응답은 유지함. matchingEvaluationId의 별도 평가 자원 참조는 보류하고 encounterId 기반 참조로 통일할 예정이며, 호출자와 필드 계약을 맞추기 전 구현 완료로 표시하지 않음.\n\n- ERD의 bigint는 내부 저장 타입이다. 기존 API의 UUID 표현을 자동으로 숫자 ID로 바꾸지 않으며 외부 식별자 형식·매핑은 호출자와 확정해야 한다.\n\n### 이번 API 변경\n\n경로와 설명 본문·대체 응답은 유지함. matchingEvaluationId의 별도 평가 자원 참조는 보류하고 encounterId 기반 참조로 통일할 예정이며, 호출자와 필드 계약을 맞추기 전 구현 완료로 표시하지 않음.\n\n### 유지하는 기능 계약\n\n원evaluation·rules사용. 생성실패시규칙문장대체. 과거근거를최신프로필로바꾸지않음.",
+        "description": "해당 매칭 제안이 만들어진 이유를 설명하는 작업을 요청합니다.\n\n### 처리 규칙\n\n- 별도 설명 테이블 대신 ai_results에 kind=MATCH_EXPLANATION, target_id=제안 번호로 저장하고 job_id로 생성 작업과 연결함.\n\n- 당시 encounters.evaluation_json·평가 버전·양쪽 설정 사본을 근거로 사용함.\n\n- matchingEvaluationId는 별도 평가 테이블의 번호로 취급하지 않으며 호환용 식별 방식은 내부 평가 API와 함께 확정해야 함.\n\n- 실패 시 규칙 문장 대체와 현재 조회 권한 검사는 유지함.\n\n### 확인할 사항\n\n- 경로와 설명 본문·대체 응답은 유지함. matchingEvaluationId의 별도 평가 자원 참조는 보류하고 encounterId 기반 참조로 통일할 예정이며, 호출자와 필드 계약을 맞추기 전 구현 완료로 표시하지 않음.\n\n제안 proposalId는 DB proposal_id와 같은 양수 integer(int64)로 확정. 기타 자원 ID는 별도 계약 유지.\n\n### 이번 API 변경\n\n경로와 설명 본문·대체 응답은 유지함. matchingEvaluationId의 별도 평가 자원 참조는 보류하고 encounterId 기반 참조로 통일할 예정이며, 호출자와 필드 계약을 맞추기 전 구현 완료로 표시하지 않음.\n\n### 유지하는 기능 계약\n\n원evaluation·rules사용. 생성실패시규칙문장대체. 과거근거를최신프로필로바꾸지않음.",
         "tags": [
           "MAT"
         ],
@@ -15782,8 +15791,9 @@
             "in": "path",
             "required": true,
             "schema": {
-              "type": "string",
-              "format": "uuid"
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
             }
           },
           {
@@ -15907,7 +15917,7 @@
             ]
           },
           "403": {
-            "description": "FORBIDDEN",
+            "description": "ONBOARDING_REQUIRED / FORBIDDEN",
             "headers": {
               "X-Request-Id": {
                 "schema": {
@@ -15928,8 +15938,8 @@
                   "$ref": "#/components/schemas/Error"
                 },
                 "example": {
-                  "code": "FORBIDDEN",
-                  "message": "FORBIDDEN",
+                  "code": "ONBOARDING_REQUIRED",
+                  "message": "가입을 완료해 주세요.",
                   "requestId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
                   "retryable": false,
                   "fields": [
@@ -15939,6 +15949,7 @@
               }
             },
             "x-error-codes": [
+              "ONBOARDING_REQUIRED",
               "FORBIDDEN"
             ]
           },
@@ -16130,7 +16141,7 @@
         "x-reviewed-at": "2026-10-21 11:47 KST",
         "x-confirmation-required": [
           "경로와 설명 본문·대체 응답은 유지함. matchingEvaluationId의 별도 평가 자원 참조는 보류하고 encounterId 기반 참조로 통일할 예정이며, 호출자와 필드 계약을 맞추기 전 구현 완료로 표시하지 않음.",
-          "ERD의 bigint는 내부 저장 타입이다. 기존 API의 UUID 표현을 자동으로 숫자 ID로 바꾸지 않으며 외부 식별자 형식·매핑은 호출자와 확정해야 한다."
+          "제안 proposalId는 DB와 같은 양수 integer(int64)로 확정. 기타 자원 ID는 별도 계약 유지."
         ],
         "x-change-history": [
           {
@@ -16147,7 +16158,7 @@
       "get": {
         "operationId": "getExplanation",
         "summary": "생성·대체 설명 조회 (수정 2026-10-21 11:16)",
-        "description": "생성된 매칭 설명 또는 생성 실패 시 대체 설명을 조회합니다.\n\n### 처리 규칙\n\n- 별도 설명 테이블 대신 ai_results에 kind=MATCH_EXPLANATION, target_id=제안 번호로 저장하고 job_id로 생성 작업과 연결함.\n\n- 당시 encounters.evaluation_json·평가 버전·양쪽 설정 사본을 근거로 사용함.\n\n- matchingEvaluationId는 별도 평가 테이블의 번호로 취급하지 않으며 호환용 식별 방식은 내부 평가 API와 함께 확정해야 함.\n\n- 실패 시 규칙 문장 대체와 현재 조회 권한 검사는 유지함.\n\n### 확인할 사항\n\n- 경로와 설명 본문·대체 응답은 유지함. matchingEvaluationId의 별도 평가 자원 참조는 보류하고 encounterId 기반 참조로 통일할 예정이며, 호출자와 필드 계약을 맞추기 전 구현 완료로 표시하지 않음.\n\n- ERD의 bigint는 내부 저장 타입이다. 기존 API의 UUID 표현을 자동으로 숫자 ID로 바꾸지 않으며 외부 식별자 형식·매핑은 호출자와 확정해야 한다.\n\n- 버전 파일 코드·기존 releaseId/manifest 및 만남 기반 평가 참조를 내부 호출자·저장소 OpenAPI와 함께 맞춘다.\n\n### 이번 API 변경\n\n경로와 설명 본문·대체 응답은 유지함. matchingEvaluationId의 별도 평가 자원 참조는 보류하고 encounterId 기반 참조로 통일할 예정이며, 호출자와 필드 계약을 맞추기 전 구현 완료로 표시하지 않음.\n\n### 유지하는 기능 계약\n\n생성·대체 설명 조회",
+        "description": "생성된 매칭 설명 또는 생성 실패 시 대체 설명을 조회합니다.\n\n### 처리 규칙\n\n- 별도 설명 테이블 대신 ai_results에 kind=MATCH_EXPLANATION, target_id=제안 번호로 저장하고 job_id로 생성 작업과 연결함.\n\n- 당시 encounters.evaluation_json·평가 버전·양쪽 설정 사본을 근거로 사용함.\n\n- matchingEvaluationId는 별도 평가 테이블의 번호로 취급하지 않으며 호환용 식별 방식은 내부 평가 API와 함께 확정해야 함.\n\n- 실패 시 규칙 문장 대체와 현재 조회 권한 검사는 유지함.\n\n### 확인할 사항\n\n- 경로와 설명 본문·대체 응답은 유지함. matchingEvaluationId의 별도 평가 자원 참조는 보류하고 encounterId 기반 참조로 통일할 예정이며, 호출자와 필드 계약을 맞추기 전 구현 완료로 표시하지 않음.\n\n제안 proposalId는 DB proposal_id와 같은 양수 integer(int64)로 확정. 기타 자원 ID는 별도 계약 유지.\n\n- 버전 파일 코드·기존 releaseId/manifest 및 만남 기반 평가 참조를 내부 호출자·저장소 OpenAPI와 함께 맞춘다.\n\n### 이번 API 변경\n\n경로와 설명 본문·대체 응답은 유지함. matchingEvaluationId의 별도 평가 자원 참조는 보류하고 encounterId 기반 참조로 통일할 예정이며, 호출자와 필드 계약을 맞추기 전 구현 완료로 표시하지 않음.\n\n### 유지하는 기능 계약\n\n생성·대체 설명 조회",
         "tags": [
           "MAT"
         ],
@@ -16161,8 +16172,9 @@
             "in": "path",
             "required": true,
             "schema": {
-              "type": "string",
-              "format": "uuid"
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
             }
           }
         ],
@@ -16275,7 +16287,7 @@
             ]
           },
           "403": {
-            "description": "FORBIDDEN",
+            "description": "ONBOARDING_REQUIRED / FORBIDDEN",
             "headers": {
               "X-Request-Id": {
                 "schema": {
@@ -16296,8 +16308,8 @@
                   "$ref": "#/components/schemas/Error"
                 },
                 "example": {
-                  "code": "FORBIDDEN",
-                  "message": "FORBIDDEN",
+                  "code": "ONBOARDING_REQUIRED",
+                  "message": "가입을 완료해 주세요.",
                   "requestId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
                   "retryable": false,
                   "fields": [
@@ -16307,6 +16319,7 @@
               }
             },
             "x-error-codes": [
+              "ONBOARDING_REQUIRED",
               "FORBIDDEN"
             ]
           },
@@ -16533,7 +16546,7 @@
         "x-reviewed-at": "2026-10-21 11:47 KST",
         "x-confirmation-required": [
           "경로와 설명 본문·대체 응답은 유지함. matchingEvaluationId의 별도 평가 자원 참조는 보류하고 encounterId 기반 참조로 통일할 예정이며, 호출자와 필드 계약을 맞추기 전 구현 완료로 표시하지 않음.",
-          "ERD의 bigint는 내부 저장 타입이다. 기존 API의 UUID 표현을 자동으로 숫자 ID로 바꾸지 않으며 외부 식별자 형식·매핑은 호출자와 확정해야 한다.",
+          "제안 proposalId는 DB와 같은 양수 integer(int64)로 확정. 기타 자원 ID는 별도 계약 유지.",
           "버전 파일 코드·기존 releaseId/manifest 및 만남 기반 평가 참조를 내부 호출자·저장소 OpenAPI와 함께 맞춘다."
         ],
         "x-change-history": [
@@ -18098,7 +18111,7 @@
       "get": {
         "operationId": "getProposalPhoto",
         "summary": "유효 제안의 사진 바이트 (수정 2026-10-21 11:24)",
-        "description": "유효한 매칭 제안의 당사자인지 검사한 뒤 상대의 현재 사진을 전달합니다.\n\n### 처리 규칙\n\n- 사진별 행·photoId 대신 유효 제안 또는 활성방으로 상대를 확인하고 profiles.image_url에서 현재 이미지를 찾음.\n\n- 사진이 없거나 삭제되었으면 기존 410 처리함.\n\n### 확인할 사항\n\n- 기존 권한 검사 후 이미지 전달 경로는 유지 가능한 호환안임. 프로필의 imageUrl은 이 경로를 가리키거나 별도 권한 제한 URL이 될 수 있으며 최종 전달 방식은 FE·BE 사진 계약에서 통일해야 함. URL 저장으로 바뀌었다는 이유로 사진을 무제한 공개하지 않음.\n\n- ERD의 bigint는 내부 저장 타입이다. 기존 API의 UUID 표현을 자동으로 숫자 ID로 바꾸지 않으며 외부 식별자 형식·매핑은 호출자와 확정해야 한다.\n\n### 이번 API 변경\n\n기존 권한 검사 후 이미지 전달 경로는 유지 가능한 호환안임. 프로필의 imageUrl은 이 경로를 가리키거나 별도 권한 제한 URL이 될 수 있으며 최종 전달 방식은 FE·BE 사진 계약에서 통일해야 함. URL 저장으로 바뀌었다는 이유로 사진을 무제한 공개하지 않음.\n\n### 유지하는 기능 계약\n\n유효제안당사자만. 삭제410, no-store.",
+        "description": "유효한 매칭 제안의 당사자인지 검사한 뒤 상대의 현재 사진을 전달합니다.\n\n### 처리 규칙\n\n- 사진별 행·photoId 대신 유효 제안 또는 활성방으로 상대를 확인하고 profiles.image_url에서 현재 이미지를 찾음.\n\n- 사진이 없거나 삭제되었으면 기존 410 처리함.\n\n### 확인할 사항\n\n- 기존 권한 검사 후 이미지 전달 경로는 유지 가능한 호환안임. 프로필의 imageUrl은 이 경로를 가리키거나 별도 권한 제한 URL이 될 수 있으며 최종 전달 방식은 FE·BE 사진 계약에서 통일해야 함. URL 저장으로 바뀌었다는 이유로 사진을 무제한 공개하지 않음.\n\n제안 proposalId는 DB proposal_id와 같은 양수 integer(int64)로 확정. 기타 자원 ID는 별도 계약 유지.\n\n### 이번 API 변경\n\n기존 권한 검사 후 이미지 전달 경로는 유지 가능한 호환안임. 프로필의 imageUrl은 이 경로를 가리키거나 별도 권한 제한 URL이 될 수 있으며 최종 전달 방식은 FE·BE 사진 계약에서 통일해야 함. URL 저장으로 바뀌었다는 이유로 사진을 무제한 공개하지 않음.\n\n### 유지하는 기능 계약\n\n유효제안당사자만. 삭제410, no-store.",
         "tags": [
           "PRO"
         ],
@@ -18112,8 +18125,9 @@
             "in": "path",
             "required": true,
             "schema": {
-              "type": "string",
-              "format": "uuid"
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
             }
           }
         ],
@@ -18220,7 +18234,7 @@
             ]
           },
           "403": {
-            "description": "FORBIDDEN",
+            "description": "ONBOARDING_REQUIRED / FORBIDDEN",
             "headers": {
               "X-Request-Id": {
                 "schema": {
@@ -18241,8 +18255,8 @@
                   "$ref": "#/components/schemas/Error"
                 },
                 "example": {
-                  "code": "FORBIDDEN",
-                  "message": "FORBIDDEN",
+                  "code": "ONBOARDING_REQUIRED",
+                  "message": "가입을 완료해 주세요.",
                   "requestId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
                   "retryable": false,
                   "fields": [
@@ -18252,6 +18266,7 @@
               }
             },
             "x-error-codes": [
+              "ONBOARDING_REQUIRED",
               "FORBIDDEN"
             ]
           },
@@ -18479,7 +18494,7 @@
         "x-reviewed-at": "2026-10-21 11:47 KST",
         "x-confirmation-required": [
           "기존 권한 검사 후 이미지 전달 경로는 유지 가능한 호환안임. 프로필의 imageUrl은 이 경로를 가리키거나 별도 권한 제한 URL이 될 수 있으며 최종 전달 방식은 FE·BE 사진 계약에서 통일해야 함. URL 저장으로 바뀌었다는 이유로 사진을 무제한 공개하지 않음.",
-          "ERD의 bigint는 내부 저장 타입이다. 기존 API의 UUID 표현을 자동으로 숫자 ID로 바꾸지 않으며 외부 식별자 형식·매핑은 호출자와 확정해야 한다."
+          "제안 proposalId는 DB와 같은 양수 integer(int64)로 확정. 기타 자원 ID는 별도 계약 유지."
         ],
         "x-change-history": [
           {
@@ -23119,7 +23134,7 @@
                 "$ref": "#/components/schemas/BlockInput"
               },
               "example": {
-                "proposalId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+                "proposalId": 1001
               }
             }
           }
@@ -28745,9 +28760,10 @@
         "additionalProperties": false,
         "properties": {
           "proposalId": {
-            "type": "string",
-            "format": "uuid",
-            "description": "매칭 제안 식별자"
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1,
+            "description": "제안 숫자 ID; DB proposal_id와 동일"
           },
           "status": {
             "type": "string",
@@ -28807,7 +28823,7 @@
         ],
         "examples": [
           {
-            "proposalId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+            "proposalId": 1001,
             "status": "WAITING_FOR_OTHER",
             "myDecision": "ACCEPT",
             "createdAt": "2026-10-20T05:00:00Z",
@@ -29458,8 +29474,10 @@
         "additionalProperties": false,
         "properties": {
           "proposalId": {
-            "type": "string",
-            "format": "uuid"
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1,
+            "description": "제안 숫자 ID; DB proposal_id와 동일"
           },
           "chatRoomId": {
             "type": "string",
@@ -29470,7 +29488,7 @@
         "description": "정확히 하나의 문맥 ID로 상대를 결정. 임의 회원 ID는 받지 않는다.",
         "examples": [
           {
-            "proposalId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+            "proposalId": 1001
           }
         ],
         "oneOf": [

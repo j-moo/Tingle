@@ -1,6 +1,6 @@
 # Tingle(팅글) ERD·테이블 정의
 
-1.1.0-review / 수정 2026-10-21 11:47 KST. **24개 테이블·162개 컬럼**, PostgreSQL·JPA 기준. 물리 외래 키는 없으며 아래 관계는 서비스가 검사하는 논리 참조다. 검토 SQL을 실제 DB에 실행하지 않았다.
+1.1.0-review / 수정 2026-10-21 11:47 KST. **24개 테이블·164개 컬럼**, PostgreSQL·JPA 기준. 물리 외래 키는 없으며 아래 관계는 서비스가 검사하는 논리 참조다. 검토 SQL을 실제 DB에 실행하지 않았다.
 
 [API](../contracts/api/README.md) / [SQL](schema.sql) / [ERDCloud 가져오기 SQL](erdcloud-import.sql) / [기계판독 정의](tables.json) / [기존안·수정안 비교](changes-20261021.md) / [기능 대응표](../specifications/coverage.md)
 
@@ -31,7 +31,7 @@
 | `user_pairs` | 동일 회원 쌍·동시 처리 잠금·거절 제한 | 5 |
 | `encounters` | 양쪽 제출을 묶는 만남·최종 판정 | 9 |
 | `encounter_submissions` | 각 기기의 제출·재전송·증명 | 7 |
-| `match_proposals` | 제안·고정 두 사람의 선택·방 연결 | 11 |
+| `match_proposals` | 제안·고정 두 사람의 선택·방 연결 | 13 |
 | `chat_rooms` | 7일 대화와 종료 후 30일 보관 | 7 |
 | `chat_members` | 참여자별 입장·두 안내의 표시 확인 | 5 |
 | `chat_messages` | 메시지와 순서·재전송 키 | 7 |
@@ -201,6 +201,8 @@ erDiagram
         text high_decision
         timestamptz low_decided_at
         timestamptz high_decided_at
+        uuid low_request_key
+        uuid high_request_key
         text status
         timestamptz created_at
         timestamptz expires_at
@@ -502,6 +504,8 @@ erDiagram
 | `high_decision` | user_high의 ACCEPT / DECLINE; 미선택 NULL | 가능 |
 | `low_decided_at` | user_low 최초 결정 | 가능 |
 | `high_decided_at` | user_high 최초 결정 | 가능 |
+| `low_request_key` | user_low 최초 실제 선택의 UUID 멱등 키 | 가능 |
+| `high_request_key` | user_high 최초 실제 선택의 UUID 멱등 키 | 가능 |
 | `status` | PENDING / WAITING_FOR_OTHER / ACCEPTED / REJECTED / EXPIRED | 불가 |
 | `created_at` | 제안 생성 | 불가 |
 | `expires_at` | 생성+24시간 | 불가 |
