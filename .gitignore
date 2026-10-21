@@ -2,6 +2,12 @@
 .env
 .env.*
 !.env.example
+
+# 개인 AI 도구 지침·설정 (하위 디렉터리 포함)
+AGENTS.md
+CLAUDE.md
+.claude/
+
 .venv/
 __pycache__/
 *.py[cod]
