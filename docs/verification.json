@@ -6,7 +6,7 @@
   "notion_response_field_parity": "PASS",
   "notion_request_field_parity": "PASS",
   "schemas": 83,
-  "examples_validated": 732,
+  "examples_validated": 733,
   "feature_coverage": "24/24 including CHAT_DELETE workflow",
   "question_contracts_checked": 100,
   "sql_parse": "PASS",
@@ -22,5 +22,7 @@
   "service_or_device_tests": "NOT RUN",
   "reference_dependency_closure": "PASS",
   "reference_links_checked": 61,
-  "required_reference_files": 7
+  "required_reference_files": 7,
+  "mr8_contract_regression": "5/5 PASS; chat summary excluded",
+  "mr20_review_findings": "3/3 corrected; policy, errors, PublicProfile"
 }

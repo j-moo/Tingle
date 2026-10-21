@@ -14661,7 +14661,7 @@
       "get": {
         "operationId": "getProposalProfile",
         "summary": "수락 전 최신 공개 프로필 (수정 2026-10-21 11:21)",
-        "description": "유효한 매칭 제안의 상대가 공개한 최신 프로필을 조회합니다.\n\n### 처리 규칙\n\n- 현재 공개값은 profiles.image_url을 포함한 최신 프로필에서 읽음.\n\n- 나이·사진 존재 여부는 계산하고 상대의 내부 회원 번호·실제 생년월일·희망 조건·원응답은 공개하지 않음.\n\n- 유효 제안/활성방의 당사자 확인과 삭제된 사진의 즉시 미표시 규칙을 유지함.\n\n### 확인할 사항\n\n- profileVersion과 profileImageId를 제외하고 imageUrl(현재 사진을 보여 주는 허용된 URL) 또는 null을 반환하는 수정안임. hasProfilePhoto는 image_url 존재에서 계산함. DB에는 짧게 만료되는 서명 URL을 영구 저장하지 않으며 접근 제어 URL 발급/전달 방식은 사진 계약 확인 사항임.\n\n- ERD의 bigint는 내부 저장 타입이다. 기존 API의 UUID 표현을 자동으로 숫자 ID로 바꾸지 않으며 외부 식별자 형식·매핑은 호출자와 확정해야 한다.\n\n- 정책 합의 항목: POL-05. 기존의 미합의 조건을 이 문서만으로 활성화하지 않는다.\n\n### 이번 API 변경\n\nprofileVersion과 profileImageId를 제외하고 imageUrl(현재 사진을 보여 주는 허용된 URL) 또는 null을 반환하는 수정안임. hasProfilePhoto는 image_url 존재에서 계산함. DB에는 짧게 만료되는 서명 URL을 영구 저장하지 않으며 접근 제어 URL 발급/전달 방식은 사진 계약 확인 사항임.",
+        "description": "유효한 매칭 제안의 상대가 공개한 최신 프로필을 조회합니다.\n\n### 처리 규칙\n\n- 현재 공개값은 profiles.image_url을 포함한 최신 프로필에서 읽음.\n\n- 나이·사진 존재 여부는 계산하고 상대의 내부 회원 번호·실제 생년월일·희망 조건·원응답은 공개하지 않음.\n\n- 유효 제안/활성방의 당사자 확인과 삭제된 사진의 즉시 미표시 규칙을 유지함.\n\n### 확인할 사항\n\n- profileVersion과 profileImageId를 제외하고 imageUrl(현재 사진을 보여 주는 허용된 URL) 또는 null을 반환하는 수정안임. hasProfilePhoto는 image_url 존재에서 계산함. DB에는 짧게 만료되는 서명 URL을 영구 저장하지 않으며 접근 제어 URL 발급/전달 방식은 사진 계약 확인 사항임.\n\n- ERD의 bigint는 내부 저장 타입이다. 기존 API의 UUID 표현을 자동으로 숫자 ID로 바꾸지 않으며 외부 식별자 형식·매핑은 호출자와 확정해야 한다.\n\n- 정책 합의 항목: POL-05. 기존의 미합의 조건을 이 문서만으로 활성화하지 않는다.\n\n### 이번 API 변경\n\nprofileVersion과 profileImageId를 제외하고 imageUrl(현재 사진을 보여 주는 허용된 URL) 또는 null을 반환하는 수정안임. hasProfilePhoto는 image_url 존재에서 계산함. DB에는 짧게 만료되는 서명 URL을 영구 저장하지 않으며 접근 제어 URL 발급/전달 방식은 사진 계약 확인 사항임.\n\n### 오류·응답 호환성\n\n제안 없음·타인 접근은 404 RESOURCE_NOT_FOUND, 종료된 본인 제안의 접근은 410 PROPOSAL_EXPIRED다. 기존 409 PROFILE_ACCESS_ENDED를 사용하지 않는다. PublicProfile은 imageUrl과 hasProfilePhoto를 사용하며 proposalId·profileVersion·profileImageId를 포함하지 않는다.",
         "tags": [
           "PROP"
         ],
@@ -15070,7 +15070,7 @@
       "post": {
         "operationId": "acceptProposal",
         "summary": "제안 수락 (수정 2026-10-21 11:22)",
-        "description": "받은 매칭 제안을 수락합니다. 양쪽이 수락하면 채팅방 생성을 진행합니다.\n\n### 처리 규칙\n\n- 제안의 두 당사자 선택과 선택 시각을 match_proposals 한 행에 저장함.\n\n- 별도 proposal_decisions 테이블이나 resolved_at을 만들지 않음.\n\n- 거절은 첫 DECLINE 시각, 상호 수락은 두 ACCEPT 중 늦은 시각, 만료는 expires_at을 기준으로 판단함.\n\n- user_pairs로 쌍 단위 잠금·거절 후 30일 제한을 관리함.\n\n- 방 생성 후속 작업은 별도 outbox 테이블 대신 같은 트랜잭션에 background_jobs로 남김.\n\n- 실제 방이 준비되기 전 chatAvailable=false인 기존 동작은 유지함.\n\n### 확인할 사항\n\n- ERD의 bigint는 내부 저장 타입이다. 기존 API의 UUID 표현을 자동으로 숫자 ID로 바꾸지 않으며 외부 식별자 형식·매핑은 호출자와 확정해야 한다.\n\n### 이번 API 변경\n\n경로·기존 요청/응답은 유지하고 내부 저장 방식만 변경함.\n\n### 유지하는 기능 계약\n\n최초결정고정. 동일수락멱등. pair→proposal 잠금·기한재검사. 사진옵션변경으로거절금지. 상호수락커밋후durable background_jobs로방생성, 실제준비전chatAvailable=false.",
+        "description": "받은 매칭 제안을 수락합니다. 양쪽이 수락하면 채팅방 생성을 진행합니다.\n\n### 처리 규칙\n\n- 제안의 두 당사자 선택과 선택 시각을 match_proposals 한 행에 저장함.\n\n- 별도 proposal_decisions 테이블이나 resolved_at을 만들지 않음.\n\n- 거절은 첫 DECLINE 시각, 상호 수락은 두 ACCEPT 중 늦은 시각, 만료는 expires_at을 기준으로 판단함.\n\n- user_pairs로 쌍 단위 잠금·거절 후 30일 제한을 관리함.\n\n- 방 생성 후속 작업은 별도 outbox 테이블 대신 같은 트랜잭션에 background_jobs로 남김.\n\n- 실제 방이 준비되기 전 chatAvailable=false인 기존 동작은 유지함.\n\n### 확인할 사항\n\n- ERD의 bigint는 내부 저장 타입이다. 기존 API의 UUID 표현을 자동으로 숫자 ID로 바꾸지 않으며 외부 식별자 형식·매핑은 호출자와 확정해야 한다.\n\n### 이번 API 변경\n\n경로·기존 요청/응답은 유지하고 내부 저장 방식만 변경함.\n\n### 유지하는 기능 계약\n\n최초결정고정. 동일수락멱등. pair→proposal 잠금·기한재검사. 사진옵션변경으로거절금지. 상호수락커밋후durable background_jobs로방생성, 실제준비전chatAvailable=false.\n\n### 오류 호환성\n\n제안 없음·타인 접근은 404 RESOURCE_NOT_FOUND, 마감 정각부터 새 선택은 410 PROPOSAL_EXPIRED다. 기존 409 PROPOSAL_EXPIRED는 사용하지 않는다. 상태 충돌은 409 PROPOSAL_STATE_CONFLICT로 구분한다.",
         "tags": [
           "PROP"
         ],
@@ -15486,7 +15486,7 @@
       "post": {
         "operationId": "declineProposal",
         "summary": "제안 거절 (수정 2026-10-21 11:22)",
-        "description": "받은 매칭 제안을 거절하고 같은 상대에 대한 제한 기간을 기록합니다.\n\n### 처리 규칙\n\n- 제안의 두 당사자 선택과 선택 시각을 match_proposals 한 행에 저장함.\n\n- 별도 proposal_decisions 테이블이나 resolved_at을 만들지 않음.\n\n- 거절은 첫 DECLINE 시각, 상호 수락은 두 ACCEPT 중 늦은 시각, 만료는 expires_at을 기준으로 판단함.\n\n- user_pairs로 쌍 단위 잠금·거절 후 30일 제한을 관리함.\n\n- 방 생성 후속 작업은 별도 outbox 테이블 대신 같은 트랜잭션에 background_jobs로 남김.\n\n- 실제 방이 준비되기 전 chatAvailable=false인 기존 동작은 유지함.\n\n### 확인할 사항\n\n- ERD의 bigint는 내부 저장 타입이다. 기존 API의 UUID 표현을 자동으로 숫자 ID로 바꾸지 않으며 외부 식별자 형식·매핑은 호출자와 확정해야 한다.\n\n### 이번 API 변경\n\n경로·기존 요청/응답은 유지하고 내부 저장 방식만 변경함.\n\n### 유지하는 기능 계약\n\n동일거절멱등. pair 제한은처음거절시각+720시간, 반복연장금지. 자동만료는제한없음.",
+        "description": "받은 매칭 제안을 거절하고 같은 상대에 대한 제한 기간을 기록합니다.\n\n### 처리 규칙\n\n- 제안의 두 당사자 선택과 선택 시각을 match_proposals 한 행에 저장함.\n\n- 별도 proposal_decisions 테이블이나 resolved_at을 만들지 않음.\n\n- 거절은 첫 DECLINE 시각, 상호 수락은 두 ACCEPT 중 늦은 시각, 만료는 expires_at을 기준으로 판단함.\n\n- user_pairs로 쌍 단위 잠금·거절 후 30일 제한을 관리함.\n\n- 방 생성 후속 작업은 별도 outbox 테이블 대신 같은 트랜잭션에 background_jobs로 남김.\n\n- 실제 방이 준비되기 전 chatAvailable=false인 기존 동작은 유지함.\n\n### 확인할 사항\n\n- ERD의 bigint는 내부 저장 타입이다. 기존 API의 UUID 표현을 자동으로 숫자 ID로 바꾸지 않으며 외부 식별자 형식·매핑은 호출자와 확정해야 한다.\n\n### 이번 API 변경\n\n경로·기존 요청/응답은 유지하고 내부 저장 방식만 변경함.\n\n### 유지하는 기능 계약\n\n동일거절멱등. pair 제한은처음거절시각+720시간, 반복연장금지. 자동만료는제한없음.\n\n### 오류 호환성\n\n제안 없음·타인 접근은 404 RESOURCE_NOT_FOUND, 마감 정각부터 새 선택은 410 PROPOSAL_EXPIRED다. 기존 409 PROPOSAL_EXPIRED는 사용하지 않는다. 상태 충돌은 409 PROPOSAL_STATE_CONFLICT로 구분한다.",
         "tags": [
           "PROP"
         ],
@@ -15840,6 +15840,42 @@
             },
             "x-error-codes": [
               "SERVICE_UNAVAILABLE"
+            ]
+          },
+          "410": {
+            "description": "PROPOSAL_EXPIRED",
+            "headers": {
+              "X-Request-Id": {
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              },
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "민감 응답 no-store"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "code": "PROPOSAL_EXPIRED",
+                  "message": "PROPOSAL_EXPIRED",
+                  "requestId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+                  "retryable": false,
+                  "fields": [
+                    "revision"
+                  ]
+                }
+              }
+            },
+            "x-error-codes": [
+              "PROPOSAL_EXPIRED"
             ]
           }
         },
@@ -23611,7 +23647,7 @@
       "post": {
         "operationId": "leaveChat",
         "summary": "자발적 채팅 퇴장",
-        "description": "자동 만료와 사용자가 직접 나가는 동작을 구분한다.\n\n### 처리 규칙\n\n- 자동 만료와 사용자가 직접 나가는 동작을 구분한다.\n\n- 방 종료 범위·삭제 기산점·재매칭 제한 정책이 확정되기 전에는 활성화하지 않는다.\n\n- 아래 기존안의 제안과 정책 미합의 상태를 함께 보존한다.\n\n### 확인할 사항\n\n- 정책 합의 항목: POL-09. 기존의 미합의 조건을 이 문서만으로 활성화하지 않는다.\n\n### 유지하는 기능 계약\n\n자동만료와구별. 자발적퇴장후영구재매칭제한기존방향유지. 방양쪽종료·삭제기산점세부정책승인전422.",
+        "description": "자동 만료와 사용자가 직접 나가는 동작을 구분한다.\n\n### 처리 규칙\n\n- 자동 만료와 사용자가 직접 나가는 동작을 구분한다.\n\n- 방 종료 범위·삭제 기산점·재매칭 제한 정책이 확정되기 전에는 활성화하지 않는다.\n\n- 아래 기존안의 제안과 정책 미합의 상태를 함께 보존한다.\n\n### 확인할 사항\n\n- 정책 합의 항목: POL-09. 기존의 미합의 조건을 이 문서만으로 활성화하지 않는다.\n\n### 정책 적용 경계\n\n자발적 퇴장 후 재매칭 제한의 유무·기간은 POL-09 미정 사항이다. 영구 제한을 현재 규칙으로 적용하지 않는다. 방 종료 범위·삭제 기산점과 함께 합의하기 전에는 422 POLICY_UNRESOLVED로 처리한다. 자동 만료만으로 재매칭 제한을 만들지 않는다.",
         "tags": [
           "SAFE"
         ],

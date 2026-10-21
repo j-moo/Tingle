@@ -48,6 +48,21 @@
 
 확정 계약 검토 → 저장소 명세 교차 검토 → 관련 구현과 로컬 검증 → 가상 키링 통합 → 실제 외부/실물/배포 검증 순으로 진행한다. 현재 단계는 문서 반영이다. DB DDL 실행·원격 게시·MR 병합은 하지 않았다. 실제 개발 이력은 다른 BE 팀원의 docs 위치·양식을 확인한 후 맞춘다.
 
+## 기존 38번 계약과의 적용 기준
+
+전송 필드·필수값·HTTP 상태·오류 코드는 이 디렉터리의 OpenAPI를 기준으로 한다. 기존 38번 `encounters-proposals.md`는 상태·시간·동시성 흐름을 보완한다. 두 문서를 함께 검토한 뒤 서버와 앱의 오류 분기를 같은 배포 단위로 맞춘다. 문서 변경만으로 기존 구현의 호환성이 보장되지는 않는다.
+
+| 기존안 | 수정안 | 적용 대상 |
+| --- | --- | --- |
+| 404 PROPOSAL_NOT_FOUND | 404 RESOURCE_NOT_FOUND | 제안 없음·타인 접근 |
+| 409 PROPOSAL_EXPIRED | 410 PROPOSAL_EXPIRED | 수락·거절 마감 |
+| 409 PROFILE_ACCESS_ENDED | 410 PROPOSAL_EXPIRED | 종료된 본인 제안의 상대 프로필 접근 |
+| 503 TEMPORARILY_UNAVAILABLE | 503 SERVICE_UNAVAILABLE | 일시 장애 |
+| profileImageId·profileVersion·proposalId가 있는 공개 프로필 | imageUrl·hasProfilePhoto, 그 외 PublicProfile 허용 필드 | 사진 없으면 imageUrl=null |
+| 자발적 퇴장 후 영구 재매칭 제한 | 제한 유무·기간 미정(POL-09), 합의 전 422 | 자동 만료와 구분 |
+
+404는 존재 여부 노출을 막기 위해 소유권부터 확인하고, 본인 자원인 경우에만 기한·상태를 판정한다. 409는 상태·멱등 충돌에 사용한다. 공통 오류 전체와 경로별 지원 여부는 OpenAPI를 따른다. 공개 프로필 버전/ETag를 새 필수값으로 추가하지 않는다.
+
 ## 현재 API 목록
 
 | Method | Path | 기능 | 요청 → 성공 응답 | operationId |
