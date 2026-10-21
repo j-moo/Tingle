@@ -7,6 +7,9 @@ S15P31E106/
 │     └─ MR.md
 ├─ back/                     # Spring Boot 서버
 ├─ docs/
+│  ├─ contracts/
+│  │  └─ api/
+│  │     └─ auth.md
 │  └─ convention/
 │     ├─ backend-convention.md   # 백엔드 규칙 (BE 합의 중)
 │     ├─ gitlab-convention.md
