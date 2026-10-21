@@ -39,7 +39,7 @@ v0.3.0, 2026.10.21. 모바일 앱을 Kotlin Multiplatform 으로 정하고, Reac
 
 ## 4. 컨테이너 구성
 
-모두 `infra/docker-compose.yml` 하나로 띄운다. `Dockerfile` 은 각 파트 폴더(`backend/`, `ai-server/`, `frontend/web/`)에 둔다. 앱(`frontend/app/`)과 펌웨어(`iot/`)는 컨테이너가 아니라 **빌드 산출물**이다.
+모두 `infra/docker-compose.yml` 하나로 띄운다. `Dockerfile` 은 각 파트 폴더(`back/`, `ai-server/`, `front/web/`)에 둔다. 앱(`front/app/`)과 펌웨어(`iot/`)는 컨테이너가 아니라 **빌드 산출물**이다.
 
 | 서비스 | 기술 | 운영 | 개발 |
 | --- | --- | --- | --- |
@@ -72,11 +72,11 @@ v0.3.0, 2026.10.21. 모바일 앱을 Kotlin Multiplatform 으로 정하고, Reac
 
 ```
 checkout
-  → 변경 파트 감지 (backend/, ai-server/, frontend/app/, frontend/web/, iot/ diff. infra/·Jenkinsfile 변경 시 전체)
+  → 변경 파트 감지 (back/, ai-server/, front/app/, front/web/, iot/ diff. infra/·Jenkinsfile 변경 시 전체)
   → 검사 (병렬)  backend:  gradle build + checkstyle + 테스트
                  ai:       pytest
                  app:      ./gradlew check (lint + 단위 테스트)
-                 web:      npm ci + npm run build
+                 web:      pnpm install --frozen-lockfile + pnpm lint + pnpm build
                  firmware: arduino-cli compile (보드 seeed_xiao_nrf52840)
   → [MR]      여기서 끝. 결과를 GitLab MR 에 표시. 실패하면 머지 불가
   → [develop] ai·backend·web 이미지 빌드(태그 dev) → compose up -d ai-dev backend-dev web-dev
@@ -194,7 +194,7 @@ WebSocket: 테스트 앱 2대를 채팅방에 두고 배포 → 끊김 감지 �
 | AI | GMS 프롬프트·응답 스키마 버전 관리, 구조화 결과 검증 규칙, 요청·응답 원문 로그 금지 | backend 와의 계약·개인정보 |
 | 앱(FE) | Gradle 속성 `apiBase` 로 서버 선택, WebSocket 자동 재접속(1·2·4초), 마지막 메시지 ID 이후 재수신 | 운영/개발 분리·블루-그린 전환 복구 |
 | 앱(FE) | Android 서명 키 생성 후 팀장에게 전달(Jenkins Credentials 등록), `./gradlew check` 통과 | CI 빌드 |
-| 웹(FE) | `frontend/web/Dockerfile`(Node 빌드 → `nginx:alpine`), 빌드 기준 경로를 설정으로 받아 `/` 와 `/dev/` 양쪽에서 동작 | 운영/개발 경로 분리 |
+| 웹(FE) | `front/web/Dockerfile`(Node·pnpm 빌드 → `nginx:alpine`), 빌드 기준 경로를 설정으로 받아 `/` 와 `/dev/` 양쪽에서 동작 | 운영/개발 경로 분리 |
 | 펌웨어 | `iot/` 에 arduino-cli 로 빌드되는 구조(보드 FQBN·라이브러리 목록 `.txt`), 펌웨어 버전 상수 | CI 컴파일 검사·버전 추적 |
 | 전체 | 로그에 개인정보 원문 금지 | 기획안 8.3 |
 
