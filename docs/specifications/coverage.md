@@ -1,16 +1,16 @@
 # 기능 → API → ERD 대응표
 
-수정 2026-10-21 11:47 KST. 24개 기능/24개 테이블·162개 컬럼의 문서 대응이다. 구현·통합·출시 완료 표시가 아니다. 관리자9개·사진 처리 조회1개는 현재 제외.
+수정 2026-10-21 11:47 KST. 24개 기능/24개 테이블·162개 컬럼의 문서 대응이다. 구현·통합·출시 완료 표시가 아니다. 관리자9개·사진 처리 조회1개 및 통합 signup은 제외/폐기. 인증 연락 동기화 2026-10-21 14:16 KST.
 
 [API](../contracts/api/README.md) / [ERD](../database/erd.md)
 
 | 기능 ID | 현재 operationId | 저장 테이블 |
 | --- | --- | --- |
 | AUTH-01 | `socialLogin`, `refreshTokens`, `logout`, `listAgreements` | `app_users`, `refresh_tokens`, `user_consents` |
-| AUTH-02 | `getOnboarding`, `completeProfile`, `getSurveySession` | `app_users`, `user_consents`, `profiles`, `survey_responses`, `matching_settings` |
+| AUTH-02 | `getOnboarding`, `submitAgreements`, `getSurveySession` | `app_users`, `user_consents`, `profiles`, `survey_responses`, `matching_settings` |
 | KEY-01 | `purchaseInfo`, `createRegistrationChallenge`, `registerKeyring`, `listKeyrings` | `keyrings`, `keyring_bindings`, `registration_challenges` |
 | KEY-02 | `createSync`, `getSync`, `ackSync` | `keyring_sync_runs`, `keyring_bindings`, `settings_snapshots`, `matching_settings` |
-| PRO-01 | `checkNickname`, `getMyProfile`, `saveProfileDraft`, `completeProfile` | `profiles`, `app_users` |
+| PRO-01 | `checkNickname`, `getMyProfile`, `saveProfileDraft` | `profiles`, `app_users` |
 | PRO-02 | `uploadPhoto`, `deletePhoto`, `getPartnerPhoto`, `getProposalPhoto` | `profiles`, `background_jobs` |
 | PRO-03 | `saveProfileDraft`, `getChatProfile` | `profiles`, `matching_settings`, `settings_snapshots` |
 | SUR-01 | `getQuestionnaire`, `createSurveySession`, `getSurveySession`, `getSessionQuestionnaire`, `saveSurveyAnswer`, `deleteSurveyAnswer`, `setSurveyMetadata`, `completeSurvey`, `getMigrationPlan`, `migrateSurvey` | `survey_responses` |

@@ -9,3 +9,5 @@
 - [기능 명세 원문](specifications/functional-spec-v1.md) / [설문·계산 원문](survey-analysis/README.md) / [가입·매칭 정책 원문](contracts/matching/profile-policy-v1.md)
 
 마지막 세 원문은 다른 작업의 변경을 보존했으며 이번 ERD 동기화로 덮어쓰지 않았다. 현재 변경 차이는 API/ERD 변경 비교와 확인 사항을 먼저 참고한다.
+
+인증 담당 연락 반영(2026-10-21 14:16 KST): 약관 동의 API·가입 분리·새 토큰 응답은 [API 명세](contracts/api/README.md)에 반영했다. AUTH-OPEN-01~06은 [별도 합의 항목](contracts/api/auth-recheck.md)이며 코드/DB/노션 변경·인계 완료를 뜻하지 않는다.
