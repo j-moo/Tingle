@@ -3,6 +3,13 @@ spring:
   docker:
     compose:
       enabled: true
+  # 엔티티가 아직 없는 테이블(키링·설문·희망 조건 등)도 가입 단계 계산에 쓰므로 ERD 설계 SQL로 먼저 만든다.
+  # 이미 있는 테이블은 CREATE 가 실패하는데, 그 오류는 무시하고 넘어간다(continue-on-error).
+  sql:
+    init:
+      mode: always
+      schema-locations: file:../docs/database/schema.sql
+      continue-on-error: true
   jpa:
     hibernate:
       ddl-auto: update

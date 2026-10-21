@@ -23,11 +23,24 @@ public class MemberAccessRepository {
 		this.environment = environment;
 	}
 
-	public boolean activeSession(long userId, UUID familyId, Instant now) {
-		return Boolean.TRUE.equals(jdbc.queryForObject("select exists (select 1 from refresh_tokens t "
-			+ "join app_users u on u.user_id=t.user_id where t.user_id=? and t.family_id=? "
-			+ "and t.revoked_at is null and t.used_at is null and t.expires_at>? and u.status='ACTIVE')",
-			Boolean.class, userId, familyId, Timestamp.from(now)));
+	// 가입 단계별 완료 여부 (OnboardingService.statusOf). 마지막 키링 반영까지 끝났는지는 ready 가 판단한다.
+
+	public boolean hasKeyring(long userId) {
+		return Boolean.TRUE.equals(jdbc.queryForObject("select exists (select 1 from keyring_bindings "
+			+ "where user_id=? and unbound_at is null)", Boolean.class, userId));
+	}
+
+	public boolean surveyCompleted(long userId) {
+		return Boolean.TRUE.equals(jdbc.queryForObject("select exists (select 1 from survey_responses sr "
+			+ "join analysis_results a on a.response_id=sr.response_id where sr.user_id=? "
+			+ "and sr.completed_at is not null and a.outcome='SUCCEEDED' "
+			+ "and sr.response_id=(select max(response_id) from survey_responses where user_id=?))",
+			Boolean.class, userId, userId));
+	}
+
+	public boolean preferencesSet(long userId) {
+		return Boolean.TRUE.equals(jdbc.queryForObject("select exists (select 1 from matching_settings "
+			+ "where user_id=? and cardinality(desired_genders)>0 and age_min>=19)", Boolean.class, userId));
 	}
 
 	public void lockMember(long userId) {

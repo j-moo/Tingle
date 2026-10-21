@@ -37,21 +37,36 @@ spring:
         dialect: com.e106.tingle.global.jpa.NoColumnCheckPostgreSqlDialect
 
 app:
+  # 인증 (docs/contracts/api/auth.md)
   auth:
-    jwt-secret: ${JWT_SECRET}
+    jwt-secret: ${JWT_SECRET:}
+    access-token-ttl: 30m
+    refresh-token-ttl: 14d
+    refresh-reuse-grace: 30s
+    google-client-id: ${GOOGLE_WEB_CLIENT_ID:}
+    kakao-app-id: ${KAKAO_APP_ID:}
+    # 액세스 토큰에 iss·aud 가 있으면 이 값과 같아야 한다(없으면 통과).
     issuer: tingle
     audience: mobile-app
+
   proposals:
     decline-days: 30
 
+  # 현재 적용 중인 동의 항목. 항목 추가·삭제, 버전 변경은 여기만 고치면 된다 (코드·앱 수정 불필요).
+  # 버전을 올리면 이전 버전으로 들어온 가입 요청은 AGREEMENT_VERSION_OUTDATED 가 된다. 목록 순서대로 화면에 표시된다.
   agreement:
     items:
       - type: TERMS
         version: "2026-10-19"
+        title: 서비스 이용약관
         required: true
+        content-url: ${TERMS_CONTENT_URL:https://example.com/terms}
       - type: PRIVACY
         version: "2026-10-19"
+        title: 개인정보 수집·이용 동의
         required: true
+        content-url: ${PRIVACY_CONTENT_URL:https://example.com/privacy}
       - type: ADULT
         version: "2026-10-19"
+        title: 만 19세 이상입니다
         required: true

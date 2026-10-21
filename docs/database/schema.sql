@@ -10,6 +10,7 @@ CREATE TABLE app_users (
     status text NOT NULL,
     created_at timestamptz NOT NULL,
     signup_completed_at timestamptz,
+    email text,
     CONSTRAINT pk_app_users PRIMARY KEY (user_id),
     CONSTRAINT uq_app_users_1 UNIQUE (provider, provider_subject),
     CONSTRAINT ck_app_users_1 CHECK (status IN ('ACTIVE','SUSPENDED','WITHDRAWN'))

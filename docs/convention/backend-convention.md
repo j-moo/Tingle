@@ -188,7 +188,7 @@ _[api-docs]_ **[합의 필요]**
 ### 토큰 전달
 _[auth-header]_ **[제안]**
 
-`Authorization: Bearer {accessToken}`. 회원 식별은 검증된 JWT sub를 사용한다. sid·세션 모델과 로그아웃 즉시 access 폐기 방식·범위는 인증 계약 확인 사항이다. 최신 통합 계약의 `auth-recheck.md`를 기준으로 합의하고, 미정이라는 이유로 현재 폐기 검사를 임의로 제거하지 않는다. 로그인 구현의 refresh family 기반 sid는 별도 인증 검토 대상으로 구분한다.
+`Authorization: Bearer {accessToken}`. 회원 식별은 검증된 JWT sub를 사용한다. sid·세션 모델과 로그아웃 즉시 access 폐기 방식·범위는 인증 계약 확인 사항이다. 최신 통합 계약의 `auth-recheck.md`를 기준으로 합의하고, 미정이라는 이유로 현재 폐기 검사를 임의로 제거하지 않는다. 로그인 구현의 refresh family 기반 sid는 별도 인증 검토 대상으로 구분한다. (현재 구현: `sid` = `refresh_tokens.family_id`, 요청마다 세션·회원 상태 확인. 확정 여부는 AUTH-OPEN-03)
 
 ### 로그인한 사용자 ID 꺼내기
 _[auth-current-user]_ **[제안]**
@@ -200,12 +200,12 @@ _[auth-current-user]_ **[제안]**
 ### 가입 미완료 사용자의 접근 범위
 _[auth-onboarding-step]_ **[제안]**
 
-가입 단계는 AGREEMENT_REQUIRED → KEYRING_REQUIRED → PROFILE_REQUIRED → SURVEY_REQUIRED → PREFERENCES_REQUIRED → SYNC_PENDING → READY다. 서버가 단계별 API 허용과 소유권을 확인하고 단계 계산은 서비스 한 곳에 둔다. /api/v1/auth/** 전체를 가입 제한의 예외로 두지 않는다. 약관 동의·프로필 저장 분리 경로/DTO 및 허용 단계는 인증 상세 계약에서 확인한다. 초기 구성 MR이 이 흐름을 구현한 것은 아니다.
+가입 단계는 AGREEMENT_REQUIRED → KEYRING_REQUIRED → PROFILE_REQUIRED → SURVEY_REQUIRED → PREFERENCES_REQUIRED → SYNC_PENDING → READY다. 서버가 단계별 API 허용과 소유권을 확인하고 단계 계산은 서비스 한 곳(`OnboardingService`)에 둔다. /api/v1/auth/** 전체를 가입 제한의 예외로 두지 않는다. 약관 동의·프로필 저장 분리 경로/DTO 및 허용 단계는 인증 상세 계약에서 확인한다. (현재 구현: 가입 중에도 쓸 API는 `@RequiresOnboarding(가장 이른 단계)`, 붙이지 않은 `/api/**` 는 `READY` 필요, 어기면 `403 ONBOARDING_REQUIRED`)
 
 ### 인증 없이 여는 API
 _[auth-public-api]_ **[제안]**
 
-공개 API는 인증 상세 계약의 경로·메서드 허용 목록을 따른다. 로그아웃의 토큰 전달·즉시 폐기 범위 등 미정 항목을 이 공통 문서에서 확정하지 않는다. 나머지 API는 인증과 현재 권한을 검사한다.
+공개 API는 인증 상세 계약의 경로·메서드 허용 목록을 따른다. 로그아웃의 토큰 전달·즉시 폐기 범위 등 미정 항목을 이 공통 문서에서 확정하지 않는다. 나머지 API는 인증과 현재 권한을 검사한다. (현재 구현: 허용 목록은 `SecurityConfig.isPublic` 한 곳)
 
 ### 로컬·테스트에서 인증 사용자 준비
 _[auth-test-user]_ **[제안]**
@@ -254,7 +254,7 @@ _[db-entity]_ **[제안]**
 
 - 기본 생성자는 `protected`, 값 변경은 의미 있는 메서드로(`completeSignup`). `@Setter`·`@Data` 는 쓰지 않는다.
 - 다른 엔티티는 객체 연관관계(`@ManyToOne`) 대신 **ID 값으로** 참조한다(`userId`). 지연 로딩·N+1 문제를 피하고 도메인 간 의존을 줄이기 위해서다.
-- 단, **ERD에 외래 키가 정의된 관계**는 DB에 외래 키를 만든다. JPA는 연관관계가 있어야 외래 키를 만들므로 그 관계에만 연관관계를 두고(예: `Profile` 의 `@MapsId @OneToOne User`), 조회에는 쓰지 않고 값은 계속 ID 필드로 다룬다. 읽기 전용 연관관계(`insertable = false`)로는 외래 키가 만들어지지 않는다.
+- 현재 ERD는 물리 외래 키를 두지 않는다. 그래서 연관관계 없이 ID 필드만 두고, 참조 대상의 존재·소유 확인과 삭제 정리는 서비스 코드가 한다.
 
 ### 스키마 관리
 _[db-schema]_ **[확정]** (2026.10.20, Flyway 없이 JPA 자동 생성으로 관리. 설계 SQL·계약 이력과 실행 마이그레이션은 구분)

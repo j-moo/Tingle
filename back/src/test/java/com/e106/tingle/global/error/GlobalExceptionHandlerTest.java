@@ -11,31 +11,31 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
-import org.springframework.context.annotation.ComponentScan;
-import org.springframework.context.annotation.FilterType;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
 
-import com.e106.tingle.auth.SecurityConfiguration;
-import com.e106.tingle.auth.SessionJwtConverter;
+import com.e106.tingle.user.OnboardingService;
 
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 
+// 예외 → 응답 변환만 확인한다. 인증 필터는 끄고, 인터셉터가 쓰는 빈은 대체한다.
+@WebMvcTest(controllers = GlobalExceptionHandlerTest.FailingController.class)
 @AutoConfigureMockMvc(addFilters = false)
-@WebMvcTest(controllers = GlobalExceptionHandlerTest.FailingController.class,
-	excludeFilters = @ComponentScan.Filter(type = FilterType.ASSIGNABLE_TYPE,
-		classes = {SecurityConfiguration.class, SessionJwtConverter.class}))
 @Import({GlobalExceptionHandlerTest.FailingController.class, JsonErrorController.class})
 class GlobalExceptionHandlerTest {
 
 	@Autowired
 	private MockMvc mockMvc;
+
+	@MockitoBean
+	private OnboardingService onboardingService;
 
 	@Test
 	@DisplayName("비즈니스 예외는 정해진 코드와 상태로 응답한다")
@@ -47,7 +47,7 @@ class GlobalExceptionHandlerTest {
 	}
 
 	@Test
-	@DisplayName("요청 본문 검증 실패는 INVALID REQUEST로 응답한다")
+	@DisplayName("요청 본문 검증 실패는 INVALID_REQUEST로 응답한다")
 	void validationFailureRespondsWithInvalidRequest() throws Exception {
 		mockMvc.perform(post("/test/validate").contentType(MediaType.APPLICATION_JSON).content("{\"name\":\"\"}"))
 			.andExpect(status().isBadRequest())
@@ -55,7 +55,7 @@ class GlobalExceptionHandlerTest {
 	}
 
 	@Test
-	@DisplayName("잘못된 JSON은 INVALID REQUEST로 응답한다")
+	@DisplayName("잘못된 JSON은 INVALID_REQUEST로 응답한다")
 	void malformedJsonRespondsWithInvalidRequest() throws Exception {
 		mockMvc.perform(post("/test/validate").contentType(MediaType.APPLICATION_JSON).content("{broken"))
 			.andExpect(status().isBadRequest())
@@ -63,7 +63,7 @@ class GlobalExceptionHandlerTest {
 	}
 
 	@Test
-	@DisplayName("허용되지 않은 메서드는 상태는 405 코드는 INVALID REQUEST로 응답한다")
+	@DisplayName("허용되지 않은 메서드는 상태는 405 코드는 INVALID_REQUEST로 응답한다")
 	void unsupportedMethodRespondsWith405AndInvalidRequest() throws Exception {
 		mockMvc.perform(post("/test/business"))
 			.andExpect(status().isMethodNotAllowed())
@@ -71,7 +71,7 @@ class GlobalExceptionHandlerTest {
 	}
 
 	@Test
-	@DisplayName("예상하지 못한 예외는 내부 정보를 숨기고 INTERNAL ERROR로 응답한다")
+	@DisplayName("예상하지 못한 예외는 내부 정보를 숨기고 INTERNAL_ERROR로 응답한다")
 	void unexpectedExceptionHidesDetailsAndRespondsWithInternalError() throws Exception {
 		mockMvc.perform(get("/test/unexpected"))
 			.andExpect(status().isInternalServerError())
