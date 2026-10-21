@@ -1,6 +1,6 @@
 # Tingle(팅글) 설계 문서
 
-수정 2026-10-21 11:47 KST. 최신 설계는24개 테이블·162개 컬럼이다. 노션과 Jira 최신화 내용을 저장소 문서에 맞췄으며, 커밋·서버/DB 적용·팀 승인·실제 연동/배포 완료는 별도다.
+수정 2026-10-21 11:47 KST. 최신 설계는24개 테이블·164개 컬럼이다. 노션과 Jira 최신화 내용을 저장소 문서에 맞췄으며, 커밋·서버/DB 적용·팀 승인·실제 연동/배포 완료는 별도다.
 
 - [API 명세](contracts/api/README.md) / [OpenAPI](contracts/api/openapi.json) / [API 기존안·수정안](contracts/api/changes-20261021.md)
 - [ERD·컬럼 설명](database/erd.md) / [SQL](database/schema.sql) / [ERDCloud 가져오기](database/erdcloud-import.sql) / [ERD 변경 비교](database/changes-20261021.md)

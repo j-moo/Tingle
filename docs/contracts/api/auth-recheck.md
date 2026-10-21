@@ -2,6 +2,10 @@
 
 수정 2026-10-21 14:16 KST. 로그인 담당 연락과 !14 80310e6·!16 4f69108를 대조해 문서만 수정했다. 아래 미정 항목의 합의·코드 수정·실제 공급자/DB/앱 통합 검증은 하지 않았다.
 
+## MR9 후속 로컬 통합 검증
+
+매칭 제안은 sid=refresh family를 채택하고 세션 폐기와 최신 필수 동의·프로필·기기·설문·분석·조건·ACK를 DB에서 검사하도록 수정했다. MR16 형식 토큰으로 PostgreSQL 통합 테스트를 통과했다. 아래 MR16 자체 미완료·협의 사항을 해결한 것으로 간주하지 않는다. 실제 공급자 로그인·앱 통합·공용 DB 적용은 수행하지 않았다.
+
 ## 이번에 명세에 반영한 내용
 
 1. 가입 순서는 AGREEMENT_REQUIRED → KEYRING_REQUIRED → PROFILE_REQUIRED → SURVEY_REQUIRED → PREFERENCES_REQUIRED → SYNC_PENDING → READY다. 연락의 AGREEMENT/SYNC는 설명용 약칭이며 enum을 바꾸지 않는다.

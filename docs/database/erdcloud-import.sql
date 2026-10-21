@@ -193,6 +193,8 @@ CREATE TABLE match_proposals (
     high_decision text,
     low_decided_at timestamptz,
     high_decided_at timestamptz,
+    low_request_key uuid,
+    high_request_key uuid,
     status text NOT NULL,
     created_at timestamptz NOT NULL,
     expires_at timestamptz NOT NULL,

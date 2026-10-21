@@ -2,7 +2,7 @@
 
 1.2.0-auth-review / 수정 2026-10-21 14:16 KST
 
-노션에서 검토한 **24개 테이블·162개 컬럼** 설계를 반영한 계약 초안이다. 현재 구현 대상으로 정리한 API는 **68개**, 범위에서 제외·폐기한 기존안은 **11개**다. 문서 정리와 팀 합의·실제 구현·DB 적용·배포 완료를 구분한다.
+노션에서 검토한 **24개 테이블·164개 컬럼** 설계를 반영한 계약 초안이다. 현재 구현 대상으로 정리한 API는 **68개**, 범위에서 제외·폐기한 기존안은 **11개**다. 문서 정리와 팀 합의·실제 구현·DB 적용·배포 완료를 구분한다.
 
 - [OpenAPI: 요청/응답 타입·필수값·예시](openapi.json)
 - [기존안·수정안과 API별 변경 이력](changes-20261021.md)
@@ -15,7 +15,7 @@
 - Spring Boot·JPA·PostgreSQL 기준이다. Flyway·H2는 사용하지 않는다. local은 update, test는 create-drop이며 dev/prod 스키마 운영과 Docker·인프라는 준비 후 정한다.
 - 앱은 제공자 증명을 서버에 전달해 자체 access/refresh를 발급받고 OS 보호 저장소에 보관한다. 서버는 JWT 주체와 현재 권한을 검증한다. 앱이 보낸 회원번호를 인증 근거로 사용하지 않는다.
 - 소셜·refresh 요청은 유지하고 새 토큰 응답6개(accessToken/refreshToken/tokenType/accessTokenExpiresAt/refreshTokenExpiresAt/onboardingStatus)를 구현 기준 초안으로 반영했다. 기존 accessTokenExpiresIn/signupCompleted의 병행 유지·전환은 AUTH-OPEN-01 합의 필요다. sid/로그아웃/회전 범위는 AUTH-OPEN-03·04를 확인하며 보안 검사를 임의 제거하지 않는다.
-- 공개 UUID 계약은 내부 bigint 변경으로 자동 교체하지 않는다. 자원별 매핑·형식은 FE/AI/IoT와 확인할 사항이다. 상대의 내부 회원번호·생년월일·소셜ID·원응답·기기 자격은 공개 DTO에서 제외한다.
+- 제안 proposalId는 1 이상의 integer(int64) 숫자이며 DB proposal_id와 동일하다. 별도 공개 UUID나 매핑 컬럼을 두지 않는다. UUID 형식인 Idempotency-Key·세션 family ID는 그대로 유지한다. 나머지 공개 UUID 계약은 내부 bigint 변경으로 자동 교체하지 않는다. 자원별 매핑·형식은 FE/AI/IoT와 확인할 사항이다. 상대의 내부 회원번호·생년월일·소셜ID·원응답·기기 자격은 공개 DTO에서 제외한다.
 - 가입 단계는 AGREEMENT_REQUIRED → KEYRING_REQUIRED → PROFILE_REQUIRED → SURVEY_REQUIRED → PREFERENCES_REQUIRED → SYNC_PENDING → READY다. nextStep과 onboardingStatus는 같은 서비스에서 계산한다. POST /users/me/agreements + PATCH /users/me/profile로 분리하며 기존 POST /auth/signup은 폐기했다. 현재 코드의 미구현 가입 게이트는 AUTH-OPEN-06으로 구분한다.
 - 서버가 단계별 호출·소유권을 검사한다. 키링 등록/조회 등 가입 진행 API는 해당 단계에 허용하되 모든 후속 API를 일괄 허용하지 않는다.
 - 성공 응답은 감싸지 않는다. 목록은 items 객체를 사용한다. 오류의 필수값은 code,message이며 추적 정보는 선택 확장이다. 상태 코드는 endpoint별 OpenAPI 계약을 따른다.

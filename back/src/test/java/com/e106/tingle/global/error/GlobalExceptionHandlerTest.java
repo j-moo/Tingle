@@ -9,7 +9,10 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
+import org.springframework.context.annotation.ComponentScan;
+import org.springframework.context.annotation.FilterType;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
@@ -18,10 +21,16 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.e106.tingle.auth.SecurityConfiguration;
+import com.e106.tingle.auth.SessionJwtConverter;
+
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 
-@WebMvcTest(controllers = GlobalExceptionHandlerTest.FailingController.class)
+@AutoConfigureMockMvc(addFilters = false)
+@WebMvcTest(controllers = GlobalExceptionHandlerTest.FailingController.class,
+	excludeFilters = @ComponentScan.Filter(type = FilterType.ASSIGNABLE_TYPE,
+		classes = {SecurityConfiguration.class, SessionJwtConverter.class}))
 @Import({GlobalExceptionHandlerTest.FailingController.class, JsonErrorController.class})
 class GlobalExceptionHandlerTest {
 

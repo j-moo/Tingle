@@ -3,3 +3,7 @@ spring:
   jpa:
     hibernate:
       ddl-auto: create-drop
+
+app:
+  auth:
+    jwt-secret: only-for-automated-tests-not-a-production-secret-123456
