@@ -119,7 +119,7 @@ ai 와 back 에 같은 스크립트를 쓴다. ai 를 먼저 전환해 새 back 
 ```
 1. 현재 색 읽기     /srv/tingle/nginx-state/<서비스>.conf. 파일 없으면 처음 (blue 로 띄움)
 2. 반대 색 띄우기   compose up -d <서비스>-{new}
-3. 상태 확인        back /actuator/health, ai /health 가 200 (2초 간격, 최대 90초. Flyway 마이그레이션 시간 포함)
+3. 상태 확인        back /actuator/health, ai /health 가 200 (2초 간격, 최대 90초)
                    실패 → stop <서비스>-{new}; exit 1  (운영 그대로, Jenkins 실패)
 4. 전환            upstream 파일을 {new} 로 쓰고 nginx -s reload
                    back: 새 HTTP 요청·새 WebSocket 연결은 {new} 로. 기존 WebSocket 은 {old} 에 남음
@@ -136,8 +136,8 @@ ai 와 back 에 같은 스크립트를 쓴다. ai 를 먼저 전환해 새 back 
 ## 8. DB·파일·백업
 
 - DB 는 **PostgreSQL 17** 한 컨테이너에 운영 `tingle`, 개발 `tingle_dev` 두 DB 를 둔다. 확장은 쓰지 않는다.
-- 서버 DB 테이블은 처음에 `docs/database/schema.sql` 로 만들었다 (10/22, 각 24개). back 은 `ddl-auto: validate` 라 스키마가 엔티티와 다르면 뜨지 않는다. **Flyway 가 들어오기 전까지 스키마 변경은 BE 가 서버 DB 두 개에 직접 반영**해야 한다.
-- 구조 변경은 Flyway (BE 요청 중). 전환 중 이전·새 버전이 같은 DB 를 쓰므로 **이전 버전이 깨지지 않는 변경만 한 번에** 배포한다. 컬럼 이름 변경·삭제는 추가 → 코드 전환 → 삭제로 나눈다.
+- 서버 DB 테이블은 처음에 `docs/database/schema.sql` 로 만들었다 (10/22, 각 24개). back 은 `ddl-auto: validate` 라 스키마가 엔티티와 다르면 뜨지 않는다. **스키마 변경은 BE 가 서버 DB 두 개에 직접 반영**해야 한다 (운영은 반영이 안 되면 새 색이 상태 확인에 실패해 옛 색이 그대로 운영된다).
+- 블루-그린 전환 중 이전·새 버전이 같은 DB 를 쓰므로 **이전 버전이 깨지지 않는 변경만 한 번에** 배포한다. 컬럼 이름 변경·삭제는 추가 → 코드 전환 → 삭제로 나눈다.
 - 핵심 제약은 DB 에 둔다: `offline_encounter_submissions(encounter_id, device_id)` 유일, `pair_restrictions`·`chat_rooms` 의 정렬된 사용자 쌍 유일, 활성 채팅방 1개 부분 유일 인덱스. 앱·키링이 중복 업로드해도 DB 가 막는다.
 - `master` 배포 직전 `pg_dump` → `/backup/` (구현됨, 30개 보관). 매일 새벽 `pg_dump` + `/data/uploads` tar(7일치)는 5단계. 서버가 1대라 서버 유실에는 못 버티므로 **주 1회 팀장 로컬로 내려받는다**. DB 포트는 열지 않는다.
 - 복원은 구성 직후 1회, 이후 2주마다 연습하고 걸린 시간을 기록한다.
@@ -206,7 +206,7 @@ WebSocket: 테스트 앱 2대를 채팅방에 두고 배포 → 끊김 감지 �
 
 | 파트 | 요청 | 이유 |
 | --- | --- | --- |
-| BE | `/actuator/health`(DB 연결 포함), JWT(세션 금지), Flyway, graceful shutdown 20초, 예약 작업 ShedLock + 멱등, AI 서버 호출 타임아웃·재시도·시간 로그, AI 서버 주소는 환경변수 | 상태 확인·전환 중 두 칸 동시 실행·병목 측정 |
+| BE | `/actuator/health`(DB 연결 포함), JWT(세션 금지), graceful shutdown 20초, 예약 작업 ShedLock + 멱등, AI 서버 호출 타임아웃·재시도·시간 로그, AI 서버 주소는 환경변수 | 상태 확인·전환 중 두 칸 동시 실행·병목 측정 |
 | BE | 프로필·사진 API 서버측 권한 검사, 업로드는 `/data/uploads` 볼륨 경로를 환경변수로 | 상호 수락 전 비공개·백업 |
 | AI | `ai-server/Dockerfile`, 컨테이너에서는 `HOST=0.0.0.0` 으로 실행, `/health` 유지, GMS 키는 환경변수, GMS 호출 타임아웃·재시도, graceful shutdown | 컨테이너 상태 확인·블루-그린 전환 |
 | AI | GMS 프롬프트·응답 스키마 버전 관리, 구조화 결과 검증 규칙, 요청·응답 원문 로그 금지 | back 과의 계약·개인정보 |
@@ -216,7 +216,7 @@ WebSocket: 테스트 앱 2대를 채팅방에 두고 배포 → 끊김 감지 �
 | 전체 | 로그에 개인정보 원문 금지 | 기획안 8.3 |
 
 10/22 기준 진행:
-- BE: JWT(세션 금지) 됨. **지금 필요한 것은 `/actuator/health` · graceful shutdown · Flyway** (배포 확인 · 블루-그린 · 서버 DB 스키마 반영). 나머지(ShedLock, AI 호출 타임아웃 · 주소, 사진 권한 · 업로드 경로)는 해당 기능을 만들 때 지킨다. `back/Dockerfile` 은 인프라가 작성(MR !40).
+- BE: JWT(세션 금지) 됨. `/actuator/health` 됨(MR !43). **지금 필요한 것은 graceful shutdown** (블루-그린). 나머지(ShedLock, AI 호출 타임아웃 · 주소, 사진 권한 · 업로드 경로)는 해당 기능을 만들 때 지킨다. `back/Dockerfile` 은 인프라가 작성(MR !40).
 - 웹: `front/web/Dockerfile` 있음, `/` · `/dev/` 동작.
 - AI: `ai-server/Dockerfile` 없음 (인프라가 작성 가능).
 
@@ -255,7 +255,7 @@ WebSocket: 테스트 앱 2대를 채팅방에 두고 배포 → 끊김 감지 �
 - [x] 서버 `/srv/tingle/.env`(Jenkins 기동 값) 작성, 앱 비밀값은 Jenkins Credentials → `app.env` (GMS 키 · FCM · 업로드 경로 · AI 서버 주소는 해당 컨테이너 연결 때)
 - [x] Jenkins 관리자 계정, GitLab Webhook·토큰 등록 — APK 키스토어 Credentials 는 남음
 - [x] 검사 이미지 빌드 시간·Gradle 캐시 확인 (첫 빌드 약 5분, 이후 1~2분)
-- [ ] BE 에 health·graceful shutdown·Flyway 요청 (ShedLock·AI 호출 재시도는 해당 기능 때)
+- [ ] BE 에 graceful shutdown 요청 (health 는 완료) (ShedLock·AI 호출 재시도는 해당 기능 때)
 - [ ] AI 에 `HOST=0.0.0.0`·graceful shutdown 요청 (Dockerfile 은 인프라가 작성 가능)
 - [ ] 앱 팀에 apiBase·재접속 요청 — 웹 Dockerfile·기준 경로는 완료
 - [ ] 3단계 재시작 배포 다운타임·WebSocket 끊김 기록

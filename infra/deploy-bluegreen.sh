@@ -27,7 +27,7 @@ else
   $dc up -d --build --no-deps "$svc-$new"
 fi
 
-# 상태 확인: 2초 간격 최대 90초 (Flyway 마이그레이션 시간 포함)
+# 상태 확인: 2초 간격 최대 90초
 i=0
 until docker exec tingle-nginx-1 wget -q -O /dev/null "http://$svc-$new:$port$health" 2>/dev/null; do
   i=$((i + 1))
