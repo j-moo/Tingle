@@ -48,9 +48,9 @@ class AgreementServiceTest {
 		given(userRepository.findByIdForUpdate(1L)).willReturn(Optional.of(mock(User.class)));
 		clock = Clock.fixed(NOW, ZoneId.of("Asia/Seoul"));
 		AgreementProperties properties = new AgreementProperties(List.of(
-			new AgreementProperties.Item("TERMS", V, "이용약관", true, "https://example.com/terms"),
-			new AgreementProperties.Item("ADULT", V, "만 19세 이상", true, null),
-			new AgreementProperties.Item("MARKETING", V, "마케팅 수신", false, null)));
+			new AgreementProperties.Item("TERMS", V, true, "https://example.com/terms"),
+			new AgreementProperties.Item("ADULT", V, true, null),
+			new AgreementProperties.Item("MARKETING", V, false, null)));
 		service = new AgreementService(properties, repository, userRepository, clock);
 	}
 

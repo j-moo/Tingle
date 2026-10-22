@@ -19,6 +19,7 @@ import lombok.RequiredArgsConstructor;
 /**
  * 아직 도달하지 않은 가입 단계의 API를 호출하면 403 ONBOARDING_REQUIRED로 막는다.
  * API마다 @RequiresOnboarding 으로 호출 가능한 가장 이른 단계를 정하고, 붙이지 않으면 가입 완료(READY)가 필요하다.
+ * 판단 규칙은 OnboardingService.canAccess 한 곳에 있다.
  * 공개 API(소셜 로그인·재발급·로그아웃·약관 조회)는 인증 객체가 없어 검사하지 않는다.
  */
 @Configuration
@@ -44,7 +45,7 @@ public class OnboardingInterceptor implements HandlerInterceptor, WebMvcConfigur
 		if (required == OnboardingStatus.AGREEMENT_REQUIRED) {
 			return true;
 		}
-		if (onboardingService.statusOf(Long.parseLong(token.getName())).isBefore(required)) {
+		if (!onboardingService.canAccess(Long.parseLong(token.getName()), required)) {
 			throw new BusinessException(ErrorCode.ONBOARDING_REQUIRED);
 		}
 		return true;

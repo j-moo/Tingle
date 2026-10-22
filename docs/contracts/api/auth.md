@@ -2,7 +2,7 @@
 
 | 항목 | 내용 |
 | --- | --- |
-| 버전 | v0.1.1 |
+| 버전 | v0.1.2 |
 | 변경일 | 2026-10-21 |
 | 담당자 | 가을 (BE) |
 | 관련 Story | S15P31E106-35 [BE] 소셜 로그인 인증 흐름과 API 명세 작성 |
@@ -21,6 +21,7 @@
 - [약관 조회](#약관-조회)
 - [약관 동의](#약관-동의)
 - [프로필 저장](#프로필-저장)
+- [프로필 등록 완료](#프로필-등록-완료)
 - [프로필 조회](#프로필-조회)
 - [닉네임 중복 확인](#닉네임-중복-확인)
 - [토큰 재발급](#토큰-재발급)
@@ -48,6 +49,7 @@ Authorization: Bearer {accessToken}
 ### 오류 응답 형식
 
 모든 오류는 같은 형식으로 응답한다. 앱은 `code`로 분기하고, `message`는 화면에 그대로 보여 줘도 되는 문장이다.
+`message`는 요청의 `Accept-Language` 언어로 오고, 그 언어 문구가 없으면 기본 언어(한국어)로 온다(기능 명세 §1.1 I18N01·07). 앱은 `message` 문장을 비교해 동작을 나누지 않는다.
 
 ```json
 {
@@ -122,7 +124,8 @@ Authorization: Bearer {accessToken}
 - 각 API의 "`X` 단계부터"는 `X`와 그 뒤의 모든 단계(`READY` 포함)에서 호출할 수 있다는 뜻이다. 가입을 마친 뒤에도 프로필 조회·닉네임 확인 등은 그대로 쓴다.
 - 단계와 상관없이 항상 호출할 수 있는 API: 소셜 로그인, 토큰 재발급, 로그아웃, 약관 조회, [가입 단계 조회](#가입-단계-조회).
 - 서버는 미구현 단계를 통과시키지 않는다. 각 단계는 실제 데이터(키링 연결, 설문 분석 성공, 희망 조건, 키링 반영 확인)로 판단하며, `READY`는 매칭 제안과 같은 기준이다. 그래서 키링·설문·희망 조건 기능이 생기기 전에는 누구도 `READY`가 되지 않는다.
-- **임시 예외:** 키링 등록 API가 생기기 전까지 [프로필 저장](#프로필-저장)·[프로필 조회](#프로필-조회)·[닉네임 중복 확인](#닉네임-중복-확인)은 `KEYRING_REQUIRED` 단계부터 허용한다. 키링 API가 생기면 `PROFILE_REQUIRED` 단계부터로 되돌린다.
+- **임시 예외:** 키링 등록 API가 생기기 전까지 [프로필 저장](#프로필-저장)·[프로필 등록 완료](#프로필-등록-완료)·[프로필 조회](#프로필-조회)·[닉네임 중복 확인](#닉네임-중복-확인)은 `KEYRING_REQUIRED` 단계부터 허용한다. 키링 API가 생기면 `PROFILE_REQUIRED` 단계부터로 되돌린다.
+- **가입을 한 번 마친 회원(`signupCompleted: true`)** 은 마지막 키링 초기화·재검사 등으로 단계가 다시 앞으로 가도 기존 기능(홈·기존 제안·채팅·탈퇴 등)을 계속 쓴다. 새 매칭만 `matchingReady: false`로 보류된다(기능 명세 AUTH-02). 바뀐 필수 약관 동의(`AGREEMENT_REQUIRED`)는 예외 없이 먼저 받는다. 앱은 이 회원을 가입 화면으로 보내지 않고 홈에서 키링 등록·동기화 안내를 보여 준다.
 - `READY`가 아니면 매칭·제안·채팅 등 서비스 API는 `403 ONBOARDING_REQUIRED`다. `SYNC_PENDING`에서 허용할 서비스 기능은 키링 명세에서 정한다.
 
 **앱 처리**
@@ -273,9 +276,9 @@ GET /api/v1/agreements
 | 필드 | 자료형 | 필수 | 설명 |
 | --- | --- | --- | --- |
 | agreements | Array | O | 현재 적용 중인 동의 항목 목록. 화면에 표시할 순서대로 온다 |
-| agreements[].type | String | O | 항목 식별자. 예: `TERMS`, `PRIVACY`, `ADULT` |
+| agreements[].type | String | O | 항목 식별자. 예: `TERMS`, `PRIVACY`, `AI_RISK_DETECTION`, `ADULT` |
 | agreements[].version | String | O | 항목 버전 |
-| agreements[].title | String | O | 화면에 표시할 문구 |
+| agreements[].title | String | O | 화면에 표시할 문구. 요청 `Accept-Language` 언어로 오고, 없으면 한국어 |
 | agreements[].required | Boolean | O | `true`면 동의해야 다음 단계로 갈 수 있다 |
 | agreements[].contentUrl | String | X | 전문 URL. 전문이 없는 항목(만 19세 확인 등)은 응답에서 빠진다 |
 
@@ -295,6 +298,13 @@ GET /api/v1/agreements
       "title": "개인정보 수집·이용 동의",
       "required": true,
       "contentUrl": "https://example.com/privacy"
+    },
+    {
+      "type": "AI_RISK_DETECTION",
+      "version": "2026-10-22",
+      "title": "AI 대화 위험 감지를 위한 개인정보 처리 동의",
+      "required": true,
+      "contentUrl": "https://example.com/ai-risk"
     },
     {
       "type": "ADULT",
@@ -335,6 +345,7 @@ POST /api/v1/users/me/agreements
   "agreements": [
     { "type": "TERMS", "version": "2026-10-19", "agreed": true },
     { "type": "PRIVACY", "version": "2026-10-19", "agreed": true },
+    { "type": "AI_RISK_DETECTION", "version": "2026-10-22", "agreed": true },
     { "type": "ADULT", "version": "2026-10-19", "agreed": true }
   ]
 }
@@ -369,6 +380,7 @@ POST /api/v1/users/me/agreements
 - **다시 보내면 보낸 내용이 현재 동의 상태가 된다.** 같은 내용을 다시 보내면 결과도 같으므로, 응답을 받지 못했으면 그대로 재시도한다. 선택 항목을 `false`로 바꿔 보내면 그 항목의 동의는 철회된다. 필수 항목은 이 API로 철회할 수 없다(`400 REQUIRED_AGREEMENT_MISSING`).
 - 동의·철회 시각은 이력으로 남는다.
 - `ADULT`는 사용자의 자기 확인이다. 실제 나이는 [프로필 저장](#프로필-저장)의 생년월일로 다시 확인한다.
+- 가입 전 필수 항목은 기능 명세 §2.7을 따른다: 이용약관, 계정 생성·관리용 개인정보, AI 대화 위험 감지용 개인정보 처리, 만 19세 이상 확인. 프로필·설문 저장, 공개 프로필 제공, 사진·자기소개·종교 선택 동의처럼 단계별로 받는 동의는 별도 작업에서 정한다.
 
 ## 프로필 저장
 
@@ -378,7 +390,7 @@ PATCH /api/v1/users/me/profile
 
 인증: 필요 (`PROFILE_REQUIRED` 단계부터. 키링 등록 API 전까지는 임시로 `KEYRING_REQUIRED` 단계부터)
 
-본인 프로필을 저장한다. 가입 중 초안 저장과 가입 후 수정을 같은 API로 한다. 필수 항목이 모두 채워지면 `completed: true`가 되고 `PROFILE_REQUIRED` 단계를 마친다. 사진은 별도 사진 API에서 다룬다.
+본인 프로필을 저장한다. 가입 중 자동 임시 저장과 가입 후 수정을 같은 API로 한다. 임시 저장만으로는 단계를 마치거나 값이 고정되지 않는다. 필수 항목을 다 채운 뒤 [프로필 등록 완료](#프로필-등록-완료)를 호출해야 `completed: true`가 되고 `PROFILE_REQUIRED` 단계를 마친다. 사진은 별도 사진 API에서 다룬다.
 
 ### 요청
 
@@ -387,14 +399,14 @@ PATCH /api/v1/users/me/profile
 | 필드 | 자료형 | 구분 | 설명 |
 | --- | --- | --- | --- |
 | nickname | String | 필수 항목 | [닉네임 규칙](#닉네임) |
-| gender | String | 필수 항목 | `MALE`, `FEMALE` 중 하나. 가입을 마친 뒤에는 바꿀 수 없다 |
-| birthDate | String | 필수 항목 | 생년월일 `YYYY-MM-DD`. [생년월일 규칙](#생년월일과-나이). 가입을 마친 뒤에는 바꿀 수 없다 |
+| gender | String | 필수 항목 | `MALE`, `FEMALE` 중 하나. 프로필 등록 완료 뒤에는 바꿀 수 없다 |
+| birthDate | String | 필수 항목 | 생년월일 `YYYY-MM-DD`. [생년월일 규칙](#생년월일과-나이). 프로필 등록 완료 뒤에는 바꿀 수 없다 |
 | smokingStatus | String | 필수 항목 | [생활 정보 코드](#생활-정보-코드) |
 | drinkingFrequency | String | 필수 항목 | [생활 정보 코드](#생활-정보-코드) |
 | religion | String | 선택 항목 | `null`이면 미입력. [생활 정보 코드](#생활-정보-코드) |
 | introduction | String | 선택 항목 | `null`이거나 공백·줄바꿈뿐이면 미입력. [자기소개 규칙](#자기소개) |
 
-"필수 항목"은 `completed`가 되기 위해 채워야 한다는 뜻이다. 초안에서는 생략할 수 있지만 `null`로 비울 수는 없다(`400 INVALID_REQUEST`).
+"필수 항목"은 프로필 등록 완료 전에 채워야 한다는 뜻이다. 임시 저장에서는 생략할 수 있지만 `null`로 비울 수는 없다(`400 INVALID_REQUEST`).
 
 ```json
 {
@@ -418,8 +430,9 @@ PATCH /api/v1/users/me/profile
   "drinkingFrequency": "MONTHLY_TWO_TO_FOUR",
   "religion": "UNDISCLOSED",
   "introduction": "산책이랑 전시 보는 걸 좋아해요.",
+  "imageUrl": null,
   "hasProfilePhoto": false,
-  "completed": true
+  "completed": false
 }
 ```
 
@@ -435,18 +448,59 @@ PATCH /api/v1/users/me/profile
 | 403 | UNDER_AGE | 만 19세 미만. 저장하지 않는다 |
 | 403 | ONBOARDING_REQUIRED | 아직 `PROFILE_REQUIRED` 단계에 오지 않음 |
 | 409 | NICKNAME_DUPLICATED | 다른 회원이 사용 중인 닉네임. 닉네임 입력 칸에 오류 표시 |
-| 422 | PROFILE_FIELD_LOCKED | 가입을 마친 뒤 `gender`·`birthDate`를 다른 값으로 바꾸려 함(정책 POL-02 결정 전까지). 같은 값은 통과 |
+| 422 | PROFILE_FIELD_LOCKED | 프로필 등록 완료 뒤 `gender`·`birthDate`를 다른 값으로 바꾸려 함. 같은 값은 통과. 오입력은 서비스팀 정정으로 고친다(기능 명세 PRO-03) |
 
 ### 주의사항
 
 - 한 요청에 오류가 하나라도 있으면 아무것도 저장하지 않는다.
 - 같은 내용을 다시 보내도 결과가 같으므로, 응답을 받지 못했으면 그대로 재시도한다.
-- `completed: true`가 되면 [가입 단계 조회](#가입-단계-조회)로 다음 단계를 확인한다.
+- 필수 항목을 다 채웠는지는 앱이 입력값으로 판단해 "프로필 등록 완료" 버튼을 켠다. 서버도 등록 완료 때 다시 확인한다.
 - **`403 UNDER_AGE`를 받으면** 앱은 "만 19세 이상만 이용할 수 있어요" 안내를 띄우고 로그아웃한다. 생년월일은 자기신고라 다른 날짜로 다시 입력하는 것을 막지 못한다. 실제 연령 인증 수단은 출시 준비 단계에서 정한다(34번 정책).
 - 닉네임은 중복 확인에서 사용 가능이었어도 저장 시점에 다른 사람이 먼저 가져가면 `NICKNAME_DUPLICATED`가 올 수 있다.
 - 사진 API가 생기기 전까지 `hasProfilePhoto`는 항상 `false`이고 `imageUrl`은 `null`이다.
 - 프로필이 바뀌면 키링 반영용 설정 버전(B 담당 `matching_settings.settings_version`)을 올린다(키링 기능 연동 후 적용). 프로필 자체에는 버전 필드가 없다.
 - **공개 범위:** 닉네임·성별·나이·생활 정보·자기소개는 **유효한 매칭 제안을 조회할 때부터** 상대에게 공개한다. 생년월일 원본은 상대용 응답과 AI 입력에 넣지 않고 계산한 나이만 쓴다. 종교가 미입력이거나 `UNDISCLOSED`면 상대에게 "종교 정보 비공개"로 보인다.
+
+## 프로필 등록 완료
+
+```
+POST /api/v1/users/me/profile/complete
+```
+
+인증: 필요 (`PROFILE_REQUIRED` 단계부터. 키링 등록 API 전까지는 임시로 `KEYRING_REQUIRED` 단계부터)
+
+"프로필 등록 완료" 버튼. 임시 저장한 프로필을 최종 등록한다(기능 명세 PRO-01). 성공하면 `PROFILE_REQUIRED` 단계를 마치고, 이때부터 생년월일·성별을 바꿀 수 없다. 앱은 이 요청 전에 두 값을 다시 확인하는 화면을 보여 준다.
+
+### 요청
+
+본문 없음.
+
+### 응답
+
+**200 OK**
+
+| 필드 | 자료형 | 필수 | 설명 |
+| --- | --- | --- | --- |
+| onboardingStatus | String | O | 등록 후 [가입 단계](#가입-단계). 보통 `SURVEY_REQUIRED` |
+
+```json
+{
+  "onboardingStatus": "SURVEY_REQUIRED"
+}
+```
+
+### 오류
+
+| 상태 | code | 상황 |
+| --- | --- | --- |
+| 400 | PROFILE_INCOMPLETE | 필수 항목(닉네임·성별·생년월일·흡연·음주) 중 빈 것이 있음. 프로필 저장으로 채운 뒤 다시 요청 |
+| 401 | AUTH_REQUIRED 등 | [공통 오류](#모든-인증-api에-공통인-오류) 참고 |
+| 403 | ONBOARDING_REQUIRED | 아직 이 단계에 오지 않음 |
+
+### 주의사항
+
+- 이미 등록한 프로필에 다시 요청해도 아무것도 바꾸지 않고 200이다. 응답을 받지 못했으면 그대로 재시도한다.
+- 등록 시각을 서버에 남긴다(ERD `profiles.completed_at`).
 
 ## 프로필 조회
 
@@ -474,7 +528,7 @@ GET /api/v1/users/me/profile
 | introduction | String \| null | O | |
 | imageUrl | String \| null | O | 현재 프로필 사진 주소. 사진이 없으면 `null` |
 | hasProfilePhoto | Boolean | O | 사진 등록 여부 |
-| completed | Boolean | O | 필수 항목을 모두 채웠는지 |
+| completed | Boolean | O | [프로필 등록 완료](#프로필-등록-완료)를 마쳤는지. 필수 항목이 다 찼는지가 아니다 |
 
 ### 오류
 
@@ -726,3 +780,4 @@ FE와 BE가 **같은 규칙**으로 검사한다. 정책 근거는 34번 정책 
 | --- | --- | --- | --- |
 | v0.1.0 | 2026-10-21 | 최초 작성. 리뷰 중 변경: 토큰 응답을 만료 시각(`...ExpiresAt`)과 `onboardingStatus` 형식으로 변경, 소셜 이메일 수집 추가, 34번 정책 반영(가입 단계 7개와 단계별 접근 규칙, 회원가입을 약관 동의와 프로필 저장으로 분리, 생년월일·만 나이·2월 29일 규칙, 닉네임 2~20자·공백 허용, 생활 정보·자기소개, 닉네임 공개 시점), 로그인 세션(`sid`)과 로그아웃, 프로필 저장을 PATCH(초안·수정 겸용)로 변경, 가입 단계 조회 응답을 `nextStep`과 완료 여부 필드로 변경 | - |
 | v0.1.1 | 2026-10-21 | MR 리뷰 반영(통합 OpenAPI와 통일): 토큰 응답은 통합 OpenAPI `TokenPair` 6개 필드 유지, 미구현 가입 단계를 통과시키지 않음(프로필은 키링 API 전까지 `KEYRING_REQUIRED`부터 임시 허용), 401 오류 코드를 `AUTH_REQUIRED`·`ACCESS_TOKEN_EXPIRED`·`ACCESS_TOKEN_INVALID`·`SESSION_REVOKED`로 분리(만료만 재발급), 가입 단계 조회에 설문·설정 필드 추가(임시값), 값이 없는 필드는 `null`로 보내고 정의되지 않은 요청 필드는 400, 흡연·음주 코드를 통합 OpenAPI 값으로 변경 | FE 미착수라 영향 없음 |
+| v0.1.2 | 2026-10-22 | 기능 명세 v0.1.81 반영: 가입 필수 동의에 `AI_RISK_DETECTION` 추가(§2.7), 프로필 등록 완료 API 추가와 생년월일·성별 고정 시점을 등록 완료로 변경(PRO-01, `completed` 뜻 변경, `PROFILE_INCOMPLETE`), 가입을 마친 회원은 키링이 없어도 기존 기능 사용(AUTH-02), 오류 `message`를 요청 언어로·없으면 한국어(§1.1) | 미착수 FE 영향 없음 |

@@ -102,7 +102,7 @@ _[api-path]_ **[제안]**
 _[api-response]_ **[제안]**
 
 - 성공: 본문을 감싸지 않고 그대로 보낸다. `{"userId": 1024, ...}`
-- 오류: 항상 `{"code": "NICKNAME_DUPLICATED", "message": "..."}`. 앱은 `code` 로 분기하고 `message` 는 화면에 그대로 보여 줄 수 있는 한국어 문장이다.
+- 오류: 항상 `{"code": "NICKNAME_DUPLICATED", "message": "..."}`. 앱은 `code` 로 분기하고 `message` 는 화면에 그대로 보여 줄 수 있는 문장이다. `message` 는 요청의 `Accept-Language` 언어로, 없으면 한국어로 보낸다.
 - JSON 필드는 camelCase. 필수이면서 nullable인 필드는 값이 없어도 null로 포함한다(예: imageUrl, chatRoomId). 선택 필드 생략 여부는 각 DTO의 OpenAPI 정의를 따른다.
 - 정의되지 않은 JSON 요청 필드는 400 INVALID_REQUEST로 거부한다. 공통 Jackson3 역직렬화 설정을 적용하며 자유 형식 객체는 상세 스키마로 추가 검증한다.
 
@@ -145,6 +145,7 @@ _[api-validation]_ **[제안]**
 
 - 형식 검증은 DTO의 Bean Validation(`@NotBlank` 등) + Controller의 `@Valid`.
 - 업무 규칙 위반은 서비스에서 `BusinessException(ErrorCode.XXX)` 를 던진다.
+- 사용자에게 보이는 문구(오류 문구, 약관 제목 등)는 코드·설정에 직접 쓰지 않고 `resources/messages.properties` 에 키로 둔다(오류 `error.{오류 코드}`, 약관 제목 `agreement.{type}.title`, 읽기는 `Messages.get`)(기능 명세 §1.1 I18N01·07). 다른 언어는 `messages_{언어}.properties` 로 추가하고, 없으면 기본 파일(한국어)을 쓴다. `ErrorCode` 를 추가하면 문구도 함께 추가한다(`ErrorMessagesTest` 가 확인).
 - 오류 응답은 처리되는 곳이 달라도 **같은 JSON 형식**(`ErrorResponse`)으로 보낸다.
 
   | 오류가 난 곳 | 변환하는 곳 |

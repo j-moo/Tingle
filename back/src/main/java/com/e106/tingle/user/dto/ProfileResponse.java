@@ -10,6 +10,7 @@ import com.e106.tingle.user.SmokingStatus;
 
 /**
  * 본인 프로필 조회·저장 응답. 값이 없는 항목도 키를 빼지 않고 null 로 보낸다(통합 명세: 필수 키, null 허용).
+ * completed 는 "프로필 등록 완료"를 마쳤는지다(필수 항목이 다 찼는지가 아님).
  */
 public record ProfileResponse(
 	long userId,
@@ -28,7 +29,7 @@ public record ProfileResponse(
 	public static ProfileResponse from(Profile profile) {
 		return new ProfileResponse(profile.getUserId(), profile.getNickname(), profile.getGender(),
 			profile.getBirthDate(), profile.getSmokingStatus(), profile.getDrinkingFrequency(), profile.getReligion(),
-			profile.getIntroduction(), profile.getImageUrl(), profile.getImageUrl() != null, profile.isCompleted());
+			profile.getIntroduction(), profile.getImageUrl(), profile.getImageUrl() != null, profile.isRegistered());
 	}
 
 	public static ProfileResponse empty(long userId) {

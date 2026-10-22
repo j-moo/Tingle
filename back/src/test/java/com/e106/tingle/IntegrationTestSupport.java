@@ -2,6 +2,7 @@ package com.e106.tingle;
 
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -121,6 +122,11 @@ public abstract class IntegrationTestSupport {
 		return perform(patch("/api/v1/users/me/profile"), tokens, toJson(fields));
 	}
 
+	// "프로필 등록 완료"
+	protected ResultActions completeProfile(JsonNode tokens) throws Exception {
+		return perform(post("/api/v1/users/me/profile/complete"), tokens, null);
+	}
+
 	/**
 	 * 가입 단계를 모두 마쳐 READY 로 만든다. 저장한 닉네임을 돌려준다.
 	 * 키링·설문·희망 조건·키링 반영은 아직 API가 없어 DB에 직접 넣는다(매칭 제안 테스트와 같은 방식).
@@ -131,9 +137,12 @@ public abstract class IntegrationTestSupport {
 		long bindingId = bindKeyring(userId);
 		String nickname = uniqueNickname();
 		patchProfile(tokens, fullProfile(nickname)).andExpect(status().isOk());
+		completeProfile(tokens).andExpect(status().isOk());
 		long analysisId = finishSurvey(userId);
 		setPreferences(userId);
 		acknowledgeSync(userId, bindingId, analysisId);
+		// 앱처럼 단계를 조회하면 READY 도달이 기록된다(가입 완료 시각)
+		perform(get("/api/v1/users/me/onboarding"), tokens, null).andExpect(status().isOk());
 		return nickname;
 	}
 
@@ -174,11 +183,14 @@ public abstract class IntegrationTestSupport {
 		return Long.parseLong(jsonMapper.readTree(Base64.getUrlDecoder().decode(payload)).path("sub").asString());
 	}
 
-	// 현재 약관 3개에 모두 동의한 요청. 테스트마다 필요한 값만 바꿔서 쓴다.
+	protected static final String AI_RISK_VERSION = "2026-10-22";
+
+	// 현재 가입 동의 항목(application.yml app.agreement.items)에 모두 동의한 요청. 테스트마다 필요한 값만 바꿔서 쓴다.
 	protected static List<Map<String, Object>> agreementAnswers() {
 		List<Map<String, Object>> answers = new ArrayList<>();
-		for (String type : List.of("TERMS", "PRIVACY", "ADULT")) {
-			answers.add(new LinkedHashMap<>(Map.of("type", type, "version", VERSION, "agreed", true)));
+		for (String type : List.of("TERMS", "PRIVACY", "AI_RISK_DETECTION", "ADULT")) {
+			String version = type.equals("AI_RISK_DETECTION") ? AI_RISK_VERSION : VERSION;
+			answers.add(new LinkedHashMap<>(Map.of("type", type, "version", version, "agreed", true)));
 		}
 		return answers;
 	}

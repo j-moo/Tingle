@@ -29,7 +29,7 @@ public class AgreementController {
 
 	@GetMapping("/api/v1/agreements")
 	public AgreementsResponse getCurrentAgreements() {
-		return new AgreementsResponse(agreementService.currentItems());
+		return AgreementsResponse.of(agreementService.currentItems());
 	}
 
 	@PostMapping("/api/v1/users/me/agreements")
