@@ -14,23 +14,12 @@ jenkins:
     loggedInUsersCanDoAnything:
       allowAnonymousRead: false
 
-credentials:
-  system:
-    domainCredentials:
-      - credentials:
-          # GitLab 프로젝트 액세스 토큰 "jenkins" (Developer · api · read_repository · 만료 2026-12-31)
-          - usernamePassword:
-              scope: GLOBAL
-              id: gitlab-clone
-              description: 'GitLab 저장소 받기 (프로젝트 토큰 jenkins)'
-              username: jenkins
-              password: '${GITLAB_TOKEN}'
-          - gitLabApiTokenImpl: # 클래스에 심볼이 없어 클래스 이름으로 쓴다 (gitlabApiToken 은 바인딩용 심볼)
-              scope: GLOBAL
-              id: gitlab-api
-              description: 'GitLab 빌드 결과 표시 (프로젝트 토큰 jenkins)'
-              apiToken: '${GITLAB_TOKEN}'
 
+# Credentials 는 여기서 관리하지 않는다. credentials: 를 두면 재시작마다 그 목록으로 덮어써 화면에서 넣은 비밀값이 지워진다 (2026-10-22 확인).
+# 비밀값은 Jenkins 관리 → Credentials 에만 있고 jenkins_home 볼륨에 암호화돼 남는다. 볼륨을 새로 만들면 아래를 다시 넣는다.
+#   gitlab-clone       Username with password  jenkins / GitLab 프로젝트 토큰 "jenkins" (Developer · api · read_repository)
+#   gitlab-api         GitLab API token        같은 토큰
+#   tingle-db          Username with password  DB 사용자 / 비밀번호 → app.env 의 POSTGRES_USER · POSTGRES_PASSWORD
 unclassified:
   location:
     url: 'https://${DOMAIN}/jenkins/'
