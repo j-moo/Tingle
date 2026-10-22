@@ -39,6 +39,8 @@ services:
       DOMAIN: ${DOMAIN:?}
       JENKINS_ADMIN_ID: ${JENKINS_ADMIN_ID:?}
       JENKINS_ADMIN_PASSWORD: ${JENKINS_ADMIN_PASSWORD:?}
+      GITLAB_TOKEN: ${GITLAB_TOKEN:?} # GitLab 프로젝트 토큰 "jenkins"
+      GITLAB_WEBHOOK_SECRET: ${GITLAB_WEBHOOK_SECRET:?}
     group_add:
       - '${DOCKER_GID:?}' # 서버 docker 그룹 번호(getent group docker) — 소켓으로 빌드·배포
     volumes:

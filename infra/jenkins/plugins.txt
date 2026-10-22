@@ -6,3 +6,4 @@ pipeline-stage-view
 credentials-binding
 timestamper
 ws-cleanup
+job-dsl
