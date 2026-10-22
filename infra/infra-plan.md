@@ -72,7 +72,7 @@ v0.4.0, 2026.10.22. 서버 구성 · CI 검사 · develop/master 자동 배포 �
 
 ## 6. CI/CD (Jenkins)
 
-Jenkins job `tingle` 은 **develop · master 만 본다**. develop · master 에 들어오는 push(머지)와, 대상 브랜치가 develop · master 인 MR 만 빌드한다. 작업 브랜치 push 는 빌드하지 않는다.
+Jenkins job `tingle` 은 **develop · master 만 본다**. develop · master 에 들어오는 push(머지)와, 대상 브랜치가 develop · master 인 MR 만 빌드한다. 작업 브랜치 push 는 빌드하지 않는다. 단, 열린 MR 의 작업 브랜치에 커밋이 추가되면 그 MR 빌드를 다시 돌린다.
 
 ```
 checkout
