@@ -1,9 +1,9 @@
 {
-  "version": "0.2.2",
+  "version": "0.2.3",
   "date": "2026-10-22",
   "status": "사용자 동의한 다음 설계 기준; 서버·DB·웹 미적용",
   "total_tables": 24,
-  "total_columns": 165,
+  "total_columns": 166,
   "physical_foreign_keys": false,
   "tables": {
     "app_users": {
@@ -493,6 +493,16 @@
           "json_shape": null
         },
         {
+          "name": "public_device_id",
+          "type": "uuid",
+          "meaning": "API deviceId에 사용하는 불변 공개 UUID; 내부 숫자 ID와 분리",
+          "nullable": false,
+          "pk": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
           "name": "serial_hash",
           "type": "bytea",
           "meaning": "기기 시리얼의 검증용 해시; 원문 미저장",
@@ -526,11 +536,16 @@
       "unique": [
         [
           "serial_hash"
+        ],
+        [
+          "public_device_id"
         ]
       ],
       "checks": [],
       "indexes": [],
-      "service_rules": []
+      "service_rules": [
+        "서버가 신규 생성 시 공개 UUID를 발급하며 기존 행은 배포 전 일회성 보완한다. UUID는 소유 증명이 아니며 현재 활성 소유 연결을 검사한다."
+      ]
     },
     "keyring_bindings": {
       "name": "keyring_bindings",

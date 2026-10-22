@@ -2607,7 +2607,8 @@
         "x-contract-status": "REVIEW_REQUIRED",
         "x-storage-design": "lean24-162",
         "x-reviewed-at": "2026-10-21 11:47 KST",
-        "x-confirmation-required": []
+        "x-confirmation-required": [],
+        "x-implementation-ref": "keyring-read.md"
       }
     },
     "/api/v1/keyrings/registration-challenges": {
@@ -3682,7 +3683,8 @@
         "x-contract-status": "REVIEW_REQUIRED",
         "x-storage-design": "lean24-162",
         "x-reviewed-at": "2026-10-21 11:47 KST",
-        "x-confirmation-required": []
+        "x-confirmation-required": [],
+        "x-implementation-ref": "keyring-read.md"
       }
     },
     "/api/v1/users/me/profile": {
@@ -27268,7 +27270,7 @@
           "deviceId": {
             "type": "string",
             "format": "uuid",
-            "description": "키링 식별자"
+            "description": "키링 공개 UUID; keyrings.public_device_id에 대응하며 내부 bigint device_id와 구분한다"
           },
           "status": {
             "type": "string",

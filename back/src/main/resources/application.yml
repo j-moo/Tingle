@@ -52,6 +52,10 @@ app:
   proposals:
     decline-days: 30
 
+  keyring:
+    # 구매처를 임의 지정하지 않는다. 미설정이면 API는 purchaseUrl:null을 반환한다.
+    purchase-url: ${KEYRING_PURCHASE_URL:}
+
   push:
     # JWT와 별도인 Base64 32바이트 키. 누락 시 등록은 503, 본인 설치 해제는 허용한다.
     token-encryption-key: ${PUSH_TOKEN_ENCRYPTION_KEY:}

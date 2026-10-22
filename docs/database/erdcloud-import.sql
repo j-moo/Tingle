@@ -68,11 +68,13 @@ CREATE TABLE matching_settings (
 -- 실물 키링 식별·검증 정보; 37번 계약 확인
 CREATE TABLE keyrings (
     device_id bigint NOT NULL,
+    public_device_id uuid NOT NULL,
     serial_hash bytea NOT NULL,
     verification_key_ref text NOT NULL,
     firmware_version text NOT NULL,
     CONSTRAINT pk_keyrings PRIMARY KEY (device_id),
-    CONSTRAINT uq_keyrings_1 UNIQUE (serial_hash)
+    CONSTRAINT uq_keyrings_1 UNIQUE (serial_hash),
+    CONSTRAINT uq_keyrings_public_device_id UNIQUE (public_device_id)
 );
 
 -- 기기 소유 연결 이력
