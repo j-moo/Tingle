@@ -96,7 +96,7 @@ checkout
 - DB 백업: master 배포 전 `pg_dump -Fc tingle` → `/backup/db-tingle-<시각>-<커밋>.dump`, 30개 보관.
 - 비밀값(DB 계정, JWT 키, 푸시 키, 이후 GMS 키 · APK 키스토어 · FCM 서비스 계정)은 Jenkins Credentials. 목록은 `infra/jenkins/casc/jenkins.yaml` 주석. JCasC 에는 Credentials 를 두지 않는다 (재시작마다 화면에서 넣은 값을 지운다).
 - 동시 빌드 1개. 앱 빌드와 서버 배포가 겹치지 않게 큐로 직렬화.
-- "실패하면 머지 불가" 는 GitLab 설정(파이프라인 성공 시에만 머지)을 켜야 한다 — 미정.
+- GitLab "파이프라인 성공 시에만 머지" 를 켰다 (10/22). Jenkins 결과가 success 가 아니면 머지 버튼이 막힌다. Jenkins 결과가 아예 없는 MR(옛 브랜치)은 커밋을 하나 더 올려 검사를 받아야 한다. Jenkins 가 죽으면 아무도 머지할 수 없으므로 그때는 설정을 잠시 끈다.
 
 ## 7. 배포
 
@@ -181,7 +181,7 @@ ai 와 back 에 같은 스크립트를 쓴다. ai 를 먼저 전환해 새 back 
 | 단계 | 시기 | 만드는 것 | 완료 기준 | 상태 (10/22) |
 | --- | --- | --- | --- | --- |
 | **0. 서버 준비** | 3주차 (10/19~) 서버 수령 직후 | Docker·Compose, 도메인·certbot, `/srv/tingle/.env`, Jenkins 실행, GitLab Webhook | Jenkins 로그인, MR 에 Jenkins 반응 | 완료 |
-| **1. CI 검사** | 3주차 | Jenkinsfile 검사 단계 (back·ai·app·web·firmware), 파트별 docker 이미지 | MR 에 결과 표시, 실패 시 머지 불가 | 검사 완료. 머지 불가 설정 · 펌웨어 검사 남음 |
+| **1. CI 검사** | 3주차 | Jenkinsfile 검사 단계 (back·ai·app·web·firmware), 파트별 docker 이미지 | MR 에 결과 표시, 실패 시 머지 불가 | 완료 (펌웨어 검사는 코드 생기면) |
 | **2. 개발 환경** | 3~4주차 | compose, back·ai·web Dockerfile, develop 재시작 배포, `/app/dev/latest.apk` | 개발 APK 로 `/dev/api` 접속 성공, `/dev/` 랜딩 표시, back-dev → ai-dev 호출 성공 | web-dev · back-dev 배포 완료. ai · APK 남음 |
 | **3. 운영 재시작 배포** | 4주차 (10/26~) | master 재시작 배포. **다운타임·WebSocket 끊김 측정** | `/`·`/api` 동작, 다운타임 기록 | 배포 구성 완료(배포 전 DB 백업 포함). 첫 master 머지 · 측정 남음 |
 | **4. 블루-그린** | 5주차 (11/2~11/6) | deploy-bluegreen.sh, upstream 전환(ai·back), 롤백, ShedLock 확인 | 배포 중 1초 간격 요청 실패 0건, 채팅 재접속 3초 이내 | back 전환 · 롤백 구현, 시험 실패 0건. graceful shutdown · ai · WebSocket 확인 남음 |
