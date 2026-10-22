@@ -50,7 +50,10 @@ jobs:
                 triggerOnNoteRequest(false)
                 ciSkip(true)
                 setBuildDescription(true)
-                branchFilterType('All')
+                // develop · master 만 본다: push(머지)는 이 두 브랜치일 때만, MR 은 대상 브랜치가 이 둘일 때만 빌드한다.
+                branchFilterType('NameBasedFilter')
+                includeBranchesSpec('develop, master')
+                excludeBranchesSpec('')
                 secretToken('${GITLAB_WEBHOOK_SECRET}')
               }
             }
