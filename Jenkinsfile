@@ -4,10 +4,10 @@
 
 def PARTS = [back: 'back/', ai: 'ai-server/', web: 'front/web/', app: 'front/app/', iot: 'iot/']
 // 브랜치별 배포: 코드를 dir 에 풀고 services(infra/docker-compose.yml 서비스 이름 → 응답 확인 주소)만 다시 띄운다.
-// ai 가 생기면 여기에 더한다. back 확인 주소는 Actuator 가 생기면 /actuator/health 로 바꾼다 (지금은 인증 없는 약관 조회).
+// ai 가 생기면 여기에 더한다 (확인 주소 /health). back 은 Actuator 상태 확인 — DB 연결까지 정상이면 200, 아니면 503.
 def DEPLOY = [
-  develop: [dir: '/srv/tingle/dev', services: ['web-dev': 'http://web-dev/', 'back-dev': 'http://back-dev:8080/api/v1/agreements']],
-  master: [dir: '/srv/tingle/repo', services: ['web': 'http://web/', 'back': 'http://back:8080/api/v1/agreements'], backup: true],
+  develop: [dir: '/srv/tingle/dev', services: ['web-dev': 'http://web-dev/', 'back-dev': 'http://back-dev:8080/actuator/health']],
+  master: [dir: '/srv/tingle/repo', services: ['web': 'http://web/', 'back': 'http://back:8080/actuator/health'], backup: true],
 ]
 def changed = []
 
