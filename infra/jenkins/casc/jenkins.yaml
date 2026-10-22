@@ -1,0 +1,19 @@
+# Jenkins 설정 코드(JCasC). 컨테이너가 뜰 때마다 이 내용으로 맞춘다 — 화면에서 바꾼 값은 재시작 시 되돌아간다.
+# ${...} 는 compose 가 넘긴 환경변수(서버 /srv/tingle/.env)로 채워진다.
+jenkins:
+  systemMessage: 'Tingle CI — 설정은 저장소 infra/jenkins/casc 에서 관리'
+  numExecutors: 1 # 동시 빌드 1개 (인프라 계획 6절)
+  mode: NORMAL
+  securityRealm:
+    local:
+      allowsSignup: false
+      users:
+        - id: '${JENKINS_ADMIN_ID}'
+          password: '${JENKINS_ADMIN_PASSWORD}'
+  authorizationStrategy:
+    loggedInUsersCanDoAnything:
+      allowAnonymousRead: false
+
+unclassified:
+  location:
+    url: 'https://${DOMAIN}/jenkins/'
