@@ -136,7 +136,9 @@ ai 와 back 에 같은 스크립트를 쓴다. ai 를 먼저 전환해 새 back 
 ## 8. DB·파일·백업
 
 - DB 는 **PostgreSQL 17** 한 컨테이너에 운영 `tingle`, 개발 `tingle_dev` 두 DB 를 둔다. 확장은 쓰지 않는다.
-- 서버 DB 테이블은 처음에 `docs/database/schema.sql` 로 만들었다 (10/22, 각 24개). back 은 `ddl-auto: validate` 라 스키마가 엔티티와 다르면 뜨지 않는다. **스키마 변경은 BE 가 서버 DB 두 개에 직접 반영**해야 한다 (운영은 반영이 안 되면 새 색이 상태 확인에 실패해 옛 색이 그대로 운영된다).
+- 서버 DB 테이블은 처음에 `docs/database/schema.sql` 로 만들었다 (10/22, 각 24개). 이후 구조 변경은 환경마다 다르게 반영한다 (BE 컨벤션 `[db-schema]`, Flyway 안 씀).
+  - 개발 `tingle_dev`: 프로필 dev 가 `ddl-auto: update` (`back/src/main/resources/application-dev.yml`). develop 배포 때 새 테이블 · 컬럼이 자동 추가된다. 컬럼 삭제 · 이름 변경은 SQL 로 직접.
+  - 운영 `tingle`: 프로필 prod 가 `ddl-auto: validate`. **BE 가 변경 SQL 을 인프라에 주면, 인프라가 master 머지 전에 백업을 받고 운영 DB 에 실행**한다. 빠뜨리면 새 색이 시작하지 못해 상태 확인에 실패하고 옛 색이 그대로 운영된다.
 - 블루-그린 전환 중 이전·새 버전이 같은 DB 를 쓰므로 **이전 버전이 깨지지 않는 변경만 한 번에** 배포한다. 컬럼 이름 변경·삭제는 추가 → 코드 전환 → 삭제로 나눈다.
 - 핵심 제약은 DB 에 둔다: `offline_encounter_submissions(encounter_id, device_id)` 유일, `pair_restrictions`·`chat_rooms` 의 정렬된 사용자 쌍 유일, 활성 채팅방 1개 부분 유일 인덱스. 앱·키링이 중복 업로드해도 DB 가 막는다.
 - `master` 배포 직전 `pg_dump` → `/backup/db-tingle-<시각>-<커밋>.dump` (30개 보관). 매일 한국 시각 04:00 운영 · 개발 DB `pg_dump` + `/data/uploads` tar → `/backup/daily-*` (7일치, `infra/backup-daily.sh`, 서버 crontab). 로그는 `/backup/daily.log`. 서버가 1대라 서버 유실에는 못 버티므로 **주 1회 팀장 로컬로 내려받는다**. DB 포트는 열지 않는다.

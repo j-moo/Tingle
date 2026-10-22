@@ -1,0 +1,8 @@
+# 운영 서버(back-blue · back-green, DB tingle). master 머지마다 Jenkins 가 SPRING_PROFILES_ACTIVE=prod 로 띄운다.
+# 앱이 DB 구조를 바꾸지 않는다(검증만). 구조가 바뀌면 변경 SQL 을 master 머지 전에 운영 DB 에 먼저 실행한다 (infra/infra-plan.md 8절).
+# 반영이 안 된 채 배포되면 새 색이 시작하지 못해 상태 확인에 실패하고, 옛 색이 그대로 운영된다.
+# DB 접속 정보 · JWT 등 비밀값은 compose 환경변수로 받는다 (infra/docker-compose.yml).
+spring:
+  jpa:
+    hibernate:
+      ddl-auto: validate
