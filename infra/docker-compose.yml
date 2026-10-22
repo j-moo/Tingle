@@ -15,6 +15,7 @@ services:
       - ./nginx/templates:/etc/nginx/templates:ro # ${DOMAIN} 을 치환해 /etc/nginx/conf.d/ 로 복사된다
       - /etc/letsencrypt:/etc/letsencrypt:ro
       - /var/www/certbot:/var/www/certbot:ro # certbot webroot 갱신 경로
+      - /srv/tingle/nginx-state:/etc/nginx/state:ro # 블루-그린 운영 색 (infra/deploy-bluegreen.sh 가 씀)
     depends_on:
       - web
       - web-dev
@@ -64,10 +65,10 @@ services:
     mem_limit: 64m
     restart: unless-stopped
 
-  # back: 운영(prod, DB tingle) · 개발(dev, DB tingle_dev). nginx 가 /api/ /ws/ → back, /dev/api/ /dev/ws/ → back-dev 로 넘긴다.
+  # back: 운영(prod, DB tingle, 블루-그린 back-blue · back-green 중 한쪽만 켬) · 개발(dev, DB tingle_dev). nginx 가 /api/ /ws/ → back, /dev/api/ /dev/ws/ → back-dev 로 넘긴다.
   # 테이블은 미리 있어야 한다 (ddl-auto validate). 처음엔 docs/database/schema.sql 을 넣었다 — 이후 스키마 변경은 BE 가 DB 에 반영.
   # 비밀값은 app.env (Jenkins Credentials). 구글 · 카카오 ID 는 정해지면 Credentials 에 넣고 여기에 GOOGLE_WEB_CLIENT_ID · KAKAO_APP_ID 를 더한다.
-  back:
+  back-blue:
     build: ../back
     environment: &back-env
       SPRING_PROFILES_ACTIVE: prod
@@ -76,6 +77,13 @@ services:
       SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:?}
       JWT_SECRET: ${JWT_SECRET:?}
       PUSH_TOKEN_ENCRYPTION_KEY: ${PUSH_TOKEN_ENCRYPTION_KEY:?}
+    depends_on: [db]
+    mem_limit: 1536m
+    restart: unless-stopped
+
+  back-green:
+    build: ../back
+    environment: *back-env
     depends_on: [db]
     mem_limit: 1536m
     restart: unless-stopped
