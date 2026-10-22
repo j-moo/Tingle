@@ -4,12 +4,14 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.e106.tingle.user.dto.NicknameAvailabilityResponse;
 import com.e106.tingle.user.dto.OnboardingDetailResponse;
+import com.e106.tingle.user.dto.OnboardingResponse;
 import com.e106.tingle.user.dto.ProfileResponse;
 
 import lombok.RequiredArgsConstructor;
@@ -45,6 +47,14 @@ public class UserController {
 		ProfileResponse profile = profileService.patch(userId(jwt), body);
 		onboardingService.recordProgress(userId(jwt));
 		return profile;
+	}
+
+	// 프로필 등록 완료(기능 명세 PRO-01). 다음 가입 단계를 돌려준다.
+	@PostMapping("/api/v1/users/me/profile/complete")
+	@RequiresOnboarding(OnboardingStatus.KEYRING_REQUIRED)
+	public OnboardingResponse completeProfile(@AuthenticationPrincipal Jwt jwt) {
+		profileService.register(userId(jwt));
+		return new OnboardingResponse(onboardingService.recordProgress(userId(jwt)));
 	}
 
 	@GetMapping("/api/v1/users/nickname-availability")

@@ -1,6 +1,9 @@
 package com.e106.tingle.auth;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.hamcrest.Matchers.emptyOrNullString;
+import static org.hamcrest.Matchers.everyItem;
+import static org.hamcrest.Matchers.not;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
@@ -69,8 +72,10 @@ class AuthIntegrationTest extends IntegrationTestSupport {
 	@Test
 	@DisplayName("401은 원인별 코드로 나뉜다: 토큰 없음·만료·위조·세션 종료")
 	void unauthorizedCodesTellAppWhatToDo() throws Exception {
-		mockMvc.perform(get(ONBOARDING)).andExpect(status().isUnauthorized())
-			.andExpect(jsonPath("$.code").value("AUTH_REQUIRED"));
+		// 번역이 없는 언어로 요청해도 기본(한국어) 문구가 온다
+		mockMvc.perform(get(ONBOARDING).header("Accept-Language", "en")).andExpect(status().isUnauthorized())
+			.andExpect(jsonPath("$.code").value("AUTH_REQUIRED"))
+			.andExpect(jsonPath("$.message").value("로그인이 필요합니다."));
 		mockMvc.perform(get(ONBOARDING).header("Authorization", "Bearer forged.token.value"))
 			.andExpect(status().isUnauthorized())
 			.andExpect(jsonPath("$.code").value("ACCESS_TOKEN_INVALID"));
@@ -130,10 +135,14 @@ class AuthIntegrationTest extends IntegrationTestSupport {
 	// ---------- 약관 조회 ----------
 
 	@Test
-	@DisplayName("약관 조회는 인증 없이 현재 버전을 돌려준다")
+	@DisplayName("약관 조회는 인증 없이 현재 버전을 돌려주고, 제목은 요청 언어에 없으면 한국어다")
 	void agreementsReturnCurrentVersionsWithoutAuth() throws Exception {
-		mockMvc.perform(get("/api/v1/agreements"))
+		mockMvc.perform(get("/api/v1/agreements").header("Accept-Language", "en"))
 			.andExpect(status().isOk())
+			// 설정의 모든 항목에 messages.properties 제목이 있어야 한다
+			.andExpect(jsonPath("$.agreements.length()").value(4))
+			.andExpect(jsonPath("$.agreements[*].title", everyItem(not(emptyOrNullString()))))
+			.andExpect(jsonPath("$.agreements[2].title").value("AI 대화 위험 감지를 위한 개인정보 처리 동의"))
 			.andExpect(jsonPath("$.agreements[0].type").value("TERMS"))
 			.andExpect(jsonPath("$.agreements[0].version").value(VERSION))
 			.andExpect(jsonPath("$.agreements[0].title").value("서비스 이용약관"))

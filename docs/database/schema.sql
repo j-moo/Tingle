@@ -53,6 +53,7 @@ CREATE TABLE profiles (
     religion text,
     introduction text,
     image_url text,
+    completed_at timestamptz,
     CONSTRAINT pk_profiles PRIMARY KEY (user_id),
     CONSTRAINT uq_profiles_1 UNIQUE (nickname_key),
     CONSTRAINT ck_profiles_1 CHECK ((nickname IS NULL)=(nickname_key IS NULL))

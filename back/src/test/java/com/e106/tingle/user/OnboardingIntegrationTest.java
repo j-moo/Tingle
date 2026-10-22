@@ -75,9 +75,14 @@ class OnboardingIntegrationTest extends IntegrationTestSupport {
 		long bindingId = bindKeyring(userId);
 		assertNextStep(tokens, "PROFILE_REQUIRED");
 
-		// 프로필까지 마쳐도 남은 단계가 있으면 가입 완료가 아니다
+		// 필수 항목을 다 채워도 "등록 완료" 전에는 프로필 단계에 머문다
 		patchProfile(tokens, fullProfile(uniqueNickname())).andExpect(status().isOk())
-			.andExpect(jsonPath("$.completed").value(true));
+			.andExpect(jsonPath("$.completed").value(false));
+		assertNextStep(tokens, "PROFILE_REQUIRED");
+		completeProfile(tokens).andExpect(status().isOk())
+			.andExpect(jsonPath("$.onboardingStatus").value("SURVEY_REQUIRED"));
+
+		// 프로필까지 마쳐도 남은 단계가 있으면 가입 완료가 아니다
 		perform(get(ONBOARDING), tokens, null).andExpect(jsonPath("$.nextStep").value("SURVEY_REQUIRED"))
 			.andExpect(jsonPath("$.signupCompleted").value(false))
 			.andExpect(jsonPath("$.matchingReady").value(false));
@@ -144,7 +149,8 @@ class OnboardingIntegrationTest extends IntegrationTestSupport {
 		long userId = userIdOf(tokens);
 		assertThat(userConsentRepository.findByUserIdOrderByIdAsc(userId))
 			.extracting(consent -> consent.getConsentType() + ":" + consent.getDocumentVersion())
-			.containsExactlyInAnyOrder("TERMS:" + VERSION, "PRIVACY:" + VERSION, "ADULT:" + VERSION);
+			.containsExactlyInAnyOrder("TERMS:" + VERSION, "PRIVACY:" + VERSION, "AI_RISK_DETECTION:" + AI_RISK_VERSION,
+				"ADULT:" + VERSION);
 	}
 
 	@Test
@@ -178,7 +184,7 @@ class OnboardingIntegrationTest extends IntegrationTestSupport {
 			() -> agree(tokens).andReturn().getResponse().getStatus());
 
 		assertThat(statuses).containsExactly(200, 200);
-		assertThat(userConsentRepository.findByUserIdOrderByIdAsc(userIdOf(tokens))).hasSize(3);
+		assertThat(userConsentRepository.findByUserIdOrderByIdAsc(userIdOf(tokens))).hasSize(4);
 	}
 
 	@Test
@@ -252,10 +258,15 @@ class OnboardingIntegrationTest extends IntegrationTestSupport {
 	}
 
 	@Test
-	@DisplayName("가입을 마친 뒤 성별·생년월일을 바꾸면 422 PROFILE_FIELD_LOCKED, 같은 값은 통과")
-	void genderAndBirthDateLockedAfterCompletion() throws Exception {
+	@DisplayName("프로필 등록 완료 뒤 성별·생년월일을 바꾸면 422 PROFILE_FIELD_LOCKED, 같은 값은 통과. 임시 저장만으로는 잠기지 않는다")
+	void genderAndBirthDateLockedAfterRegistration() throws Exception {
 		JsonNode tokens = agreedUser();
 		patchProfile(tokens, fullProfile(uniqueNickname())).andExpect(status().isOk());
+		// 필수 항목이 다 찬 임시 저장 상태에서는 아직 고칠 수 있다
+		patchProfile(tokens, Map.of("gender", "MALE", "birthDate", "1999-01-01")).andExpect(status().isOk());
+		patchProfile(tokens, Map.of("gender", "FEMALE", "birthDate", "2001-03-15")).andExpect(status().isOk());
+		completeProfile(tokens).andExpect(status().isOk());
+		perform(get(PROFILE), tokens, null).andExpect(jsonPath("$.completed").value(true));
 
 		patchProfile(tokens, Map.of("gender", "MALE")).andExpect(status().is(422))
 			.andExpect(jsonPath("$.code").value("PROFILE_FIELD_LOCKED"));
@@ -264,6 +275,33 @@ class OnboardingIntegrationTest extends IntegrationTestSupport {
 		patchProfile(tokens, Map.of("birthDate", LocalDate.now(ZoneId.of("Asia/Seoul")).plusDays(1).toString()))
 			.andExpect(status().is(422));
 		patchProfile(tokens, Map.of("gender", "FEMALE", "introduction", "안녕하세요")).andExpect(status().isOk());
+	}
+
+	@Test
+	@DisplayName("필수 항목이 빠진 채 등록 완료하면 400 PROFILE_INCOMPLETE, 이미 등록했으면 다시 요청해도 200")
+	void registrationNeedsRequiredFieldsAndIsIdempotent() throws Exception {
+		JsonNode tokens = agreedUser();
+		completeProfile(tokens).andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.code").value("PROFILE_INCOMPLETE"));
+		patchProfile(tokens, Map.of("nickname", uniqueNickname())).andExpect(status().isOk());
+		completeProfile(tokens).andExpect(status().isBadRequest());
+
+		patchProfile(tokens, fullProfile(uniqueNickname())).andExpect(status().isOk());
+		completeProfile(tokens).andExpect(status().isOk());
+		completeProfile(tokens).andExpect(status().isOk());
+	}
+
+	@Test
+	@DisplayName("가입을 마친 회원은 마지막 키링을 초기화해도 기존 기능을 쓰고, 새 매칭만 보류된다")
+	void completedMemberKeepsAccessWithoutKeyring() throws Exception {
+		JsonNode tokens = login("kakao", newSocialId());
+		completeOnboarding(tokens);
+		jdbc.update("update keyring_bindings set unbound_at=now() where user_id=?", userIdOf(tokens));
+
+		perform(get(ONBOARDING), tokens, null).andExpect(jsonPath("$.nextStep").value("KEYRING_REQUIRED"))
+			.andExpect(jsonPath("$.signupCompleted").value(true))
+			.andExpect(jsonPath("$.matchingReady").value(false));
+		perform(get("/api/v1/test/protected"), tokens, null).andExpect(status().isOk());
 	}
 
 	@Test

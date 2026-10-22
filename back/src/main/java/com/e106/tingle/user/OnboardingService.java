@@ -34,7 +34,7 @@ public class OnboardingService {
 		if (!members.hasKeyring(userId)) {
 			return OnboardingStatus.KEYRING_REQUIRED;
 		}
-		if (!profileRepository.findById(userId).map(Profile::isCompleted).orElse(false)) {
+		if (!profileRepository.findById(userId).map(Profile::isRegistered).orElse(false)) {
 			return OnboardingStatus.PROFILE_REQUIRED;
 		}
 		if (!members.surveyCompleted(userId)) {
@@ -57,6 +57,20 @@ public class OnboardingService {
 		// ponytail: 설문·설정 반영 필드는 해당 기능 전까지 임시값
 		return new OnboardingDetailResponse(status, signupCompleted(userId), ready, ready,
 			null, 0, 0, null, 0, null, clock.instant());
+	}
+
+	/**
+	 * required 단계부터 쓸 수 있는 API를 지금 호출할 수 있는지.
+	 * 가입을 한 번 마친 회원은 마지막 키링 초기화·재검사 등으로 단계가 뒤로 가도 기존 기능(홈·기존 제안·채팅·탈퇴)을
+	 * 계속 쓴다. 새 매칭만 matchingReady=false 로 보류된다(기능 명세 AUTH-02). 바뀐 필수 약관 동의는 예외 없이 먼저 받는다.
+	 */
+	@Transactional(readOnly = true)
+	public boolean canAccess(long userId, OnboardingStatus required) {
+		OnboardingStatus status = statusOf(userId);
+		if (!status.isBefore(required)) {
+			return true;
+		}
+		return status != OnboardingStatus.AGREEMENT_REQUIRED && signupCompleted(userId);
 	}
 
 	@Transactional(readOnly = true)

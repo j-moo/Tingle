@@ -12,6 +12,7 @@ import java.time.Instant;
 import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
@@ -91,12 +92,15 @@ class ProposalIntegrationTest {
 			+ "overriding system value values (?,'GOOGLE',?,'ACTIVE',?)", user, "synthetic-" + user,
 			java.sql.Timestamp.from(NOW));
 		jdbc.update("insert into profiles(user_id,nickname,nickname_key,birth_date,gender,smoking_status, "
-			+ "drinking_frequency,image_url) values (?,?,?,'2001-10-21','FEMALE','NON_SMOKER','NEVER',?)",
-			user, "산책친구" + user, "nickname" + user, "https://images.example.test/current.jpg");
-		for (String type : List.of("TERMS", "PRIVACY", "ADULT")) {
-			jdbc.update("insert into user_consents(user_id,consent_type,document_version,agreed,recorded_at) "
-				+ "values (?,?,'2026-10-19',true,?)", user, type, java.sql.Timestamp.from(NOW));
-		}
+			+ "drinking_frequency,image_url,completed_at) "
+			+ "values (?,?,?,'2001-10-21','FEMALE','NON_SMOKER','NEVER',?,?)",
+			user, "산책친구" + user, "nickname" + user, "https://images.example.test/current.jpg",
+			java.sql.Timestamp.from(NOW));
+		Map<String, String> consents = Map.of("TERMS", "2026-10-19", "PRIVACY", "2026-10-19",
+			"AI_RISK_DETECTION", "2026-10-22", "ADULT", "2026-10-19");
+		consents.forEach((type, version) -> jdbc.update("insert into user_consents(user_id,consent_type,"
+			+ "document_version,agreed,recorded_at) values (?,?,?,true,?)", user, type, version,
+			java.sql.Timestamp.from(NOW)));
 		jdbc.update("insert into matching_settings(user_id,desired_genders,age_min,settings_version) "
 			+ "values (?,ARRAY['MALE','FEMALE'],19,1)", user);
 		jdbc.update("insert into keyrings(device_id,serial_hash,verification_key_ref,firmware_version) "

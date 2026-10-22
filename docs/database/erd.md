@@ -1,6 +1,6 @@
 # Tingle(팅글) ERD·테이블 정의
 
-1.1.0-review / 수정 2026-10-21 11:47 KST. **24개 테이블·165개 컬럼**, PostgreSQL·JPA 기준. 물리 외래 키는 없으며 아래 관계는 서비스가 검사하는 논리 참조다. 검토 SQL을 실제 DB에 실행하지 않았다.
+1.1.0-review / 수정 2026-10-21 11:47 KST. **24개 테이블·166개 컬럼**, PostgreSQL·JPA 기준. 물리 외래 키는 없으며 아래 관계는 서비스가 검사하는 논리 참조다. 검토 SQL을 실제 DB에 실행하지 않았다.
 
 [API](../contracts/api/README.md) / [SQL](schema.sql) / [ERDCloud 가져오기 SQL](erdcloud-import.sql) / [기계판독 정의](tables.json) / [기존안·수정안 비교](changes-20261021.md) / [기능 대응표](../specifications/coverage.md)
 
@@ -19,7 +19,7 @@
 | `app_users` | 회원·단일 소셜 로그인 계정 | 7 |
 | `refresh_tokens` | 리프레시 토큰·회전 계열; 인증 담당과 조정할 초안 | 7 |
 | `user_consents` | 약관·선택적 AI 분석 동의 이벤트 | 6 |
-| `profiles` | 회원 프로필과 사진 한 장 | 10 |
+| `profiles` | 회원 프로필과 사진 한 장 | 11 |
 | `matching_settings` | 회원별 희망 조건·매칭 설정·키링 반영 버전 | 7 |
 | `keyrings` | 실물 키링 식별·검증 정보; 37번 계약 확인 | 4 |
 | `keyring_bindings` | 기기 소유 연결 이력 | 5 |
@@ -86,6 +86,7 @@ erDiagram
         text religion
         text introduction
         text image_url
+        timestamptz completed_at
     }
     matching_settings {
         bigint user_id PK
@@ -353,6 +354,7 @@ erDiagram
 | `religion` | 종교 코드; 선택 | 가능 |
 | `introduction` | 자기소개; 선택 | 가능 |
 | `image_url` | 현재 사진의 저장소 참조 URL; 선택 | 가능 |
+| `completed_at` | "프로필 등록 완료" 시각. 이후 생년월일·성별 고정, 완료 전(임시 저장 중) NULL | 가능 |
 
 중복 금지 조합: nickname_key.
 

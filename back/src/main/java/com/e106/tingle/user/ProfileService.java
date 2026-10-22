@@ -54,20 +54,20 @@ public class ProfileService {
 			.orElseThrow(() -> new BusinessException(ErrorCode.AUTH_REQUIRED));
 		Profile profile = profileRepository.findById(userId).orElseGet(() -> Profile.empty(userId));
 		ProfileResponse before = ProfileResponse.from(profile);
-		boolean completed = profile.isCompleted();
+		boolean registered = profile.isRegistered();
 
 		if (body.has("nickname")) {
 			changeNickname(profile, ProfileRules.normalizeNickname(requiredText(body, "nickname")));
 		}
 		if (body.has("gender")) {
 			Gender gender = toEnum(Gender.class, requiredText(body, "gender"));
-			rejectChangeAfterCompletion(completed, profile.getGender(), gender);
+			rejectChangeAfterRegistration(registered, profile.getGender(), gender);
 			profile.changeGender(gender);
 		}
 		if (body.has("birthDate")) {
 			LocalDate birthDate = parseBirthDate(requiredText(body, "birthDate"));
 			// 가입 후 변경 금지를 먼저 판단해야 어떤 날짜를 보내도 같은 오류(422)가 된다.
-			rejectChangeAfterCompletion(completed, profile.getBirthDate(), birthDate);
+			rejectChangeAfterRegistration(registered, profile.getBirthDate(), birthDate);
 			ProfileRules.validateBirthDate(birthDate, LocalDate.now(clock));
 			profile.changeBirthDate(birthDate);
 		}
@@ -99,6 +99,25 @@ public class ProfileService {
 	}
 
 	/**
+	 * "프로필 등록 완료". 필수 항목이 모두 있어야 하고(PROFILE_INCOMPLETE), 성공하면 생년월일·성별이 고정된다.
+	 * 이미 등록했으면 아무것도 바꾸지 않고 성공으로 끝난다(응답 유실 재시도).
+	 */
+	@Transactional
+	public void register(long userId) {
+		userRepository.findByIdForUpdate(userId)
+			.orElseThrow(() -> new BusinessException(ErrorCode.AUTH_REQUIRED));
+		Profile profile = profileRepository.findById(userId)
+			.orElseThrow(() -> new BusinessException(ErrorCode.PROFILE_INCOMPLETE));
+		if (profile.isRegistered()) {
+			return;
+		}
+		if (!profile.hasRequiredFields()) {
+			throw new BusinessException(ErrorCode.PROFILE_INCOMPLETE);
+		}
+		profile.register(clock.instant());
+	}
+
+	/**
 	 * 입력 중 실시간 확인용이라 형식 오류도 400이 아니라 available=false로 응답한다.
 	 * 본인이 이미 쓰고 있는 닉네임은 사용 가능이다. 최종 판단은 저장 시 DB 유니크 제약이 한다.
 	 */
@@ -127,8 +146,8 @@ public class ProfileService {
 		profile.changeNickname(nickname, key);
 	}
 
-	private static void rejectChangeAfterCompletion(boolean completed, Object current, Object requested) {
-		if (completed && !Objects.equals(current, requested)) {
+	private static void rejectChangeAfterRegistration(boolean registered, Object current, Object requested) {
+		if (registered && !Objects.equals(current, requested)) {
 			throw new BusinessException(ErrorCode.PROFILE_FIELD_LOCKED);
 		}
 	}
