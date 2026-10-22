@@ -1,122 +1,67 @@
-import { useState } from 'react'
-import heroImg from './assets/hero.png'
-import reactLogo from './assets/react.svg'
-import viteLogo from './assets/vite.svg'
-import './App.css'
+const steps = [
+  {
+    title: '키링과 함께 일상으로',
+    body: '키링을 등록하고 평소처럼 지니고 다녀요.',
+    icon: <path d="M12 12h0M8.5 8.5a5 5 0 0 0 0 7M15.5 8.5a5 5 0 0 1 0 7M5.6 5.6a9 9 0 0 0 0 12.8M18.4 5.6a9 9 0 0 1 0 12.8" />,
+  },
+  {
+    title: '스치면 조용히 알려요',
+    body: '잘 맞는 사람과 가까워지면 키링이 짧게 알려 줘요.',
+    icon: <path d="M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10z" />,
+  },
+  {
+    title: '서로 수락하면 대화',
+    body: '앱에서 제안을 확인하고 두 사람 모두 원할 때 대화가 열려요.',
+    icon: <path d="M12 4a8 8 0 0 0-6.9 12L4 20l4.1-1.1A8 8 0 1 0 12 4z" />,
+  },
+]
 
-function App() {
-  const [count, setCount] = useState(0)
-
+export default function App() {
   return (
-    <>
-      <section id="center">
-        <div className="hero">
-          <img src={heroImg} className="base" width="170" height="179" alt="" />
-          <img src={reactLogo} className="framework" alt="React logo" />
-          <img src={viteLogo} className="vite" alt="Vite logo" />
-        </div>
-        <div>
-          <h1>Get started</h1>
-          <p>
-            Edit <code>src/App.tsx</code> and save to test <code>HMR</code>
-          </p>
-        </div>
-        <button
-          type="button"
-          className="counter"
-          onClick={() => setCount((count) => count + 1)}
-        >
-          Count is {count}
-        </button>
+    <main className="page">
+      <header className="top">
+        <span className="wordmark">Tingle.</span>
+        <span className="top__ko">팅글</span>
+      </header>
+
+      <section className="hero">
+        <p className="eyebrow">A LITTLE TINGLE</p>
+        <h1>
+          스친 순간,
+          <br />
+          새로운 시작.
+        </h1>
+        <p>일상에서 만난 인연을 확인해 보세요.</p>
       </section>
 
-      <div className="ticks"></div>
+      <ul className="steps">
+        {steps.map((s) => (
+          <li className="step" key={s.title}>
+            <span className="step__icon" aria-hidden>
+              <svg viewBox="0 0 24 24">{s.icon}</svg>
+            </span>
+            <div>
+              <strong>{s.title}</strong>
+              <span>{s.body}</span>
+            </div>
+          </li>
+        ))}
+      </ul>
 
-      <section id="next-steps">
-        <div id="docs">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#documentation-icon"></use>
-          </svg>
-          <h2>Documentation</h2>
-          <p>Your questions, answered</p>
-          <ul>
-            <li>
-              <a href="https://vite.dev/" target="_blank">
-                <img className="logo" src={viteLogo} alt="" />
-                Explore Vite
-              </a>
-            </li>
-            <li>
-              <a href="https://react.dev/" target="_blank">
-                <img className="button-icon" src={reactLogo} alt="" />
-                Learn more
-              </a>
-            </li>
-          </ul>
-        </div>
-        <div id="social">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#social-icon"></use>
-          </svg>
-          <h2>Connect with us</h2>
-          <p>Join the Vite community</p>
-          <ul>
-            <li>
-              <a href="https://github.com/vitejs/vite" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#github-icon"></use>
-                </svg>
-                GitHub
-              </a>
-            </li>
-            <li>
-              <a href="https://chat.vite.dev/" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#discord-icon"></use>
-                </svg>
-                Discord
-              </a>
-            </li>
-            <li>
-              <a href="https://x.com/vite_js" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#x-icon"></use>
-                </svg>
-                X.com
-              </a>
-            </li>
-            <li>
-              <a href="https://bsky.app/profile/vite.dev" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#bluesky-icon"></use>
-                </svg>
-                Bluesky
-              </a>
-            </li>
-          </ul>
-        </div>
+      <section className="notice" aria-label="서비스 안내">
+        <p className="notice__label">곧 만나요</p>
+        <h2>
+          Tingle 앱을
+          <br />
+          준비하고 있어요.
+        </h2>
+        <p className="notice__label">Android 앱을 먼저 선보일 예정이에요.</p>
+        <span className="notice__button" aria-disabled="true">
+          Android 앱 준비 중
+        </span>
       </section>
 
-      <div className="ticks"></div>
-      <section id="spacer"></section>
-    </>
+      <footer className="footer">SSAFY 15기 자율 프로젝트 E106 · Suddenly I See</footer>
+    </main>
   )
 }
-
-export default App

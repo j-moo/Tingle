@@ -1,111 +1,247 @@
+/*
+ * Tingle Design Foundations v0.2 DRAFT — Figma "00 디자인 기초 v0.2" 변수와 같은 이름
+ * WHITE 기본, OS 다크 모드 또는 <html data-theme="dark"> 이면 BLACK
+ * 글꼴은 미확정(Pretendard 후보) — 설치돼 있으면 쓰고 없으면 시스템 글꼴
+ */
 :root {
-  --text: #6b6375;
-  --text-h: #08060d;
-  --bg: #fff;
-  --border: #e5e4e7;
-  --code-bg: #f4f3ec;
-  --accent: #aa3bff;
-  --accent-bg: rgba(170, 59, 255, 0.1);
-  --accent-border: rgba(170, 59, 255, 0.5);
-  --social-bg: rgba(244, 243, 236, 0.5);
-  --shadow:
-    rgba(0, 0, 0, 0.1) 0 10px 15px -3px, rgba(0, 0, 0, 0.05) 0 4px 6px -2px;
+  --neutral-0: #ffffff;
+  --neutral-100: #f5f5f5;
+  --neutral-150: #e7e7e7;
+  --neutral-300: #a5a5a5;
+  --neutral-400: #808080;
+  --neutral-500: #696969;
+  --neutral-700: #303030;
+  --neutral-800: #262626;
+  --neutral-850: #1c1c1c;
+  --neutral-900: #171717;
+  --neutral-950: #101010;
 
-  --sans: system-ui, 'Segoe UI', Roboto, sans-serif;
-  --heading: system-ui, 'Segoe UI', Roboto, sans-serif;
-  --mono: ui-monospace, Consolas, monospace;
+  --bg-canvas: var(--neutral-0);
+  --bg-surface: var(--neutral-100);
+  --bg-elevated: var(--neutral-0);
+  --text-primary: var(--neutral-900);
+  --text-secondary: var(--neutral-500);
+  --border-subtle: var(--neutral-150);
+  --border-control: var(--neutral-400);
+  --action-primary: var(--neutral-900);
+  --action-on-primary: var(--neutral-0);
+  --action-disabled: var(--neutral-150);
+  --focus-ring: var(--neutral-900);
 
-  font: 18px/145% var(--sans);
-  letter-spacing: 0.18px;
-  color-scheme: light dark;
-  color: var(--text);
-  background: var(--bg);
-  font-synthesis: none;
-  text-rendering: optimizeLegibility;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+  --font-sans: 'Pretendard', 'SUIT', 'Wanted Sans', system-ui, -apple-system, 'Noto Sans KR', sans-serif;
 
-  @media (max-width: 1024px) {
-    font-size: 16px;
-  }
+  --space-4: 4px;
+  --space-8: 8px;
+  --space-12: 12px;
+  --space-16: 16px;
+  --space-20: 20px;
+  --space-24: 24px;
+  --space-32: 32px;
+  --space-48: 48px;
+
+  --radius-control: 12px;
+  --radius-card: 20px;
+  --radius-sheet: 24px;
+  --size-button: 48px;
+
+  color-scheme: light;
+}
+
+:root[data-theme='dark'] {
+  --bg-canvas: var(--neutral-950);
+  --bg-surface: var(--neutral-850);
+  --bg-elevated: var(--neutral-800);
+  --text-primary: var(--neutral-100);
+  --text-secondary: var(--neutral-300);
+  --border-subtle: var(--neutral-700);
+  --action-primary: var(--neutral-100);
+  --action-on-primary: var(--neutral-950);
+  --action-disabled: var(--neutral-800);
+  --focus-ring: var(--neutral-100);
+  color-scheme: dark;
 }
 
 @media (prefers-color-scheme: dark) {
-  :root {
-    --text: #9ca3af;
-    --text-h: #f3f4f6;
-    --bg: #16171d;
-    --border: #2e303a;
-    --code-bg: #1f2028;
-    --accent: #c084fc;
-    --accent-bg: rgba(192, 132, 252, 0.15);
-    --accent-border: rgba(192, 132, 252, 0.5);
-    --social-bg: rgba(47, 48, 58, 0.5);
-    --shadow:
-      rgba(0, 0, 0, 0.4) 0 10px 15px -3px, rgba(0, 0, 0, 0.25) 0 4px 6px -2px;
-  }
-
-  #social .button-icon {
-    filter: invert(1) brightness(2);
+  :root:not([data-theme='light']) {
+    --bg-canvas: var(--neutral-950);
+    --bg-surface: var(--neutral-850);
+    --bg-elevated: var(--neutral-800);
+    --text-primary: var(--neutral-100);
+    --text-secondary: var(--neutral-300);
+    --border-subtle: var(--neutral-700);
+    --action-primary: var(--neutral-100);
+    --action-on-primary: var(--neutral-950);
+    --action-disabled: var(--neutral-800);
+    --focus-ring: var(--neutral-100);
+    color-scheme: dark;
   }
 }
 
-#root {
-  width: 1126px;
-  max-width: 100%;
-  margin: 0 auto;
-  text-align: center;
-  border-inline: 1px solid var(--border);
-  min-height: 100svh;
-  display: flex;
-  flex-direction: column;
+*,
+*::before,
+*::after {
   box-sizing: border-box;
 }
 
-body {
-  margin: 0;
-}
-
+body,
 h1,
-h2 {
-  font-family: var(--heading);
-  font-weight: 500;
-  color: var(--text-h);
-}
-
-h1 {
-  font-size: 56px;
-  letter-spacing: -1.68px;
-  margin: 32px 0;
-  @media (max-width: 1024px) {
-    font-size: 36px;
-    margin: 20px 0;
-  }
-}
-h2 {
-  font-size: 24px;
-  line-height: 118%;
-  letter-spacing: -0.24px;
-  margin: 0 0 8px;
-  @media (max-width: 1024px) {
-    font-size: 20px;
-  }
-}
-p {
+h2,
+p,
+ul {
   margin: 0;
 }
 
-code,
-.counter {
-  font-family: var(--mono);
-  display: inline-flex;
-  border-radius: 4px;
-  color: var(--text-h);
+body {
+  min-height: 100svh;
+  background: var(--bg-canvas);
+  color: var(--text-primary);
+  font: 400 16px/26px var(--font-sans);
+  -webkit-font-smoothing: antialiased;
 }
 
-code {
-  font-size: 15px;
-  line-height: 135%;
-  padding: 4px 8px;
-  background: var(--code-bg);
+:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+/* 화면 여백 24 · 섹션 사이 32 · 카드 안쪽 20 · 요소 사이 12 */
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-32);
+  width: min(560px, 100%);
+  min-height: 100svh;
+  margin-inline: auto;
+  padding: var(--space-32) var(--space-24);
+}
+
+.top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.wordmark {
+  font-size: 40px;
+  font-weight: 900;
+  letter-spacing: -0.05em;
+  line-height: 1;
+}
+.top__ko {
+  color: var(--text-secondary);
+  font-size: 16px;
+  font-weight: 500;
+}
+
+.hero {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-16);
+  padding-block: var(--space-16) var(--space-8);
+}
+.eyebrow {
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: 0.18em;
+}
+/* Display 32/42 · 700 · -0.5px — 웰컴 화면은 한 단계 크게 */
+.hero h1 {
+  font-size: 44px;
+  font-weight: 800;
+  line-height: 1.3;
+  letter-spacing: -0.03em;
+}
+.hero p {
+  color: var(--text-secondary);
+}
+
+.steps {
+  padding: 0;
+  list-style: none;
+  border-top: 1px solid var(--border-subtle);
+}
+.step {
+  display: flex;
+  align-items: center;
+  gap: var(--space-16);
+  padding-block: var(--space-20);
+  border-bottom: 1px solid var(--border-subtle);
+}
+.step__icon {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 52px;
+  height: 52px;
+  border-radius: var(--radius-control);
+  background: var(--bg-surface);
+}
+.step__icon svg {
+  width: 24px;
+  height: 24px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.75;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+/* Subtitle 18/26 · 600 / Body small 14/22 */
+.step strong {
+  display: block;
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 26px;
+  letter-spacing: -0.2px;
+}
+.step span {
+  color: var(--text-secondary);
+  font-size: 14px;
+  line-height: 22px;
+}
+
+.notice {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-12);
+  padding: var(--space-24) var(--space-20);
+  border-radius: var(--radius-sheet);
+  background: var(--action-primary);
+  color: var(--action-on-primary);
+}
+.notice__label {
+  opacity: 0.7;
+  font-size: 13px;
+}
+/* Title 22/30 · 600 · -0.3px */
+.notice h2 {
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 30px;
+  letter-spacing: -0.3px;
+}
+.notice__button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: var(--size-button);
+  margin-top: var(--space-8);
+  border-radius: var(--radius-control);
+  background: var(--bg-canvas);
+  color: var(--text-secondary);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.footer {
+  margin-top: auto;
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 18px;
+  text-align: center;
+}
+
+@media (max-width: 400px) {
+  .hero h1 {
+    font-size: 36px;
+  }
 }
