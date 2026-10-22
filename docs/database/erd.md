@@ -1,8 +1,8 @@
 # Tingle(팅글) ERD·테이블 정의
 
-1.1.1-review / 수정 2026-10-22. **canonical SQL 기준 24개 테이블·167개 컬럼**, PostgreSQL·JPA 기준. 82번의 nullable `push_installations.login_family_id` 하나를 추가했다. 물리 외래 키는 없으며 아래 관계는 서비스가 검사하는 논리 참조다. 공용 DB에 실행하지 않았다.
+1.1.2-review / 수정 2026-10-22. **canonical SQL 기준 24개 테이블·168개 컬럼**, PostgreSQL·JPA 기준. 82번의 nullable `push_installations.login_family_id`와 66번의 `keyrings.public_device_id`를 포함한다. 물리 외래 키는 없으며 아래 관계는 서비스가 검사하는 논리 참조다. 공용 DB에 실행하지 않았다.
 
-가져오기 SQL·tables.json은 24개·165개다. 기존 `app_users.email`·`profiles.completed_at` 누락 2개는 이번 작업 전에도 있던 차이이며 82번 범위에서 보존했다. 이번 push_installations의 7개 컬럼은 canonical/import/metadata에서 일치하고 일회용 PostgreSQL에 canonical SQL을 실행해 JPA validate를 확인했다. 전체 ERD·웹 동기화 완료로 해석하지 않는다.
+가져오기 SQL·tables.json은 24개·166개다. 기존 `app_users.email`·`profiles.completed_at` 누락 2개는 이번 작업 전에도 있던 차이이며 82번 범위에서 보존했다. 이번 push_installations의 7개 컬럼은 canonical/import/metadata에서 일치하고 일회용 PostgreSQL에 canonical SQL을 실행해 JPA validate를 확인했다. 전체 ERD·웹 동기화 완료로 해석하지 않는다.
 
 [API](../contracts/api/README.md) / [SQL](schema.sql) / [ERDCloud 가져오기 SQL](erdcloud-import.sql) / [기계판독 정의](tables.json) / [기존안·수정안 비교](changes-20261021.md) / [기능 대응표](../specifications/coverage.md)
 
@@ -23,7 +23,7 @@
 | `user_consents` | 약관·선택적 AI 분석 동의 이벤트 | 6 |
 | `profiles` | 회원 프로필과 사진 한 장 | 11 |
 | `matching_settings` | 회원별 희망 조건·매칭 설정·키링 반영 버전 | 7 |
-| `keyrings` | 실물 키링 식별·검증 정보; 37번 계약 확인 | 4 |
+| `keyrings` | 실물 키링 식별·검증 정보; 37번 계약 확인 | 5 |
 | `keyring_bindings` | 기기 소유 연결 이력 | 5 |
 | `registration_challenges` | 일회성 키링 등록 검증; 37번 계약 확인 | 5 |
 | `keyring_sync_runs` | 설정 동기화 요청과 기기 저장 확인 | 6 |
@@ -111,6 +111,7 @@ erDiagram
 erDiagram
     keyrings {
         bigint device_id PK
+        uuid public_device_id UK
         bytea serial_hash
         text verification_key_ref
         text firmware_version
@@ -378,11 +379,12 @@ erDiagram
 | 저장 항목 | 의미 | 비워 둘 수 있나 |
 | --- | --- | --- |
 | `device_id` | 내부 식별자; 서버/DB 생성 | 불가 |
+| `public_device_id` | API deviceId의 불변 공개 UUID; 서버가 생성하며 인증·소유 증명이 아님 | 불가 |
 | `serial_hash` | 기기 시리얼의 검증용 해시; 원문 미저장 | 불가 |
 | `verification_key_ref` | 검증 키 참조; 비밀 키 원문 아님 | 불가 |
 | `firmware_version` | 기기 펌웨어 버전 | 불가 |
 
-중복 금지 조합: serial_hash.
+중복 금지 조합: serial_hash, public_device_id 각각. 기존 행이 있는 공유 DB는 공개 UUID를 한 번 발급·중복 검사한 뒤 NOT NULL/UNIQUE를 적용해야 하며 기존 내부 참조는 유지한다. 자동 실행 마이그레이션은 제공하지 않는다.
 
 ## 기기 소유 연결 이력 (`keyring_bindings`)
 

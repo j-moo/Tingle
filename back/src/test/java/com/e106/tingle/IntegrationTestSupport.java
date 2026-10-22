@@ -149,9 +149,9 @@ public abstract class IntegrationTestSupport {
 	// ---------- 아직 API가 없는 가입 단계 (ERD 테이블에 직접 기록) ----------
 
 	protected long bindKeyring(long userId) {
-		Long deviceId = jdbc.queryForObject("insert into keyrings(serial_hash,verification_key_ref,firmware_version) "
-			+ "values (?,'test-only','test') returning device_id", Long.class,
-			UUID.randomUUID().toString().getBytes());
+		Long deviceId = jdbc.queryForObject("insert into keyrings(public_device_id,serial_hash,"
+			+ "verification_key_ref,firmware_version) values (?,?,'test-only','test') returning device_id", Long.class,
+			UUID.randomUUID(), UUID.randomUUID().toString().getBytes());
 		return jdbc.queryForObject("insert into keyring_bindings(device_id,user_id,bound_at) values (?,?,now()) "
 			+ "returning binding_id", Long.class, deviceId, userId);
 	}

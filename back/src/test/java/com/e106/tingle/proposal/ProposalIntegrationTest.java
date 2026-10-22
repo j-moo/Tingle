@@ -103,8 +103,9 @@ class ProposalIntegrationTest {
 			java.sql.Timestamp.from(NOW)));
 		jdbc.update("insert into matching_settings(user_id,desired_genders,age_min,settings_version) "
 			+ "values (?,ARRAY['MALE','FEMALE'],19,1)", user);
-		jdbc.update("insert into keyrings(device_id,serial_hash,verification_key_ref,firmware_version) "
-			+ "overriding system value values (?,?,'test-only','test')", user, new byte[] {(byte)user});
+		jdbc.update("insert into keyrings(device_id,public_device_id,serial_hash,verification_key_ref,"
+			+ "firmware_version) overriding system value values (?,?,?,'test-only','test')",
+			user, UUID.randomUUID(), new byte[] {(byte)user});
 		jdbc.update("insert into keyring_bindings(binding_id,device_id,user_id,bound_at) "
 			+ "overriding system value values (?,?,?,?)", user, user, user, java.sql.Timestamp.from(NOW));
 		jdbc.update("insert into survey_responses(response_id,user_id,version_code,client_request_id, "
