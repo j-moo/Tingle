@@ -185,7 +185,7 @@ ai 와 back 에 같은 스크립트를 쓴다. ai 를 먼저 전환해 새 back 
 | **0. 서버 준비** | 3주차 (10/19~) 서버 수령 직후 | Docker·Compose, 도메인·certbot, `/srv/tingle/.env`, Jenkins 실행, GitLab Webhook | Jenkins 로그인, MR 에 Jenkins 반응 | 완료 |
 | **1. CI 검사** | 3주차 | Jenkinsfile 검사 단계 (back·ai·app·web·firmware), 파트별 docker 이미지 | MR 에 결과 표시, 실패 시 머지 불가 | 완료 (펌웨어 검사는 코드 생기면) |
 | **2. 개발 환경** | 3~4주차 | compose, back·ai·web Dockerfile, develop 재시작 배포, `/app/dev/latest.apk` | 개발 APK 로 `/dev/api` 접속 성공, `/dev/` 랜딩 표시, back-dev → ai-dev 호출 성공 | web-dev · back-dev 배포 완료. ai · APK 남음 |
-| **3. 운영 재시작 배포** | 4주차 (10/26~) | master 재시작 배포. **다운타임·WebSocket 끊김 측정** | `/`·`/api` 동작, 다운타임 기록 | 배포 구성 완료(배포 전 DB 백업 포함). 첫 master 머지 · 측정 남음 |
+| **3. 운영 재시작 배포** | 4주차 (10/26~) | master 재시작 배포. **다운타임·WebSocket 끊김 측정** | `/`·`/api` 동작, 다운타임 기록 | 완료 (10/22 첫 master 머지 MR !53, web 재시작 끊김 0.35초, `infra/배포_측정.md`) |
 | **4. 블루-그린** | 5주차 (11/2~11/6) | deploy-bluegreen.sh, upstream 전환(ai·back), 롤백, ShedLock 확인 | 배포 중 1초 간격 요청 실패 0건, 채팅 재접속 3초 이내 | back 전환 · 롤백 구현, 시험 실패 0건. graceful shutdown · ai · WebSocket 확인 남음 |
 | **5. 운영 보강** | 6주차 (11/9~11/13) | 매일 백업, 모니터링, 푸시(FCM), 이미지 보관 정책 | 복원 1회 성공, Grafana 에서 배포 전후 확인 | 배포 전 백업만 완료 |
 | **6. 최종** | 7주차 (11/16~) | 운영 APK 릴리스, 시연용 데이터 초기화 스크립트 | E2E 시연 전 운영 환경 고정 | — |
