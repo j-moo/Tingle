@@ -47,7 +47,7 @@ v0.3.0, 2026.10.21. 모바일 앱을 Kotlin Multiplatform 으로 정하고, Reac
 | web | React 랜딩·서비스 설명 페이지. Node 로 빌드하고 `nginx:alpine` 으로 정적 파일 서빙 | `web` | `web-dev` |
 | backend | Spring Boot (REST + STOMP WebSocket + 예약 작업 + AI 서버 호출) | `backend-blue` / `-green` | `backend-dev` |
 | ai | FastAPI (Python 3.12). GMS 호출로 자연어 구조화·설문값 정규화 | `ai-blue` / `-green` | `ai-dev` |
-| db | PostgreSQL 16, 컨테이너 1개 | DB `sis` | DB `sis_dev` |
+| db | PostgreSQL 17 (백엔드 로컬 `back/compose.yaml` 과 동일), 컨테이너 1개 | DB `tingle` | DB `tingle_dev` |
 | jenkins | Jenkins LTS, Docker 소켓 마운트. 에이전트 이미지에 JDK 21·Android SDK·Node 20·Python 3.12·arduino-cli | 공용 | 공용 |
 | (5단계) prometheus, node-exporter, cadvisor, loki, promtail, grafana | 모니터링 | 공용 | 공용 |
 
@@ -93,7 +93,7 @@ checkout
 
 ### 개발 (재시작)
 
-`docker compose -p sis --env-file /서버경로/.env -f infra/docker-compose.yml up -d --build ai-dev backend-dev web-dev`
+`docker compose --env-file /srv/tingle/.env -f infra/docker-compose.yml up -d --build ai-dev backend-dev web-dev` (프로젝트 이름은 compose 의 `name: tingle`)
 
 ### 운영 (블루-그린, `deploy.sh <서비스>`)
 
@@ -118,7 +118,7 @@ ai 와 backend 에 같은 스크립트를 쓴다. ai 를 먼저 전환해 새 ba
 
 ## 8. DB·파일·백업
 
-- DB 는 **PostgreSQL 16** 한 컨테이너에 운영 `sis`, 개발 `sis_dev` 두 DB 를 둔다. 확장은 쓰지 않는다.
+- DB 는 **PostgreSQL 17** 한 컨테이너에 운영 `tingle`, 개발 `tingle_dev` 두 DB 를 둔다. 확장은 쓰지 않는다.
 - 구조 변경은 Flyway. 전환 중 이전·새 버전이 같은 DB 를 쓰므로 **이전 버전이 깨지지 않는 변경만 한 번에** 배포한다. 컬럼 이름 변경·삭제는 추가 → 코드 전환 → 삭제로 나눈다.
 - 핵심 제약은 DB 에 둔다: `offline_encounter_submissions(encounter_id, device_id)` 유일, `pair_restrictions`·`chat_rooms` 의 정렬된 사용자 쌍 유일, 활성 채팅방 1개 부분 유일 인덱스. 앱·키링이 중복 업로드해도 DB 가 막는다.
 - `master` 배포 직전과 매일 새벽 `pg_dump` + `/data/uploads` tar → 서버 `/backup/`, 7일치. 서버가 1대라 서버 유실에는 못 버티므로 **주 1회 팀장 로컬로 내려받는다**. DB 포트는 열지 않는다.

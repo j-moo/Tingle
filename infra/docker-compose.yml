@@ -1,0 +1,85 @@
+# 서버 /srv/tingle 에서 실행: docker compose --env-file /srv/tingle/.env -f infra/docker-compose.yml up -d --build
+# 호스트에 여는 포트는 nginx 의 80·443 뿐이다 (Docker publish 는 ufw 를 우회한다). 나머지는 내부망 이름으로만 호출.
+name: tingle
+
+services:
+  nginx:
+    image: nginx:alpine
+    ports:
+      - '80:80'
+      - '443:443'
+    environment:
+      DOMAIN: ${DOMAIN:?}
+    volumes:
+      - ./nginx/templates:/etc/nginx/templates:ro # ${DOMAIN} 을 치환해 /etc/nginx/conf.d/ 로 복사된다
+      - /etc/letsencrypt:/etc/letsencrypt:ro
+      - /var/www/certbot:/var/www/certbot:ro # certbot webroot 갱신 경로
+    depends_on:
+      - web
+      - web-dev
+    mem_limit: 128m
+    restart: unless-stopped
+
+  db:
+    image: postgres:17
+    environment:
+      POSTGRES_USER: tingle
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?}
+      POSTGRES_DB: tingle # 운영. 개발 DB tingle_dev 는 db/init.sql 이 첫 기동 때 만든다
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    mem_limit: 1g
+    restart: unless-stopped
+
+  jenkins:
+    image: jenkins/jenkins:lts-jdk21
+    environment:
+      JENKINS_OPTS: --prefix=/jenkins
+    volumes:
+      - jenkins_home:/var/jenkins_home
+      - /var/run/docker.sock:/var/run/docker.sock # docker CLI·소켓 권한은 Jenkins 브랜치(S15P31E106-8)에서 에이전트 이미지와 함께
+    mem_limit: 1536m
+    restart: unless-stopped
+
+  web:
+    build: ../front/web
+    mem_limit: 64m
+    restart: unless-stopped
+
+  web-dev:
+    build:
+      context: ../front/web
+      args:
+        BASE: /dev/
+    mem_limit: 64m
+    restart: unless-stopped
+
+  # back · ai: 각 파트가 Dockerfile 을 만들면 주석을 풀고 연결한다. nginx 는 이미 /api/ /ws/ /dev/api/ /dev/ws/ 를 back·back-dev:8080 으로 넘긴다.
+  # back:
+  #   build: ../back
+  #   environment:
+  #     SPRING_PROFILES_ACTIVE: prod
+  #     SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/tingle
+  #     SPRING_DATASOURCE_USERNAME: tingle
+  #     SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD}
+  #     JWT_SECRET: ${JWT_SECRET}
+  #     AI_SERVER_URL: http://ai:8000
+  #   volumes:
+  #     - /data/uploads:/data/uploads
+  #   depends_on: [db]
+  #   mem_limit: 1536m
+  #   restart: unless-stopped
+  # back-dev: 위와 같고 DB tingle_dev · AI_SERVER_URL http://ai-dev:8000
+  # ai:
+  #   build: ../ai-server
+  #   environment:
+  #     HOST: 0.0.0.0
+  #     GMS_API_KEY: ${GMS_API_KEY}
+  #   mem_limit: 512m
+  #   restart: unless-stopped
+  # ai-dev: 위와 같음
+
+volumes:
+  pgdata:
+  jenkins_home:
