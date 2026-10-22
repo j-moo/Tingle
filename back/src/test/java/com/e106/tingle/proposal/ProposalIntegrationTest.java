@@ -44,6 +44,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
 
 import com.e106.tingle.TestcontainersConfiguration;
+import com.e106.tingle.auth.MemberAccessRepository;
 import com.e106.tingle.global.error.BusinessException;
 import com.nimbusds.jose.jwk.source.ImmutableSecret;
 
@@ -66,6 +67,8 @@ class ProposalIntegrationTest {
 	@Autowired
 	private ProposalService service;
 	@Autowired
+	private MemberAccessRepository members;
+	@Autowired
 	private MutableClock clock;
 	@Autowired
 	private ObjectMapper mapper;
@@ -74,10 +77,13 @@ class ProposalIntegrationTest {
 	private final UUID firstFamily = UUID.randomUUID();
 	private final UUID secondFamily = UUID.randomUUID();
 	private MatchProposal proposal;
+	private String initialVersion;
+	private String secondVersion;
 
 	@BeforeEach
 	void prepare() throws Exception {
-		jdbc.execute("truncate table match_proposals, encounters, user_pairs, refresh_tokens, profiles, "
+		jdbc.execute("truncate table chat_message_reads, chat_messages, chat_members, chat_rooms, "
+			+ "match_proposals, encounters, user_pairs, refresh_tokens, profiles, "
 			+ "app_users, user_consents, matching_settings, keyrings, keyring_bindings, survey_responses, "
 			+ "analysis_results, settings_snapshots, keyring_sync_runs, user_blocks restart identity");
 		clock.set(NOW);
@@ -85,12 +91,14 @@ class ProposalIntegrationTest {
 			seedMember(user, user == 1 ? firstFamily : user == 2 ? secondFamily : UUID.randomUUID());
 		}
 		proposal = createProposal(1, 2, NOW);
+		initialVersion = service.profile(proposal.getId(), 1).profileVersion();
+		secondVersion = service.profile(proposal.getId(), 2).profileVersion();
 	}
 
 	private void seedMember(long user, UUID family) throws Exception {
-		jdbc.update("insert into app_users(user_id,provider,provider_subject,status,created_at) "
-			+ "overriding system value values (?,'GOOGLE',?,'ACTIVE',?)", user, "synthetic-" + user,
-			java.sql.Timestamp.from(NOW));
+		jdbc.update("insert into app_users(user_id,provider,provider_subject,status,created_at,signup_completed_at) "
+			+ "overriding system value values (?,'GOOGLE',?,'ACTIVE',?,?)", user, "synthetic-" + user,
+			java.sql.Timestamp.from(NOW), java.sql.Timestamp.from(NOW));
 		jdbc.update("insert into profiles(user_id,nickname,nickname_key,birth_date,gender,smoking_status, "
 			+ "drinking_frequency,image_url,completed_at) "
 			+ "values (?,?,?,'2001-10-21','FEMALE','NON_SMOKER','NEVER',?,?)",
@@ -134,6 +142,58 @@ class ProposalIntegrationTest {
 		return proposals.saveAndFlush(new MatchProposal(pair.getId(), encounter, createdAt));
 	}
 
+	@ParameterizedTest
+	@ValueSource(strings = {"accept", "decline"})
+	void existingProposalCanBeAnsweredWithoutKeyring(String action) throws Exception {
+		jdbc.update("update keyring_bindings set unbound_at=? where user_id=1", java.sql.Timestamp.from(NOW));
+		assertThat(members.ready(1, NOW)).isFalse();
+		mvc.perform(get(path()).header("Authorization", bearer(1))).andExpect(status().isOk());
+		decide(proposal.getId(), 1, action, UUID.randomUUID()).andExpect(status().isOk());
+	}
+
+	@ParameterizedTest
+	@ValueSource(strings = {"accept", "decline"})
+	void aiWithdrawalDoesNotBlockProposalsOrMatching(String action) throws Exception {
+		withdrawConsent("AI_RISK_DETECTION", "2026-10-22");
+		assertThat(members.ready(1, NOW)).isTrue();
+		mvc.perform(get(path()).header("Authorization", bearer(1))).andExpect(status().isOk());
+		mvc.perform(get(path() + "/partner-profile").header("Authorization", bearer(1)))
+			.andExpect(status().isOk());
+		decide(proposal.getId(), 1, action, UUID.randomUUID()).andExpect(status().isOk());
+	}
+
+	@Test
+	void aiWithdrawalAndKeyringResetKeepExistingProposalAccess() throws Exception {
+		withdrawConsent("AI_RISK_DETECTION", "2026-10-22");
+		jdbc.update("update keyring_bindings set unbound_at=? where user_id=1", java.sql.Timestamp.from(NOW));
+		mvc.perform(get("/api/v1/match-proposals").header("Authorization", bearer(1)))
+			.andExpect(status().isOk());
+		decide(proposal.getId(), 1, "accept", UUID.randomUUID()).andExpect(status().isOk());
+	}
+
+	@ParameterizedTest
+	@ValueSource(strings = {"TERMS", "PRIVACY"})
+	void serviceAgreementsStillRequiredAfterAiWithdrawal(String type) throws Exception {
+		withdrawConsent("AI_RISK_DETECTION", "2026-10-22");
+		withdrawConsent(type, "2026-10-19");
+		assertThat(members.ready(1, NOW)).isFalse();
+		mvc.perform(get(path()).header("Authorization", bearer(1))).andExpect(status().isForbidden());
+		decide(proposal.getId(), 1, "accept", UUID.randomUUID()).andExpect(status().isForbidden());
+	}
+
+	@Test
+	void initialSignupStillRequiresAiConsent() throws Exception {
+		jdbc.update("update app_users set signup_completed_at=null where user_id=1");
+		withdrawConsent("AI_RISK_DETECTION", "2026-10-22");
+		assertThat(members.ready(1, NOW)).isFalse();
+		decide(proposal.getId(), 1, "accept", UUID.randomUUID()).andExpect(status().isForbidden());
+	}
+
+	private void withdrawConsent(String type, String version) {
+		jdbc.update("insert into user_consents(user_id,consent_type,document_version,agreed,recorded_at) "
+			+ "values (1,?,?,false,?)", type, version, java.sql.Timestamp.from(NOW.plusSeconds(1)));
+	}
+
 	@Test
 	void usesNumericIdsAndOnlyPublicProfileFields() throws Exception {
 		mvc.perform(get(path()).header("Authorization", bearer(1)))
@@ -141,7 +201,7 @@ class ProposalIntegrationTest {
 		mvc.perform(get(path() + "/partner-profile").header("Authorization", bearer(1)))
 			.andExpect(status().isOk()).andExpect(header().string("Cache-Control", "no-store"))
 			.andExpect(jsonPath("$.age").value(24)).andExpect(jsonPath("$.birthDate").doesNotExist())
-			.andExpect(jsonPath("$.userId").doesNotExist()).andExpect(jsonPath("$.profileVersion").doesNotExist());
+			.andExpect(jsonPath("$.userId").doesNotExist()).andExpect(jsonPath("$.profileVersion").isString());
 		mvc.perform(get("/api/v1/match-proposals/" + UUID.randomUUID()).header("Authorization", bearer(1)))
 			.andExpect(status().isBadRequest());
 	}
@@ -190,7 +250,8 @@ class ProposalIntegrationTest {
 		PairRelation pair = relations.findById(proposal.getPairId()).orElseThrow();
 		assertThat(pair.getRestrictedUntil()).isEqualTo(NOW.plus(Duration.ofDays(30)));
 		assertThat(pair.getDeclinedProposalId()).isEqualTo(proposal.getId());
-		decide(proposal.getId(), 2, "accept", UUID.randomUUID()).andExpect(status().isConflict());
+		decide(proposal.getId(), 2, "accept", UUID.randomUUID()).andExpect(status().isOk())
+			.andExpect(jsonPath("$.status").value("REJECTED"));
 	}
 
 	@Test
@@ -216,7 +277,8 @@ class ProposalIntegrationTest {
 
 	@ParameterizedTest
 	@ValueSource(strings = {"consent", "profile", "binding", "survey", "analysis", "preferences", "sync", "version"})
-	void rejectsEveryIncompleteGate(String gate) throws Exception {
+	void rejectsEveryIncompleteInitialSignupGate(String gate) throws Exception {
+		jdbc.update("update app_users set signup_completed_at=null where user_id=1");
 		String sql = switch (gate) {
 			case "consent" -> "update user_consents set agreed=false where user_id=1";
 			case "profile" -> "update profiles set birth_date=null where user_id=1";
@@ -289,7 +351,7 @@ class ProposalIntegrationTest {
 	private String choose(CountDownLatch start, long user, MatchProposal.Decision choice, UUID key) throws Exception {
 		start.await();
 		try {
-			service.decide(proposal.getId(), user, choice, key);
+			service.decide(proposal.getId(), user, choice, key, user == 1 ? initialVersion : secondVersion);
 			return "SUCCESS";
 		} catch (BusinessException exception) {
 			return exception.getErrorCode().name();
@@ -336,8 +398,135 @@ class ProposalIntegrationTest {
 	}
 
 	private ResultActions decide(long id, long user, String action, UUID key) throws Exception {
-		return mvc.perform(post("/api/v1/match-proposals/" + id + "/" + action)
-			.header("Authorization", bearer(user)).header("Idempotency-Key", key));
+		var request = post("/api/v1/match-proposals/" + id + "/" + action)
+			.header("Authorization", bearer(user)).header("Idempotency-Key", key);
+		if ("accept".equals(action)) {
+			var profile = mvc.perform(get("/api/v1/match-proposals/" + id + "/partner-profile")
+				.header("Authorization", bearer(user))).andReturn().getResponse();
+			String version = profile.getStatus() == 200
+				? mapper.readTree(profile.getContentAsString()).get("profileVersion").asText() : initialVersion;
+			request.contentType("application/json").content("{\"profileVersion\":\"" + version + "\"}");
+		}
+		return mvc.perform(request);
+	}
+
+	@Test
+	void stalePublicProfileRequiresExplicitConfirmationButPrivateChangesDoNot() throws Exception {
+		jdbc.update("update profiles set image_url=null where user_id=2");
+		UUID key = UUID.randomUUID();
+		mvc.perform(post(path() + "/accept").header("Authorization", bearer(1)).header("Idempotency-Key", key)
+			.contentType("application/json").content("{\"profileVersion\":\"" + initialVersion + "\"}"))
+			.andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("PROFILE_CHANGED"));
+		assertThat(proposals.findById(proposal.getId()).orElseThrow().getLowRequestKey()).isNull();
+		String latest = service.profile(proposal.getId(), 1).profileVersion();
+		jdbc.update("update app_users set email='private@example.test' where user_id=2");
+		assertThat(service.profile(proposal.getId(), 1).profileVersion()).isEqualTo(latest);
+		decide(proposal.getId(), 1, "accept", key).andExpect(status().isOk());
+		jdbc.update("update profiles set introduction='changed again' where user_id=2");
+		mvc.perform(post(path() + "/accept").header("Authorization", bearer(1)).header("Idempotency-Key", key)
+			.contentType("application/json").content("{\"profileVersion\":\"" + initialVersion + "\"}"))
+			.andExpect(status().isOk()).andExpect(jsonPath("$.myDecision").value("ACCEPT"));
+	}
+
+	@Test
+	void birthdayChangesPublicVersionWithoutCancellingTheProposal() throws Exception {
+		clock.set(NOW.plus(Duration.ofHours(12)));
+		assertThat(service.profile(proposal.getId(), 1).age()).isEqualTo(25);
+		assertThat(service.profile(proposal.getId(), 1).profileVersion()).isNotEqualTo(initialVersion);
+		mvc.perform(post(path() + "/accept").header("Authorization", bearer(1))
+			.header("Idempotency-Key", UUID.randomUUID()).contentType("application/json")
+			.content("{\"profileVersion\":\"" + initialVersion + "\"}"))
+			.andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("PROFILE_CHANGED"));
+		decide(proposal.getId(), 1, "accept", UUID.randomUUID()).andExpect(status().isOk());
+	}
+
+	@Test
+	void priorDeclineKeepsUndecidedListProfileAndDecisionPath() throws Exception {
+		decide(proposal.getId(), 1, "decline", UUID.randomUUID()).andExpect(status().isOk());
+		mvc.perform(get("/api/v1/match-proposals").header("Authorization", bearer(1)))
+			.andExpect(jsonPath("$.items").isEmpty());
+		mvc.perform(get("/api/v1/match-proposals").header("Authorization", bearer(2)))
+			.andExpect(jsonPath("$.items[0].status").value("PENDING"))
+			.andExpect(jsonPath("$.items[0].myDecision").value("NONE"));
+		mvc.perform(get(path() + "/partner-profile").header("Authorization", bearer(2)))
+			.andExpect(status().isOk());
+		clock.set(NOW.plusSeconds(30));
+		decide(proposal.getId(), 2, "accept", UUID.randomUUID()).andExpect(status().isOk())
+			.andExpect(jsonPath("$.status").value("REJECTED")).andExpect(jsonPath("$.chatAvailable").value(false));
+		mvc.perform(get("/api/v1/match-proposals").header("Authorization", bearer(2)))
+			.andExpect(jsonPath("$.items").isEmpty());
+		assertThat(relations.findById(proposal.getPairId()).orElseThrow().getRestrictedUntil())
+			.isEqualTo(NOW.plus(Duration.ofDays(30)));
+	}
+
+	@Test
+	void cancellationPreservesOriginalAcceptanceAndHidesItFromUndecidedPartner() throws Exception {
+		UUID accept = UUID.randomUUID();
+		UUID cancel = UUID.randomUUID();
+		decide(proposal.getId(), 1, "cancel", cancel).andExpect(status().isConflict());
+		decide(proposal.getId(), 1, "accept", accept).andExpect(status().isOk());
+		decide(proposal.getId(), 1, "cancel", accept).andExpect(status().isConflict())
+			.andExpect(jsonPath("$.code").value("IDEMPOTENCY_CONFLICT"));
+		decide(proposal.getId(), 1, "cancel", cancel).andExpect(status().isOk())
+			.andExpect(jsonPath("$.myDecision").value("DECLINE"));
+		clock.set(NOW.plusSeconds(30));
+		decide(proposal.getId(), 1, "cancel", cancel).andExpect(status().isOk());
+		decide(proposal.getId(), 1, "accept", accept).andExpect(status().isOk())
+			.andExpect(jsonPath("$.status").value("REJECTED"));
+		decide(proposal.getId(), 1, "accept", UUID.randomUUID()).andExpect(status().isConflict());
+		MatchProposal saved = proposals.findById(proposal.getId()).orElseThrow();
+		assertThat(saved.getLowDecision()).isEqualTo(MatchProposal.Decision.ACCEPT);
+		assertThat(saved.getLowRequestKey()).isEqualTo(accept);
+		assertThat(saved.getLowCancelRequestKey()).isEqualTo(cancel);
+		assertThat(saved.getLowCancelledAt()).isEqualTo(NOW);
+		mvc.perform(get(path()).header("Authorization", bearer(2)))
+			.andExpect(jsonPath("$.status").value("PENDING"));
+		decide(proposal.getId(), 2, "accept", UUID.randomUUID()).andExpect(status().isOk())
+			.andExpect(jsonPath("$.status").value("REJECTED"));
+		assertThat(relations.findById(proposal.getPairId()).orElseThrow().getRestrictedUntil())
+			.isEqualTo(NOW.plus(Duration.ofDays(30)));
+	}
+
+	@Test
+	void concurrentCancellationAndPartnerAcceptanceHaveOneConsistentOutcome() throws Exception {
+		decide(proposal.getId(), 1, "accept", UUID.randomUUID()).andExpect(status().isOk());
+		CountDownLatch start = new CountDownLatch(1);
+		try (var executor = Executors.newFixedThreadPool(2)) {
+			var cancellation = executor.submit(() -> {
+				start.await();
+				try {
+					service.cancel(proposal.getId(), 1, UUID.randomUUID());
+					return "SUCCESS";
+				} catch (BusinessException exception) {
+					return exception.getErrorCode().name();
+				}
+			});
+			var acceptance = executor.submit(() -> choose(start, 2, MatchProposal.Decision.ACCEPT, UUID.randomUUID()));
+			start.countDown();
+			String cancellationResult = cancellation.get(10, TimeUnit.SECONDS);
+			assertThat(acceptance.get(10, TimeUnit.SECONDS)).isEqualTo("SUCCESS");
+			MatchProposal saved = proposals.findById(proposal.getId()).orElseThrow();
+			if ("SUCCESS".equals(cancellationResult)) {
+				assertThat(saved.getStatus()).isEqualTo(MatchProposal.Status.REJECTED);
+				assertThat(saved.getLowCancelledAt()).isEqualTo(NOW);
+			} else {
+				assertThat(cancellationResult).isEqualTo("PROPOSAL_STATE_CONFLICT");
+				assertThat(saved.getStatus()).isEqualTo(MatchProposal.Status.ACCEPTED);
+				assertThat(saved.getLowCancelledAt()).isNull();
+			}
+		}
+	}
+
+	@Test
+	void mutualAcceptanceWinsOverLaterCancellationAndExpiryRemovesUndecidedRows() throws Exception {
+		decide(proposal.getId(), 1, "accept", UUID.randomUUID()).andExpect(status().isOk());
+		decide(proposal.getId(), 2, "accept", UUID.randomUUID()).andExpect(status().isOk());
+		decide(proposal.getId(), 1, "cancel", UUID.randomUUID()).andExpect(status().isConflict());
+		MatchProposal other = createProposal(1, 3, NOW);
+		clock.set(NOW.plus(Duration.ofHours(24)));
+		mvc.perform(get("/api/v1/match-proposals").header("Authorization", bearer(3)))
+			.andExpect(jsonPath("$.items").isEmpty());
+		decide(other.getId(), 1, "cancel", UUID.randomUUID()).andExpect(status().isGone());
 	}
 
 	private String path() {

@@ -1,7 +1,7 @@
 # 본인 푸시 단말 등록·교체·해제
 
 - 버전: 0.2.0-local, 2026-10-22. 담당 김영빈(BE), S15P31E106-82.
-- 기계 판독 계약: [OpenAPI](openapi.json)의 `registerPush`, `removePush`, `PushToken`, `Ack`.
+- 기계 판독 계약: [OpenAPI](openapi.json)의 `registerPush`, `removePush`, `PushToken`, `PushRegistration`.
 - 영향: FE 설치 UUID·토큰 교체·해제 처리, 가을(BE)의 인증·계정 전환 연동. 로컬 구현 단계이며 팀 승인·병합·배포 또는 실제 푸시 발송 완료를 뜻하지 않는다.
 
 ## 등록과 토큰 교체
@@ -21,7 +21,7 @@
 - 현재 회원의 설치는 동일한 내부 행에서 플랫폼·암호문·시각을 갱신한다. 같은 요청 재전송도 행을 추가하지 않는다.
 - 다른 회원 소유 UUID에는 404 `NOT_FOUND`를 반환하고 저장값을 보존한다. UUID를 제시하는 것만으로 계정 연결을 이전하지 않는다.
 - 서로 다른 회원이 동시에 같은 UUID를 최초 등록해도 DB UNIQUE 제약과 소유권을 포함한 upsert로 한 회원만 소유한다.
-- 200 응답은 `{"serverTime":"2026-10-22T01:00:00Z"}` 형태다. 토큰·암호문·내부 ID는 반환하지 않으며 `Cache-Control: no-store`를 적용한다.
+- 200 응답은 `{"serverTime":"2026-10-22T01:00:00Z","bindingId":"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"}` 형태다. 안내 연동에서 추가한 bindingId는 현재 로그인 연결의 불투명 UUID이며 인증 자격이 아니다. 같은 family의 토큰 교체에는 유지하고 새 로그인·삭제 후 재등록에는 새 값을 발급한다. 토큰·암호문·내부 ID는 반환하지 않으며 `Cache-Control: no-store`를 적용한다.
 
 ## 해제와 재등록
 
@@ -34,7 +34,7 @@
 
 ## 저장과 설정
 
-두 번째 단위는 기존 ERD의 6개 컬럼을 사용했다. 세 번째 단위는 설치별 로그인 상태를 구분하도록 nullable UUID `login_family_id` 하나를 추가한다. 값은 요청 필드가 아닌 검증된 JWT `sid`에서 얻는다. 기존 null 행을 로그인 중이라고 가정하지 않으며 새 제안 수신 연결만 허용한다. 클라이언트가 로그인 후 PUT으로 재등록하면 현재 세션을 연결한다. 별도 테이블·물리 FK는 추가하지 않는다.
+두 번째 단위는 기존 ERD의 6개 컬럼을 사용했다. 세 번째 단위는 설치별 로그인 상태를 구분하도록 nullable UUID `login_family_id` 하나를 추가한다. 값은 요청 필드가 아닌 검증된 JWT `sid`에서 얻는다. 기존 null 행을 로그인 중이라고 가정하지 않으며 새 제안 수신 연결만 허용한다. 클라이언트가 로그인 후 PUT으로 재등록하면 현재 세션을 연결한다. 안내 통합은 nullable binding_id(UUID)·linked_at(timestamptz)을 추가한다. 기존 login_family_id를 재사용하며 session_family_id라는 중복 컬럼을 만들지 않는다. 같은 family 재등록은 최초 linked_at을 유지한다. null인 기존 행의 연결 정보는 추정하지 않고 검증된 재등록 때 채운다. 별도 테이블·물리 FK는 추가하지 않는다.
 
 `PUSH_TOKEN_ENCRYPTION_KEY`에 JWT와 별도로 생성한 32바이트 키를 Base64로 인코딩해 주입한다. 누락 시 등록은 503 `SERVICE_UNAVAILABLE`이며 평문 저장으로 대체하지 않는다. 값이 있으나 잘못된 형식·길이면 시작 단계에서 거부한다. 임의 기본 키나 JWT 키 재사용은 하지 않는다. 실제 키는 환경별로 관리하고 저장소에 기록하지 않는다.
 
@@ -78,9 +78,11 @@
 
 ## 호환성과 후속 연동
 
-- 기존 공개 경로·UUID·요청 필드·200 Ack/204 응답을 유지한다. 이 단위의 404는 기존 OpenAPI 템플릿의 `RESOURCE_NOT_FOUND` 대신 서버의 일반 자원 오류 `NOT_FOUND`로 맞춘다. FE는 새 분기를 적용한 서버와 함께 반영한다.
+- 기존 공개 경로·UUID·요청 필드를 유지하며 등록은200 PushRegistration(serverTime, bindingId), 해제는204 본문 없음이다. 이 단위의 404는 기존 OpenAPI 템플릿의 `RESOURCE_NOT_FOUND` 대신 서버의 일반 자원 오류 `NOT_FOUND`로 맞춘다. FE는 새 분기를 적용한 서버와 함께 반영한다.
 - 가입 미완료 403 `ONBOARDING_REQUIRED`, 인증 오류 401 분기, 키 미설정 503을 기존 서버 형식으로 응답한다. 실제 발송·채널 선택·예약·ACK 정책은 구현하지 않는다.
 - 적용 순서: FE·인증 담당 계약 검토 → 인프라 담당이 공유 DB nullable 컬럼 적용·키 관리 확인 → 승인 MR 반영 → 서버 키 설정·클라이언트 적용 → 실제 기기/공급자 검증. 공유 DB에 설계 SQL을 직접 실행하지 않는다. 기존 클라이언트는 일반 로그아웃을 유지하며, 설치 재등록·명시적 해제 연동은 FE 반영이 필요하다.
 - 로그아웃 시 연결을 자동 삭제하지 않는다. 설치·세션을 확인한 선택적 해제만 계정 전환에 사용한다. 계정 전환을 이전 연결 해제와 새 인증 절차 없이 자동 이전하지 않는다.
 
 정상/오류·재등록·소유권·동시 등록 테스트의 실행 결과는 [구현 기록](../../verification/push-installations-82.md)에 남긴다.
+
+2026-10-22 후속 웹 대조: 요청받은 채팅·설치·로그아웃8개와 키링2개 API의 노션 현재 계약·저장 검증을 완료했다. 이 기록은 다른 API 전체나 서버/공용 DB/단말 검증으로 확대하지 않는다. [현재 통합 검증](../../verification/mr29-unified-integration-20261022.md)과 [10개 API 증거](../../verification/notion-api-ten-20261022.json)를 따른다.

@@ -91,9 +91,13 @@ public class AgreementService {
 	 * 현재 필수 항목에 현재 버전으로 모두 동의한 상태인지. 약관 버전이 올라가면 다시 false 가 된다.
 	 */
 	public boolean hasAgreedAllRequired(long userId) {
+		return hasAgreedRequiredForAccess(userId, false);
+	}
+
+	public boolean hasAgreedRequiredForAccess(long userId, boolean signupCompleted) {
 		Map<String, UserConsent> latest = latestByType(userId);
 		return currentItems().stream()
-			.filter(AgreementProperties.Item::required)
+			.filter(item -> AgreementPolicy.requiredForAccess(item.type(), item.required(), signupCompleted))
 			.allMatch(item -> {
 				UserConsent consent = latest.get(item.type());
 				return consent != null && consent.isAgreed() && consent.getDocumentVersion().equals(item.version());

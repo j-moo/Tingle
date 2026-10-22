@@ -1,0 +1,177 @@
+{
+  "recorded_on": "2026-10-22",
+  "base_commit": "1485656dd0b4c7777be704f1023c05caa4abb18c",
+  "status": "local-and-web-verified; remote-unpushed",
+  "backend": {
+    "validated_on": "2026-10-21",
+    "source_patch_rechecked_on": "2026-10-22",
+    "source_diff_matches_preserved_validated_patch": true,
+    "diff_sha256": "1865c8f01489be1ec6bee3847e168e76962ea9cd993c32d34d19283c2bbdac24",
+    "test_totals": {
+      "tests": 118,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "suites": [
+      {
+        "suite": "com.e106.tingle.agreement.AgreementServiceTest",
+        "tests": 12,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "suite": "com.e106.tingle.auth.AuthIntegrationTest",
+        "tests": 27,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "suite": "com.e106.tingle.auth.SocialVerifierTest",
+        "tests": 8,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "suite": "com.e106.tingle.BackendApplicationTests",
+        "tests": 2,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "suite": "com.e106.tingle.global.error.GlobalExceptionHandlerTest",
+        "tests": 8,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "suite": "com.e106.tingle.proposal.ProposalIntegrationTest",
+        "tests": 27,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "suite": "com.e106.tingle.proposal.ProposalResponseTest",
+        "tests": 9,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "suite": "com.e106.tingle.RuntimeConfigurationTest",
+        "tests": 3,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "suite": "com.e106.tingle.user.OnboardingIntegrationTest",
+        "tests": 16,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "suite": "com.e106.tingle.user.ProfileRulesTest",
+        "tests": 6,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      }
+    ],
+    "checks": [
+      "compile",
+      "checkstyleMain",
+      "checkstyleTest",
+      "bootJar",
+      "Testcontainers PostgreSQL17"
+    ],
+    "full_test_rerun_for_documentation_only_changes": false,
+    "diff_scope": "back/src against base_commit; excludes documentation"
+  },
+  "openapi": {
+    "version": "1.2.1-alignment-review",
+    "active_operations": 68,
+    "validation": "passed"
+  },
+  "sql": {
+    "canonical_parse": "passed",
+    "import_parse": "passed"
+  },
+  "notion": {
+    "api_pages_reexported": 78,
+    "summary_updates_persisted": 40,
+    "nickname_rule_persisted": true,
+    "body_followup_paragraphs_verified": 17,
+    "agreements_response_description_corrected": true,
+    "logout_204_description_corrected": true,
+    "metadata_and_history_preserved": true,
+    "source_export_sha256": "c2551fbc56cb2c379c6e85f4242a4823bd9eb8d01808aa41c6f43a66dc6204b2",
+    "baseline_index": "notion-api-index.json"
+  },
+  "erdcloud": {
+    "status": "passed",
+    "browser": "IAB",
+    "application_method": "prepared snapshot changes applied through existing ERDCloud field forms; file upload event itself did not apply",
+    "view_recovery": "minimap/entity list navigation restored off-diagram viewport",
+    "reloaded_readback": true,
+    "tables": 24,
+    "columns": 165,
+    "prepared_snapshot_attribute_differences": [],
+    "existing_identity_or_relationship_changes": [],
+    "existing_table_id_or_layout_changes": [],
+    "sql_parse": "passed",
+    "sql_create_tables": 24,
+    "sql_columns": 165,
+    "sql_foreign_keys": 0,
+    "sql_snapshot_mismatches": [],
+    "sql_canonical_column_mismatches": [],
+    "quoted_comment_count": 0,
+    "limits": "ERDCloud export validates columns/types/nullability/comments and PK selection. Canonical schema.sql remains authoritative for identity/default/unique/check/index constraints. No shared database or backend source changed this turn."
+  },
+  "source_urls": {
+    "notion": "https://app.notion.com/p/API-4a2c91ccb660820793de81b259578314",
+    "erdcloud": "https://www.erdcloud.com/d/6MtwxM7423r8qDiCu"
+  },
+  "source_files_sha256": {
+    "back/src/main/java/com/e106/tingle/agreement/UserConsent.java": "25b3962f24e530c1bd52ce6f0541b71da885d6160e13f914a25acb46751e4534",
+    "back/src/main/java/com/e106/tingle/global/error/ErrorCode.java": "ca6e4b88149c0bf5b9eabe9d93dc40a275038161c680d091974e3e734cb299f4",
+    "back/src/main/java/com/e106/tingle/user/Profile.java": "97b7800aa79f45e24c257e34512f80cad3bfa18b70435f4830f3c95ada369c26",
+    "back/src/main/java/com/e106/tingle/user/ProfileService.java": "a20aa8c8cf7310e12fbbcc45ba3c2e57b80e402dc51c97d65f493fffb0c3dad8",
+    "back/src/main/java/com/e106/tingle/user/User.java": "1f27c22fed3249406cf3caeb78854d8a509cbc3eb8e15dda835398fe02da2940",
+    "back/src/test/java/com/e106/tingle/BackendApplicationTests.java": "92fcc4ff3ba06c211cde5cefbedb794d9dcdfa4fd40c67b80b3e44eb2d065d83",
+    "back/src/test/java/com/e106/tingle/user/ProfileRulesTest.java": "cfb51434afcf86f4ed72f75fb437e4e03095c507f3c0948e895cf3e03082660b",
+    "docs/contracts/api/README.md": "51652815d2faff57de9deb9c41dcf50f18f91df521301d53b470f31dbf875d51",
+    "docs/contracts/api/auth-recheck.md": "f4f0a7977247533ef0a6b11ff2270517d0bc1699172ccc3d67ef0b0a764c5d4f",
+    "docs/contracts/api/auth.md": "a9ddd495e9a4d6a576a8c5abd6776e8d59af672ed66d43244bf31db35f647e98",
+    "docs/contracts/api/openapi.json": "aa123af89062145072192a68ee13d50b241aa28c36d39e2b966b66d505425ba1",
+    "docs/contracts/matching/profile-policy-v1.md": "d368cbeb6099ebc896296a9f8b202d060d672ac3c0192a2fb3e29e5d1a6ad0ae",
+    "docs/database/erdcloud-import.sql": "3c7a5775adf66378e68337770eb0a269a54538d134d94250578e216d209b50d3",
+    "docs/database/tables.json": "82e4dd329d6bff751c17b19423d0f9128c4e5688737d2cde085b5662a48fd434",
+    "docs/database/schema.sql": "be4cff70b5e80edc1f67a611d43f8b59030589752dbdd105456f06c26eb43db5",
+    "docs/database/erd.md": "39beb4afbd2c1b1484a219acc503ccea2ef397f0295e140abf8fff3598ede8fb",
+    "docs/contracts/api/alignment-20261021.md": "224970e4ea0c190115150ad70691bb48a319702991cef2acbd914592eed35bb4"
+  },
+  "evidence_sha256": {
+    "erdcloud-postgresql.sql": "70aefa8b4500ebb6b4173c2ca0f28e75bfa74235935c3b9ed7bb3ea26d40d678",
+    "erdcloud-snapshot.json": "a25f172030f2f0f7c6cd2c5aa013fbc11ad0cde066cf14d3a93e8cc0b483289e",
+    "notion-api-index.json": "f74c78b2c746ae22b43b7073c5561bd51b18f152237429fc0c0c71b0aeed1dc7",
+    "previous-auth-recheck.txt": "fdccd13705fd8bc2358415faee3084f5da8b10b6ba40d7c9a8f4967e49a1b4c7",
+    "previous-verification.json": "ab7b5c2d8c203566fad7d6ecc5e2eaecef1ebe7d2c84a8fec940fe77f49891db"
+  },
+  "original_erdcloud_download_sha256": "4f8772b39fbc728168b81cec51009a6fb299e5a427c155a32b5bd1c4d60e7ad2",
+  "functional_spec_modified": false,
+  "shared_database_modified": false,
+  "remote_push_or_merge_performed": false,
+  "text_hash_normalization": "UTF-8 text, CRLF normalized to LF; original download/zip hashes remain raw bytes",
+  "original_erdcloud_sql_download_sha256": "8fb9d825d53ced7208cd70a873bfa9833b434dc99ee0d1d3405d49e6b5b0c1ab",
+  "evidence_normalization": {
+    "erdcloud-postgresql.sql": "Export content retained; final empty lines trimmed to one trailing LF for Git whitespace validation"
+  }
+}

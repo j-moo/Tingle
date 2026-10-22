@@ -9,6 +9,7 @@ CREATE TABLE app_users (
     status text NOT NULL,
     created_at timestamptz NOT NULL,
     signup_completed_at timestamptz,
+    email text,
     CONSTRAINT pk_app_users PRIMARY KEY (user_id),
     CONSTRAINT uq_app_users_1 UNIQUE (provider, provider_subject)
 );
@@ -49,6 +50,7 @@ CREATE TABLE profiles (
     religion text,
     introduction text,
     image_url text,
+    completed_at timestamptz,
     CONSTRAINT pk_profiles PRIMARY KEY (user_id),
     CONSTRAINT uq_profiles_1 UNIQUE (nickname_key)
 );
@@ -112,6 +114,7 @@ CREATE TABLE keyring_sync_runs (
 
 -- 설문 회차·문항별 응답·재개 상태
 CREATE TABLE survey_responses (
+    public_id uuid NOT NULL DEFAULT gen_random_uuid(),
     response_id bigint NOT NULL,
     user_id bigint NOT NULL,
     version_code text NOT NULL,
@@ -119,6 +122,7 @@ CREATE TABLE survey_responses (
     response_json jsonb NOT NULL,
     revision bigint NOT NULL,
     completed_at timestamptz,
+    CONSTRAINT uq_survey_responses_public_id UNIQUE (public_id),
     CONSTRAINT pk_survey_responses PRIMARY KEY (response_id),
     CONSTRAINT uq_survey_responses_1 UNIQUE (user_id, client_request_id)
 );
@@ -197,6 +201,10 @@ CREATE TABLE match_proposals (
     high_decided_at timestamptz,
     low_request_key uuid,
     high_request_key uuid,
+    low_cancelled_at timestamptz,
+    high_cancelled_at timestamptz,
+    low_cancel_request_key uuid,
+    high_cancel_request_key uuid,
     status text NOT NULL,
     created_at timestamptz NOT NULL,
     expires_at timestamptz NOT NULL,
@@ -209,6 +217,8 @@ CREATE TABLE match_proposals (
 CREATE TABLE chat_rooms (
     chat_room_id bigint NOT NULL,
     pair_id bigint NOT NULL,
+    public_id uuid NOT NULL,
+    source_proposal_id bigint NOT NULL,
     created_at timestamptz NOT NULL,
     expires_at timestamptz NOT NULL,
     closed_at timestamptz,
@@ -232,6 +242,9 @@ CREATE TABLE chat_messages (
     message_id bigint NOT NULL,
     chat_room_id bigint NOT NULL,
     sender_id bigint NOT NULL,
+    public_id uuid NOT NULL,
+    request_key uuid NOT NULL,
+    request_hash text NOT NULL,
     client_message_id uuid NOT NULL,
     sequence bigint NOT NULL,
     body text NOT NULL,
@@ -282,9 +295,11 @@ CREATE TABLE push_installations (
     installation_id bigint NOT NULL,
     client_installation_id uuid NOT NULL,
     user_id bigint NOT NULL,
-    login_family_id uuid,
     platform text NOT NULL,
     token_ciphertext text NOT NULL,
+    login_family_id uuid,
+    binding_id uuid,
+    linked_at timestamptz,
     updated_at timestamptz NOT NULL,
     CONSTRAINT pk_push_installations PRIMARY KEY (installation_id),
     CONSTRAINT uq_push_installations_1 UNIQUE (client_installation_id)
@@ -293,6 +308,7 @@ CREATE TABLE push_installations (
 -- 안내·AI·삭제의 실제 예약·실패 재시도
 CREATE TABLE background_jobs (
     job_id bigint NOT NULL,
+    public_id uuid,
     job_type text NOT NULL,
     business_key text NOT NULL,
     payload jsonb NOT NULL,
@@ -305,4 +321,15 @@ CREATE TABLE background_jobs (
     finished_at timestamptz,
     CONSTRAINT pk_background_jobs PRIMARY KEY (job_id),
     CONSTRAINT uq_background_jobs_1 UNIQUE (business_key)
+);
+
+
+-- 실제 화면에 표시한 수신 메시지별 읽음; 다운로드/순서 위치만으로 추정하지 않음
+CREATE TABLE chat_message_reads (
+    receipt_id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
+    message_id bigint NOT NULL,
+    user_id bigint NOT NULL,
+    read_at timestamptz NOT NULL,
+    CONSTRAINT pk_chat_message_reads PRIMARY KEY (receipt_id),
+    CONSTRAINT uq_chat_message_reads_1 UNIQUE (message_id, user_id)
 );

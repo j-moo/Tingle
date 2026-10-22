@@ -34,15 +34,15 @@ public class User {
 	private Long id;
 
 	@Enumerated(EnumType.STRING)
-	@Column(nullable = false, length = 10)
+	@Column(nullable = false, columnDefinition = "text")
 	private SocialProvider provider;
 
 	// 서버가 검증한 소셜 계정 고유 ID
-	@Column(nullable = false)
+	@Column(nullable = false, columnDefinition = "text")
 	private String providerSubject;
 
 	@Enumerated(EnumType.STRING)
-	@Column(nullable = false, length = 20)
+	@Column(nullable = false, columnDefinition = "text")
 	private UserStatus status;
 
 	@Column(nullable = false, updatable = false)
@@ -51,8 +51,8 @@ public class User {
 	// 처음으로 모든 가입 단계를 마친(READY) 시각. 한 번 채워지면 바꾸지 않는다.
 	private Instant signupCompletedAt;
 
-	// ERD에 없는 컬럼(추가 요청 중). 연락용이며 회원 식별에 쓰지 않는다. 다른 소셜 계정이 같은 이메일을 가질 수 있어 유니크가 아니다.
+	// 공식 SQL의 선택 연락처. 연락용이며 회원 식별에 쓰지 않는다. 다른 소셜 계정이 같은 이메일을 가질 수 있어 유니크가 아니다.
 	// 개인정보 수집 동의(PRIVACY)를 한 회원만 소셜이 확인한 이메일을 로그인 때 저장한다. 응답에 넣지 않는다.
-	@Column(length = 320)
+	@Column(columnDefinition = "text")
 	private String email;
 }

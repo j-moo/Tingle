@@ -7,3 +7,6 @@ spring:
 app:
   auth:
     jwt-secret: only-for-automated-tests-not-a-production-secret-123456
+
+  chat-notices:
+    scheduling-enabled: false

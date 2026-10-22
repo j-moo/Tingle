@@ -1,9 +1,10 @@
 # Tingle(팅글) API 명세서
 
-1.2.0-auth-review / 수정 2026-10-21 14:16 KST
+1.3.0-mr26-alignment-review / 정합화 기록 2026-10-22
 
-노션에서 검토한 **24개 테이블·164개 컬럼** 설계를 반영한 계약 초안이다. 현재 구현 대상으로 정리한 API는 **68개**, 범위에서 제외·폐기한 기존안은 **11개**다. 문서 정리와 팀 합의·실제 구현·DB 적용·배포 완료를 구분한다.
+최신 develop과 설문·채팅 작업을 합친 **25개 테이블·185개 컬럼** 계약 작업본이다. 웹 동기화 상태는 통합 검증 기록을 따른다. 현재 구현 대상으로 정리한 API는 **71개**, 범위에서 제외·폐기한 기존안은 **11개**다. 문서 정리와 팀 합의·실제 구현·DB 적용·배포 완료를 구분한다.
 
+- [사용자 승인 정합화 기준](alignment-20261021.md) / [검증 이력·다음 변경 대조 절차](../../verification/spec-alignment-20261022.md)
 - [OpenAPI: 요청/응답 타입·필수값·예시](openapi.json)
 - [기존안·수정안과 API별 변경 이력](changes-20261021.md)
 - [ERD·컬럼 설명](../../database/erd.md) / [SQL](../../database/schema.sql)
@@ -14,16 +15,16 @@
 
 - Spring Boot·JPA·PostgreSQL 기준이다. Flyway·H2는 사용하지 않는다. local은 update, test는 create-drop이며 dev/prod 스키마 운영과 Docker·인프라는 준비 후 정한다.
 - 앱은 제공자 증명을 서버에 전달해 자체 access/refresh를 발급받고 OS 보호 저장소에 보관한다. 서버는 JWT 주체와 현재 권한을 검증한다. 앱이 보낸 회원번호를 인증 근거로 사용하지 않는다.
-- 소셜·refresh 요청은 유지하고 새 토큰 응답6개(accessToken/refreshToken/tokenType/accessTokenExpiresAt/refreshTokenExpiresAt/onboardingStatus)를 구현 기준 초안으로 반영했다. 기존 accessTokenExpiresIn/signupCompleted의 병행 유지·전환은 AUTH-OPEN-01 합의 필요다. sid/로그아웃/회전 범위는 AUTH-OPEN-03·04를 확인하며 보안 검사를 임의 제거하지 않는다.
+- 소셜·refresh 요청과 현재 토큰 응답6개(accessToken/refreshToken/tokenType/accessTokenExpiresAt/refreshTokenExpiresAt/onboardingStatus)를 유지한다. 사용자 승인 기준에서 구형 accessTokenExpiresIn/signupCompleted를 추가하지 않기로 정리했다. 기준 develop의 앱·웹 소스에서 구형 필드 사용 연결을 찾지 못했으며 실제 앱 호환은 별도 검증한다. sid/로그아웃/회전 범위는 [현재 인증 상태](auth-recheck.md)를 따른다.
 - 제안 proposalId는 1 이상의 integer(int64) 숫자이며 DB proposal_id와 동일하다. 별도 공개 UUID나 매핑 컬럼을 두지 않는다. UUID 형식인 Idempotency-Key·세션 family ID는 그대로 유지한다. 나머지 공개 UUID 계약은 내부 bigint 변경으로 자동 교체하지 않는다. 자원별 매핑·형식은 FE/AI/IoT와 확인할 사항이다. 상대의 내부 회원번호·생년월일·소셜ID·원응답·기기 자격은 공개 DTO에서 제외한다.
-- 가입 단계는 AGREEMENT_REQUIRED → KEYRING_REQUIRED → PROFILE_REQUIRED → SURVEY_REQUIRED → PREFERENCES_REQUIRED → SYNC_PENDING → READY다. nextStep과 onboardingStatus는 같은 서비스에서 계산한다. POST /users/me/agreements + PATCH /users/me/profile로 분리하며 기존 POST /auth/signup은 폐기했다. 현재 코드의 미구현 가입 게이트는 AUTH-OPEN-06으로 구분한다.
+- 가입 단계는 AGREEMENT_REQUIRED → KEYRING_REQUIRED → PROFILE_REQUIRED → SURVEY_REQUIRED → PREFERENCES_REQUIRED → SYNC_PENDING → READY다. nextStep과 onboardingStatus는 같은 서비스에서 계산한다. POST /users/me/agreements + PATCH /users/me/profile로 분리하며 기존 POST /auth/signup은 폐기했다. 현재 가입 게이트는 실제 DB로 검사한다. 단계 상세의 설문·설정 필드 임시값은 후속 연결 대상으로 구분한다.
 - 서버가 단계별 호출·소유권을 검사한다. 키링 등록/조회 등 가입 진행 API는 해당 단계에 허용하되 모든 후속 API를 일괄 허용하지 않는다.
 - 성공 응답은 감싸지 않는다. 목록은 items 객체를 사용한다. 오류의 필수값은 code,message이며 추적 정보는 선택 확장이다. 상태 코드는 endpoint별 OpenAPI 계약을 따른다.
 - UTC ISO8601 시각을 주고받으며 나이는 Asia/Seoul 날짜로 계산한다. 만19세 이상, 윤일생은 평년3월1일에 나이가 바뀐다. 현재시각이 기한과 같아지면 만료다.
-- 닉네임은 NFC·앞뒤 ASCII공백 제거 후2~20자, 한글·영문·숫자·공백이다. 소개는 보이는 글자200개·LF3개 이하이며 text로 저장한다. FE/BE 분할 규칙을 동일하게 확인한다.
+- 닉네임은 NFC·앞뒤 ASCII공백 제거 후2~20자, 완성형 한글·영문·숫자·공백이다. 독립 자모는 혼합 입력도 금지한다. 소개는 보이는 글자200개·LF3개 이하이며 text로 저장한다. FE/BE 분할 규칙을 동일하게 확인한다.
 - 조건 헤더는 설문 revision 등 실제 조건부 갱신을 하는 경로에 적용한다. 프로필 profileVersion/ETag/If-Match 필수 구조는 제외한다. JSON 미정의 필드는 거절하고 문항 응답은 해당 버전 파일 schema로 추가 검사한다.
 - 기존 Idempotency-Key 요청 계약은 유지하지만 별도 idempotency_records 테이블을 요구하지 않는다. 자원별 업무 키·유일 제약과 원자 저장으로 같은 입력 재시도를 판정한다. 안전한 응답 재현을 보장하지 못하는 경로의 헤더 제거/대체는 호출자와 합의한다.
-- 민감 응답은 Cache-Control:no-store. 토큰·생년월일·원응답·메시지·기기 자격을 로그에 기록하지 않는다. 401 만료 시 공유 갱신과 명시적 위조/폐기/403의 처리 구분은 필요하다. 현재 인증 소스의 UNAUTHORIZED 단일 코드와 앱 갱신 조건의 차이는 AUTH-OPEN-04 합의 전이며 양쪽 방식이 이미 일치한다고 표현하지 않는다.
+- 민감 응답은 Cache-Control:no-store. 토큰·생년월일·원응답·메시지·기기 자격을 로그에 기록하지 않는다. 401 만료 시 공유 갱신과 명시적 위조/폐기/403의 처리 구분은 필요하다. 현재 서버의 ACCESS_TOKEN_EXPIRED만 갱신1회, ACCESS_TOKEN_INVALID/SESSION_REVOKED는 재로그인으로 처리한다. 실제 앱 연동은 별도 검증한다.
 
 ## 기능별 저장·시간 기준
 
@@ -31,7 +32,7 @@
 | --- | --- |
 | 사진 | 검증된 URL 한 장을 profiles.image_url에 저장. JSON imageUrl POST→200. 실패 시 기존 URL 유지, 삭제는 NULL. 별도 사진 행·crop·PROCESSING/READY 조회 제외. 업로드·소유권·전달 URL·실제 파일 삭제는 별도 계약 확인 |
 | 희망 조건/설정 | matching_settings 한 행. 변경 필드만 갱신하고 settings_version을 원자 증가시켜 snapshot 생성. 나이 ANY는 양 경계NULL, RANGE는 하한19 이상·상한NULL 또는 하한 이상 |
-| 설문 | survey_responses의 answers_json·revision·completed_at. 진행 중 회차 하나, 조건부 저장, 완료 후 불변. sessionId 외부 이름은 유지하고 내부 response_id와 대응 |
+| 설문 | survey_responses의 response_json·revision·completed_at. 진행 중 회차 하나, 조건부 저장, 완료 후 불변. sessionId 외부 이름은 유지하고 내부 response_id와 대응 |
 | 개인 분석 | analysis_results에 완료 원응답+version_code별 결과. inputHash/결과 생성시각 필수 응답 제외. 완료시각을 생성시각으로 대신 쓰지 않음 |
 | 동기화 | 같은 binding+snapshot의 실행을 재사용, 새 생성201/재사용200. 전송만으로 READY가 아니며 ACK·버전·증명을 검증. payloadHash/status 일부는 원본에서 계산, 정확한 IoT37 계약 필요 |
 | 만남/평가 | encounters+encounter_submissions. 판정과 버전은 evaluation_json/evaluation_version_code, 별도 evaluationId 대신 encounterId. 기회7일·상대 대기·제안24시간은 각각 검사 |
@@ -48,20 +49,20 @@
 
 확정 계약 검토 → 저장소 명세 교차 검토 → 관련 구현과 로컬 검증 → 가상 키링 통합 → 실제 외부/실물/배포 검증 순으로 진행한다. 현재 단계는 문서 반영이다. DB DDL 실행·원격 게시·MR 병합은 하지 않았다. 실제 개발 이력은 다른 BE 팀원의 docs 위치·양식을 확인한 후 맞춘다.
 
-## 인증 담당 연락 반영 및 합의 필요
+## 인증 담당 연락 반영·확정 상태
 
 약관 동의 API 추가·통합 signup 폐기·새 토큰 응답을 반영했다. 현재 구현과 기존 앱의 호환을 구분한다.
 
 | ID | 합의할 내용 | 현재 처리 |
 | --- | --- | --- |
-| AUTH-OPEN-01 | 새 토큰6개 필드 채택·기존 accessTokenExpiresIn/signupCompleted 병행 유지·전환 시점 | 구현된 새 응답을 명세 초안에 반영. 구형 필드 미제공은 호환 승인 완료가 아님 |
-| AUTH-OPEN-02 | 422 PROFILE_FIELD_LOCKED 이름·잠금 시작 시점·POL-02 변경 허용 정책 | 임시 코드로 표시. 기존 POLICY_UNRESOLVED와 구분 |
-| AUTH-OPEN-03 | sid=refresh family 채택·로그아웃/탈취의 기기별·전체 폐기 범위·30초 유실 재시도 | 구현을 기록하되 기존 폐기 검사를 임의 제거하지 않음 |
-| AUTH-OPEN-04 | 401 만료·위조·폐기 구분과 앱 자동 갱신 조건 | 현재 코드 UNAUTHORIZED와 통합 명세의 갱신 분기 차이를 미정으로 남김 |
-| AUTH-OPEN-05 | app_users.email·물리 FK 및 text/길이 차이, 인증/생활정보 전송 코드 | ERD/DDL 변경 없음. 현재4개 테이블명은 일치하지만 email/FK1개는 별도 조정 |
+| AUTH-OPEN-01 | 확정: 토큰 응답6필드 | accessToken·refreshToken·tokenType·두 expiresAt·onboardingStatus. 구형 필드 병행 없음. 실앱 검증은 별도 |
+| AUTH-OPEN-02 | 확정: 명시적 프로필 등록 완료 뒤 잠금 | PROFILE_FIELD_LOCKED 422. 임시 저장 중 수정 가능, 완료 후 같은 값은 허용. 서비스팀 정정은 별도 |
+| AUTH-OPEN-03 | 확정: sid=refresh family | 로그아웃 해당 family·탈취 전체 family 폐기, 회전 응답 유실30초 재시도 |
+| AUTH-OPEN-04 | 확정: 액세스 인증401 코드4개 | AUTH_REQUIRED·ACCESS_TOKEN_EXPIRED·ACCESS_TOKEN_INVALID·SESSION_REVOKED. 만료만 갱신1회. 소셜/refresh 전용 오류 유지 |
+| AUTH-OPEN-05 | 확정: 이메일 선택 연락처·물리FK 없음 | PRIVACY 동의 후 로그인에서 최신 제공값 동기화. nullable text·계정 식별에 사용하지 않음. 생활정보 전송 코드 정렬 |
 | AUTH-OPEN-06 | 미구현 가입 게이트·단계 조회 추가 필드·프로필 필수 nullable/미정의 필드 검증 | 코드의 부분 구현과 목표 계약을 구분. 프로필 완료만으로 READY 처리하지 않는 정책 유지 |
 
-상세 요청·응답/구현 차이와 인계 순서는 [인증 확인 사항](auth-recheck.md)을 따른다. 노션은 이번에 수정하지 않았으며 저장소의 신규/변경 계약은 노션과 후속 동기화가 필요하다.
+상세 요청·응답/구현 차이와 인계 순서는 [인증 확인 사항](auth-recheck.md)을 따른다. 노션·ERDCloud 반영 상태와 검증 결과는 MR26 정합화 기록에서 별도로 확인한다.
 
 ## 기존 38번 계약과의 적용 기준
 
@@ -135,6 +136,7 @@
 | PUT | `/api/v1/chat-rooms/{chatRoomId}/notices/{noticeId}/ack` | 안내 표시 확인 (수정 2026-10-21 11:24) | 없음 → 200 Ack | `ackNotice` |
 | GET | `/api/v1/chat-rooms/{chatRoomId}/messages` | 활성방 메시지 조회 | 없음 → 200 MessagePage | `listMessages` |
 | POST | `/api/v1/chat-rooms/{chatRoomId}/messages` | 텍스트 메시지 저장 | SendMessage → 201 Message | `sendMessage` |
+| POST | `/api/v1/chat-rooms/{chatRoomId}/reads` | [표시한 수신 메시지 읽음 확인](chat.md#실제-표시한-메시지-읽음) | ReadMessagesRequest → 200 ReadMessagesResult | `acknowledgeDisplayedMessages` |
 | POST | `/api/v1/chat-rooms/{chatRoomId}/icebreakers` | 질문 3개 생성 (수정 2026-10-21 11:12) | 없음 → 202 Job | `requestIcebreakers` |
 | GET | `/api/v1/chat-rooms/{chatRoomId}/icebreakers` | 생성·대체 질문 조회 (수정 2026-10-21 11:12) | 없음 → 200 Icebreakers | `getIcebreakers` |
 | GET | `/api/v1/users/me/risk-analysis-consent` | 분석 안내·동의 조회 (수정 2026-10-21 11:12) | 없음 → 200 RiskConsent | `getRiskConsent` |
@@ -144,7 +146,7 @@
 | POST | `/api/v1/blocks` | 문맥 상대 차단 (수정 2026-10-21 11:24) | BlockInput → 201 Block | `createBlock` |
 | DELETE | `/api/v1/blocks/{blockId}` | 본인 차단 해제 (수정 2026-10-21 11:24) | 없음 → 204 본문 없음 | `removeBlock` |
 | POST | `/api/v1/chat-rooms/{chatRoomId}/leave` | 자발적 채팅 퇴장 | 없음 → 200 LeaveResult | `leaveChat` |
-| PUT | `/api/v1/push-installations` | [본인 푸시 단말 등록·교체](push-installations.md) | PushToken → 200 Ack | `registerPush` |
+| PUT | `/api/v1/push-installations` | [본인 푸시 단말 등록·교체](push-installations.md) | PushToken → 200 PushRegistration(serverTime, bindingId) | `registerPush` |
 | DELETE | `/api/v1/push-installations/{installationId}` | 본인 단말 푸시 해제 | 없음 → 204 본문 없음 | `removePush` |
 | POST | `/internal/v1/matching/evaluations` | 스냅샷 기반 실제 쌍 비교 (수정 2026-10-21 11:20) | EvaluationInput → 200 Evaluation | `evaluatePair` |
 | POST | `/internal/v1/ai/explanations` | AI 근거 설명 (수정 2026-10-21 11:20) | AiInput → 200 Explanation | `generateExplanation` |
@@ -168,3 +170,24 @@
 | POST | `/admin/v1/releases/{releaseId}/approvals` | 작성자 외 검토 승인 (수정 2026-10-21 11:23) | 불변 버전 파일 운영으로 단순화. 관리자 실시간 게시/롤백 보류 |
 | PUT | `/admin/v1/release-channels/current` | 신규 세션 기본 버전 전환·롤백 (수정 2026-10-21 11:23) | 불변 버전 파일 운영으로 단순화. 관리자 실시간 게시/롤백 보류 |
 | POST | `/api/v1/auth/signup` | 통합 가입 (폐기 2026-10-21 14:16) | 약관 동의와 프로필 PATCH로 대체 |
+
+## 2026-10-22 MR26 정합화
+
+- POST `/api/v1/users/me/profile/complete`: 본문 없음 → 200 `{ onboardingStatus }`, 필수값 누락400 PROFILE_INCOMPLETE. 재요청200, 최초 완료시각 유지.
+- `completed`는 명시적 등록 완료 여부이며, PATCH 임시 저장만으로 완료·성별/생년월일 잠금이 되지 않는다.
+- AI_RISK_DETECTION은 최초 가입 필수. 가입 후 철회로 제안·매칭을 막지 않으며 채팅/AI 권한은 별도다. 키링 초기화 후 기존 제안 권한과 신규 매칭 준비를 분리한다.
+- 오류 message는 Accept-Language별 문구, 미지원/미지정 시 한국어. Onboarding.questionCount만 미연결 임시값0을 허용한다.
+
+## 2026-10-22 제안 정책 작업본
+
+수락 취소, 공개 프로필 비교와 사용자별 공개 상태 변경은 [제안 계약](encounters-proposals.md#2026-10-22-제안-정책-정합화-작업본)과 [검증 이력](../../verification/proposal-policy-20261022.md)을 따른다. 수락 본문에 profileVersion이 필수로 추가되어 앱 적용 준비가 필요하다. 노션·ERDCloud 웹 동기화와 채팅 후속 구현은 아직 완료하지 않았다.
+
+## 2026-10-22 채팅 기본 구현
+
+채팅 저장·접근 권한·메시지·개별 읽음과 상호 수락 방 연결은 [채팅 계약](chat.md)을 따른다. HTTP 조회/전송 구현이며 실시간/푸시·신고 보관/삭제·웹 명세 반영·배포는 별도다. 기능 명세와 매칭 정책은 수정하지 않는다.
+
+## 2026-10-22 안내·알림 구현
+
+첫 입장/종료 안내·표시 ACK와 설치 세션별 종료 알림은 [안내·알림 계약](chat-notices.md)을 따른다. 첫 입장 확인 전에는 메시지 이용이 제한된다. 실제 공급자/앱 종료 상태 수신 및 웹 문서 반영은 별도 검증 대상이다.
+
+2026-10-22 설문 회차는 [survey-sessions.md](survey-sessions.md)의 surveyVersion·SurveyManifest·public_id를 따른다. 공유 Manifest와 분석/이관의 미합의 UUID 계약은 유지한다. 기존 25/184에 최신 develop 키링 UUID를 포함해 현재 총계는 25테이블·185컬럼이며 [통합 검증](../../verification/api-erd-unified-20261022.md)에서 확인한다.
