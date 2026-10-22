@@ -36,6 +36,17 @@ spring:
         # enum 컬럼에 CHECK 제약을 만들지 않는다 (선택지 추가 시 기존 DB 호환, 클래스 주석 참고)
         dialect: com.e106.tingle.global.jpa.NoColumnCheckPostgreSqlDialect
 
+# 서버 상태 확인(배포·Jenkins 가 호출). DB 연결까지 확인해 정상이면 200 {"status":"UP"}, 아니면 503.
+# health 하나만 열고, 세부 정보(DB 종류 등)는 응답에 넣지 않는다.
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      show-details: never
+
 app:
   # 인증 (docs/contracts/api/auth.md)
   auth:
