@@ -90,7 +90,7 @@ checkout
 ```
 
 - `Jenkinsfile` 은 저장소 최상위. 검사 도구는 Jenkins 에 깔지 않고 파트마다 docker 이미지로 돌린다 (작업 폴더는 `--volumes-from` 으로 공유). 캐시는 `tingle-ci-*` docker 볼륨.
-- 배포 대상은 Jenkinsfile 의 `DEPLOY` 표 (브랜치 → 풀 폴더 · 서비스 · 응답 확인 주소). ai 가 생기면 여기에 더한다. back 확인 주소는 Actuator 가 생길 때까지 `/api/v1/agreements`.
+- 배포 대상은 Jenkinsfile 의 `DEPLOY` 표 (브랜치 → 풀 폴더 · 서비스 · 응답 확인 주소). ai 가 생기면 여기에 더한다. 확인 주소는 back `/actuator/health`(DB 연결 포함, 외부 비공개), ai `/health`.
 - `app-env`: Jenkins Credentials 의 앱 비밀값을 `/srv/tingle/app.env` 로 쓴다. compose 가 `--env-file` 로 읽는다. 직접 수정 금지.
 - DB 백업: master 배포 전 `pg_dump -Fc tingle` → `/backup/db-tingle-<시각>-<커밋>.dump`, 30개 보관.
 - 비밀값(DB 계정, JWT 키, 푸시 키, 이후 GMS 키 · APK 키스토어 · FCM 서비스 계정)은 Jenkins Credentials. 목록은 `infra/jenkins/casc/jenkins.yaml` 주석. JCasC 에는 Credentials 를 두지 않는다 (재시작마다 화면에서 넣은 값을 지운다).
@@ -181,7 +181,7 @@ ai 와 back 에 같은 스크립트를 쓴다. ai 를 먼저 전환해 새 back 
 | **1. CI 검사** | 3주차 | Jenkinsfile 검사 단계 (back·ai·app·web·firmware), 파트별 docker 이미지 | MR 에 결과 표시, 실패 시 머지 불가 | 검사 완료. 머지 불가 설정 · 펌웨어 검사 남음 |
 | **2. 개발 환경** | 3~4주차 | compose, back·ai·web Dockerfile, develop 재시작 배포, `/app/dev/latest.apk` | 개발 APK 로 `/dev/api` 접속 성공, `/dev/` 랜딩 표시, back-dev → ai-dev 호출 성공 | web-dev · back-dev 배포 완료. ai · APK 남음 |
 | **3. 운영 재시작 배포** | 4주차 (10/26~) | master 재시작 배포. **다운타임·WebSocket 끊김 측정** | `/`·`/api` 동작, 다운타임 기록 | 배포 구성 완료(배포 전 DB 백업 포함). 첫 master 머지 · 측정 남음 |
-| **4. 블루-그린** | 5주차 (11/2~11/6) | deploy.sh, upstream 전환(ai·back), 롤백, ShedLock 확인 | 배포 중 1초 간격 요청 실패 0건, 채팅 재접속 3초 이내 | BE Actuator · graceful shutdown 대기 |
+| **4. 블루-그린** | 5주차 (11/2~11/6) | deploy.sh, upstream 전환(ai·back), 롤백, ShedLock 확인 | 배포 중 1초 간격 요청 실패 0건, 채팅 재접속 3초 이내 | Actuator 완료(MR !43). BE graceful shutdown 대기 |
 | **5. 운영 보강** | 6주차 (11/9~11/13) | 매일 백업, 모니터링, 푸시(FCM), 이미지 보관 정책 | 복원 1회 성공, Grafana 에서 배포 전후 확인 | 배포 전 백업만 완료 |
 | **6. 최종** | 7주차 (11/16~) | 운영 APK 릴리스, 시연용 데이터 초기화 스크립트 | E2E 시연 전 운영 환경 고정 | — |
 
