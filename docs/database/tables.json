@@ -1,9 +1,9 @@
 {
-  "version": "0.2.1",
-  "date": "2026-10-21",
+  "version": "0.2.2",
+  "date": "2026-10-22",
   "status": "사용자 동의한 다음 설계 기준; 서버·DB·웹 미적용",
   "total_tables": 24,
-  "total_columns": 164,
+  "total_columns": 165,
   "physical_foreign_keys": false,
   "tables": {
     "app_users": {
@@ -2018,6 +2018,16 @@
           "json_shape": null
         },
         {
+          "name": "login_family_id",
+          "type": "uuid",
+          "meaning": "등록 시 검증된 JWT sid; 로그아웃 후에도 보존하며 현재 세션 유효성은 발송 직전 검사",
+          "nullable": true,
+          "pk": false,
+          "reference": "refresh_tokens.family_id",
+          "default": null,
+          "json_shape": null
+        },
+        {
           "name": "platform",
           "type": "text",
           "meaning": "ANDROID / IOS",
@@ -2065,7 +2075,7 @@
         ]
       ],
       "service_rules": [
-        "로그인·현재 설치 소유 관계를 검증해 등록하고 로그아웃/계정 전환에서 해제·재연결한다. 설치 UUID를 본인 인증 수단으로 사용하지 않는다.",
+        "일반 로그아웃은 새 제안 연결을 보존한다. 계정 전환 명시 시 기존 리프레시 증명의 회원·family·설치가 일치하는 연결만 해제한다. 설치 UUID만으로 이전하지 않는다.",
         "푸시 토큰 원문은 로그·작업 payload에 남기지 않는다. 푸시 내용은 자원 조회를 위한 최소 식별 정보만 보낸다."
       ]
     },

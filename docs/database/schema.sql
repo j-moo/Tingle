@@ -320,6 +320,7 @@ CREATE TABLE push_installations (
     installation_id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
     client_installation_id uuid NOT NULL,
     user_id bigint NOT NULL,
+    login_family_id uuid,
     platform text NOT NULL,
     token_ciphertext text NOT NULL,
     updated_at timestamptz NOT NULL,
