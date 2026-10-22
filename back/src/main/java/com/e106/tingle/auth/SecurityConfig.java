@@ -80,13 +80,13 @@ public class SecurityConfig {
 	}
 
 	/**
-	 * 인증 없이 호출하는 API: 약관 조회, 소셜 로그인, 토큰 재발급, 로그아웃(리프레시 토큰으로 본인 확인).
+	 * 인증 없이 호출하는 API: 약관 조회, 서버 상태 확인, 소셜 로그인, 토큰 재발급, 로그아웃(리프레시 토큰으로 본인 확인).
 	 */
 	static boolean isPublic(HttpServletRequest request) {
 		String path = request.getRequestURI();
 		String method = request.getMethod();
 		if (HttpMethod.GET.matches(method)) {
-			return path.equals("/api/v1/agreements");
+			return path.equals("/api/v1/agreements") || path.equals("/actuator/health");
 		}
 		return HttpMethod.POST.matches(method)
 			&& (path.equals("/api/v1/auth/token/refresh") || SOCIAL_LOGIN.matcher(path).matches());
