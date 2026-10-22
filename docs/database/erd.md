@@ -1,6 +1,8 @@
 # Tingle(팅글) ERD·테이블 정의
 
-1.1.0-review / 수정 2026-10-21 11:47 KST. **24개 테이블·166개 컬럼**, PostgreSQL·JPA 기준. 물리 외래 키는 없으며 아래 관계는 서비스가 검사하는 논리 참조다. 검토 SQL을 실제 DB에 실행하지 않았다.
+1.1.1-review / 수정 2026-10-22. **canonical SQL 기준 24개 테이블·167개 컬럼**, PostgreSQL·JPA 기준. 82번의 nullable `push_installations.login_family_id` 하나를 추가했다. 물리 외래 키는 없으며 아래 관계는 서비스가 검사하는 논리 참조다. 공용 DB에 실행하지 않았다.
+
+가져오기 SQL·tables.json은 24개·165개다. 기존 `app_users.email`·`profiles.completed_at` 누락 2개는 이번 작업 전에도 있던 차이이며 82번 범위에서 보존했다. 이번 push_installations의 7개 컬럼은 canonical/import/metadata에서 일치하고 일회용 PostgreSQL에 canonical SQL을 실행해 JPA validate를 확인했다. 전체 ERD·웹 동기화 완료로 해석하지 않는다.
 
 [API](../contracts/api/README.md) / [SQL](schema.sql) / [ERDCloud 가져오기 SQL](erdcloud-import.sql) / [기계판독 정의](tables.json) / [기존안·수정안 비교](changes-20261021.md) / [기능 대응표](../specifications/coverage.md)
 
@@ -38,7 +40,7 @@
 | `user_blocks` | 방향성 차단과 해제 | 4 |
 | `reports` | 신고 접수와 처리 상태 | 8 |
 | `ai_results` | AI 생성 결과와 위험 분석 결과 한 곳 | 8 |
-| `push_installations` | 앱 설치별 푸시 전달 주소 | 6 |
+| `push_installations` | 앱 설치별 푸시 전달 주소 | 7 |
 | `background_jobs` | 안내·AI·삭제의 실제 예약·실패 재시도 | 11 |
 
 ## 논리 관계도
@@ -277,6 +279,7 @@ erDiagram
         bigint installation_id PK
         uuid client_installation_id
         bigint user_id
+        uuid login_family_id
         text platform
         text token_ciphertext
         timestamptz updated_at
@@ -597,6 +600,7 @@ erDiagram
 | `installation_id` | 내부 식별자; 서버/DB 생성 | 불가 |
 | `client_installation_id` | 앱 설치 식별자; 인증 자격 아님 | 불가 |
 | `user_id` | 현재 연결 회원 연결 대상: `app_users.user_id`. | 불가 |
+| `login_family_id` | 검증된 JWT sid; 설치별 로그인 상태 검사, 기존 행 null 허용 | 가능 |
 | `platform` | ANDROID / IOS | 불가 |
 | `token_ciphertext` | 복호화해 전송에 사용하는 암호화 푸시 토큰 | 불가 |
 | `updated_at` | 토큰/계정 연결 갱신 | 불가 |

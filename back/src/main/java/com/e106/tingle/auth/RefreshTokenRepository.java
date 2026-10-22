@@ -22,6 +22,11 @@ public interface RefreshTokenRepository extends JpaRepository<RefreshToken, Long
 		+ " AND t.userId = :userId AND t.revokedAt IS NULL AND u.status = com.e106.tingle.user.UserStatus.ACTIVE")
 	boolean isSessionActive(UUID familyId, Long userId);
 
+	// 푸시 수신 설치의 세션만 검사한다. 다른 설치의 로그인으로 이 설치를 로그인 중으로 간주하지 않는다.
+	@Query("SELECT COUNT(t) > 0 FROM RefreshToken t WHERE t.familyId = :familyId AND t.userId = :userId"
+		+ " AND t.revokedAt IS NULL AND t.usedAt IS NULL AND t.expiresAt > :now")
+	boolean isPushSessionUsable(UUID familyId, Long userId, Instant now);
+
 	// 이 토큰보다 나중에 발급됐고 아직 폐기되지 않은 같은 세션의 토큰 (응답 유실 재시도 판단용)
 	List<RefreshToken> findByFamilyIdAndIdGreaterThanAndRevokedAtIsNull(UUID familyId, Long id);
 

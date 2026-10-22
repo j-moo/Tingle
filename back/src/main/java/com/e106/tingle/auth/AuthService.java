@@ -1,6 +1,7 @@
 package com.e106.tingle.auth;
 
 import java.time.Clock;
+import java.util.UUID;
 
 import org.springframework.stereotype.Service;
 
@@ -54,6 +55,10 @@ public class AuthService {
 
 	public void logout(String refreshToken) {
 		tokenService.logout(refreshToken);
+	}
+
+	public void logout(String refreshToken, UUID releaseInstallationId) {
+		tokenService.logout(refreshToken, releaseInstallationId);
 	}
 
 	private TokenResponse toResponse(TokenService.IssuedTokens tokens) {

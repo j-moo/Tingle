@@ -52,6 +52,10 @@ app:
   proposals:
     decline-days: 30
 
+  push:
+    # JWT와 별도인 Base64 32바이트 키. 누락 시 등록은 503, 본인 설치 해제는 허용한다.
+    token-encryption-key: ${PUSH_TOKEN_ENCRYPTION_KEY:}
+
   # 현재 적용 중인 동의 항목. 화면 제목은 messages.properties 의 agreement.{type}.title. 항목 추가·삭제, 버전 변경은 여기만 고치면 된다 (코드·앱 수정 불필요).
   # 버전을 올리면 이전 버전으로 들어온 가입 요청은 AGREEMENT_VERSION_OUTDATED 가 된다. 목록 순서대로 화면에 표시된다.
   agreement:

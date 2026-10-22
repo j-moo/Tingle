@@ -9,6 +9,7 @@ import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.e106.tingle.auth.dto.LoginRequest;
+import com.e106.tingle.auth.dto.LogoutRequest;
 import com.e106.tingle.auth.dto.RefreshRequest;
 import com.e106.tingle.auth.dto.TokenResponse;
 
@@ -38,7 +39,7 @@ public class AuthController {
 	// 액세스 토큰이 만료돼도 로그아웃할 수 있도록 리프레시 토큰으로 세션을 찾는다.
 	@PostMapping("/logout")
 	@ResponseStatus(HttpStatus.NO_CONTENT)
-	public void logout(@Valid @RequestBody RefreshRequest request) {
-		authService.logout(request.refreshToken());
+	public void logout(@Valid @RequestBody LogoutRequest request) {
+		authService.logout(request.refreshToken(), request.releaseInstallationId());
 	}
 }

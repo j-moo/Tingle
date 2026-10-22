@@ -20,6 +20,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.e106.tingle.global.error.BusinessException;
 import com.e106.tingle.global.error.ErrorCode;
+import com.e106.tingle.push.PushInstallationRepository;
 import com.e106.tingle.user.UserRepository;
 
 import lombok.RequiredArgsConstructor;
@@ -39,6 +40,7 @@ public class TokenService {
 
 	private final JwtEncoder jwtEncoder;
 	private final RefreshTokenRepository refreshTokenRepository;
+	private final PushInstallationRepository pushInstallations;
 	private final UserRepository userRepository;
 	private final AuthProperties properties;
 	private final Clock clock;
@@ -106,11 +108,23 @@ public class TokenService {
 	 */
 	@Transactional
 	public void logout(String rawRefreshToken) {
+		logout(rawRefreshToken, null);
+	}
+
+	/**
+	 * 일반 로그아웃은 새 제안 푸시 연결을 보존한다. 계정 전환을 명시하면 이 세션에 귀속된 설치만 해제한다.
+	 * 이미 해제됐거나 다른 회원/세션으로 다시 등록된 설치에는 영향을 주지 않는다.
+	 */
+	@Transactional
+	public void logout(String rawRefreshToken, UUID releaseInstallationId) {
 		RefreshToken token = refreshTokenRepository.findByTokenHash(hash(rawRefreshToken))
 			.orElseThrow(() -> new BusinessException(ErrorCode.INVALID_REFRESH_TOKEN));
 		// 재발급(탈취 감지 시 전체 폐기)과 같은 회원 행 잠금으로 순서를 맞춘다. 서로 다른 순서로 행을 잠가 교착되는 것을 막는다.
 		userRepository.findByIdForUpdate(token.getUserId())
 			.orElseThrow(() -> new BusinessException(ErrorCode.INVALID_REFRESH_TOKEN));
+		if (releaseInstallationId != null) {
+			pushInstallations.releaseForSession(releaseInstallationId, token.getUserId(), token.getFamilyId());
+		}
 		refreshTokenRepository.revokeAllByFamilyId(token.getFamilyId(), clock.instant());
 	}
 

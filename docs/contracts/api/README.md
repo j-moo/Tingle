@@ -144,7 +144,7 @@
 | POST | `/api/v1/blocks` | 문맥 상대 차단 (수정 2026-10-21 11:24) | BlockInput → 201 Block | `createBlock` |
 | DELETE | `/api/v1/blocks/{blockId}` | 본인 차단 해제 (수정 2026-10-21 11:24) | 없음 → 204 본문 없음 | `removeBlock` |
 | POST | `/api/v1/chat-rooms/{chatRoomId}/leave` | 자발적 채팅 퇴장 | 없음 → 200 LeaveResult | `leaveChat` |
-| PUT | `/api/v1/push-installations` | 종료 안내 단말 등록 | PushToken → 200 Ack | `registerPush` |
+| PUT | `/api/v1/push-installations` | [본인 푸시 단말 등록·교체](push-installations.md) | PushToken → 200 Ack | `registerPush` |
 | DELETE | `/api/v1/push-installations/{installationId}` | 본인 단말 푸시 해제 | 없음 → 204 본문 없음 | `removePush` |
 | POST | `/internal/v1/matching/evaluations` | 스냅샷 기반 실제 쌍 비교 (수정 2026-10-21 11:20) | EvaluationInput → 200 Evaluation | `evaluatePair` |
 | POST | `/internal/v1/ai/explanations` | AI 근거 설명 (수정 2026-10-21 11:20) | AiInput → 200 Explanation | `generateExplanation` |
