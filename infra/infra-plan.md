@@ -139,7 +139,7 @@ ai 와 back 에 같은 스크립트를 쓴다. ai 를 먼저 전환해 새 back 
 - 서버 DB 테이블은 처음에 `docs/database/schema.sql` 로 만들었다 (10/22, 각 24개). back 은 `ddl-auto: validate` 라 스키마가 엔티티와 다르면 뜨지 않는다. **스키마 변경은 BE 가 서버 DB 두 개에 직접 반영**해야 한다 (운영은 반영이 안 되면 새 색이 상태 확인에 실패해 옛 색이 그대로 운영된다).
 - 블루-그린 전환 중 이전·새 버전이 같은 DB 를 쓰므로 **이전 버전이 깨지지 않는 변경만 한 번에** 배포한다. 컬럼 이름 변경·삭제는 추가 → 코드 전환 → 삭제로 나눈다.
 - 핵심 제약은 DB 에 둔다: `offline_encounter_submissions(encounter_id, device_id)` 유일, `pair_restrictions`·`chat_rooms` 의 정렬된 사용자 쌍 유일, 활성 채팅방 1개 부분 유일 인덱스. 앱·키링이 중복 업로드해도 DB 가 막는다.
-- `master` 배포 직전 `pg_dump` → `/backup/` (구현됨, 30개 보관). 매일 새벽 `pg_dump` + `/data/uploads` tar(7일치)는 5단계. 서버가 1대라 서버 유실에는 못 버티므로 **주 1회 팀장 로컬로 내려받는다**. DB 포트는 열지 않는다.
+- `master` 배포 직전 `pg_dump` → `/backup/db-tingle-<시각>-<커밋>.dump` (30개 보관). 매일 한국 시각 04:00 운영 · 개발 DB `pg_dump` + `/data/uploads` tar → `/backup/daily-*` (7일치, `infra/backup-daily.sh`, 서버 crontab). 로그는 `/backup/daily.log`. 서버가 1대라 서버 유실에는 못 버티므로 **주 1회 팀장 로컬로 내려받는다**. DB 포트는 열지 않는다.
 - 복원은 구성 직후 1회, 이후 2주마다 연습하고 걸린 시간을 기록한다.
 - 개인정보: 테스트 기간엔 **가상 프로필만** 넣는다. 실사용자 데이터를 넣게 되면 백업 파일 암호화와 보존 기간(기획안 12절 미확정)을 먼저 정한다.
 
