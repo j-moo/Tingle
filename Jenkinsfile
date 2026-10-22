@@ -109,6 +109,26 @@ sh gradlew check :androidApp:assembleDebug --no-daemon -Dorg.gradle.jvmargs=-Xmx
         }
       }
     }
+    stage('app-env') {
+      // develop push 때만: Jenkins Credentials 의 앱 비밀값을 서버 /srv/tingle/app.env 로 쓴다 (compose 가 --env-file 로 읽는다).
+      // 비밀값을 추가하면 Credentials 에 넣고 여기 withCredentials 와 echo 줄을 늘린다. 값에 $ 가 있으면 compose 가 변수로 읽으니 $$ 로 넣는다.
+      when { expression { env.gitlabActionType == 'PUSH' && env.gitlabSourceBranch == 'develop' } }
+      steps {
+        withCredentials([usernamePassword(credentialsId: 'tingle-db', usernameVariable: 'POSTGRES_USER', passwordVariable: 'POSTGRES_PASSWORD')]) {
+          sh '''
+            set +x
+            umask 077
+            {
+              echo "# Jenkins 가 관리 — 직접 수정 금지. develop 빌드마다 Jenkins Credentials 로 다시 쓴다 (Jenkinsfile app-env 단계)"
+              echo "POSTGRES_USER=$POSTGRES_USER"
+              echo "POSTGRES_PASSWORD=$POSTGRES_PASSWORD"
+            } > /srv/tingle/app.env.tmp
+            mv /srv/tingle/app.env.tmp /srv/tingle/app.env
+            echo "app.env 갱신: $(grep -c = /srv/tingle/app.env)개 값"
+          '''
+        }
+      }
+    }
   }
   post {
     success { updateGitlabCommitStatus name: 'jenkins', state: 'success' }
