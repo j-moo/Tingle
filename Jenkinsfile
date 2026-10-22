@@ -4,10 +4,10 @@
 
 def PARTS = [back: 'back/', ai: 'ai-server/', web: 'front/web/', app: 'front/app/', iot: 'iot/']
 // 브랜치별 배포: 코드를 dir 에 풀고 services(infra/docker-compose.yml 서비스 이름 → 응답 확인 주소)만 다시 띄운다.
-// back · ai 가 생기면 여기에 더한다 (예: 'back-dev': 'http://back-dev:8080/actuator/health').
+// ai 가 생기면 여기에 더한다. back 확인 주소는 Actuator 가 생기면 /actuator/health 로 바꾼다 (지금은 인증 없는 약관 조회).
 def DEPLOY = [
-  develop: [dir: '/srv/tingle/dev', services: ['web-dev': 'http://web-dev/']],
-  master: [dir: '/srv/tingle/repo', services: ['web': 'http://web/'], backup: true],
+  develop: [dir: '/srv/tingle/dev', services: ['web-dev': 'http://web-dev/', 'back-dev': 'http://back-dev:8080/api/v1/agreements']],
+  master: [dir: '/srv/tingle/repo', services: ['web': 'http://web/', 'back': 'http://back:8080/api/v1/agreements'], backup: true],
 ]
 def changed = []
 
@@ -120,7 +120,11 @@ sh gradlew check :androidApp:assembleDebug --no-daemon -Dorg.gradle.jvmargs=-Xmx
       // 비밀값을 추가하면 Credentials 에 넣고 여기 withCredentials 와 echo 줄을 늘린다. 값에 $ 가 있으면 compose 가 변수로 읽으니 $$ 로 넣는다.
       when { expression { env.gitlabActionType == 'PUSH' && DEPLOY[env.gitlabSourceBranch] } }
       steps {
-        withCredentials([usernamePassword(credentialsId: 'tingle-db', usernameVariable: 'POSTGRES_USER', passwordVariable: 'POSTGRES_PASSWORD')]) {
+        withCredentials([
+          usernamePassword(credentialsId: 'tingle-db', usernameVariable: 'POSTGRES_USER', passwordVariable: 'POSTGRES_PASSWORD'),
+          string(credentialsId: 'tingle-jwt-secret', variable: 'JWT_SECRET'),
+          string(credentialsId: 'tingle-push-key', variable: 'PUSH_TOKEN_ENCRYPTION_KEY'),
+        ]) {
           sh '''
             set +x
             umask 077
@@ -128,6 +132,8 @@ sh gradlew check :androidApp:assembleDebug --no-daemon -Dorg.gradle.jvmargs=-Xmx
               echo "# Jenkins 가 관리 — 직접 수정 금지. develop · master 배포마다 Jenkins Credentials 로 다시 쓴다 (Jenkinsfile app-env 단계)"
               echo "POSTGRES_USER=$POSTGRES_USER"
               echo "POSTGRES_PASSWORD=$POSTGRES_PASSWORD"
+              echo "JWT_SECRET=$JWT_SECRET"
+              echo "PUSH_TOKEN_ENCRYPTION_KEY=$PUSH_TOKEN_ENCRYPTION_KEY"
             } > /srv/tingle/app.env.tmp
             mv /srv/tingle/app.env.tmp /srv/tingle/app.env
             echo "app.env 갱신: $(grep -c = /srv/tingle/app.env)개 값"
@@ -166,7 +172,7 @@ sh gradlew check :androidApp:assembleDebug --no-daemon -Dorg.gradle.jvmargs=-Xmx
             """
             // 떠서 응답하는지 확인 (Jenkins 는 compose 내부망에 있어 서비스 이름으로 부른다)
             target.services.each { name, url ->
-              sh "for i in \$(seq 1 15); do curl -fsS -o /dev/null ${url} && exit 0; sleep 2; done; echo '${name} 응답 없음'; exit 1"
+              sh "for i in \$(seq 1 60); do curl -fsS -o /dev/null ${url} && exit 0; sleep 2; done; echo '${name} 응답 없음'; exit 1"
             }
           }
         }

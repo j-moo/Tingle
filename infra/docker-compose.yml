@@ -64,23 +64,33 @@ services:
     mem_limit: 64m
     restart: unless-stopped
 
-  # back · ai: 각 파트가 Dockerfile 을 만들면 주석을 풀고 연결한다. nginx 는 이미 /api/ /ws/ /dev/api/ /dev/ws/ 를 back·back-dev:8080 으로 넘긴다.
-  # back:
-  #   build: ../back
-  #   environment:
-  #     SPRING_PROFILES_ACTIVE: prod
-  #     SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/tingle
-  #     SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER}
-  #     SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD}
-  #     JWT_SECRET: ${JWT_SECRET}
-  #     AI_SERVER_URL: http://ai:8000
-  #   volumes:
-  #     - /data/uploads:/data/uploads
-  #   depends_on: [db]
-  #   mem_limit: 1536m
-  #   restart: unless-stopped
-  # back-dev: 위와 같고 DB tingle_dev · AI_SERVER_URL http://ai-dev:8000
-  # ai:
+  # back: 운영(prod, DB tingle) · 개발(dev, DB tingle_dev). nginx 가 /api/ /ws/ → back, /dev/api/ /dev/ws/ → back-dev 로 넘긴다.
+  # 테이블은 미리 있어야 한다 (ddl-auto validate). 처음엔 docs/database/schema.sql 을 넣었다 — 이후 스키마 변경은 BE 가 DB 에 반영.
+  # 비밀값은 app.env (Jenkins Credentials). 구글 · 카카오 ID 는 정해지면 Credentials 에 넣고 여기에 GOOGLE_WEB_CLIENT_ID · KAKAO_APP_ID 를 더한다.
+  back:
+    build: ../back
+    environment: &back-env
+      SPRING_PROFILES_ACTIVE: prod
+      SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/tingle
+      SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER:?}
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:?}
+      JWT_SECRET: ${JWT_SECRET:?}
+      PUSH_TOKEN_ENCRYPTION_KEY: ${PUSH_TOKEN_ENCRYPTION_KEY:?}
+    depends_on: [db]
+    mem_limit: 1536m
+    restart: unless-stopped
+
+  back-dev:
+    build: ../back
+    environment:
+      <<: *back-env
+      SPRING_PROFILES_ACTIVE: dev
+      SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/tingle_dev
+    depends_on: [db]
+    mem_limit: 1536m
+    restart: unless-stopped
+
+  # ai: Dockerfile 이 생기면 주석을 풀고 연결한다.
   #   build: ../ai-server
   #   environment:
   #     HOST: 0.0.0.0
