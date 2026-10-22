@@ -1,10 +1,14 @@
 // S15P31E106 CI — GitLab MR·push 마다 실행 (Jenkins job: tingle, 설정 infra/jenkins/casc/jenkins.yaml)
 // 바뀐 파트만 검사한다. 도구는 Jenkins 에 깔지 않고 파트마다 docker 이미지로 돌린다 (작업 폴더는 --volumes-from 으로 공유).
-// MR 은 검사로 끝나고 결과가 GitLab MR 에 파트별로 표시된다. develop 배포 단계는 다음 MR 에서 추가한다 (인프라 계획 6절).
+// MR 은 검사로 끝나고 결과가 GitLab MR 에 파트별로 표시된다. develop · master 에 push(머지)되면 검사 뒤 각 환경에 배포한다 (인프라 계획 6절).
 
 def PARTS = [back: 'back/', ai: 'ai-server/', web: 'front/web/', app: 'front/app/', iot: 'iot/']
-// develop 머지 때 다시 띄우는 dev 서비스 (infra/docker-compose.yml). back-dev · ai-dev 가 생기면 여기에 더한다.
-def DEV_SERVICES = 'web-dev'
+// 브랜치별 배포: 코드를 dir 에 풀고 services(infra/docker-compose.yml 서비스 이름 → 응답 확인 주소)만 다시 띄운다.
+// back · ai 가 생기면 여기에 더한다 (예: 'back-dev': 'http://back-dev:8080/actuator/health').
+def DEPLOY = [
+  develop: [dir: '/srv/tingle/dev', services: ['web-dev': 'http://web-dev/']],
+  master: [dir: '/srv/tingle/repo', services: ['web': 'http://web/'], backup: true],
+]
 def changed = []
 
 // image 컨테이너에서 dir 을 기준으로 script 를 실행한다. 컨테이너는 root 로 돌기 때문에 끝나면 작업 폴더 소유권을 Jenkins 사용자에게 돌려준다.
@@ -112,16 +116,16 @@ sh gradlew check :androidApp:assembleDebug --no-daemon -Dorg.gradle.jvmargs=-Xmx
       }
     }
     stage('app-env') {
-      // develop push 때만: Jenkins Credentials 의 앱 비밀값을 서버 /srv/tingle/app.env 로 쓴다 (compose 가 --env-file 로 읽는다).
+      // 배포 브랜치 push 때만: Jenkins Credentials 의 앱 비밀값을 서버 /srv/tingle/app.env 로 쓴다 (compose 가 --env-file 로 읽는다).
       // 비밀값을 추가하면 Credentials 에 넣고 여기 withCredentials 와 echo 줄을 늘린다. 값에 $ 가 있으면 compose 가 변수로 읽으니 $$ 로 넣는다.
-      when { expression { env.gitlabActionType == 'PUSH' && env.gitlabSourceBranch == 'develop' } }
+      when { expression { env.gitlabActionType == 'PUSH' && DEPLOY[env.gitlabSourceBranch] } }
       steps {
         withCredentials([usernamePassword(credentialsId: 'tingle-db', usernameVariable: 'POSTGRES_USER', passwordVariable: 'POSTGRES_PASSWORD')]) {
           sh '''
             set +x
             umask 077
             {
-              echo "# Jenkins 가 관리 — 직접 수정 금지. develop 빌드마다 Jenkins Credentials 로 다시 쓴다 (Jenkinsfile app-env 단계)"
+              echo "# Jenkins 가 관리 — 직접 수정 금지. develop · master 배포마다 Jenkins Credentials 로 다시 쓴다 (Jenkinsfile app-env 단계)"
               echo "POSTGRES_USER=$POSTGRES_USER"
               echo "POSTGRES_PASSWORD=$POSTGRES_PASSWORD"
             } > /srv/tingle/app.env.tmp
@@ -131,24 +135,40 @@ sh gradlew check :androidApp:assembleDebug --no-daemon -Dorg.gradle.jvmargs=-Xmx
         }
       }
     }
-    stage('deploy-dev') {
-      // develop push 때만: dev 서비스를 이 커밋으로 다시 빌드해 띄운다. 운영 서비스와 nginx · db · jenkins 는 건드리지 않는다 (--no-deps).
-      // 코드는 /srv/tingle/dev 에 풀어 둔다 (운영 배포본 /srv/tingle/repo 와 분리). 서버와 Jenkins 가 /srv/tingle 을 같은 경로로 보므로 compose 의 상대 경로가 그대로 맞는다.
-      when { expression { env.gitlabActionType == 'PUSH' && env.gitlabSourceBranch == 'develop' } }
+    stage('deploy') {
+      // 이 커밋으로 해당 환경 서비스만 다시 빌드해 띄운다. 그 밖의 서비스와 nginx · db · jenkins 는 건드리지 않는다 (--no-deps, 인프라는 수동 배포).
+      // 서버와 Jenkins 가 /srv/tingle 을 같은 경로로 보므로 compose 의 상대 경로가 그대로 맞는다. 운영(master)은 먼저 DB 를 /backup 에 백업한다.
+      when { expression { env.gitlabActionType == 'PUSH' && DEPLOY[env.gitlabSourceBranch] } }
       steps {
-        gitlabCommitStatus(name: 'deploy-dev') {
-          sh """
-            rm -rf /srv/tingle/dev.new && mkdir /srv/tingle/dev.new
-            git archive HEAD | tar x -C /srv/tingle/dev.new
-            git rev-parse --short HEAD > /srv/tingle/dev.new/.deployed-commit
-            rm -rf /srv/tingle/dev.old
-            if [ -d /srv/tingle/dev ]; then mv /srv/tingle/dev /srv/tingle/dev.old; fi
-            mv /srv/tingle/dev.new /srv/tingle/dev && rm -rf /srv/tingle/dev.old
-            docker compose --env-file /srv/tingle/.env --env-file /srv/tingle/app.env -f /srv/tingle/dev/infra/docker-compose.yml up -d --build --no-deps ${DEV_SERVICES}
-            docker image prune -f
-          """
-          // 떠서 응답하는지 확인 (Jenkins 는 compose 내부망에 있어 서비스 이름으로 부른다)
-          sh 'for i in $(seq 1 15); do curl -fsS -o /dev/null http://web-dev/ && exit 0; sleep 2; done; echo "web-dev 응답 없음"; exit 1'
+        script {
+          def target = DEPLOY[env.gitlabSourceBranch]
+          gitlabCommitStatus(name: "deploy-${env.gitlabSourceBranch}") {
+            if (target.backup) {
+              // 운영 DB tingle 을 pg_dump 로 받아 30개까지 보관한다. 복구: pg_restore -U <사용자> -d tingle --clean <파일>
+              sh '''
+                umask 077
+                f=/backup/db-tingle-$(date +%Y%m%d-%H%M%S)-$(git rev-parse --short HEAD).dump
+                docker exec tingle-db-1 sh -c 'pg_dump -U "$POSTGRES_USER" -Fc tingle' > "$f.tmp"
+                mv "$f.tmp" "$f"
+                ls -t /backup/db-tingle-*.dump | tail -n +31 | xargs -r rm --
+                echo "DB 백업: $f ($(du -h "$f" | cut -f1))"
+              '''
+            }
+            sh """
+              rm -rf ${target.dir}.new && mkdir ${target.dir}.new
+              git archive HEAD | tar x -C ${target.dir}.new
+              git rev-parse --short HEAD > ${target.dir}.new/.deployed-commit
+              rm -rf ${target.dir}.old
+              if [ -d ${target.dir} ]; then mv ${target.dir} ${target.dir}.old; fi
+              mv ${target.dir}.new ${target.dir} && rm -rf ${target.dir}.old
+              docker compose --env-file /srv/tingle/.env --env-file /srv/tingle/app.env -f ${target.dir}/infra/docker-compose.yml up -d --build --no-deps ${target.services.keySet().join(' ')}
+              docker image prune -f
+            """
+            // 떠서 응답하는지 확인 (Jenkins 는 compose 내부망에 있어 서비스 이름으로 부른다)
+            target.services.each { name, url ->
+              sh "for i in \$(seq 1 15); do curl -fsS -o /dev/null ${url} && exit 0; sleep 2; done; echo '${name} 응답 없음'; exit 1"
+            }
+          }
         }
       }
     }
