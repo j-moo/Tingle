@@ -85,7 +85,8 @@ checkout
        iot:  펌웨어 코드가 없어 확인만 (생기면 arduino-cli compile, 보드 seeed_xiao_nrf52840)
   → [MR]      여기서 끝. 파트별 · 전체(jenkins) 결과를 GitLab MR 에 표시
   → [develop] app-env → /srv/tingle/dev 에 풀기 → compose up -d --build --no-deps web-dev back-dev → 응답 확인
-  → [master]  app-env → DB 백업 → /srv/tingle/repo 에 풀기 → compose up -d --build --no-deps web back → 응답 확인
+  → [master]  app-env → DB 백업 → /srv/tingle/repo 에 풀기 → compose up -d --build --no-deps web → 응답 확인
+              → back 블루-그린 (deploy-bluegreen.sh: 새 색 기동 → health → nginx 전환 → 옛 색 정지)
   → (이후)    develop: APK(dev) → /app/dev/latest.apk / master: APK(prod) → /app/latest.apk, GitLab Release / 펌웨어 산출물 보관
 ```
 
@@ -102,19 +103,21 @@ checkout
 | 대상 | 방법 | 서버 폴더 |
 | --- | --- | --- |
 | 개발 (web-dev · back-dev) | develop 머지 → Jenkins 재시작 배포 | `/srv/tingle/dev` |
-| 운영 (web · back) | master 머지 → Jenkins. 지금은 재시작 배포(3단계), 4단계에서 back · ai 를 블루-그린으로 | `/srv/tingle/repo` |
+| 운영 (web · back) | master 머지 → Jenkins. web 은 재시작, back 은 블루-그린(`infra/deploy-bluegreen.sh`). ai 는 생기면 블루-그린 | `/srv/tingle/repo` |
 | 인프라 (nginx · db · jenkins) | 인프라 담당 수동 배포 | `/srv/tingle/repo` |
 
 서버 `.env` 는 Jenkins 를 띄우는 값만(손으로 관리), 앱 비밀값은 `app.env`(Jenkins 가 씀). 수동 배포 명령:
 
 `docker compose --env-file /srv/tingle/.env --env-file /srv/tingle/app.env -f /srv/tingle/repo/infra/docker-compose.yml up -d --build <서비스>` (프로젝트 이름은 compose 의 `name: tingle`)
 
-### 운영 블루-그린 (4단계, `deploy.sh <서비스>`)
+### 운영 블루-그린 (`infra/deploy-bluegreen.sh <서비스> [rollback]`)
+
+10/22 back 에 적용. 운영 색은 `/srv/tingle/nginx-state/<서비스>.conf` (nginx 가 include, 없으면 blue). 시험: 0.2초 간격 요청 중 blue → green 181건 · rollback 174건 모두 실패 0건, 최대 응답 0.09초.
 
 ai 와 back 에 같은 스크립트를 쓴다. ai 를 먼저 전환해 새 back 이 새 AI 응답 형식을 받을 수 있게 한다.
 
 ```
-1. 현재 색 읽기     nginx/upstream/<서비스>.conf. 파일 없으면 blue
+1. 현재 색 읽기     /srv/tingle/nginx-state/<서비스>.conf. 파일 없으면 처음 (blue 로 띄움)
 2. 반대 색 띄우기   compose up -d <서비스>-{new}
 3. 상태 확인        back /actuator/health, ai /health 가 200 (2초 간격, 최대 90초. Flyway 마이그레이션 시간 포함)
                    실패 → stop <서비스>-{new}; exit 1  (운영 그대로, Jenkins 실패)
@@ -125,7 +128,7 @@ ai 와 back 에 같은 스크립트를 쓴다. ai 를 먼저 전환해 새 back 
                    old 가 닫히면 앱이 재접속 → {new}. 이미지는 최근 2개 태그만 남기고 prune
 ```
 
-- **롤백**: `deploy.sh rollback <서비스>` — 이전 색을 다시 켜고 upstream 을 되돌린 뒤 reload.
+- **롤백**: `sh /srv/tingle/repo/infra/deploy-bluegreen.sh back rollback` (Jenkins 컨테이너 안에서) — 멈춰 둔 이전 색을 다시 켜고 상태 확인 후 nginx 를 되돌린다.
 - **예약 작업 중복**: 전환 중 20~30초 동안 blue·green 이 동시에 떠 있다. 7일 대기 만료·24시간 제안 만료·30일 제한 해제 같은 예약 작업은 **ShedLock(DB 잠금)** 으로 한 칸만 실행되게 한다. 멱등하게 짜서 두 번 돌아도 결과가 같아야 한다.
 - **WebSocket**: 앱은 연결이 끊기면 1·2·4초 간격으로 재접속하고, 채팅 메시지는 DB 에 있으므로 재접속 후 마지막 메시지 ID 이후를 다시 받는다. 전환 1회당 채팅 끊김은 재접속 시간(목표 3초 이내)뿐이다.
 - **AI 호출**: back 은 AI 서버 호출에 타임아웃과 재시도를 둔다. 전환 중 실패한 요청은 재시도로 복구한다.
@@ -181,7 +184,7 @@ ai 와 back 에 같은 스크립트를 쓴다. ai 를 먼저 전환해 새 back 
 | **1. CI 검사** | 3주차 | Jenkinsfile 검사 단계 (back·ai·app·web·firmware), 파트별 docker 이미지 | MR 에 결과 표시, 실패 시 머지 불가 | 검사 완료. 머지 불가 설정 · 펌웨어 검사 남음 |
 | **2. 개발 환경** | 3~4주차 | compose, back·ai·web Dockerfile, develop 재시작 배포, `/app/dev/latest.apk` | 개발 APK 로 `/dev/api` 접속 성공, `/dev/` 랜딩 표시, back-dev → ai-dev 호출 성공 | web-dev · back-dev 배포 완료. ai · APK 남음 |
 | **3. 운영 재시작 배포** | 4주차 (10/26~) | master 재시작 배포. **다운타임·WebSocket 끊김 측정** | `/`·`/api` 동작, 다운타임 기록 | 배포 구성 완료(배포 전 DB 백업 포함). 첫 master 머지 · 측정 남음 |
-| **4. 블루-그린** | 5주차 (11/2~11/6) | deploy.sh, upstream 전환(ai·back), 롤백, ShedLock 확인 | 배포 중 1초 간격 요청 실패 0건, 채팅 재접속 3초 이내 | Actuator 완료(MR !43). BE graceful shutdown 대기 |
+| **4. 블루-그린** | 5주차 (11/2~11/6) | deploy-bluegreen.sh, upstream 전환(ai·back), 롤백, ShedLock 확인 | 배포 중 1초 간격 요청 실패 0건, 채팅 재접속 3초 이내 | back 전환 · 롤백 구현, 시험 실패 0건. graceful shutdown · ai · WebSocket 확인 남음 |
 | **5. 운영 보강** | 6주차 (11/9~11/13) | 매일 백업, 모니터링, 푸시(FCM), 이미지 보관 정책 | 복원 1회 성공, Grafana 에서 배포 전후 확인 | 배포 전 백업만 완료 |
 | **6. 최종** | 7주차 (11/16~) | 운영 APK 릴리스, 시연용 데이터 초기화 스크립트 | E2E 시연 전 운영 환경 고정 | — |
 
