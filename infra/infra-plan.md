@@ -210,7 +210,6 @@ WebSocket: 테스트 앱 2대를 채팅방에 두고 배포 → 끊김 감지 �
 | 앱(FE) | Gradle 속성 `apiBase` 로 서버 선택, WebSocket 자동 재접속(1·2·4초), 마지막 메시지 ID 이후 재수신 | 운영/개발 분리·블루-그린 전환 복구 |
 | 앱(FE) | Android 서명 키 생성 후 팀장에게 전달(Jenkins Credentials 등록), `./gradlew check` 통과 | CI 빌드 |
 | 웹(FE) | `front/web/Dockerfile`(Node·pnpm 빌드 → `nginx:alpine`), 빌드 기준 경로를 설정으로 받아 `/` 와 `/dev/` 양쪽에서 동작 | 운영/개발 경로 분리 |
-| 펌웨어 | `iot/` 에 arduino-cli 로 빌드되는 구조(보드 FQBN·라이브러리 목록 `.txt`), 펌웨어 버전 상수 | CI 컴파일 검사·버전 추적 |
 | 전체 | 로그에 개인정보 원문 금지 | 기획안 8.3 |
 
 10/22 기준 진행:
