@@ -1,5 +1,5 @@
 # Jenkins 설정 코드(JCasC). 컨테이너가 뜰 때마다 이 내용으로 맞춘다 — 화면에서 바꾼 값은 재시작 시 되돌아간다.
-# ${...} 는 compose 가 넘긴 환경변수(서버 /srv/tingle/.env)로 채워진다.
+# ${...} 는 compose 가 넘긴 환경변수(서버 /srv/tingle/.env)로 채워진다. Jenkins 변수를 그대로 남기려면 ^${...} 로 쓴다.
 jenkins:
   systemMessage: 'Tingle CI — 설정은 저장소 infra/jenkins/casc 에서 관리'
   numExecutors: 1 # 동시 빌드 1개 (인프라 계획 6절)
@@ -14,6 +14,74 @@ jenkins:
     loggedInUsersCanDoAnything:
       allowAnonymousRead: false
 
+credentials:
+  system:
+    domainCredentials:
+      - credentials:
+          # GitLab 프로젝트 액세스 토큰 "jenkins" (Developer · api · read_repository · 만료 2026-12-31)
+          - usernamePassword:
+              scope: GLOBAL
+              id: gitlab-clone
+              description: 'GitLab 저장소 받기 (프로젝트 토큰 jenkins)'
+              username: jenkins
+              password: '${GITLAB_TOKEN}'
+          - gitLabApiTokenImpl: # 클래스에 심볼이 없어 클래스 이름으로 쓴다 (gitlabApiToken 은 바인딩용 심볼)
+              scope: GLOBAL
+              id: gitlab-api
+              description: 'GitLab 빌드 결과 표시 (프로젝트 토큰 jenkins)'
+              apiToken: '${GITLAB_TOKEN}'
+
 unclassified:
   location:
     url: 'https://${DOMAIN}/jenkins/'
+  gitLabConnectionConfig:
+    useAuthenticatedEndpoint: true # Webhook 은 job 의 비밀값(GITLAB_WEBHOOK_SECRET)으로 검증
+    connections:
+      - name: lab.ssafy.com
+        url: https://lab.ssafy.com
+        apiTokenId: gitlab-api
+        clientBuilderId: autodetect
+        connectionTimeout: 10
+        readTimeout: 10
+
+# 빌드 작업. GitLab Webhook → https://${DOMAIN}/jenkins/project/tingle
+jobs:
+  - script: |
+      pipelineJob('tingle') {
+        // 브랜치는 GitLab Webhook 이 넘기는 gitlabSourceBranch 만 쓴다. 같은 이름의 job 매개변수를 두면 그 기본값이
+        // Webhook 값을 덮어써 MR 이 아닌 develop 을 받게 된다 (2026-10-22 확인). 그래서 Jenkins 화면의 직접 실행은 지원하지 않는다.
+        description('S15P31E106 — GitLab MR·push 마다 저장소 최상위 Jenkinsfile 을 실행한다. 직접 실행은 지원하지 않는다(브랜치를 Webhook 이 정함). 설정은 infra/jenkins/casc/jenkins.yaml')
+        properties {
+          pipelineTriggers {
+            triggers {
+              gitlab {
+                triggerOnPush(true)
+                triggerOnMergeRequest(true)
+                triggerOpenMergeRequestOnPush('never')
+                triggerOnNoteRequest(false)
+                ciSkip(true)
+                setBuildDescription(true)
+                branchFilterType('All')
+                secretToken('${GITLAB_WEBHOOK_SECRET}')
+              }
+            }
+          }
+        }
+        definition {
+          cpsScm {
+            scm {
+              git {
+                remote {
+                  name('origin')
+                  url('https://lab.ssafy.com/s15-final/S15P31E106.git')
+                  credentials('gitlab-clone')
+                  refspec('+refs/heads/*:refs/remotes/origin/* +refs/merge-requests/*/head:refs/remotes/origin/merge-requests/*')
+                }
+                branch('origin/^${gitlabSourceBranch}')
+              }
+            }
+            scriptPath('Jenkinsfile')
+            lightweight(false)
+          }
+        }
+      }
