@@ -72,12 +72,12 @@ v0.3.0, 2026.10.21. 모바일 앱을 Kotlin Multiplatform 으로 정하고, Reac
 
 ```
 checkout
-  → 변경 파트 감지 (back/, ai-server/, front/app/, front/web/, iot/ diff. infra/·Jenkinsfile 변경 시 전체)
+  → 변경 파트 감지 (back/, ai-server/, front/app/, front/web/, iot/ diff. Jenkinsfile 변경 시 전체)
   → 검사 (병렬)  backend:  gradle build + checkstyle + 테스트
                  ai:       pytest
-                 app:      ./gradlew check (lint + 단위 테스트)
+                 app:      ./gradlew check :androidApp:assembleDebug (lint + 단위 테스트 + 디버그 APK)
                  web:      pnpm install --frozen-lockfile + pnpm lint + pnpm build
-                 firmware: arduino-cli compile (보드 seeed_xiao_nrf52840)
+                 firmware: arduino-cli compile (보드 seeed_xiao_nrf52840) — 펌웨어 코드가 생기면 추가
   → [MR]      여기서 끝. 결과를 GitLab MR 에 표시. 실패하면 머지 불가
   → [develop] ai·backend·web 이미지 빌드(태그 dev) → compose up -d ai-dev backend-dev web-dev
               app: APK(dev) 빌드 → /app/dev/latest.apk
@@ -86,7 +86,9 @@ checkout
               firmware: 산출물 보관 (자동 굽기 없음)
 ```
 
-- `Jenkinsfile` 은 저장소 최상위. 비밀값(DB, GMS 키, APK 키스토어, FCM 서비스 계정)은 Jenkins Credentials.
+- `Jenkinsfile` 은 저장소 최상위. 검사 도구는 Jenkins 에 깔지 않고 파트마다 docker 이미지(eclipse-temurin:21-jdk, python:3.12-slim, node:24-alpine)로 돌린다. 캐시는 tingle-ci-* docker 볼륨.
+- MR 에는 파트별(back·ai·web·app·iot)과 전체(jenkins) 결과가 표시된다.
+- 비밀값(DB, GMS 키, APK 키스토어, FCM 서비스 계정)은 Jenkins Credentials.
 - 동시 빌드 1개. 앱 빌드와 서버 배포가 겹치지 않게 큐로 직렬화.
 
 ## 7. 배포
