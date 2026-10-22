@@ -2,3 +2,21 @@
 .env
 .env.*
 !.env.example
+
+# 개인 AI 도구 지침·설정 (하위 디렉터리 포함)
+AGENTS.md
+CLAUDE.md
+.claude/
+
+# 개발 도구 설정·캐시
+.idea/
+*.iml
+.gradle/
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# 빌드 결과·실행 로그
+build/
+*.log

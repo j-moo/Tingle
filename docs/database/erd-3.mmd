@@ -1,0 +1,65 @@
+erDiagram
+    survey_responses {
+        bigint response_id PK
+        bigint user_id
+        text version_code
+        uuid client_request_id
+        jsonb response_json
+        bigint revision
+        timestamptz completed_at
+    }
+    analysis_results {
+        bigint result_id PK
+        bigint response_id
+        text version_code
+        text outcome
+        jsonb result_json
+    }
+    user_pairs {
+        bigint pair_id PK
+        bigint user_low
+        bigint user_high
+        timestamptz declined_until
+        bigint declined_proposal_id
+    }
+    encounters {
+        bigint encounter_id PK
+        bigint pair_id
+        text event_key
+        timestamptz occurred_at
+        timestamptz opportunity_expires_at
+        timestamptz counterpart_deadline_at
+        text status
+        text evaluation_version_code
+        jsonb evaluation_json
+    }
+    encounter_submissions {
+        bigint receipt_id PK
+        bigint encounter_id
+        bigint binding_id
+        bigint snapshot_id
+        uuid submission_id
+        jsonb proof_json
+        timestamptz received_at
+    }
+    match_proposals {
+        bigint proposal_id PK
+        bigint pair_id
+        bigint encounter_id
+        text low_decision
+        text high_decision
+        timestamptz low_decided_at
+        timestamptz high_decided_at
+        uuid low_request_key
+        uuid high_request_key
+        text status
+        timestamptz created_at
+        timestamptz expires_at
+        bigint chat_room_id
+    }
+    survey_responses ||--o{ analysis_results : "response_id logical"
+    match_proposals ||--o{ user_pairs : "declined_proposal_id logical"
+    user_pairs ||--o{ encounters : "pair_id logical"
+    encounters ||--o{ encounter_submissions : "encounter_id logical"
+    user_pairs ||--o{ match_proposals : "pair_id logical"
+    encounters ||--o{ match_proposals : "encounter_id logical"

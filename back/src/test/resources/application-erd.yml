@@ -1,0 +1,9 @@
+# Only the disposable Testcontainers database; validate the design DDL instead of generating from entities.
+spring:
+  sql:
+    init:
+      mode: always
+      schema-locations: file:../docs/database/schema.sql
+  jpa:
+    hibernate:
+      ddl-auto: validate

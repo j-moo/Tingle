@@ -1,0 +1,7 @@
+# 개발 서버(back-dev, DB tingle_dev). develop 머지마다 Jenkins 가 SPRING_PROFILES_ACTIVE=dev 로 띄운다.
+# 테이블 · 새 컬럼은 엔티티를 보고 자동으로 추가한다. 컬럼 삭제 · 이름 변경은 하지 않으므로 필요하면 SQL 을 직접 실행한다.
+# DB 접속 정보 · JWT 등 비밀값은 compose 환경변수로 받는다 (infra/docker-compose.yml).
+spring:
+  jpa:
+    hibernate:
+      ddl-auto: update

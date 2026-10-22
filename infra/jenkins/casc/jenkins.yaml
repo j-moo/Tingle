@@ -1,0 +1,80 @@
+# Jenkins 설정 코드(JCasC). 컨테이너가 뜰 때마다 이 내용으로 맞춘다 — 화면에서 바꾼 값은 재시작 시 되돌아간다.
+# ${...} 는 compose 가 넘긴 환경변수(서버 /srv/tingle/.env)로 채워진다. Jenkins 변수를 그대로 남기려면 ^${...} 로 쓴다.
+jenkins:
+  systemMessage: 'Tingle CI — 설정은 저장소 infra/jenkins/casc 에서 관리'
+  numExecutors: 1 # 동시 빌드 1개 (인프라 계획 6절)
+  mode: NORMAL
+  securityRealm:
+    local:
+      allowsSignup: false
+      users:
+        - id: '${JENKINS_ADMIN_ID}'
+          password: '${JENKINS_ADMIN_PASSWORD}'
+  authorizationStrategy:
+    loggedInUsersCanDoAnything:
+      allowAnonymousRead: false
+
+
+# Credentials 는 여기서 관리하지 않는다. credentials: 를 두면 재시작마다 그 목록으로 덮어써 화면에서 넣은 비밀값이 지워진다 (2026-10-22 확인).
+# 비밀값은 Jenkins 관리 → Credentials 에만 있고 jenkins_home 볼륨에 암호화돼 남는다. 볼륨을 새로 만들면 아래를 다시 넣는다.
+#   gitlab-clone       Username with password  jenkins / GitLab 프로젝트 토큰 "jenkins" (Developer · api · read_repository)
+#   gitlab-api         GitLab API token        같은 토큰
+#   tingle-db          Username with password  DB 사용자 / 비밀번호 → app.env 의 POSTGRES_USER · POSTGRES_PASSWORD
+unclassified:
+  location:
+    url: 'https://${DOMAIN}/jenkins/'
+  gitLabConnectionConfig:
+    useAuthenticatedEndpoint: true # Webhook 은 job 의 비밀값(GITLAB_WEBHOOK_SECRET)으로 검증
+    connections:
+      - name: lab.ssafy.com
+        url: https://lab.ssafy.com
+        apiTokenId: gitlab-api
+        clientBuilderId: autodetect
+        connectionTimeout: 10
+        readTimeout: 10
+
+# 빌드 작업. GitLab Webhook → https://${DOMAIN}/jenkins/project/tingle
+jobs:
+  - script: |
+      pipelineJob('tingle') {
+        // 브랜치는 GitLab Webhook 이 넘기는 gitlabSourceBranch 만 쓴다. 같은 이름의 job 매개변수를 두면 그 기본값이
+        // Webhook 값을 덮어써 MR 이 아닌 develop 을 받게 된다 (2026-10-22 확인). 그래서 Jenkins 화면의 직접 실행은 지원하지 않는다.
+        description('S15P31E106 — GitLab MR·push 마다 저장소 최상위 Jenkinsfile 을 실행한다. 직접 실행은 지원하지 않는다(브랜치를 Webhook 이 정함). 설정은 infra/jenkins/casc/jenkins.yaml')
+        properties {
+          pipelineTriggers {
+            triggers {
+              gitlab {
+                triggerOnPush(true)
+                triggerOnMergeRequest(true)
+                // 열린 MR 의 작업 브랜치에 커밋이 더 올라오면 MR 빌드를 다시 돌린다 (작업 브랜치 push 빌드는 아래 필터로 막혀 있다).
+                triggerOpenMergeRequestOnPush('source')
+                triggerOnNoteRequest(false)
+                ciSkip(true)
+                setBuildDescription(true)
+                // develop · master 만 본다: push(머지)는 이 두 브랜치일 때만, MR 은 대상 브랜치가 이 둘일 때만 빌드한다.
+                branchFilterType('NameBasedFilter')
+                includeBranchesSpec('develop, master')
+                excludeBranchesSpec('')
+                secretToken('${GITLAB_WEBHOOK_SECRET}')
+              }
+            }
+          }
+        }
+        definition {
+          cpsScm {
+            scm {
+              git {
+                remote {
+                  name('origin')
+                  url('https://lab.ssafy.com/s15-final/S15P31E106.git')
+                  credentials('gitlab-clone')
+                  refspec('+refs/heads/*:refs/remotes/origin/* +refs/merge-requests/*/head:refs/remotes/origin/merge-requests/*')
+                }
+                branch('origin/^${gitlabSourceBranch}')
+              }
+            }
+            scriptPath('Jenkinsfile')
+            lightweight(false)
+          }
+        }
+      }

@@ -1,0 +1,112 @@
+# 서버 /srv/tingle 에서 실행: docker compose --env-file /srv/tingle/.env --env-file /srv/tingle/app.env -f infra/docker-compose.yml up -d --build
+# .env 는 Jenkins 를 띄우는 값(손으로 관리), app.env 는 앱 비밀값(Jenkins Credentials 에서 develop 빌드마다 다시 씀, 직접 수정 금지).
+# 호스트에 여는 포트는 nginx 의 80·443 뿐이다 (Docker publish 는 ufw 를 우회한다). 나머지는 내부망 이름으로만 호출.
+name: tingle
+
+services:
+  nginx:
+    image: nginx:alpine
+    ports:
+      - '80:80'
+      - '443:443'
+    environment:
+      DOMAIN: ${DOMAIN:?}
+    volumes:
+      - ./nginx/templates:/etc/nginx/templates:ro # ${DOMAIN} 을 치환해 /etc/nginx/conf.d/ 로 복사된다
+      - /etc/letsencrypt:/etc/letsencrypt:ro
+      - /var/www/certbot:/var/www/certbot:ro # certbot webroot 갱신 경로
+      - /srv/tingle/nginx-state:/etc/nginx/state:ro # 블루-그린 운영 색 (infra/deploy-bluegreen.sh 가 씀)
+    depends_on:
+      - web
+      - web-dev
+    mem_limit: 128m
+    restart: unless-stopped
+
+  db:
+    image: postgres:17
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?} # 사용자·비밀번호는 볼륨이 비어 있을 때만 적용된다. 이후 변경은 DB 에서 ALTER ROLE
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?}
+      POSTGRES_DB: tingle # 운영. 개발 DB tingle_dev 는 db/init.sql 이 첫 기동 때 만든다
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    mem_limit: 1g
+    restart: unless-stopped
+
+  jenkins:
+    build: ./jenkins # 공식 LTS + docker CLI + 플러그인 + 설정 코드(jenkins/casc)
+    environment:
+      JENKINS_OPTS: --prefix=/jenkins
+      DOMAIN: ${DOMAIN:?}
+      JENKINS_ADMIN_ID: ${JENKINS_ADMIN_ID:?}
+      JENKINS_ADMIN_PASSWORD: ${JENKINS_ADMIN_PASSWORD:?}
+      GITLAB_WEBHOOK_SECRET: ${GITLAB_WEBHOOK_SECRET:?}
+    group_add:
+      - '${DOCKER_GID:?}' # 서버 docker 그룹 번호(getent group docker) — 소켓으로 빌드·배포
+    volumes:
+      - jenkins_home:/var/jenkins_home
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /srv/tingle:/srv/tingle # app.env 쓰기 · 배포 (서버와 같은 경로)
+      - /backup:/backup # 운영 배포 전 DB 백업
+    mem_limit: 1536m
+    restart: unless-stopped
+
+  web:
+    build: ../front/web
+    mem_limit: 64m
+    restart: unless-stopped
+
+  web-dev:
+    build:
+      context: ../front/web
+      args:
+        BASE: /dev/
+    mem_limit: 64m
+    restart: unless-stopped
+
+  # back: 운영(prod, DB tingle, 블루-그린 back-blue · back-green 중 한쪽만 켬) · 개발(dev, DB tingle_dev). nginx 가 /api/ /ws/ → back, /dev/api/ /dev/ws/ → back-dev 로 넘긴다.
+  # 테이블은 미리 있어야 한다 (ddl-auto validate). 처음엔 docs/database/schema.sql 을 넣었다 — 이후 스키마 변경은 BE 가 DB 에 반영.
+  # 비밀값은 app.env (Jenkins Credentials). 구글 · 카카오 ID 는 정해지면 Credentials 에 넣고 여기에 GOOGLE_WEB_CLIENT_ID · KAKAO_APP_ID 를 더한다.
+  back-blue:
+    build: ../back
+    environment: &back-env
+      SPRING_PROFILES_ACTIVE: prod
+      SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/tingle
+      SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER:?}
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:?}
+      JWT_SECRET: ${JWT_SECRET:?}
+      PUSH_TOKEN_ENCRYPTION_KEY: ${PUSH_TOKEN_ENCRYPTION_KEY:?}
+    depends_on: [db]
+    mem_limit: 1536m
+    restart: unless-stopped
+
+  back-green:
+    build: ../back
+    environment: *back-env
+    depends_on: [db]
+    mem_limit: 1536m
+    restart: unless-stopped
+
+  back-dev:
+    build: ../back
+    environment:
+      <<: *back-env
+      SPRING_PROFILES_ACTIVE: dev
+      SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/tingle_dev
+    depends_on: [db]
+    mem_limit: 1536m
+    restart: unless-stopped
+
+  # ai: Dockerfile 이 생기면 주석을 풀고 연결한다.
+  #   build: ../ai-server
+  #   environment:
+  #     HOST: 0.0.0.0
+  #     GMS_API_KEY: ${GMS_API_KEY}
+  #   mem_limit: 512m
+  #   restart: unless-stopped
+  # ai-dev: 위와 같음
+
+volumes:
+  pgdata:
+  jenkins_home:

@@ -1,0 +1,10 @@
+# 로컬 개발용 DB. ./gradlew bootRun 시 Spring Boot가 자동으로 띄우고 연결한다.
+services:
+  postgres:
+    image: 'postgres:17'
+    environment:
+      - 'POSTGRES_DB=tingle'
+      - 'POSTGRES_USER=tingle'
+      - 'POSTGRES_PASSWORD=${LOCAL_DB_PASSWORD:-local}'
+    ports:
+      - '5432'

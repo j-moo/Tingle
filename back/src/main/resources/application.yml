@@ -1,0 +1,93 @@
+# YAML은 UTF-8로 읽혀서 한글 값을 그대로 쓸 수 있다 (.properties는 한글이 깨진다).
+spring:
+  application:
+    name: tingle
+  profiles:
+    # 프로필을 지정하지 않고 실행하면 local 로 뜬다. 서버(dev·prod)는 인프라 준비 후 프로필을 따로 만든다.
+    default: local
+  docker:
+    compose:
+      # compose.yaml 로 DB를 띄우는 것은 local 에서만 한다 (application-local.yml).
+      enabled: false
+  config:
+    # back/.env 가 있으면 읽는다. 실제 값은 .env 에만 두고 커밋하지 않는다 (.env.example 참고).
+    import: optional:file:.env[.properties]
+  datasource:
+    # 비어 있으면 로컬은 compose.yaml, 테스트는 Testcontainers 가 연결 정보를 채운다.
+    url: ${SPRING_DATASOURCE_URL:}
+    username: ${SPRING_DATASOURCE_USERNAME:}
+    password: ${SPRING_DATASOURCE_PASSWORD:}
+  web:
+    resources:
+      # 앱 전용 JSON API 서버라 정적 파일(HTML·이미지)을 내보내지 않는다. 없는 경로는 JSON 404로 응답한다.
+      add-mappings: false
+  jackson:
+    default-property-inclusion: always
+    deserialization:
+      fail-on-unknown-properties: true
+  jpa:
+    hibernate:
+      # 공통 기본값은 검증만 한다. 테이블 자동 변경은 local(update)·test(create-drop) 프로필에서만 켠다.
+      # (docs/convention/backend-convention.md [db-schema], [env-profiles])
+      ddl-auto: validate
+    open-in-view: false
+    properties:
+      hibernate:
+        # enum 컬럼에 CHECK 제약을 만들지 않는다 (선택지 추가 시 기존 DB 호환, 클래스 주석 참고)
+        dialect: com.e106.tingle.global.jpa.NoColumnCheckPostgreSqlDialect
+
+# 서버 상태 확인(배포·Jenkins 가 호출). DB 연결까지 확인해 정상이면 200 {"status":"UP"}, 아니면 503.
+# health 하나만 열고, 세부 정보(DB 종류 등)는 응답에 넣지 않는다.
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      show-details: never
+
+app:
+  # 인증 (docs/contracts/api/auth.md)
+  auth:
+    jwt-secret: ${JWT_SECRET:}
+    access-token-ttl: 30m
+    refresh-token-ttl: 14d
+    refresh-reuse-grace: 30s
+    google-client-id: ${GOOGLE_WEB_CLIENT_ID:}
+    kakao-app-id: ${KAKAO_APP_ID:}
+    # 액세스 토큰에 iss·aud 가 있으면 이 값과 같아야 한다(없으면 통과).
+    issuer: tingle
+    audience: mobile-app
+
+  proposals:
+    decline-days: 30
+
+  keyring:
+    # 구매처를 임의 지정하지 않는다. 미설정이면 API는 purchaseUrl:null을 반환한다.
+    purchase-url: ${KEYRING_PURCHASE_URL:}
+
+  push:
+    # JWT와 별도인 Base64 32바이트 키. 누락 시 등록은 503, 본인 설치 해제는 허용한다.
+    token-encryption-key: ${PUSH_TOKEN_ENCRYPTION_KEY:}
+
+  # 현재 적용 중인 동의 항목. 화면 제목은 messages.properties 의 agreement.{type}.title. 항목 추가·삭제, 버전 변경은 여기만 고치면 된다 (코드·앱 수정 불필요).
+  # 버전을 올리면 이전 버전으로 들어온 가입 요청은 AGREEMENT_VERSION_OUTDATED 가 된다. 목록 순서대로 화면에 표시된다.
+  agreement:
+    items:
+      - type: TERMS
+        version: "2026-10-19"
+        required: true
+        content-url: ${TERMS_CONTENT_URL:https://example.com/terms}
+      - type: PRIVACY
+        version: "2026-10-19"
+        required: true
+        content-url: ${PRIVACY_CONTENT_URL:https://example.com/privacy}
+      # 기능 명세 §2.7: 가입 전 별도 필수 동의. 외부 전송 적용 전 확인 조건은 AI-02 기준
+      - type: AI_RISK_DETECTION
+        version: "2026-10-22"
+        required: true
+        content-url: ${AI_RISK_CONTENT_URL:https://example.com/ai-risk}
+      - type: ADULT
+        version: "2026-10-19"
+        required: true
