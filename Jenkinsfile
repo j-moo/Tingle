@@ -3,6 +3,8 @@
 // MR 은 검사로 끝나고 결과가 GitLab MR 에 파트별로 표시된다. develop 배포 단계는 다음 MR 에서 추가한다 (인프라 계획 6절).
 
 def PARTS = [back: 'back/', ai: 'ai-server/', web: 'front/web/', app: 'front/app/', iot: 'iot/']
+// develop 머지 때 다시 띄우는 dev 서비스 (infra/docker-compose.yml). back-dev · ai-dev 가 생기면 여기에 더한다.
+def DEV_SERVICES = 'web-dev'
 def changed = []
 
 // image 컨테이너에서 dir 을 기준으로 script 를 실행한다. 컨테이너는 root 로 돌기 때문에 끝나면 작업 폴더 소유권을 Jenkins 사용자에게 돌려준다.
@@ -126,6 +128,27 @@ sh gradlew check :androidApp:assembleDebug --no-daemon -Dorg.gradle.jvmargs=-Xmx
             mv /srv/tingle/app.env.tmp /srv/tingle/app.env
             echo "app.env 갱신: $(grep -c = /srv/tingle/app.env)개 값"
           '''
+        }
+      }
+    }
+    stage('deploy-dev') {
+      // develop push 때만: dev 서비스를 이 커밋으로 다시 빌드해 띄운다. 운영 서비스와 nginx · db · jenkins 는 건드리지 않는다 (--no-deps).
+      // 코드는 /srv/tingle/dev 에 풀어 둔다 (운영 배포본 /srv/tingle/repo 와 분리). 서버와 Jenkins 가 /srv/tingle 을 같은 경로로 보므로 compose 의 상대 경로가 그대로 맞는다.
+      when { expression { env.gitlabActionType == 'PUSH' && env.gitlabSourceBranch == 'develop' } }
+      steps {
+        gitlabCommitStatus(name: 'deploy-dev') {
+          sh """
+            rm -rf /srv/tingle/dev.new && mkdir /srv/tingle/dev.new
+            git archive HEAD | tar x -C /srv/tingle/dev.new
+            git rev-parse --short HEAD > /srv/tingle/dev.new/.deployed-commit
+            rm -rf /srv/tingle/dev.old
+            if [ -d /srv/tingle/dev ]; then mv /srv/tingle/dev /srv/tingle/dev.old; fi
+            mv /srv/tingle/dev.new /srv/tingle/dev && rm -rf /srv/tingle/dev.old
+            docker compose --env-file /srv/tingle/.env --env-file /srv/tingle/app.env -f /srv/tingle/dev/infra/docker-compose.yml up -d --build --no-deps ${DEV_SERVICES}
+            docker image prune -f
+          """
+          // 떠서 응답하는지 확인 (Jenkins 는 compose 내부망에 있어 서비스 이름으로 부른다)
+          sh 'for i in $(seq 1 15); do curl -fsS -o /dev/null http://web-dev/ && exit 0; sleep 2; done; echo "web-dev 응답 없음"; exit 1'
         }
       }
     }

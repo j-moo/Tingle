@@ -88,6 +88,7 @@ checkout
 
 - `Jenkinsfile` 은 저장소 최상위. 검사 도구는 Jenkins 에 깔지 않고 파트마다 docker 이미지(eclipse-temurin:21-jdk, python:3.12-slim, node:24-alpine)로 돌린다. 캐시는 tingle-ci-* docker 볼륨.
 - MR 에는 파트별(back·ai·web·app·iot)과 전체(jenkins) 결과가 표시된다.
+- develop 머지 때: Credentials → `/srv/tingle/app.env` 갱신, 코드를 `/srv/tingle/dev` 에 풀고 dev 서비스만 `compose up -d --build --no-deps` (지금은 web-dev. back-dev · ai-dev 는 Dockerfile 이 생기면 Jenkinsfile `DEV_SERVICES` 에 추가, APK(dev) 는 이후).
 - 비밀값(DB, GMS 키, APK 키스토어, FCM 서비스 계정)은 Jenkins Credentials.
 - 동시 빌드 1개. 앱 빌드와 서버 배포가 겹치지 않게 큐로 직렬화.
 
