@@ -46,7 +46,8 @@ jobs:
               gitlab {
                 triggerOnPush(true)
                 triggerOnMergeRequest(true)
-                triggerOpenMergeRequestOnPush('never')
+                // 열린 MR 의 작업 브랜치에 커밋이 더 올라오면 MR 빌드를 다시 돌린다 (작업 브랜치 push 빌드는 아래 필터로 막혀 있다).
+                triggerOpenMergeRequestOnPush('source')
                 triggerOnNoteRequest(false)
                 ciSkip(true)
                 setBuildDescription(true)
