@@ -1,0 +1,62 @@
+package com.e106.tingle.chat;
+
+import static org.assertj.core.api.Assertions.*;
+
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
+
+import com.e106.tingle.global.error.BusinessException;
+
+class ChatTextTest {
+	@ParameterizedTest
+	@ValueSource(strings = {"https://example.com/join?id=123#x", "www.example.com", "example.co.kr/path",
+		"bit.ly/abcd", "https://예시.한국/경로", "예시.한국/경로", "http://192.0.2.1:8080/join", "192.0.2.1/a",
+		"https://[2001:db8::1]:8080/join", "https://[2001:db8::1]"})
+	void masksTheCompleteAddress(String address) {
+		assertThat(ChatText.mask("여기 (" + address + "), 확인!"))
+			.isEqualTo("여기 ([웹 주소 차단]), 확인!");
+	}
+
+	@ParameterizedTest
+	@ValueSource(strings = {"네이버에서 검색해", "버전 1.2", "10.21에 만나", "hello@example.com",
+		"카톡 아이디는 tingle123", "example 닷 com"})
+	void preservesExcludedOrdinaryText(String text) {
+		assertThat(ChatText.mask(text)).isEqualTo(text);
+	}
+
+	@Test
+	void validatesOriginalLengthBeforeMaskingAndKeepsExpandedResult() {
+		String original = "x.co ".repeat(200);
+		assertThat(ChatText.normalize(original)).isEqualTo(original);
+		assertThat(ChatText.mask(original)).hasSizeGreaterThan(1000);
+		assertThatThrownBy(() -> ChatText.normalize(original + "x")).isInstanceOf(BusinessException.class);
+	}
+
+	@Test
+	void countsExtendedGraphemesAndNormalizesLineBreaksWithoutTruncating() {
+		String family = "👨‍👩‍👧‍👦";
+		assertThat(ChatText.normalize(family.repeat(1000))).isEqualTo(family.repeat(1000));
+		assertThatThrownBy(() -> ChatText.normalize(family.repeat(1001))).isInstanceOf(BusinessException.class);
+		assertThat(ChatText.normalize("첫째\r\n둘째\r셋째")).isEqualTo("첫째\n둘째\n셋째");
+	}
+
+	@ParameterizedTest
+	@ValueSource(strings = {"", " \n\t", "\u00a0\u3000"})
+	void rejectsWhitespaceOnly(String text) {
+		assertThatThrownBy(() -> ChatText.normalize(text)).isInstanceOf(BusinessException.class);
+	}
+
+	@Test
+	void boundsPathologicalCombiningSequencesByUtf8Bytes() {
+		assertThatThrownBy(() -> ChatText.normalize("a" + "\u0301".repeat(40000)))
+			.isInstanceOf(BusinessException.class);
+	}
+
+	@Test
+	void rejectsDatabaseControlCharactersAndMalformedSurrogates() {
+		for (char value : new char[] {0, 1, Character.MIN_SURROGATE}) {
+			assertThatThrownBy(() -> ChatText.normalize("text" + value)).isInstanceOf(BusinessException.class);
+		}
+	}
+}

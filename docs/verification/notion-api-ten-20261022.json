@@ -1,0 +1,171 @@
+{
+  "date": "2026-10-22",
+  "scope": "requested 10 Notion APIs only",
+  "pages": [
+    {
+      "name": "list",
+      "method": "GET",
+      "path": "/api/v1/chat-rooms",
+      "page_url": "https://app.notion.com/p/3ffc91ccb660805ea5c4d17106bfe471",
+      "identity": "PASS",
+      "current_request_response_permission_storage_checks": "PASS",
+      "required_facts_checked": 12,
+      "success_status": "200",
+      "saved_readback": "PASS",
+      "evidence": "list.md",
+      "sha256": "77147c578d36753d823ac4bcd6a877b2a929df852691ba9bfb5e97595dd834c4"
+    },
+    {
+      "name": "detail",
+      "method": "GET",
+      "path": "/api/v1/chat-rooms/{chatRoomId}",
+      "page_url": "https://app.notion.com/p/3ffc91ccb660805ca7cbe858730577b8",
+      "identity": "PASS",
+      "current_request_response_permission_storage_checks": "PASS",
+      "required_facts_checked": 12,
+      "success_status": "200",
+      "saved_readback": "PASS",
+      "evidence": "detail.md",
+      "sha256": "9f2c97686b931d900e3eb9e87ec6dea2107bf5953c55e5e1d676fc9f2386d389"
+    },
+    {
+      "name": "messages",
+      "method": "GET",
+      "path": "/api/v1/chat-rooms/{chatRoomId}/messages",
+      "page_url": "https://app.notion.com/p/3ffc91ccb660806e8880d5fd202bb99d",
+      "identity": "PASS",
+      "current_request_response_permission_storage_checks": "PASS",
+      "required_facts_checked": 11,
+      "success_status": "200",
+      "saved_readback": "PASS",
+      "evidence": "messages.md",
+      "sha256": "d24d866f5e6daf55ab01ffcb55a6397a0134a971d8febf2e62128d00dd266966"
+    },
+    {
+      "name": "send",
+      "method": "POST",
+      "path": "/api/v1/chat-rooms/{chatRoomId}/messages",
+      "page_url": "https://app.notion.com/p/3ffc91ccb6608042a53fc12019b109e5",
+      "identity": "PASS",
+      "current_request_response_permission_storage_checks": "PASS",
+      "required_facts_checked": 11,
+      "success_status": "201",
+      "saved_readback": "PASS",
+      "evidence": "send-current-bottom.txt",
+      "sha256": "b124312da09cff57ff69423f6a21a503505c24277a82aef765f0e44e6e080c13"
+    },
+    {
+      "name": "reads",
+      "method": "POST",
+      "path": "/api/v1/chat-rooms/{chatRoomId}/reads",
+      "page_url": "https://app.notion.com/p/401c91ccb66080f6944af1b785df25c3",
+      "identity": "PASS",
+      "current_request_response_permission_storage_checks": "PASS",
+      "required_facts_checked": 11,
+      "success_status": "200",
+      "saved_readback": "PASS",
+      "evidence": "reads-saved.txt",
+      "sha256": "5310bd63f8e75b9e9b3d1e6894e7ca8ed7d8afcaafcff456bdc8f6fcbd1f3c69"
+    },
+    {
+      "name": "push",
+      "method": "PUT",
+      "path": "/api/v1/push-installations",
+      "page_url": "https://app.notion.com/p/3ffc91ccb660802d879ec77b9f622e02",
+      "identity": "PASS",
+      "current_request_response_permission_storage_checks": "PASS",
+      "required_facts_checked": 11,
+      "success_status": "200",
+      "saved_readback": "PASS",
+      "evidence": "push-live.txt",
+      "sha256": "3d31afb11bdcbf32d44098fb069209d15a47572549cdb310b2e6dac613fdd800"
+    },
+    {
+      "name": "remove",
+      "method": "DELETE",
+      "path": "/api/v1/push-installations/{installationId}",
+      "page_url": "https://app.notion.com/p/3ffc91ccb6608052895cd17258ec1aa2",
+      "identity": "PASS",
+      "current_request_response_permission_storage_checks": "PASS",
+      "required_facts_checked": 8,
+      "success_status": "204",
+      "saved_readback": "PASS",
+      "evidence": "remove-live.txt",
+      "sha256": "50615404d545948f8958d75cf352b5b5e41b9bc5c581346af3b936367f06c1ab"
+    },
+    {
+      "name": "logout",
+      "method": "POST",
+      "path": "/api/v1/auth/logout",
+      "page_url": "https://app.notion.com/p/3ffc91ccb6608089b245d8cdda63d67c",
+      "identity": "PASS",
+      "current_request_response_permission_storage_checks": "PASS",
+      "required_facts_checked": 9,
+      "success_status": "204",
+      "saved_readback": "PASS",
+      "evidence": "logout-live.txt",
+      "sha256": "e6bdb4b292a2724ce2c04eab559329498e03b72d7e87550c9541ea6f19721046"
+    },
+    {
+      "name": "keyrings",
+      "method": "GET",
+      "path": "/api/v1/keyrings",
+      "page_url": "https://app.notion.com/p/3ffc91ccb66080769f1ae85633d8d913",
+      "identity": "PASS",
+      "current_request_response_permission_storage_checks": "PASS",
+      "required_facts_checked": 16,
+      "success_status": "200",
+      "saved_readback": "PASS",
+      "evidence": "keyrings-saved.txt",
+      "sha256": "19b5b7df8b35a628ab6c7f38381235abda015ac24cf1915ce31752353a7aacb8"
+    },
+    {
+      "name": "purchase",
+      "method": "GET",
+      "path": "/api/v1/keyrings/purchase-info",
+      "page_url": "https://app.notion.com/p/3ffc91ccb66080a18a84e6d6687c923a",
+      "identity": "PASS",
+      "current_request_response_permission_storage_checks": "PASS",
+      "required_facts_checked": 11,
+      "success_status": "200",
+      "saved_readback": "PASS",
+      "evidence": "purchase-saved.txt",
+      "sha256": "650f1824cbcc28ee62e03512ad30add645069044d41a2934a554b5b75ab63530"
+    }
+  ],
+  "pages_verified": 10,
+  "facts_checked": 112,
+  "keyring_changed_paragraphs_saved": 6,
+  "other_chat_8_pages_rewritten": false,
+  "keyring_metadata_history_preserved": true,
+  "offline_status": "OpenAPI enum retained; current server emits REGISTERED/SYNC_PENDING/READY; OFFLINE observation/return unconfirmed",
+  "rejected_export": {
+    "file": "send.md",
+    "reason": "exported HTTP GET instead of expected POST; not used as send proof; actual POST page DOM was captured and checked"
+  },
+  "backend_tests": "NOT_RUN_DOCS_ONLY",
+  "shared_db": "NOT_ACCESSED",
+  "common_scope_text_saved_reload": "PASS",
+  "metadata_history_hashes": {
+    "keyrings": {
+      "metadata_sha256": "27c7361a4893ff0e6a72d8b2c24dc79217c2f690a6d981754483bfd967bfd6f5",
+      "history_sha256": "1ce3a1ef9921594d4f535aa27810c4a90e1d5d8315b85781b59050476db673d0",
+      "before_after_equal": true
+    },
+    "purchase": {
+      "metadata_sha256": "dd45cee62a80a3c49f7248cfbb7b196082202f2d988727737e8a34669ed5712c",
+      "history_sha256": "4266dc53aacd6f647852256342299f2b6405a7bf2a123b4f51830580fd63a805",
+      "before_after_equal": true
+    }
+  },
+  "other_chat_openapi_source_sha256": "3f171e894180544be916899d49db894ca7e174cebfaa7abfaab7ff0eee218968",
+  "imported_other_chat_deltas": [
+    "existing reads page reference",
+    "push/removal 403 ONBOARDING_REQUIRED",
+    "reads and PushRegistration index rows"
+  ],
+  "own_openapi_corrections": [
+    "keyring/purchase GET 403 ONBOARDING_REQUIRED",
+    "Keyring.status description distinguishes current implementation and unconfirmed OFFLINE; enum unchanged"
+  ]
+}

@@ -28,7 +28,7 @@ public class OnboardingService {
 	// 미구현 단계도 통과시키지 않는다. 각 도메인의 실제 데이터로 판단하고, READY 는 매칭 제안과 같은 기준(ready)을 쓴다.
 	@Transactional(readOnly = true)
 	public OnboardingStatus statusOf(long userId) {
-		if (!agreementService.hasAgreedAllRequired(userId)) {
+		if (!agreementService.hasAgreedRequiredForAccess(userId, members.signupCompleted(userId))) {
 			return OnboardingStatus.AGREEMENT_REQUIRED;
 		}
 		if (!members.hasKeyring(userId)) {
@@ -62,7 +62,8 @@ public class OnboardingService {
 	/**
 	 * required 단계부터 쓸 수 있는 API를 지금 호출할 수 있는지.
 	 * 가입을 한 번 마친 회원은 마지막 키링 초기화·재검사 등으로 단계가 뒤로 가도 기존 기능(홈·기존 제안·채팅·탈퇴)을
-	 * 계속 쓴다. 새 매칭만 matchingReady=false 로 보류된다(기능 명세 AUTH-02). 바뀐 필수 약관 동의는 예외 없이 먼저 받는다.
+	 * 계속 쓴다. 새 매칭만 matchingReady=false 로 보류된다(기능 명세 AUTH-02).
+	 * AI 동의 철회는 가입 완료 회원의 제안·매칭 권한을 막지 않으며, 그 외 필수 약관 재동의는 먼저 받는다.
 	 */
 	@Transactional(readOnly = true)
 	public boolean canAccess(long userId, OnboardingStatus required) {

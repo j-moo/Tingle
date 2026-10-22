@@ -29,6 +29,7 @@ import org.springframework.web.method.support.HandlerMethodArgumentResolver;
 import org.springframework.web.method.support.ModelAndViewContainer;
 
 import com.e106.tingle.auth.MemberAccessRepository;
+import com.e106.tingle.chat.ChatService;
 import com.e106.tingle.global.error.GlobalExceptionHandler;
 import com.e106.tingle.profile.PublicProfile;
 import com.e106.tingle.profile.PublicProfileRepository;
@@ -53,7 +54,7 @@ class ProposalResponseTest {
 		proposal = proposal(1, NOW);
 		relation = new PairRelation(1, 2);
 		ReflectionTestUtils.setField(relation, "id", 1L);
-		when(members.ready(eq(1L), any())).thenReturn(true);
+		when(members.canRespondToProposal(1L)).thenReturn(true);
 		when(relations.findAllById(any())).thenReturn(List.of(relation));
 		when(proposals.findById(proposal.getId())).thenReturn(Optional.of(proposal));
 		when(proposals.lockById(proposal.getId())).thenReturn(Optional.of(proposal));
@@ -74,8 +75,8 @@ class ProposalResponseTest {
 			.andExpect(jsonPath("$.age").value(24))
 			.andReturn();
 		var body = mapper.readTree(result.getResponse().getContentAsString());
-		assertThat(body.size()).isEqualTo(9);
-		for (String field : List.of("profileImageId", "profileVersion", "proposalId", "userId", "birthDate")) {
+		assertThat(body.size()).isEqualTo(10);
+		for (String field : List.of("profileImageId", "proposalId", "userId", "birthDate")) {
 			assertThat(body.has(field)).as(field).isFalse();
 		}
 	}
@@ -95,7 +96,7 @@ class ProposalResponseTest {
 
 	@Test
 	void returnsServerTimeAndNullCursorOnEmptyPage() throws Exception {
-		when(proposals.findFirstPage(eq(1L), any())).thenReturn(List.of());
+		when(proposals.findFirstPage(eq(1L), eq(NOW), any())).thenReturn(List.of());
 		var result = mvc.perform(get("/api/v1/match-proposals"))
 			.andExpect(status().isOk())
 			.andExpect(jsonPath("$.items").isEmpty())
@@ -109,13 +110,13 @@ class ProposalResponseTest {
 	@Test
 	void preservesCursorPaginationAlongsideServerTime() throws Exception {
 		MatchProposal older = proposal(2, NOW.minusSeconds(1));
-		when(proposals.findFirstPage(eq(1L), any())).thenReturn(List.of(proposal, older));
+		when(proposals.findFirstPage(eq(1L), eq(NOW), any())).thenReturn(List.of(proposal, older));
 		var result = mvc.perform(get("/api/v1/match-proposals").param("limit", "1"))
 			.andExpect(status().isOk())
 			.andExpect(jsonPath("$.items.length()").value(1))
 			.andExpect(jsonPath("$.serverTime").value(NOW.toString())).andReturn();
 		String cursor = mapper.readTree(result.getResponse().getContentAsString()).get("nextCursor").asText();
-		when(proposals.findNextPage(eq(1L), eq(NOW), eq(proposal.getId()), any())).thenReturn(List.of(older));
+		when(proposals.findNextPage(eq(1L), eq(NOW), eq(NOW), eq(proposal.getId()), any())).thenReturn(List.of(older));
 		mvc.perform(get("/api/v1/match-proposals").param("limit", "1").param("cursor", cursor))
 			.andExpect(status().isOk())
 			.andExpect(jsonPath("$.items[0].proposalId").value(older.getId()))
@@ -126,7 +127,8 @@ class ProposalResponseTest {
 	void returnsGoneForBothDecisionsAtExactDeadline() throws Exception {
 		mvc = mvcAt(NOW.plus(Duration.ofHours(24)));
 		for (String action : List.of("accept", "decline")) {
-			mvc.perform(post(path() + "/" + action).header("Idempotency-Key", UUID.randomUUID()))
+			mvc.perform(post(path() + "/" + action).header("Idempotency-Key", UUID.randomUUID())
+				.contentType("application/json").content("{\"profileVersion\":\"" + "0".repeat(64) + "\"}"))
 				.andExpect(status().isGone())
 				.andExpect(jsonPath("$.code").value("PROPOSAL_EXPIRED"));
 		}
@@ -138,7 +140,7 @@ class ProposalResponseTest {
 	void returnsGoneForExpiredOrRejectedProfileAccess() throws Exception {
 		mvc = mvcAt(NOW.plus(Duration.ofHours(24)));
 		assertProfileGone();
-		proposal.decide(false, MatchProposal.Decision.DECLINE, UUID.randomUUID(), NOW);
+		proposal.decide(true, MatchProposal.Decision.DECLINE, UUID.randomUUID(), NOW);
 		mvc = mvcAt(NOW);
 		assertProfileGone();
 		verifyNoInteractions(profiles);
@@ -146,7 +148,7 @@ class ProposalResponseTest {
 
 	@Test
 	void returnsGoneForRestrictedPairWithoutReadingPhoto() throws Exception {
-		relation.restrictUntil(NOW.plusSeconds(60), proposal.getId());
+		relation.restrictUntil(NOW.plusSeconds(60), 999L);
 		assertProfileGone();
 		verifyNoInteractions(profiles);
 	}
@@ -172,7 +174,8 @@ class ProposalResponseTest {
 	@Test
 	void preservesConflictForChangingAnExistingDecision() throws Exception {
 		proposal.decide(true, MatchProposal.Decision.ACCEPT, UUID.randomUUID(), NOW);
-		mvc.perform(post(path() + "/decline").header("Idempotency-Key", UUID.randomUUID()))
+		mvc.perform(post(path() + "/decline").header("Idempotency-Key", UUID.randomUUID())
+				.contentType("application/json").content("{\"profileVersion\":\"" + "0".repeat(64) + "\"}"))
 			.andExpect(status().isConflict())
 			.andExpect(jsonPath("$.code").value("PROPOSAL_STATE_CONFLICT"));
 	}
@@ -209,7 +212,7 @@ class ProposalResponseTest {
 
 	private MockMvc mvcAt(Instant now) {
 		ProposalService service = new ProposalService(proposals, relations, profiles, members,
-			Clock.fixed(now, ZoneOffset.UTC), mock(EntityManager.class), 30);
+			Clock.fixed(now, ZoneOffset.UTC), mock(EntityManager.class), mock(ChatService.class), 30);
 		return MockMvcBuilders.standaloneSetup(new ProposalController(service))
 			.setControllerAdvice(new GlobalExceptionHandler())
 			.setCustomArgumentResolvers(new TestPrincipalResolver()).build();

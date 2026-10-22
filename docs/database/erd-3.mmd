@@ -1,5 +1,6 @@
 erDiagram
     survey_responses {
+        uuid public_id UK
         bigint response_id PK
         bigint user_id
         text version_code
@@ -52,6 +53,10 @@ erDiagram
         timestamptz high_decided_at
         uuid low_request_key
         uuid high_request_key
+        timestamptz low_cancelled_at
+        timestamptz high_cancelled_at
+        uuid low_cancel_request_key
+        uuid high_cancel_request_key
         text status
         timestamptz created_at
         timestamptz expires_at

@@ -1,16 +1,14 @@
 # Tingle(팅글) ERD·테이블 정의
 
-1.1.2-review / 수정 2026-10-22. **canonical SQL 기준 24개 테이블·168개 컬럼**, PostgreSQL·JPA 기준. 82번의 nullable `push_installations.login_family_id`와 66번의 `keyrings.public_device_id`를 포함한다. 물리 외래 키는 없으며 아래 관계는 서비스가 검사하는 논리 참조다. 공용 DB에 실행하지 않았다.
+1.3.0-unified-review / 2026-10-22. **25개 테이블·185개 컬럼**, PostgreSQL·JPA 기준. 물리 외래 키는 없으며 아래 관계는 서비스가 검사하는 논리 참조다. 이번 변경의 검증 결과는 정합화 이력에 구분해 기록한다.
 
-가져오기 SQL·tables.json은 24개·166개다. 기존 `app_users.email`·`profiles.completed_at` 누락 2개는 이번 작업 전에도 있던 차이이며 82번 범위에서 보존했다. 이번 push_installations의 7개 컬럼은 canonical/import/metadata에서 일치하고 일회용 PostgreSQL에 canonical SQL을 실행해 JPA validate를 확인했다. 전체 ERD·웹 동기화 완료로 해석하지 않는다.
-
-[API](../contracts/api/README.md) / [SQL](schema.sql) / [ERDCloud 가져오기 SQL](erdcloud-import.sql) / [기계판독 정의](tables.json) / [기존안·수정안 비교](changes-20261021.md) / [기능 대응표](../specifications/coverage.md)
+[정합화 검증 이력](../verification/spec-alignment-20261022.md) / [API](../contracts/api/README.md) / [SQL](schema.sql) / [ERDCloud 가져오기 SQL](erdcloud-import.sql) / [기계판독 정의](tables.json) / [기존안·수정안 비교](changes-20261021.md) / [기능 대응표](../specifications/coverage.md)
 
 ## 구조 원칙
 
 - 회원당 하나의 소셜 로그인 연결, 현재 프로필 사진 한 장은 URL로 저장한다. 여러 소셜 계정 연결·사진별 처리 이력은 현행 범위에 없다.
 - 원응답과 개인 결과, 두 사람의 당시 설정 사본과 실제 매칭 판정을 구분한다. 설문/규칙은 버전별 불변 파일과 과거 파일을 함께 보존한다.
-- 키링 증명·토큰 회전·공개 ID/버전 대응은 인증·FE·IoT와 확인할 계약이다. 표의 bigint는 내부 저장 타입이며 공개 UUID를 자동으로 바꾸지 않는다.
+- 제안 proposalId는 DB proposal_id와 동일한 양수 int64 하나로 확정했다. Idempotency-Key·family_id의 UUID는 유지한다. 나머지 공개 ID/버전 대응과 키링 증명은 관련 호출자와 확인하며 bigint를 근거로 일괄 전환하지 않는다. 현재 토큰 회전 기준은 [인증 정합화 상태](../contracts/api/auth-recheck.md)를 따른다.
 - 업무 유일 제약·조건부 갱신·잠금·시간 검사는 유지한다. 물리 FK가 없으므로 존재/소유권과 탈퇴·삭제 정리는 서비스 책임이다.
 - 예약·재시도는 background_jobs 한 곳, 메시지의 세 번호는 서로 다른 역할이 있어 모두 유지한다. 실제 구현 증거 없이 원자성·삭제·재시도 보장이 완료됐다고 표시하지 않는다.
 
@@ -27,21 +25,22 @@
 | `keyring_bindings` | 기기 소유 연결 이력 | 5 |
 | `registration_challenges` | 일회성 키링 등록 검증; 37번 계약 확인 | 5 |
 | `keyring_sync_runs` | 설정 동기화 요청과 기기 저장 확인 | 6 |
-| `survey_responses` | 설문 회차·문항별 응답·재개 상태 | 7 |
+| `survey_responses` | 설문 회차·문항별 응답·재개 상태 | 8 |
 | `analysis_results` | 개인 성향 계산 결과·재계산 이력 | 5 |
 | `settings_snapshots` | 키링·오프라인 만남 당시의 설정 보존 | 6 |
 | `user_pairs` | 동일 회원 쌍·동시 처리 잠금·거절 제한 | 5 |
 | `encounters` | 양쪽 제출을 묶는 만남·최종 판정 | 9 |
 | `encounter_submissions` | 각 기기의 제출·재전송·증명 | 7 |
-| `match_proposals` | 제안·고정 두 사람의 선택·방 연결 | 13 |
-| `chat_rooms` | 7일 대화와 종료 후 30일 보관 | 7 |
+| `match_proposals` | 제안·고정 두 사람의 선택·방 연결 | 17 |
+| `chat_rooms` | 7일 대화와 종료 후 30일 보관 | 9 |
 | `chat_members` | 참여자별 입장·두 안내의 표시 확인 | 5 |
-| `chat_messages` | 메시지와 순서·재전송 키 | 7 |
+| `chat_messages` | 메시지와 순서·재전송 키 | 10 |
+| `chat_message_reads` | 실제 표시한 수신 메시지별 읽음 확인 | 4 |
 | `user_blocks` | 방향성 차단과 해제 | 4 |
 | `reports` | 신고 접수와 처리 상태 | 8 |
 | `ai_results` | AI 생성 결과와 위험 분석 결과 한 곳 | 8 |
-| `push_installations` | 앱 설치별 푸시 전달 주소 | 7 |
-| `background_jobs` | 안내·AI·삭제의 실제 예약·실패 재시도 | 11 |
+| `push_installations` | 앱 설치별 푸시 전달 주소 | 9 |
+| `background_jobs` | 안내·AI·삭제의 실제 예약·실패 재시도 | 12 |
 
 ## 논리 관계도
 
@@ -156,6 +155,7 @@ erDiagram
 ```mermaid
 erDiagram
     survey_responses {
+        uuid public_id UK
         bigint response_id PK
         bigint user_id
         text version_code
@@ -208,6 +208,10 @@ erDiagram
         timestamptz high_decided_at
         uuid low_request_key
         uuid high_request_key
+        timestamptz low_cancelled_at
+        timestamptz high_cancelled_at
+        uuid low_cancel_request_key
+        uuid high_cancel_request_key
         text status
         timestamptz created_at
         timestamptz expires_at
@@ -226,6 +230,8 @@ erDiagram
 ```mermaid
 erDiagram
     chat_rooms {
+        uuid public_id
+        bigint source_proposal_id
         bigint chat_room_id PK
         bigint pair_id
         timestamptz created_at
@@ -242,6 +248,9 @@ erDiagram
         timestamptz end_notice_acked_at
     }
     chat_messages {
+        uuid public_id
+        uuid request_key
+        text request_hash
         bigint message_id PK
         bigint chat_room_id
         bigint sender_id
@@ -249,6 +258,12 @@ erDiagram
         bigint sequence
         text body
         timestamptz created_at
+    }
+    chat_message_reads {
+        bigint receipt_id PK
+        bigint message_id
+        bigint user_id
+        timestamptz read_at
     }
     user_blocks {
         bigint block_id PK
@@ -277,15 +292,18 @@ erDiagram
         timestamptz created_at
     }
     push_installations {
+        uuid login_family_id
+        uuid binding_id
+        timestamptz linked_at
         bigint installation_id PK
         uuid client_installation_id
         bigint user_id
-        uuid login_family_id
         text platform
         text token_ciphertext
         timestamptz updated_at
     }
     background_jobs {
+        uuid public_id
         bigint job_id PK
         text job_type
         text business_key
@@ -425,6 +443,7 @@ erDiagram
 
 | 저장 항목 | 의미 | 비워 둘 수 있나 |
 | --- | --- | --- |
+| `public_id` | 외부 API sessionId UUID; UNIQUE·NOT NULL·DEFAULT gen_random_uuid(), 내부 response_id 유지 | 불가 |
 | `response_id` | 내부 식별자; 서버/DB 생성 | 불가 |
 | `user_id` | 응답 회원 연결 대상: `app_users.user_id`. | 불가 |
 | `version_code` | 불변 설문 정의 파일의 버전 코드; 이전 ID가 아니라 코드 문자열로 저장 | 불가 |
@@ -515,6 +534,10 @@ erDiagram
 | `high_decided_at` | user_high 최초 결정 | 가능 |
 | `low_request_key` | user_low 최초 실제 선택의 UUID 멱등 키 | 가능 |
 | `high_request_key` | user_high 최초 실제 선택의 UUID 멱등 키 | 가능 |
+| `low_cancelled_at` | user_low 최초 수락 취소 시각; 원래 수락 기록 보존 | 가능 |
+| `high_cancelled_at` | user_high 최초 수락 취소 시각; 원래 수락 기록 보존 | 가능 |
+| `low_cancel_request_key` | user_low 취소 업무의 최초 멱등 키 | 가능 |
+| `high_cancel_request_key` | user_high 취소 업무의 최초 멱등 키 | 가능 |
 | `status` | PENDING / WAITING_FOR_OTHER / ACCEPTED / REJECTED / EXPIRED | 불가 |
 | `created_at` | 제안 생성 | 불가 |
 | `expires_at` | 생성+24시간 | 불가 |
@@ -602,7 +625,6 @@ erDiagram
 | `installation_id` | 내부 식별자; 서버/DB 생성 | 불가 |
 | `client_installation_id` | 앱 설치 식별자; 인증 자격 아님 | 불가 |
 | `user_id` | 현재 연결 회원 연결 대상: `app_users.user_id`. | 불가 |
-| `login_family_id` | 검증된 JWT sid; 설치별 로그인 상태 검사, 기존 행 null 허용 | 가능 |
 | `platform` | ANDROID / IOS | 불가 |
 | `token_ciphertext` | 복호화해 전송에 사용하는 암호화 푸시 토큰 | 불가 |
 | `updated_at` | 토큰/계정 연결 갱신 | 불가 |
@@ -634,7 +656,7 @@ erDiagram
 - survey_responses는 completed_at IS NULL 조건으로 같은 사용자·version_code의 진행 중 회차를 하나만 허용한다. 문항 PATCH는 미완료+revision 조건부 갱신. 완료 후 원응답은 불변이며 새 응답은 새 response_id다.
 - analysis_results는 UNIQUE(response_id,version_code). 분석은 완료된 불변 응답만 사용한다. 응답 수정을 허용하거나 미완료 분석을 도입한다면 response_revision을 유지해야 한다.
 - encounter_submissions는 UNIQUE(binding_id,submission_id)와 UNIQUE(encounter_id,binding_id)를 유지한다. 요청의 수락하는 모든 필드는 기존 행/만남/스냅샷/proof_json에서 정규화 비교 가능해야 한다. 비교하지 못하는 필드가 있다면 request_hash를 유지한다. proof의 서명 검증은 그대로다.
-- match_proposals.resolved_at 응답값은 계산 가능하다. REJECTED면 DECLINE인 시각 중 가장 이른 값, ACCEPTED면 양쪽 수락 시각 중 늦은 값, EXPIRED면 expires_at. user_pairs의 거절 제한은 첫 실제 거절+30일로 기록하며 재시도로 갱신하지 않는다.
+- match_proposals.resolved_at 응답값은 계산 가능하다. REJECTED면 DECLINE 결정 시각과 수락 취소 시각 중 가장 이른 값, ACCEPTED면 양쪽 수락 시각 중 늦은 값, EXPIRED면 expires_at. user_pairs의 거절 제한은 첫 실제 거절+30일로 기록하며 재시도로 갱신하지 않는다.
 - chat_rooms의 상태는 closed_at IS NOT NULL 또는 now>=expires_at이면 CLOSED. 활성 방의 UNIQUE(pair_id) 부분 조건은 closed_at IS NULL로 바꾼다. 배치가 늦은 만료 행은 pair 잠금 아래 정확한 expires_at으로 닫은 뒤 후속 작업을 등록한다.
 - chat_members는 joined_at=방 생성 시각으로 취급한다. 최초 입장은 FIRST_ENTRY:{room}:{user} 고유 작업 생성으로 기억하고 그 작업은 방의 수명 동안 유지한다. 두 표시 ACK와 푸시 전달 성공을 구분한다. first_entered_at 표시/통계가 요구되면 별도 유지한다.
 - user_blocks는 UNIQUE(blocker_id,blocked_id). 해제 시 행을 실제로 지우는 향후 구현안이며 이번 작업에서 데이터를 삭제하지 않았다. 차단/해제 이력이 필요해지면 revoked_at을 유지해야 한다.
@@ -646,3 +668,15 @@ erDiagram
 ## 적용 상태
 
 SQL 문법·컬럼 수·논리 참조·문서 연결을 정적으로 확인한다. JPA 엔티티·서버·실제 PostgreSQL·ERDCloud 웹·인프라에는 미적용이다. 기존 DB 데이터 변환이나 운영 DDL 절차는 별도 검토한다. Flyway/H2를 추가하지 않는다.
+
+## 채팅 저장·읽음 추가(2026-10-22)
+
+외부 UUID는 chat_rooms.public_id와 chat_messages.public_id로 매핑한다. 최초 방 생성 업무 키는 source_proposal_id, 전송 요청 키는 sender_id+request_key, 중복 메시지는 room+sender+client_message_id로 검사한다. 별도 chat_message_reads(message_id,user_id,read_at)는 실제 표시한 메시지에만 기록하며 순서 번호로 이전 메시지의 읽음을 추정하지 않는다. 세부 계약과 제약은 [채팅 API](../contracts/api/chat.md), 컬럼 전체 기준은 tables.json과 schema.sql이다. 읽음 기록은 원본 채팅 메시지의 보관·삭제 작업에 포함해야 하며 별도 무기한 보관하지 않는다. 웹 ERD 및 공용 DB 반영은 이번 로컬 검증과 구분한다.
+
+## 첫 입장·종료 안내와 설치 세션(2026-10-22)
+
+별도 안내 테이블 없이 background_jobs의 FIRST_ENTRY/END_NOTICE와 chat_members의 최초 ACK 시각을 사용한다. public_id는 안내의 외부 UUID이며 다른 종류의 작업은 nullable이다. push_installations에는 login_family_id·binding_id·linked_at을 추가하여 설치별 로그인/계정 연결과 원래 안내 시각을 검증한다. 토큰은 AES-256-GCM 암호문만 저장한다. 필드 전체는 tables.json·schema.sql, 업무와 JSON 형태는 [안내·알림 계약](../contracts/api/chat-notices.md)을 따른다. 웹/공용 DB 적용 및 기존 행 이관은 별도다.
+
+## 설문 회차·전체 모델 통합 (2026-10-22)
+
+기존 25개 테이블·184개 컬럼은 채팅/안내 작업본 25/183과 설문 public_id 1개를 합친 설계다. 최신 develop 16e5ede의 keyrings.public_device_id를 보존하면 현재 통합 모델은 25개·185개다. CreateSession은 surveyVersion 문자열을 version_code에 고정하며 DB release 행을 요구하지 않는다. 공유 Manifest의 분석 필수값은 유지하고 설문 최소 SurveyManifest를 구분한다. 분석/이관 release UUID 및 ANALYSIS/작업·결과 상태는 합의 전 유지한다. 서버·공용 DB 적용은 별도이며 [현재 검증](../verification/api-erd-unified-20261022.md)을 따른다.

@@ -31,6 +31,15 @@ class ProfileRulesTest {
 	}
 
 	@Test
+	@DisplayName("독립 자모는 단독 닉네임과 완성형·영문 혼합 닉네임 모두 거부한다")
+	void nicknameRejectsStandaloneJamoAndMixedNames() {
+		for (String nickname : new String[] {"ㄱㄴ", "ㅏㅓ", "홍ㄱ", "abcㅋ", "가ㅏ"}) {
+			assertThat(ProfileRules.isValidNickname(nickname)).isFalse();
+			assertErrorCode(() -> ProfileRules.normalizeNickname(nickname), ErrorCode.INVALID_NICKNAME);
+		}
+	}
+
+	@Test
 	@DisplayName("자모가 나뉘어 들어온 한글도 NFC로 합쳐서 검사·저장한다")
 	void nicknameIsNfcNormalized() {
 		String decomposed = "가을";
