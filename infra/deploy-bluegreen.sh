@@ -1,14 +1,16 @@
 #!/bin/sh
-# 운영 블루-그린 배포 (인프라 계획 7절). Jenkins 가 master 머지 때 실행한다. 직접 실행: sh infra/deploy-bluegreen.sh back [rollback]
+# 운영 블루-그린 배포 (인프라 계획 7절). Jenkins 가 master 머지 때 실행한다. 직접 실행: sh infra/deploy-bluegreen.sh back|ai [rollback]
 # 1) 쉬고 있는 색을 새 이미지로 띄우고 2) 상태 확인이 통과하면 3) nginx 를 새 색으로 돌린 뒤 4) 30초 뒤 옛 색을 끈다.
 # 상태 확인이 실패하면 새 색만 내리고 nginx 는 그대로 둔다 (운영은 옛 색으로 계속).
 # rollback: 꺼 둔 옛 색을 다시 켜고 nginx 를 되돌린다 (옛 색은 지난 배포 이미지 그대로 남아 있다).
 # 어느 색이 운영인지는 /srv/tingle/nginx-state/<서비스>.conf 에 적힌다 (nginx 가 include, 없으면 blue).
+# back 은 /api/ /ws/ 경로, ai 는 nginx 내부 8000 포트(별칭 ai)가 전환된다.
 set -eu
 svc=$1
 mode=${2:-deploy}
 case $svc in
   back) port=8080 health=/actuator/health ;;
+  ai) port=8000 health=/health ;;
   *) echo "블루-그린 대상이 아님: $svc"; exit 1 ;;
 esac
 root=$(cd "$(dirname "$0")/.." && pwd)

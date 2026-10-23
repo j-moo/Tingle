@@ -19,6 +19,9 @@ services:
     depends_on:
       - web
       - web-dev
+    networks:
+      default:
+        aliases: [ai] # back 이 부르는 http://ai:8000 은 nginx 가 받아 운영 색(ai-blue · ai-green)으로 넘긴다 (블루-그린)
     mem_limit: 128m
     restart: unless-stopped
 
@@ -98,14 +101,24 @@ services:
     mem_limit: 1536m
     restart: unless-stopped
 
-  # ai: Dockerfile 이 생기면 주석을 풀고 연결한다.
-  #   build: ../ai-server
-  #   environment:
-  #     HOST: 0.0.0.0
-  #     GMS_API_KEY: ${GMS_API_KEY}
-  #   mem_limit: 512m
-  #   restart: unless-stopped
-  # ai-dev: 위와 같음
+  # ai: 운영(ai-blue · ai-green 중 한쪽만 켬, back 은 http://ai:8000 → nginx 가 운영 색으로 전달) · 개발(ai-dev, back-dev 가 http://ai-dev:8000 으로 직접 호출).
+  # 외부에 열지 않는다. Dockerfile 기본값이 HOST=0.0.0.0 · PORT=8000 · APP_ENV=prod. GMS 키는 받으면 Credentials → app.env → 여기에 GMS_API_KEY 를 더한다.
+  ai-blue:
+    build: ../ai-server
+    mem_limit: 512m
+    restart: unless-stopped
+
+  ai-green:
+    build: ../ai-server
+    mem_limit: 512m
+    restart: unless-stopped
+
+  ai-dev:
+    build: ../ai-server
+    environment:
+      APP_ENV: dev
+    mem_limit: 512m
+    restart: unless-stopped
 
 volumes:
   pgdata:
