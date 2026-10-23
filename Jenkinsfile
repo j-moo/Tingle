@@ -4,11 +4,11 @@
 
 def PARTS = [back: 'back/', ai: 'ai-server/', web: 'front/web/', app: 'front/app/', iot: 'iot/']
 // 브랜치별 배포: 코드를 dir 에 풀고 services(infra/docker-compose.yml 서비스 이름 → 응답 확인 주소)만 다시 띄운다.
-// bluegreen 은 infra/deploy-bluegreen.sh 로 무중단 전환한다 (운영 back). ai 가 생기면 여기에 더한다 (확인 주소 /health).
-// back 확인은 Actuator — DB 연결까지 정상이면 200, 아니면 503.
+// bluegreen 은 infra/deploy-bluegreen.sh 로 무중단 전환한다 (운영 back · ai). ai 를 먼저 바꾼다 — 새 ai 가 옛 back 요청도 받아야 한다 (인프라 계획 7절).
+// back 확인은 Actuator — DB 연결까지 정상이면 200, 아니면 503. ai 는 /health.
 def DEPLOY = [
-  develop: [dir: '/srv/tingle/dev', services: ['web-dev': 'http://web-dev/', 'back-dev': 'http://back-dev:8080/actuator/health']],
-  master: [dir: '/srv/tingle/repo', services: ['web': 'http://web/'], bluegreen: ['back'], backup: true],
+  develop: [dir: '/srv/tingle/dev', services: ['web-dev': 'http://web-dev/', 'back-dev': 'http://back-dev:8080/actuator/health', 'ai-dev': 'http://ai-dev:8000/health']],
+  master: [dir: '/srv/tingle/repo', services: ['web': 'http://web/'], bluegreen: ['ai', 'back'], backup: true],
 ]
 def changed = []
 
