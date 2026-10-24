@@ -67,6 +67,10 @@ app:
     # 구매처를 임의 지정하지 않는다. 미설정이면 API는 purchaseUrl:null을 반환한다.
     purchase-url: ${KEYRING_PURCHASE_URL:}
 
+  # 새 설문 회차가 쓰는 설문 버전 (resources/survey/questionnaires/{버전}.json). 바꿔도 이미 시작한 회차는 원래 버전을 쓴다.
+  survey:
+    current-version: SIS-Q-1.1-100
+
   # 현재 적용 중인 동의 항목. 화면 제목은 messages.properties 의 agreement.{type}.title. 항목 추가·삭제, 버전 변경은 여기만 고치면 된다 (코드·앱 수정 불필요).
   # 버전을 올리면 이전 버전으로 들어온 가입 요청은 AGREEMENT_VERSION_OUTDATED 가 된다. 목록 순서대로 화면에 표시된다.
   agreement:

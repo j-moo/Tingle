@@ -18399,9 +18399,7 @@
         "additionalProperties": false,
         "properties": {
           "manifest": {
-            "surveyVersion": "SIS-Q-1.1-100",
-            "wordingVersion": "SIS-WORDING-20261020-1",
-            "contentHash": "0000000000000000000000000000000000000000000000000000000000000000"
+            "$ref": "#/components/schemas/SurveyManifest"
           },
           "questionCount": {
             "type": "integer",
@@ -18663,9 +18661,7 @@
             "description": "survey_responses.public_id(UUID, NOT NULL, UNIQUE). 내부 response_id bigint는 API에 노출하지 않는다."
           },
           "manifest": {
-            "surveyVersion": "SIS-Q-1.1-100",
-            "wordingVersion": "SIS-WORDING-20261020-1",
-            "contentHash": "0000000000000000000000000000000000000000000000000000000000000000"
+            "$ref": "#/components/schemas/SurveyManifest"
           },
           "status": {
             "type": "string",
