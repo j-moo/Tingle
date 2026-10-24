@@ -1,6 +1,6 @@
 # Tingle(팅글) ERD·테이블 정의
 
-1.3.0-unified-review / 2026-10-22. **25개 테이블·185개 컬럼**, PostgreSQL·JPA 기준. 물리 외래 키는 없으며 아래 관계는 서비스가 검사하는 논리 참조다. 이번 변경의 검증 결과는 정합화 이력에 구분해 기록한다.
+1.4.0-unified-review / 2026-10-22. **28개 테이블·204개 컬럼**, PostgreSQL·JPA 기준. 물리 외래 키는 없으며 아래 관계는 서비스가 검사하는 논리 참조다. 기능 명세 v2 반영(탈퇴 대기·재가입 제한, 키링 영구 사용 불가, 재매칭 금지·제안 종료, 신고 보관·기각·첨부 메시지, AI 안내 1회 표시, 동의 언어·화면)은 [변경 기록](changes-20261022.md) 9절에 있다.
 
 [정합화 검증 이력](../verification/spec-alignment-20261022.md) / [API](../contracts/api/README.md) / [SQL](schema.sql) / [ERDCloud 가져오기 SQL](erdcloud-import.sql) / [기계판독 정의](tables.json) / [기존안·수정안 비교](changes-20261021.md) / [기능 대응표](../specifications/coverage.md)
 
@@ -16,19 +16,20 @@
 
 | 테이블 | 쓰는 곳 | 컬럼 수 |
 | --- | --- | ---: |
-| `app_users` | 회원·단일 소셜 로그인 계정 | 7 |
+| `app_users` | 회원·단일 소셜 로그인 계정 | 9 |
 | `refresh_tokens` | 리프레시 토큰·회전 계열; 인증 담당과 조정할 초안 | 7 |
-| `user_consents` | 약관·선택적 AI 분석 동의 이벤트 | 6 |
+| `user_consents` | 약관·선택적 AI 분석 동의 이벤트 | 8 |
+| `signup_restrictions` | 탈퇴 후 72시간 재가입 제한(회원 데이터와 분리) | 3 |
 | `profiles` | 회원 프로필과 사진 한 장 | 11 |
 | `matching_settings` | 회원별 희망 조건·매칭 설정·키링 반영 버전 | 7 |
-| `keyrings` | 실물 키링 식별·검증 정보; 37번 계약 확인 | 5 |
+| `keyrings` | 실물 키링 식별·검증 정보; 37번 계약 확인 | 7 |
 | `keyring_bindings` | 기기 소유 연결 이력 | 5 |
 | `registration_challenges` | 일회성 키링 등록 검증; 37번 계약 확인 | 5 |
 | `keyring_sync_runs` | 설정 동기화 요청과 기기 저장 확인 | 6 |
 | `survey_responses` | 설문 회차·문항별 응답·재개 상태 | 8 |
 | `analysis_results` | 개인 성향 계산 결과·재계산 이력 | 5 |
 | `settings_snapshots` | 키링·오프라인 만남 당시의 설정 보존 | 6 |
-| `user_pairs` | 동일 회원 쌍·동시 처리 잠금·거절 제한 | 5 |
+| `user_pairs` | 동일 회원 쌍·동시 처리 잠금·거절 제한 | 6 |
 | `encounters` | 양쪽 제출을 묶는 만남·최종 판정 | 9 |
 | `encounter_submissions` | 각 기기의 제출·재전송·증명 | 7 |
 | `match_proposals` | 제안·고정 두 사람의 선택·방 연결 | 17 |
@@ -36,8 +37,10 @@
 | `chat_members` | 참여자별 입장·두 안내의 표시 확인 | 5 |
 | `chat_messages` | 메시지와 순서·재전송 키 | 10 |
 | `chat_message_reads` | 실제 표시한 수신 메시지별 읽음 확인 | 4 |
+| `chat_safety_notices` | AI 위험 안내 배너의 사용자별 1회 표시 | 6 |
 | `user_blocks` | 방향성 차단과 해제 | 4 |
-| `reports` | 신고 접수와 처리 상태 | 8 |
+| `reports` | 신고 접수와 처리 상태 | 9 |
+| `report_messages` | 신고에 첨부한 메시지(0~5개) | 2 |
 | `ai_results` | AI 생성 결과와 위험 분석 결과 한 곳 | 8 |
 | `push_installations` | 앱 설치별 푸시 전달 주소 | 9 |
 | `background_jobs` | 안내·AI·삭제의 실제 예약·실패 재시도 | 12 |
@@ -58,6 +61,8 @@ erDiagram
         timestamptz created_at
         timestamptz signup_completed_at
         text email
+        timestamptz withdrawal_due_at
+        timestamptz withdrawn_at
     }
     refresh_tokens {
         bigint token_id PK
@@ -75,6 +80,13 @@ erDiagram
         text document_version
         boolean agreed
         timestamptz recorded_at
+        text locale
+        text consent_screen
+    }
+    signup_restrictions {
+        text provider PK
+        bytea subject_hmac PK
+        timestamptz rejoin_allowed_at
     }
     profiles {
         bigint user_id PK
@@ -114,6 +126,8 @@ erDiagram
         bytea serial_hash
         text verification_key_ref
         text firmware_version
+        timestamptz blocked_at
+        text block_reason
     }
     keyring_bindings {
         bigint binding_id PK
@@ -177,6 +191,7 @@ erDiagram
         bigint user_high
         timestamptz declined_until
         bigint declined_proposal_id
+        timestamptz rematch_banned_at
     }
     encounters {
         bigint encounter_id PK
@@ -265,6 +280,14 @@ erDiagram
         bigint user_id
         timestamptz read_at
     }
+    chat_safety_notices {
+        bigint notice_id PK
+        bigint chat_room_id
+        bigint user_id
+        text notice_type
+        timestamptz sent_at
+        timestamptz displayed_at
+    }
     user_blocks {
         bigint block_id PK
         bigint blocker_id
@@ -280,6 +303,11 @@ erDiagram
         text detail
         text status
         timestamptz created_at
+        timestamptz resolved_at
+    }
+    report_messages {
+        bigint report_id PK
+        bigint message_id PK
     }
     ai_results {
         bigint job_id PK
@@ -319,6 +347,8 @@ erDiagram
     chat_rooms ||--o{ chat_members : "chat_room_id logical"
     chat_rooms ||--o{ chat_messages : "chat_room_id logical"
     background_jobs ||--o{ ai_results : "job_id logical"
+    reports ||--o{ report_messages : "report_id logical"
+    chat_rooms ||--o{ chat_safety_notices : "chat_room_id logical"
 ```
 
 ## 컬럼 설명과 제약
@@ -329,13 +359,15 @@ erDiagram
 | --- | --- | --- |
 | `user_id` | 내부 식별자; 서버/DB 생성 | 불가 |
 | `provider` | 소셜 제공자 코드; 로그인 계약 기준 | 불가 |
-| `provider_subject` | 서버가 검증한 공급자 사용자 식별값 | 불가 |
-| `status` | ACTIVE / SUSPENDED / WITHDRAWN | 불가 |
+| `provider_subject` | 서버가 검증한 공급자 사용자 식별값; 탈퇴 완료 시 지워 같은 소셜 계정이 새 가입 ID로 재가입할 수 있게 함 | 가능(탈퇴 행만) |
+| `status` | ACTIVE / SUSPENDED / WITHDRAWAL_PENDING(연령 미달 24시간 탈퇴 대기) / WITHDRAWN | 불가 |
 | `created_at` | 최초 계정 생성 | 불가 |
 | `signup_completed_at` | 최초 전체 가입 완료; 완료 전 NULL | 가능 |
 | `email` | 소셜 이메일, 연락용. 식별에 쓰지 않고 응답에 넣지 않음. 개인정보 수집(PRIVACY) 동의 회원만 저장 | 가능 |
+| `withdrawal_due_at` | 연령 미달 탈퇴 예정 겸 키링 초기화 마감 = 최초 안내+24시간(안내 시각은 여기서 계산); 재안내로 바꾸지 않고 서버가 이 시각에 탈퇴 실행 | 가능 |
+| `withdrawn_at` | 서버 탈퇴 완료 시각; 72시간 재가입 제한·1년 재매칭 제한의 기준 | 가능 |
 
-중복 금지 조합: provider + provider_subject.
+중복 금지 조합: provider + provider_subject(탈퇴 행은 NULL이라 제외).
 
 ## 리프레시 토큰·회전 계열; 인증 담당과 조정할 초안 (`refresh_tokens`)
 
@@ -361,6 +393,18 @@ erDiagram
 | `document_version` | 사용자가 확인한 정확한 문서 버전 | 불가 |
 | `agreed` | 동의 true, 거절/철회 false | 불가 |
 | `recorded_at` | 서버 기록 시각 | 불가 |
+| `locale` | 동의 당시 안내문 언어(예: ko-KR); 이전 행은 NULL | 가능 |
+| `consent_screen` | 동의를 받은 화면 코드(예: SIGNUP, PROFILE_PHOTO); 이전 행은 NULL | 가능 |
+
+## 탈퇴 후 72시간 재가입 제한(회원 데이터와 분리) (`signup_restrictions`)
+
+| 저장 항목 | 의미 | 비워 둘 수 있나 |
+| --- | --- | --- |
+| `provider` | 소셜 제공자 | 불가 |
+| `subject_hmac` | 서버 비밀키로 만든 제공자 계정 식별값 HMAC; 원문·가입 ID 미저장 | 불가 |
+| `rejoin_allowed_at` | 재가입 가능 시각 = withdrawn_at+72시간; 지나면 삭제 | 불가 |
+
+명세 기준 세 항목만 저장한다. 만료 시각이 지난 행은 제한에 쓰지 않으며 정기 삭제한다. 키 교체 방식은 DES01.
 
 ## 회원 프로필과 사진 한 장 (`profiles`)
 
@@ -388,7 +432,7 @@ erDiagram
 | `desired_genders` | 희망 상대 성별; 아직 미입력인 초안이면 NULL | 가능 |
 | `age_min` | 희망 최소 만 나이; 상관없음이면 age_max와 함께 NULL | 가능 |
 | `age_max` | 희망 최대 만 나이; 범위의 상한 없음도 NULL | 가능 |
-| `matching_enabled` | 매칭 ON/OFF | 불가 |
+| `matching_enabled` | 매칭 ON/OFF; 최초 기본값 ON(MAT-05) | 불가 |
 | `require_partner_photo` | 상대 사진 필수 | 불가 |
 | `settings_version` | 프로필·성향·조건 변경과 키링 반영 비교용 실제 버전 | 불가 |
 
@@ -401,6 +445,8 @@ erDiagram
 | `serial_hash` | 기기 시리얼의 검증용 해시; 원문 미저장 | 불가 |
 | `verification_key_ref` | 검증 키 참조; 비밀 키 원문 아님 | 불가 |
 | `firmware_version` | 기기 펌웨어 버전 | 불가 |
+| `blocked_at` | 영구 사용 불가 지정 시각; 계정 탈퇴·삭제와 무관하게 유지, 이후 어느 계정도 등록 불가 | 가능 |
+| `block_reason` | LOST(분실) / AGE_DEADLINE(연령 미달 탈퇴 기한까지 미초기화) | 가능 |
 
 중복 금지 조합: serial_hash, public_device_id 각각. 기존 행이 있는 공유 DB는 공개 UUID를 한 번 발급·중복 검사한 뒤 NOT NULL/UNIQUE를 적용해야 하며 기존 내부 참조는 유지한다. 자동 실행 마이그레이션은 제공하지 않는다.
 
@@ -488,6 +534,7 @@ erDiagram
 | `user_high` | 큰 회원 ID 연결 대상: `app_users.user_id`. | 불가 |
 | `declined_until` | 명시적 거절 재제안 제한 종료 | 가능 |
 | `declined_proposal_id` | 현재 거절 제한의 근거 제안 연결 대상: `match_proposals.proposal_id`. | 가능 |
+| `rematch_banned_at` | 영구 재매칭 금지 시작(나가기·7일 종료·AI 동의 철회); 방 본문이 삭제돼도 유지. 차단 종료는 여기 기록하지 않고 user_blocks로 판단(해제 시 재매칭 가능) | 가능 |
 
 중복 금지 조합: user_low + user_high.
 
@@ -538,7 +585,7 @@ erDiagram
 | `high_cancelled_at` | user_high 최초 수락 취소 시각; 원래 수락 기록 보존 | 가능 |
 | `low_cancel_request_key` | user_low 취소 업무의 최초 멱등 키 | 가능 |
 | `high_cancel_request_key` | user_high 취소 업무의 최초 멱등 키 | 가능 |
-| `status` | PENDING / WAITING_FOR_OTHER / ACCEPTED / REJECTED / EXPIRED | 불가 |
+| `status` | PENDING / WAITING_FOR_OTHER / ACCEPTED / REJECTED / EXPIRED / CLOSED(차단·탈퇴로 양쪽 목록에서 제거; 거절 30일 제한과 구분. AI 동의 철회는 채팅방만 닫고 제안은 닫지 않음) | 불가 |
 | `created_at` | 제안 생성 | 불가 |
 | `expires_at` | 생성+24시간 | 불가 |
 | `chat_room_id` | 실제로 생성된 방; 생성 전 NULL 연결 대상: `chat_rooms.chat_room_id`. | 가능 |
@@ -554,7 +601,7 @@ erDiagram
 | `created_at` | 최초 실제 방 생성 | 불가 |
 | `expires_at` | created_at+168시간 | 불가 |
 | `closed_at` | 실제 종료 효력; 정상 자동 종료는 expires_at | 가능 |
-| `delete_at` | closed_at+720시간 | 가능 |
+| `delete_at` | 일반 방 closed_at+720시간. 신고된 방은 최초 신고+90일, 모두 기각되면 min(마지막 기각+30일, 최초 신고+90일) | 가능 |
 | `last_sequence` | 방별 메시지 순번 발급 | 불가 |
 
 ## 참여자별 입장·두 안내의 표시 확인 (`chat_members`)
@@ -563,7 +610,7 @@ erDiagram
 | --- | --- | --- |
 | `chat_room_id` | 방; 복합 PK 연결 대상: `chat_rooms.chat_room_id`. | 불가 |
 | `user_id` | 참여 회원; 복합 PK 연결 대상: `app_users.user_id`. | 불가 |
-| `left_at` | 허용된 퇴장 시각; 정책 미정이면 기록하지 않음 | 가능 |
+| `left_at` | 나가기(AI 동의 철회 포함) 시각 | 가능 |
 | `first_notice_acked_at` | 첫 입장 안내 표시 확인 | 가능 |
 | `end_notice_acked_at` | 종료 1시간 전 안내 표시 확인 | 가능 |
 
@@ -580,6 +627,19 @@ erDiagram
 | `created_at` | 서버 저장 | 불가 |
 
 중복 금지 조합: chat_room_id + sender_id + client_message_id; chat_room_id + sequence.
+
+## AI 위험 안내 배너의 사용자별 1회 표시 (`chat_safety_notices`)
+
+| 저장 항목 | 의미 | 비워 둘 수 있나 |
+| --- | --- | --- |
+| `notice_id` | 내부 식별자; 서버/DB 생성 | 불가 |
+| `chat_room_id` | 방 연결 대상: `chat_rooms.chat_room_id`. | 불가 |
+| `user_id` | 안내 대상 회원 연결 대상: `app_users.user_id`. | 불가 |
+| `notice_type` | 안내 유형(수신자 보호 / 공격적 표현 발신자 안내 등) | 불가 |
+| `sent_at` | 서버가 안내를 보낸 시각 | 불가 |
+| `displayed_at` | 앱이 실제 화면에 표시했다고 확인한 시각 | 가능 |
+
+같은 방·사용자·안내 유형은 1회만. 방 삭제 때 함께 삭제한다.
 
 ## 방향성 차단과 해제 (`user_blocks`)
 
@@ -602,8 +662,20 @@ erDiagram
 | `target_id` | target_type에 해당하는 내부 ID | 불가 |
 | `reason` | 신고 사유 코드 | 불가 |
 | `detail` | 추가 설명; 선택 | 가능 |
-| `status` | RECEIVED / REVIEWING / RESOLVED | 불가 |
+| `status` | RECEIVED / REVIEWING / RESOLVED / DISMISSED(기각) | 불가 |
 | `created_at` | 접수 | 불가 |
+| `resolved_at` | 조치 완료(RESOLVED) 또는 기각(DISMISSED) 시각; 기각 시 보관 단축 계산 | 가능 |
+
+중복 금지 조합: reporter_id + target_type + target_id + reason(같은 신고자·대상·사유 재신고 방지). 채팅 신고는 target_type=CHAT_ROOM으로 방 단위로 받고 선택 메시지는 `report_messages`에 둔다.
+
+## 신고에 첨부한 메시지(0~5개) (`report_messages`)
+
+| 저장 항목 | 의미 | 비워 둘 수 있나 |
+| --- | --- | --- |
+| `report_id` | 신고 연결 대상: `reports.report_id`. | 불가 |
+| `message_id` | 선택한 메시지 연결 대상: `chat_messages.message_id`. | 불가 |
+
+신고 1건당 최대 5개는 서비스가 검사한다. 메시지 본문 사본을 두지 않는다.
 
 ## AI 생성 결과와 위험 분석 결과 한 곳 (`ai_results`)
 
@@ -636,7 +708,7 @@ erDiagram
 | 저장 항목 | 의미 | 비워 둘 수 있나 |
 | --- | --- | --- |
 | `job_id` | 내부 식별자; 서버/DB 생성 | 불가 |
-| `job_type` | 현재 사용하는 CHAT_CREATE / FIRST_ENTRY / END_NOTICE / AI / CHAT_DELETE 등 허용 목록 | 불가 |
+| `job_type` | CHAT_CREATE / FIRST_ENTRY / END_NOTICE / AI / CHAT_DELETE / WITHDRAWAL(예정 시각 탈퇴 실행) / USER_DATA_DELETE(저장소별 회원 데이터 삭제·재시도) | 불가 |
 | `business_key` | 같은 업무 재생성 방지 키 | 불가 |
 | `payload` | 자원 ID·요청 키·필요 버전만; 메시지/토큰 원문 금지 | 불가 |
 | `status` | PENDING / RUNNING / SUCCEEDED / FAILED / CANCELLED | 불가 |

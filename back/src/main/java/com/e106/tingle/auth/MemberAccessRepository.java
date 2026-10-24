@@ -36,7 +36,8 @@ public class MemberAccessRepository {
 		return Boolean.TRUE.equals(jdbc.queryForObject("select exists (select 1 from survey_responses sr "
 			+ "join analysis_results a on a.response_id=sr.response_id where sr.user_id=? "
 			+ "and sr.completed_at is not null and a.outcome='SUCCEEDED' "
-			+ "and sr.response_id=(select max(response_id) from survey_responses where user_id=?))",
+			+ "and sr.response_id=(select max(response_id) from survey_responses "
+			+ "where user_id=? and completed_at is not null))",
 			Boolean.class, userId, userId));
 	}
 
@@ -98,7 +99,8 @@ public class MemberAccessRepository {
 			+ "join keyring_sync_runs k on k.snapshot_id=ss.snapshot_id "
 			+ "join keyring_bindings b on b.binding_id=k.binding_id "
 			+ "where sr.user_id=u.user_id and sr.completed_at is not null and a.outcome='SUCCEEDED' "
-			+ "and sr.response_id=(select max(response_id) from survey_responses where user_id=u.user_id) "
+			+ "and sr.response_id=(select max(response_id) from survey_responses "
+			+ "where user_id=u.user_id and completed_at is not null) "
 			+ "and ss.user_id=u.user_id and ss.settings_version=m.settings_version "
 			+ "and b.user_id=u.user_id and b.unbound_at is null "
 			+ "and k.status='ACKNOWLEDGED' and k.acknowledged_at is not null))",

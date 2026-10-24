@@ -52,7 +52,7 @@ counterpartDeadlineAt = min(opportunityExpiresAt, firstValidReceivedAt + counter
 proposalExpiresAt = proposalCreatedAt + proposalDuration
 chatExpiresAt = chatCreatedAt + 168 hours
 chatClosedAt = chatExpiresAt  # 정상 자동 종료
-chatDeleteAt = chatClosedAt + 720 hours
+chatDeleteAt = chatClosedAt + 720 hours  # 일반 방. 신고된 방은 최초 신고+90일, 모두 기각되면 min(마지막 기각+30일, 최초 신고+90일)
 oneHourNoticeAt = chatExpiresAt - 1 hour
 ```
 

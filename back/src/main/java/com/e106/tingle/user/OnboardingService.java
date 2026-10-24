@@ -7,6 +7,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.e106.tingle.agreement.AgreementService;
 import com.e106.tingle.auth.MemberAccessRepository;
+import com.e106.tingle.survey.SurveyService;
 import com.e106.tingle.user.dto.OnboardingDetailResponse;
 
 import lombok.RequiredArgsConstructor;
@@ -23,6 +24,7 @@ public class OnboardingService {
 	private final MemberAccessRepository members;
 	private final ProfileRepository profileRepository;
 	private final UserRepository userRepository;
+	private final SurveyService surveyService;
 	private final Clock clock;
 
 	// 미구현 단계도 통과시키지 않는다. 각 도메인의 실제 데이터로 판단하고, READY 는 매칭 제안과 같은 기준(ready)을 쓴다.
@@ -54,9 +56,11 @@ public class OnboardingService {
 	public OnboardingDetailResponse detail(long userId) {
 		OnboardingStatus status = recordProgress(userId);
 		boolean ready = status == OnboardingStatus.READY;
-		// ponytail: 설문·설정 반영 필드는 해당 기능 전까지 임시값
+		SurveyService.Progress survey = surveyService.progress(userId);
+		// ponytail: 설정 반영 버전 필드는 키링 동기화 기능 전까지 임시값
 		return new OnboardingDetailResponse(status, signupCompleted(userId), ready, ready,
-			null, 0, 0, null, 0, null, clock.instant());
+			survey.sessionId(), survey.answeredCount(), survey.questionCount(), survey.nextQuestionId(),
+			0, null, clock.instant());
 	}
 
 	/**
