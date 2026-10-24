@@ -2,7 +2,7 @@
 
 1.3.0-mr26-alignment-review / 정합화 기록 2026-10-22
 
-최신 develop과 설문·채팅 작업을 합친 **25개 테이블·185개 컬럼** 계약 작업본이다. 웹 동기화 상태는 통합 검증 기록을 따른다. 현재 구현 대상으로 정리한 API는 **71개**, 범위에서 제외·폐기한 기존안은 **11개**다. 문서 정리와 팀 합의·실제 구현·DB 적용·배포 완료를 구분한다.
+최신 develop과 설문·채팅 작업을 합친 계약 작업본이다. ERD는 기능 명세 v2 반영 후 **28개 테이블·204개 컬럼**([변경 기록](../database/changes-20261022.md) 0절·9절). 웹 동기화 상태는 통합 검증 기록을 따른다. 현재 구현 대상으로 정리한 API는 **71개**, 범위에서 제외·폐기한 기존안은 **11개**다. 문서 정리와 팀 합의·실제 구현·DB 적용·배포 완료를 구분한다.
 
 - [사용자 승인 정합화 기준](alignment-20261021.md) / [검증 이력·다음 변경 대조 절차](../../verification/spec-alignment-20261022.md)
 - [OpenAPI: 요청/응답 타입·필수값·예시](openapi.json)
@@ -37,7 +37,7 @@
 | 동기화 | 같은 binding+snapshot의 실행을 재사용, 새 생성201/재사용200. 전송만으로 READY가 아니며 ACK·버전·증명을 검증. payloadHash/status 일부는 원본에서 계산, 정확한 IoT37 계약 필요 |
 | 만남/평가 | encounters+encounter_submissions. 판정과 버전은 evaluation_json/evaluation_version_code, 별도 evaluationId 대신 encounterId. 기회7일·상대 대기·제안24시간은 각각 검사 |
 | 제안 | match_proposals의 두 선택·최초 결정시각. 거절/수락 시각으로 resolvedAt 계산. 최초 거절+30일 제한을 재시도로 연장하지 않음. 사진 옵션 변경 전 제안은 유지하고 현재 프로필을 표시 |
-| 채팅 | 최초 방 생성+168시간에 종료. 요청마다 시간/참여 검사. 정상 closed_at=expires_at, delete_at=closed_at+720시간. 배치 지연·재접속으로 기한 연장 없음 |
+| 채팅 | 최초 방 생성+168시간에 종료. 요청마다 시간/참여 검사. 정상 closed_at=expires_at, delete_at=closed_at+720시간(신고된 방은 최초 신고+90일, 모두 기각되면 min(마지막 기각+30일, 최초 신고+90일)). 배치 지연·재접속으로 기한 연장 없음 |
 | 안내 | chat_members의 두 표시 ACK와 background_jobs의 사용자별 최초 입장/종료1시간 전 업무 키. noticeId는 작업을 가리키는 호환 식별자이며 소유·종류·방을 재검사 |
 | 메시지 | 서버 message_id, 앱 재전송 client_message_id, 방 안 sequence 모두 유지. 같은 키·다른 본문 충돌. 원문 큐/로그 복제 금지 |
 | 후속 처리 | background_jobs로 예약·실패 재시도 통합. business_key 유일, 선점마다 attempts 증가, 완료 시 자신의 attempt·RUNNING·lease 유효성 검사. 별도 outbox/삭제/AI 작업 테이블 없음 |
