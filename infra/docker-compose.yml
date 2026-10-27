@@ -120,6 +120,81 @@ services:
     mem_limit: 512m
     restart: unless-stopped
 
+  # 모니터링 (인프라 계획 10절, 합계 메모리 1GB 안). Grafana 만 nginx /grafana/ 로 열고 나머지는 내부망 전용.
+  # 지표: Prometheus 가 node-exporter(서버 + container-stats 가 쓴 컨테이너별 메모리 · CPU)를 모은다. 로그: Alloy 가 모든 컨테이너 로그를 Loki 로 보낸다.
+  # API 응답 시간 · 에러율은 nginx 접근 로그(JSON)를 Loki 에서 계산한다. 인프라라 Jenkins 가 아닌 손으로 띄운다 (nginx · db · jenkins 와 같음).
+  prometheus:
+    image: prom/prometheus:v3.5.0
+    command: [--config.file=/etc/prometheus/prometheus.yml, --storage.tsdb.retention.time=15d]
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus:/prometheus
+    mem_limit: 256m
+    restart: unless-stopped
+
+  node-exporter:
+    image: prom/node-exporter:v1.10.2
+    command: [--path.rootfs=/host, --collector.textfile.directory=/textfile]
+    pid: host
+    volumes:
+      - /:/host:ro,rslave
+      - textfile:/textfile:ro # container-stats 가 쓰는 컨테이너별 지표
+    mem_limit: 64m
+    restart: unless-stopped
+
+  container-stats:
+    image: docker:29-cli
+    entrypoint: [sh, /container-stats.sh]
+    volumes:
+      - ./monitoring/container-stats.sh:/container-stats.sh:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /sys/fs/cgroup:/sys/fs/cgroup:ro
+      - textfile:/textfile
+    mem_limit: 32m
+    restart: unless-stopped
+
+  loki:
+    image: grafana/loki:3.5.5
+    command: [-config.file=/etc/loki/loki.yml]
+    volumes:
+      - ./monitoring/loki.yml:/etc/loki/loki.yml:ro
+      - loki:/loki
+    mem_limit: 256m
+    restart: unless-stopped
+
+  alloy:
+    image: grafana/alloy:v1.11.0
+    command: [run, --storage.path=/var/lib/alloy/data, /etc/alloy/config.alloy]
+    volumes:
+      - ./monitoring/alloy.alloy:/etc/alloy/config.alloy:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - alloy:/var/lib/alloy/data # 컨테이너별 읽은 위치 — 재시작해도 로그를 두 번 보내지 않는다
+    mem_limit: 128m
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:12.2.0
+    environment:
+      GF_SERVER_ROOT_URL: https://${DOMAIN:?}/grafana/
+      GF_SERVER_SERVE_FROM_SUB_PATH: 'true'
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?} # 첫 기동 때만 적용. 이후 변경은 grafana cli admin reset-admin-password
+      GF_USERS_ALLOW_SIGN_UP: 'false'
+      GF_ANALYTICS_REPORTING_ENABLED: 'false'
+      GF_ANALYTICS_CHECK_FOR_UPDATES: 'false'
+    volumes:
+      - ./monitoring/grafana/datasources:/etc/grafana/provisioning/datasources:ro
+      - ./monitoring/grafana/dashboards:/etc/grafana/provisioning/dashboards:ro # tingle.json
+      - grafana:/var/lib/grafana
+    depends_on: [prometheus, loki]
+    mem_limit: 192m
+    restart: unless-stopped
+
 volumes:
   pgdata:
   jenkins_home:
+  prometheus:
+  loki:
+  alloy:
+  grafana:
+  textfile:

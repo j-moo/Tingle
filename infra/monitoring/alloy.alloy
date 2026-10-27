@@ -1,0 +1,32 @@
+// 모든 컨테이너의 stdout·stderr 를 Loki 로 보낸다. 라벨: container(tingle-back-dev-1), service(compose 서비스 이름).
+// 로그에 프로필 원문·사진 경로·기기 키를 남기지 않는 건 각 앱의 책임이다 (기획안 8.3). nginx 접근 로그는 경로만 남긴다(쿼리 문자열 제외).
+discovery.docker "containers" {
+  host = "unix:///var/run/docker.sock"
+}
+
+discovery.relabel "containers" {
+  targets = []
+
+  rule {
+    source_labels = ["__meta_docker_container_name"]
+    regex         = "/(.*)"
+    target_label  = "container"
+  }
+  rule {
+    source_labels = ["__meta_docker_container_label_com_docker_compose_service"]
+    target_label  = "service"
+  }
+}
+
+loki.source.docker "containers" {
+  host          = "unix:///var/run/docker.sock"
+  targets       = discovery.docker.containers.targets
+  relabel_rules = discovery.relabel.containers.rules
+  forward_to    = [loki.write.local.receiver]
+}
+
+loki.write "local" {
+  endpoint {
+    url = "http://loki:3100/loki/api/v1/push"
+  }
+}
