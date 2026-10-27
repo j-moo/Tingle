@@ -10,6 +10,12 @@ log_format tingle escape=json '{"status":$status,"method":"$request_method","uri
 # back → ai 내부 호출(8000)은 경로 앞에 /ai 를 붙여 남긴다 — 대시보드에서 /ai/.* 로 따로 본다
 log_format tingle_ai escape=json '{"status":$status,"method":"$request_method","uri":"/ai$log_path","rt":$request_time,"bytes":$body_bytes_sent,"upstream":"$upstream_addr"}';
 
+# APK 는 첨부파일로 내려줘 브라우저가 다운로드 알림을 띄우게 한다 (없으면 일부 폰 브라우저가 알림 없이 바로 설치 화면으로 넘어감).
+map $uri $apk_name {
+    ~^/app/dev/ tingle-dev.apk;
+    default     tingle.apk;
+}
+
 map $http_upgrade $connection_upgrade {
     default upgrade;
     ''      close;
@@ -94,6 +100,7 @@ server {
             application/vnd.android.package-archive apk;
         }
         add_header Cache-Control no-cache; # 같은 이름으로 덮어쓰므로 항상 새로 확인
+        add_header Content-Disposition 'attachment; filename="$apk_name"';
     }
 
     # Jenkins 는 --prefix=/jenkins 로 떠서 접두사를 그대로 넘긴다
