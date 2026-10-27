@@ -1,0 +1,50 @@
+# Local SDK paths, IDE state and caches
+local.properties
+.gradle/
+.kotlin/
+.idea/
+*.iml
+.cxx/
+.externalNativeBuild/
+
+# Build output and locally collected verification evidence
+/artifacts/
+**/build/
+/core/bin/
+/captures/
+*.apk
+*.aab
+*.apks
+*.dex
+*.class
+*.hprof
+*.log
+*.logcat
+bugreport*.zip
+
+# Runtime storage and exported device data; keep synthetic source fixtures tracked
+*.db
+*.db-*
+*.sqlite
+*.sqlite-*
+*.sqlite3
+*.sqlite3-*
+keyring-received-*.json
+keyring-lab-*.json
+field-test-*.json
+ui-flow-*.json
+
+# Signing/authentication material and machine-specific configuration
+*.jks
+*.keystore
+*.p12
+*.pfx
+*.pem
+*.key
+keystore.properties
+signing.properties
+key.properties
+secrets.properties
+.android/
+adbkey
+adbkey.pub
