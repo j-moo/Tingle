@@ -196,12 +196,13 @@ sh gradlew check :androidApp:assembleDebug --no-daemon -Dorg.gradle.jvmargs=-Xmx
               '''
             }
             sh """
-              rm -rf ${target.dir}.new && mkdir ${target.dir}.new
-              git archive HEAD | tar x -C ${target.dir}.new
-              git rev-parse --short HEAD > ${target.dir}.new/.deployed-commit
-              rm -rf ${target.dir}.old
-              if [ -d ${target.dir} ]; then mv ${target.dir} ${target.dir}.old; fi
-              mv ${target.dir}.new ${target.dir} && rm -rf ${target.dir}.old
+              # 폴더를 통째로 바꾸지 않고 안의 파일만 바꾼다. 폴더째 바꾸면 그 안을 마운트한 nginx · grafana 가 지워진 옛 폴더를 계속 본다 (2026-10-27).
+              # 커밋에 없는 파일(저장소에서 지운 것)은 지운다. 한글 경로가 따옴표로 바뀌지 않게 core.quotePath=false.
+              mkdir -p ${target.dir}
+              git archive HEAD | tar x -C ${target.dir}
+              git -c core.quotePath=false ls-tree -r --name-only HEAD | sort > \$WORKSPACE/.deploy-files
+              (cd ${target.dir} && find . -type f ! -name .deployed-commit | sed 's#^\\./##' | sort | comm -23 - \$WORKSPACE/.deploy-files | xargs -r -d '\\n' rm -f --)
+              git rev-parse --short HEAD > ${target.dir}/.deployed-commit
               docker compose --env-file /srv/tingle/.env --env-file /srv/tingle/app.env -f ${target.dir}/infra/docker-compose.yml up -d --build --no-deps ${target.services.keySet().join(' ')}
               docker image prune -f
             """
