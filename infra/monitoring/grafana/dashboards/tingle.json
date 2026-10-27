@@ -1,0 +1,129 @@
+{
+  "uid": "tingle",
+  "title": "Tingle 서버",
+  "description": "서버·컨테이너 자원과 API 응답(nginx 접근 로그). 세로 점선은 back 이 새로 뜬 시점(배포) — 앞뒤를 비교한다.",
+  "tags": ["tingle"],
+  "timezone": "browser",
+  "refresh": "30s",
+  "time": { "from": "now-6h", "to": "now" },
+  "schemaVersion": 39,
+  "templating": {
+    "list": [
+      {
+        "name": "env",
+        "label": "환경",
+        "type": "custom",
+        "query": "운영 : /api/.*,개발 : /dev/api/.*",
+        "current": { "text": "운영", "value": "/api/.*" },
+        "options": [
+          { "text": "운영", "value": "/api/.*", "selected": true },
+          { "text": "개발", "value": "/dev/api/.*", "selected": false }
+        ]
+      }
+    ]
+  },
+  "annotations": {
+    "list": [
+      {
+        "name": "back 배포",
+        "datasource": { "type": "loki", "uid": "loki" },
+        "enable": true,
+        "iconColor": "orange",
+        "expr": "{service=~\"back-.*\"} |= \"Started \" |= \"Application in\"",
+        "titleFormat": "{{container}} 시작"
+      }
+    ]
+  },
+  "panels": [
+    { "type": "row", "title": "API (nginx 접근 로그)", "gridPos": { "x": 0, "y": 0, "w": 24, "h": 1 } },
+    {
+      "type": "timeseries",
+      "title": "요청 수 (초당)",
+      "gridPos": { "x": 0, "y": 1, "w": 8, "h": 8 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "fieldConfig": { "defaults": { "unit": "reqps" } },
+      "targets": [
+        { "refId": "A", "expr": "sum by (status) (rate({service=\"nginx\"} | json | __error__=\"\" | uri=~\"$env\" [1m]))", "legendFormat": "{{status}}" }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "5xx 비율",
+      "gridPos": { "x": 8, "y": 1, "w": 8, "h": 8 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "fieldConfig": { "defaults": { "unit": "percentunit", "min": 0 } },
+      "targets": [
+        { "refId": "A", "expr": "sum(rate({service=\"nginx\"} | json | __error__=\"\" | uri=~\"$env\" | status >= 500 [5m])) / sum(rate({service=\"nginx\"} | json | __error__=\"\" | uri=~\"$env\" [5m]))", "legendFormat": "5xx" }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "응답 시간 (p50 · p95)",
+      "gridPos": { "x": 16, "y": 1, "w": 8, "h": 8 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "fieldConfig": { "defaults": { "unit": "s", "min": 0 } },
+      "targets": [
+        { "refId": "A", "expr": "quantile_over_time(0.5, {service=\"nginx\"} | json | __error__=\"\" | uri=~\"$env\" | unwrap rt [5m]) by ()", "legendFormat": "p50" },
+        { "refId": "B", "expr": "quantile_over_time(0.95, {service=\"nginx\"} | json | __error__=\"\" | uri=~\"$env\" | unwrap rt [5m]) by ()", "legendFormat": "p95" }
+      ]
+    },
+    { "type": "row", "title": "서버", "gridPos": { "x": 0, "y": 9, "w": 24, "h": 1 } },
+    {
+      "type": "timeseries",
+      "title": "CPU 사용률",
+      "gridPos": { "x": 0, "y": 10, "w": 8, "h": 7 },
+      "fieldConfig": { "defaults": { "unit": "percentunit", "min": 0, "max": 1 } },
+      "targets": [
+        { "refId": "A", "expr": "1 - avg(rate(node_cpu_seconds_total{mode=\"idle\"}[1m]))", "legendFormat": "CPU" }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "메모리 사용률",
+      "gridPos": { "x": 8, "y": 10, "w": 8, "h": 7 },
+      "fieldConfig": { "defaults": { "unit": "percentunit", "min": 0, "max": 1 } },
+      "targets": [
+        { "refId": "A", "expr": "1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes", "legendFormat": "메모리" }
+      ]
+    },
+    {
+      "type": "gauge",
+      "title": "디스크 사용률 (/)",
+      "gridPos": { "x": 16, "y": 10, "w": 8, "h": 7 },
+      "fieldConfig": { "defaults": { "unit": "percentunit", "min": 0, "max": 1, "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "orange", "value": 0.7 }, { "color": "red", "value": 0.85 } ] } } },
+      "targets": [
+        { "refId": "A", "expr": "1 - node_filesystem_avail_bytes{mountpoint=\"/\",fstype!=\"rootfs\"} / node_filesystem_size_bytes{mountpoint=\"/\",fstype!=\"rootfs\"}" }
+      ]
+    },
+    { "type": "row", "title": "컨테이너", "gridPos": { "x": 0, "y": 17, "w": 24, "h": 1 } },
+    {
+      "type": "timeseries",
+      "title": "컨테이너 메모리",
+      "gridPos": { "x": 0, "y": 18, "w": 12, "h": 8 },
+      "fieldConfig": { "defaults": { "unit": "bytes", "min": 0 } },
+      "targets": [
+        { "refId": "A", "expr": "tingle_container_memory_bytes", "legendFormat": "{{name}}" }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "컨테이너 CPU (코어)",
+      "gridPos": { "x": 12, "y": 18, "w": 12, "h": 8 },
+      "fieldConfig": { "defaults": { "unit": "short", "min": 0 } },
+      "targets": [
+        { "refId": "A", "expr": "rate(tingle_container_cpu_seconds_total[1m])", "legendFormat": "{{name}}" }
+      ]
+    },
+    { "type": "row", "title": "로그", "gridPos": { "x": 0, "y": 26, "w": 24, "h": 1 } },
+    {
+      "type": "logs",
+      "title": "back · ai 오류 로그",
+      "gridPos": { "x": 0, "y": 27, "w": 24, "h": 10 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "options": { "showTime": true, "wrapLogMessage": true, "sortOrder": "Descending" },
+      "targets": [
+        { "refId": "A", "expr": "{service=~\"back-.*|ai-.*\"} |~ \"ERROR|Exception|Traceback\"" }
+      ]
+    }
+  ]
+}

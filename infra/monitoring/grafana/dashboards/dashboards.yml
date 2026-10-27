@@ -1,0 +1,9 @@
+apiVersion: 1
+
+# 이 폴더의 *.json 대시보드를 읽는다. 화면에서 고친 내용은 저장되지 않으니 JSON 을 고쳐 MR 로 반영한다.
+providers:
+  - name: tingle
+    type: file
+    allowUiUpdates: false
+    options:
+      path: /etc/grafana/provisioning/dashboards
