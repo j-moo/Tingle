@@ -1,12 +1,14 @@
 # 키링 화면설계 유지 원칙과 변경 가능 항목
 
+> 2026-10-27 참조 정리: 아래 v0.1.92/v0.1.81 링크는 작성 당시 기준으로 고정했다. 현재 제품 기준은 [MVP 명세](../../specifications/functional-spec-mvp.md)와 [상세 명세](../../specifications/functional-spec-v3.md)이며, 본 계약의 후속 합의 반영·실제 기기 검증은 별도다. 이번 변경은 링크 정리이며 통신 계약 구현 완료를 뜻하지 않는다.
+
 v0.3.1-draft / 2026-10-22 / S15P31E106-90 / 작성: 김종무(IOT)
 
 **기존 화면설계의 구조를 유지한다. 다만 개발 과정에서 구조 안의 세부 내용은 바뀔 수 있다.**
 
 기준은 [현재 Figma 화면설계](https://www.figma.com/design/6UkrZ5AeVOvj3DTG5pfsAv/Suddenly-I-See-%E2%80%94-E106?node-id=22-2)다. 화면 구성과 기본 흐름을 유지하면서 실기기 테스트와 FE·BE·IOT 협의 결과를 세부 내용에 반영한다.
 
-세부 동작은 최신 [가입·매칭 정책 v0.1.92](../matching/profile-policy-v1.md) §4.1·4.2·5와 [기능 명세 v0.1.81](../../specifications/functional-spec-v1.md)의 KEY-01~06·MAT-05·PRO-03을 따른다. 변경 가능하다는 뜻은 확정된 정책·완료 조건을 임의로 바꾼다는 뜻이 아니다.
+세부 동작은 최신 [가입·매칭 정책 v0.1.92](https://lab.ssafy.com/s15-final/S15P31E106/-/blob/c4c8131dc4ee09481880a98ee5b0842705e4886b/docs/contracts/matching/profile-policy-v1.md) §4.1·4.2·5와 [기능 명세 v0.1.81](https://lab.ssafy.com/s15-final/S15P31E106/-/blob/c4c8131dc4ee09481880a98ee5b0842705e4886b/docs/specifications/functional-spec-v1.md)의 KEY-01~06·MAT-05·PRO-03을 따른다. 변경 가능하다는 뜻은 확정된 정책·완료 조건을 임의로 바꾼다는 뜻이 아니다.
 
 ## 개발 과정에서 변경될 수 있는 부분
 

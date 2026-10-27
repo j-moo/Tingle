@@ -1,9 +1,12 @@
 erDiagram
     keyrings {
+        uuid public_device_id UK
         bigint device_id PK
         bytea serial_hash
         text verification_key_ref
         text firmware_version
+        timestamptz blocked_at
+        text block_reason
     }
     keyring_bindings {
         bigint binding_id PK

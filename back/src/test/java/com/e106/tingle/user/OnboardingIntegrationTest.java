@@ -62,11 +62,11 @@ class OnboardingIntegrationTest extends IntegrationTestSupport {
 		perform(get(ONBOARDING), tokens, null).andExpect(jsonPath("$.nextStep").value("AGREEMENT_REQUIRED"))
 			.andExpect(jsonPath("$.signupCompleted").value(false))
 			.andExpect(jsonPath("$.onboardingCompleted").value(false))
-			// 설문·설정 필드는 기능 전이라 임시값이지만 키는 항상 있다
+			// 설문 회차가 없으면 현재 버전의 첫 문항부터. 설정 반영 필드는 기능 전이라 임시값이지만 키는 항상 있다
 			.andExpect(jsonPath("$.surveySessionId").value(nullValue()))
 			.andExpect(jsonPath("$.answeredCount").value(0))
-			.andExpect(jsonPath("$.questionCount").value(0))
-			.andExpect(jsonPath("$.nextQuestionId").value(nullValue()))
+			.andExpect(jsonPath("$.questionCount").value(100))
+			.andExpect(jsonPath("$.nextQuestionId").value("Q001"))
 			.andExpect(jsonPath("$.requiredSettingsVersion").value(0))
 			.andExpect(jsonPath("$.acknowledgedSettingsVersion").value(nullValue()));
 

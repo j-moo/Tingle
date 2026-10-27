@@ -23,4 +23,8 @@ public final class Messages {
 	public static String get(String key) {
 		return SOURCE.getMessage(key, null, LocaleContextHolder.getLocale());
 	}
+
+	public static String get(String key, Object... values) {
+		return SOURCE.getMessage(key, values, LocaleContextHolder.getLocale());
+	}
 }

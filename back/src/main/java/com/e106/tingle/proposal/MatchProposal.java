@@ -47,6 +47,10 @@ public class MatchProposal {
 	private Instant highDecidedAt;
 	private UUID lowRequestKey;
 	private UUID highRequestKey;
+	private Instant lowCancelledAt;
+	private Instant highCancelledAt;
+	private UUID lowCancelRequestKey;
+	private UUID highCancelRequestKey;
 	@Column(nullable = false)
 	private Instant createdAt;
 	@Column(nullable = false)
@@ -65,8 +69,48 @@ public class MatchProposal {
 	}
 
 	public Decision decisionOf(boolean lowMember) {
+		if (cancelledAt(lowMember) != null) {
+			return Decision.DECLINE;
+		}
+		return originalDecisionOf(lowMember);
+	}
+
+	public Decision originalDecisionOf(boolean lowMember) {
 		Decision decision = lowMember ? lowDecision : highDecision;
 		return decision == null ? Decision.NONE : decision;
+	}
+
+	public Instant cancelledAt(boolean lowMember) {
+		return lowMember ? lowCancelledAt : highCancelledAt;
+	}
+
+	public void linkChatRoom(long roomId) {
+		if (status != Status.ACCEPTED || (chatRoomId != null && chatRoomId != roomId)) {
+			throw new IllegalStateException("Only an accepted proposal can link one chat room");
+		}
+		chatRoomId = roomId;
+	}
+
+	public UUID cancelKeyOf(boolean lowMember) {
+		return lowMember ? lowCancelRequestKey : highCancelRequestKey;
+	}
+
+	public Status visibleStatus(boolean lowMember, Instant now) {
+		if (decisionOf(lowMember) == Decision.NONE) {
+			return now.isBefore(expiresAt) ? Status.PENDING : Status.EXPIRED;
+		}
+		return effectiveStatus(now);
+	}
+
+	public void cancel(boolean lowMember, UUID requestKey, Instant now) {
+		if (lowMember) {
+			lowCancelledAt = now;
+			lowCancelRequestKey = requestKey;
+		} else {
+			highCancelledAt = now;
+			highCancelRequestKey = requestKey;
+		}
+		status = Status.REJECTED;
 	}
 
 	public Status effectiveStatus(Instant now) {
@@ -93,9 +137,9 @@ public class MatchProposal {
 			highDecidedAt = now;
 			highRequestKey = requestKey;
 		}
-		if (decision == Decision.DECLINE) {
+		if (decisionOf(true) == Decision.DECLINE || decisionOf(false) == Decision.DECLINE) {
 			status = Status.REJECTED;
-		} else if (lowDecision == Decision.ACCEPT && highDecision == Decision.ACCEPT) {
+		} else if (decisionOf(true) == Decision.ACCEPT && decisionOf(false) == Decision.ACCEPT) {
 			status = Status.ACCEPTED;
 		} else {
 			status = Status.WAITING_FOR_OTHER;

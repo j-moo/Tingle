@@ -31,7 +31,7 @@ export default function App() {
           <br />
           새로운 시작.
         </h1>
-        <p>일상에서 만난 인연을 확인해 보세요.</p>
+        <p>스쳐 간 인연을 확인해 보세요.</p>
       </section>
 
       <ul className="steps">

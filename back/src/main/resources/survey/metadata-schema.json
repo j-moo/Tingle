@@ -1,0 +1,9 @@
+{
+  "type": "object",
+  "properties": {
+    "ownAge": { "anyOf": [{ "type": "integer", "minimum": 19, "maximum": 100 }, { "type": "null" }] },
+    "desiredAgeMin": { "anyOf": [{ "type": "integer", "minimum": 19, "maximum": 100 }, { "type": "null" }] },
+    "desiredAgeMax": { "anyOf": [{ "type": "integer", "minimum": 19, "maximum": 100 }, { "type": "null" }] }
+  },
+  "required": ["ownAge", "desiredAgeMin", "desiredAgeMax"]
+}

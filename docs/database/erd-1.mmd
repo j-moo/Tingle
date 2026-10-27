@@ -6,6 +6,8 @@ erDiagram
         text status
         timestamptz created_at
         timestamptz signup_completed_at
+        timestamptz withdrawal_due_at
+        timestamptz withdrawn_at
     }
     refresh_tokens {
         bigint token_id PK
@@ -23,6 +25,13 @@ erDiagram
         text document_version
         boolean agreed
         timestamptz recorded_at
+        text locale
+        text consent_screen
+    }
+    signup_restrictions {
+        text provider PK
+        bytea subject_hmac PK
+        timestamptz rejoin_allowed_at
     }
     profiles {
         bigint user_id PK
@@ -35,6 +44,7 @@ erDiagram
         text religion
         text introduction
         text image_url
+        timestamptz completed_at
     }
     matching_settings {
         bigint user_id PK
