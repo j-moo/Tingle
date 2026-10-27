@@ -13,12 +13,12 @@
         "name": "env",
         "label": "환경",
         "type": "custom",
-        "query": "운영 : /api/.*,개발 : /dev/api/.*,AI 운영 (back → ai) : /ai/.*",
-        "current": { "text": "운영", "value": "/api/.*" },
+        "query": "운영 : ^/api/.*,개발 : ^/dev/api/.*,AI 운영 (back → ai) : ^/ai/.*",
+        "current": { "text": "운영", "value": "^/api/.*" },
         "options": [
-          { "text": "운영", "value": "/api/.*", "selected": true },
-          { "text": "개발", "value": "/dev/api/.*", "selected": false },
-          { "text": "AI 운영 (back → ai)", "value": "/ai/.*", "selected": false }
+          { "text": "운영", "value": "^/api/.*", "selected": true },
+          { "text": "개발", "value": "^/dev/api/.*", "selected": false },
+          { "text": "AI 운영 (back → ai)", "value": "^/ai/.*", "selected": false }
         ]
       }
     ]
@@ -52,9 +52,9 @@
       "title": "5xx 비율",
       "gridPos": { "x": 8, "y": 1, "w": 8, "h": 8 },
       "datasource": { "type": "loki", "uid": "loki" },
-      "fieldConfig": { "defaults": { "unit": "percentunit", "min": 0 } },
+      "fieldConfig": { "defaults": { "unit": "percentunit", "min": 0, "custom": { "axisSoftMax": 0.01 } } },
       "targets": [
-        { "refId": "A", "expr": "sum(rate({service=\"nginx\"} | json | __error__=\"\" | uri=~\"$env\" | status >= 500 [5m])) / sum(rate({service=\"nginx\"} | json | __error__=\"\" | uri=~\"$env\" [5m]))", "legendFormat": "5xx" }
+        { "refId": "A", "expr": "(sum(rate({service=\"nginx\"} | json | __error__=\"\" | uri=~\"$env\" | status >= 500 [5m])) or vector(0)) / sum(rate({service=\"nginx\"} | json | __error__=\"\" | uri=~\"$env\" [5m]))", "legendFormat": "5xx" }
       ]
     },
     {
@@ -103,7 +103,7 @@
       "gridPos": { "x": 0, "y": 18, "w": 12, "h": 8 },
       "fieldConfig": { "defaults": { "unit": "bytes", "min": 0 } },
       "targets": [
-        { "refId": "A", "expr": "tingle_container_memory_bytes", "legendFormat": "{{name}}" }
+        { "refId": "A", "expr": "tingle_container_memory_bytes{name=~\"tingle-.*\"}", "legendFormat": "{{name}}" }
       ]
     },
     {
@@ -112,7 +112,7 @@
       "gridPos": { "x": 12, "y": 18, "w": 12, "h": 8 },
       "fieldConfig": { "defaults": { "unit": "short", "min": 0 } },
       "targets": [
-        { "refId": "A", "expr": "rate(tingle_container_cpu_seconds_total[1m])", "legendFormat": "{{name}}" }
+        { "refId": "A", "expr": "rate(tingle_container_cpu_seconds_total{name=~\"tingle-.*\"}[1m])", "legendFormat": "{{name}}" }
       ]
     },
     { "type": "row", "title": "로그", "gridPos": { "x": 0, "y": 26, "w": 24, "h": 1 } },
