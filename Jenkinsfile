@@ -150,8 +150,29 @@ sh gradlew check :androidApp:assembleDebug --no-daemon -Dorg.gradle.jvmargs=-Xmx
               echo "PUSH_TOKEN_ENCRYPTION_KEY=$PUSH_TOKEN_ENCRYPTION_KEY"
             } > /srv/tingle/app.env.tmp
             mv /srv/tingle/app.env.tmp /srv/tingle/app.env
+            mkdir -p /srv/tingle/secrets # back 이 읽기 전용으로 마운트한다. 없으면 docker 가 root 소유로 만들어 Jenkins 가 못 쓴다
             echo "app.env 갱신: $(grep -c = /srv/tingle/app.env)개 값"
           '''
+        }
+        // 푸시(FCM, -141): Credentials 에 tingle-fcm(Secret file, Firebase 서비스 계정 JSON)이 있으면 키 파일을 쓰고 푸시를 켠다.
+        // 없으면 꺼진 채로 둔다 (back 은 PUSH_ENABLED=false 면 키를 읽지 않는다). 프로젝트 ID 는 JSON 의 project_id 를 쓴다.
+        script {
+          try {
+            withCredentials([file(credentialsId: 'tingle-fcm', variable: 'FCM_JSON')]) {
+              sh '''
+                set +x
+                umask 077
+                cp "$FCM_JSON" /srv/tingle/secrets/fcm.json.tmp
+                mv /srv/tingle/secrets/fcm.json.tmp /srv/tingle/secrets/fcm.json
+                project=$(sed -n 's/.*"project_id": *"\\([^"]*\\)".*/\\1/p' /srv/tingle/secrets/fcm.json)
+                printf 'PUSH_ENABLED=true\\nFIREBASE_PROJECT_ID=%s\\n' "$project" >> /srv/tingle/app.env
+                echo "FCM 키 반영 (Firebase 프로젝트 $project) — 푸시 켬"
+              '''
+            }
+          } catch (e) {
+            if (!(e.message ?: '').contains('tingle-fcm')) { throw e }
+            echo 'FCM 키 없음 (Credentials tingle-fcm) — 푸시 꺼짐'
+          }
         }
       }
     }
