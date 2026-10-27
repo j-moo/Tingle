@@ -13,11 +13,12 @@
         "name": "env",
         "label": "환경",
         "type": "custom",
-        "query": "운영 : /api/.*,개발 : /dev/api/.*",
+        "query": "운영 : /api/.*,개발 : /dev/api/.*,AI 운영 (back → ai) : /ai/.*",
         "current": { "text": "운영", "value": "/api/.*" },
         "options": [
           { "text": "운영", "value": "/api/.*", "selected": true },
-          { "text": "개발", "value": "/dev/api/.*", "selected": false }
+          { "text": "개발", "value": "/dev/api/.*", "selected": false },
+          { "text": "AI 운영 (back → ai)", "value": "/ai/.*", "selected": false }
         ]
       }
     ]
