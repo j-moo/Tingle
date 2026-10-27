@@ -1,5 +1,5 @@
 # 서버·컨테이너 지표(node-exporter, 컨테이너별 값은 container-stats 가 textfile 로 넘긴다)를 15초마다 모은다. 보관 15일(compose 의 --storage.tsdb.retention.time).
-# 응답 시간·에러율은 nginx 접근 로그(Loki)로 본다. back 이 /actuator/prometheus 를 열면 여기에 job 을 더한다.
+# 응답 시간·에러율은 nginx 접근 로그(Loki)로 본다. 앱 내부 지표(back /actuator/prometheus 등)는 받지 않기로 함 (2026-10-27).
 global:
   scrape_interval: 15s
 
