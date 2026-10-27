@@ -92,7 +92,11 @@ pnpm build
             gitlabCommitStatus(name: 'app') {
               // Android SDK 는 처음 한 번 볼륨에 받고, 필요한 플랫폼·빌드 도구는 AGP 가 알아서 내려받는다.
               // 메모리: gradle.properties 기본값(4G + Kotlin 데몬 3G)은 서버에 크므로 Kotlin 을 gradle 안에서 돌리고 3G 로 줄인다.
-              inDocker('eclipse-temurin:21-jdk', 'front/app', '-v tingle-ci-gradle-app:/root/.gradle -v tingle-ci-android:/opt/android-sdk -e ANDROID_HOME=/opt/android-sdk', '''
+              // master 머지는 release APK 를 Credentials 의 서명 키(tingle-release-key · tingle-release-password)로 만든다. 그 밖은 debug.
+              script {
+                def release = env.gitlabActionType == 'PUSH' && env.gitlabSourceBranch == 'master'
+                def build = {
+                  inDocker('eclipse-temurin:21-jdk', 'front/app', '-v tingle-ci-gradle-app:/root/.gradle -v tingle-ci-android:/opt/android-sdk -e ANDROID_HOME=/opt/android-sdk -e APK_TASK -e TINGLE_KEYSTORE -e TINGLE_KEYSTORE_PASSWORD', '''
 if [ ! -x "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" ]; then
   apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq unzip >/dev/null
   curl -fsSLo /tmp/tools.zip https://dl.google.com/android/repository/commandlinetools-linux-13114758_latest.zip
@@ -100,18 +104,26 @@ if [ ! -x "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" ]; then
   mkdir -p "$ANDROID_HOME/cmdline-tools" && mv /tmp/tools/cmdline-tools "$ANDROID_HOME/cmdline-tools/latest"
 fi
 yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null || true
-sh gradlew check :androidApp:assembleDebug --no-daemon -Dorg.gradle.jvmargs=-Xmx3g -Pkotlin.compiler.execution.strategy=in-process
+sh gradlew check :androidApp:$APK_TASK --no-daemon -Dorg.gradle.jvmargs=-Xmx3g -Pkotlin.compiler.execution.strategy=in-process
 ''')
-              // develop · master 머지면 APK 를 공개한다: develop → https://도메인/app/dev/latest.apk, master → /app/latest.apk (nginx /app/ → /srv/tingle/app).
-              // 앱이 바뀐 커밋에서만 갱신된다. ponytail: master 도 아직 디버그 서명 APK — 서명 키가 정해지면 master 는 assembleRelease + Credentials 서명으로 바꾼다 (그때 기존 설치본은 지우고 다시 설치).
-              script {
+                }
+                if (release) {
+                  withEnv(['APK_TASK=assembleRelease']) {
+                    withCredentials([file(credentialsId: 'tingle-release-key', variable: 'TINGLE_KEYSTORE'), string(credentialsId: 'tingle-release-password', variable: 'TINGLE_KEYSTORE_PASSWORD')]) { build() }
+                  }
+                } else {
+                  withEnv(['APK_TASK=assembleDebug']) { build() }
+                }
+                // develop · master 머지면 APK 를 공개한다: develop → https://도메인/app/dev/latest.apk, master → /app/latest.apk (nginx /app/ → /srv/tingle/app).
+                // 앱이 바뀐 커밋에서만 갱신된다.
                 def apkDir = [develop: '/srv/tingle/app/dev', master: '/srv/tingle/app'][env.gitlabSourceBranch]
+                def apk = release ? 'release/androidApp-release.apk' : 'debug/androidApp-debug.apk'
                 if (env.gitlabActionType == 'PUSH' && apkDir) {
                   sh """
                     mkdir -p ${apkDir}
-                    cp front/app/androidApp/build/outputs/apk/debug/androidApp-debug.apk ${apkDir}/latest.apk.tmp
+                    cp front/app/androidApp/build/outputs/apk/${apk} ${apkDir}/latest.apk.tmp
                     mv ${apkDir}/latest.apk.tmp ${apkDir}/latest.apk
-                    echo "APK 공개 (${env.gitlabSourceBranch}): \$(git rev-parse --short HEAD) (\$(du -h ${apkDir}/latest.apk | cut -f1))"
+                    echo "APK 공개 (${env.gitlabSourceBranch}, ${release ? 'release' : 'debug'}): \$(git rev-parse --short HEAD) (\$(du -h ${apkDir}/latest.apk | cut -f1))"
                   """
                 }
               }
