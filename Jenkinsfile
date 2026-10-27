@@ -102,6 +102,17 @@ fi
 yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null || true
 sh gradlew check :androidApp:assembleDebug --no-daemon -Dorg.gradle.jvmargs=-Xmx3g -Pkotlin.compiler.execution.strategy=in-process
 ''')
+              // develop 머지면 개발 APK 를 https://도메인/app/dev/latest.apk 로 공개한다 (nginx /app/ → /srv/tingle/app). 앱이 바뀐 커밋에서만 갱신된다.
+              script {
+                if (env.gitlabActionType == 'PUSH' && env.gitlabSourceBranch == 'develop') {
+                  sh '''
+                    mkdir -p /srv/tingle/app/dev
+                    cp front/app/androidApp/build/outputs/apk/debug/androidApp-debug.apk /srv/tingle/app/dev/latest.apk.tmp
+                    mv /srv/tingle/app/dev/latest.apk.tmp /srv/tingle/app/dev/latest.apk
+                    echo "개발 APK 공개: $(git rev-parse --short HEAD) ($(du -h /srv/tingle/app/dev/latest.apk | cut -f1))"
+                  '''
+                }
+              }
             }
           }
         }
