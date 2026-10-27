@@ -1,10 +1,12 @@
 ## 최종 1차 통신 명세
 
+> 2026-10-27 참조 정리: 아래 v0.1.92/v0.1.81 링크는 작성 당시 기준으로 고정했다. 현재 제품 기준은 [MVP 명세](../../specifications/functional-spec-mvp.md)와 [상세 명세](../../specifications/functional-spec-v3.md)이며, 본 계약의 후속 합의 반영·실제 기기 검증은 별도다. 이번 변경은 링크 정리이며 통신 계약 구현 완료를 뜻하지 않는다.
+
 작성: 김종무(IOT) / S15P31E106-37 / 2026-10-20
 
 화면 기능·초기화 정책 보완: 2026-10-21 / S15P31E106-90 — 사용자 요청과 Figma 확인 내용 반영, FE·BE 검토 전.
 
-MR 필수 피드백·최신 정책 반영 및 재검토: 2026-10-22. 기준은 [가입·매칭 정책 v0.1.92](../matching/profile-policy-v1.md) §4.1·4.2·5와 [기능 명세 v0.1.81](../../specifications/functional-spec-v1.md)의 KEY-01~06·MAT-03·05·PRO-03이다. 기존 활성 키링 한 개안은 최신 정책의 복수 동시 사용으로 대체한다.
+MR 필수 피드백·최신 정책 반영 및 재검토: 2026-10-22. 기준은 [가입·매칭 정책 v0.1.92](https://lab.ssafy.com/s15-final/S15P31E106/-/blob/c4c8131dc4ee09481880a98ee5b0842705e4886b/docs/contracts/matching/profile-policy-v1.md) §4.1·4.2·5와 [기능 명세 v0.1.81](https://lab.ssafy.com/s15-final/S15P31E106/-/blob/c4c8131dc4ee09481880a98ee5b0842705e4886b/docs/specifications/functional-spec-v1.md)의 KEY-01~06·MAT-03·05·PRO-03이다. 기존 활성 키링 한 개안은 최신 정책의 복수 동시 사용으로 대체한다.
 
 2차 피드백과 추가사항을 정리한 1차 초안이다. 세부 필드와 구현 방법은 실제 테스트와 팀 회의를 통해 보완한다. 현재 적용 기준은 이 상단의 「최종 1차 통신 명세」이며, 하단의 이전 메모·피드백은 참고 기록으로 보존한다.
 

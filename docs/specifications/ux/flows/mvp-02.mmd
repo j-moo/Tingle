@@ -1,0 +1,63 @@
+flowchart LR
+  start(["최초 가입·미완료 복귀"])
+  terms["가입 약관"]
+  choose[/"필수·선택 동의"/]
+  accepted{"필수 동의 저장 성공?"}
+  termsError["누락·변경·실패 안내"]
+  keyring["키링 등록·구매 안내"]
+  has{"등록할 키링 있음?"}
+  buy["구매 경로·등록 대기"]
+  pair["권한·탐색·귀속 확인"]
+  paired{"소유 등록 성공?"}
+  pairError["등록 오류·재시도"]
+  profile["본인 프로필"]
+  input[/"정보 입력·초안 저장"/]
+  valid{"필수값·연령 적합?"}
+  fix["필드 오류 안내"]
+  confirm[/"생년월일·성별 최종 확인"/]
+  registered["프로필 등록 완료 확인"]
+  survey["03 성향테스트"]
+  prefs["희망 나이 설정"]
+  prefInput[/"범위·상관없음 선택"/]
+  sync["기기별 동기화"]
+  ready{"매칭 준비 확인?"}
+  syncWait["미연결·실패·재시도"]
+  home(["홈 진입"])
+  start --> terms
+  terms --> choose
+  choose --> accepted
+  accepted -->|"아니요"| termsError
+  termsError -->|"내용 재확인"| terms
+  accepted -->|"예"| keyring
+  keyring --> has
+  has -->|"없음"| buy
+  buy -.->|"키링 확보 후"| keyring
+  has -->|"있음"| pair
+  pair --> paired
+  paired -->|"아니요"| pairError
+  pairError -->|"재시도"| keyring
+  paired -->|"예"| profile
+  profile --> input
+  input --> valid
+  valid -->|"아니요"| fix
+  fix -->|"수정"| profile
+  valid -->|"예"| confirm
+  confirm -->|"최종 등록 성공"| registered
+  registered --> survey
+  survey -->|"최초 유효 계산 완료"| prefs
+  prefs --> prefInput
+  prefInput -->|"저장 성공"| sync
+  sync --> ready
+  ready -->|"아니요"| syncWait
+  syncWait -->|"연결·재시도"| sync
+  ready -->|"예"| home
+classDef screen fill:#A0F4CD,stroke:#53B78E
+class terms,termsError,keyring,buy,pairError,profile,fix,survey,prefs,sync,syncWait screen
+classDef action fill:#E2E5E3,stroke:#8D9891
+class pair,registered action
+classDef decision fill:#ECFBF4,stroke:#53B78E
+class accepted,has,paired,valid,ready decision
+classDef input fill:#E2E5E3,stroke:#8D9891
+class choose,input,confirm,prefInput input
+classDef terminal fill:#F5F6F5,stroke:#8D9891
+class start,home terminal
