@@ -92,9 +92,12 @@ pnpm build
             gitlabCommitStatus(name: 'app') {
               // Android SDK 는 처음 한 번 볼륨에 받고, 필요한 플랫폼·빌드 도구는 AGP 가 알아서 내려받는다.
               // 메모리: gradle.properties 기본값(4G + Kotlin 데몬 3G)은 서버에 크므로 Kotlin 을 gradle 안에서 돌리고 3G 로 줄인다.
-              // master 머지는 release APK 를 Credentials 의 서명 키(tingle-release-key · tingle-release-password)로 만든다. 그 밖은 debug.
+              // develop · master 머지는 공개할 APK 를 팀 서명 키(Credentials tingle-release-key · tingle-release-password)로 찍는다 — master 는 release, develop 은 debug.
+              // 디버그 키는 빌드 컨테이너마다 새로 생겨 매번 서명이 달라지므로 덮어 설치가 안 된다. MR 검사는 키 없이 debug.
               script {
-                def release = env.gitlabActionType == 'PUSH' && env.gitlabSourceBranch == 'master'
+                def apkDir = [develop: '/srv/tingle/app/dev', master: '/srv/tingle/app'][env.gitlabSourceBranch]
+                def publish = env.gitlabActionType == 'PUSH' && apkDir
+                def release = publish && env.gitlabSourceBranch == 'master'
                 def build = {
                   inDocker('eclipse-temurin:21-jdk', 'front/app', '-v tingle-ci-gradle-app:/root/.gradle -v tingle-ci-android:/opt/android-sdk -e ANDROID_HOME=/opt/android-sdk -e APK_TASK -e TINGLE_KEYSTORE -e TINGLE_KEYSTORE_PASSWORD', '''
 if [ ! -x "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" ]; then
@@ -107,18 +110,16 @@ yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null 
 sh gradlew check :androidApp:$APK_TASK --no-daemon -Dorg.gradle.jvmargs=-Xmx3g -Pkotlin.compiler.execution.strategy=in-process
 ''')
                 }
-                if (release) {
-                  withEnv(['APK_TASK=assembleRelease']) {
+                if (publish) {
+                  withEnv(["APK_TASK=${release ? 'assembleRelease' : 'assembleDebug'}"]) {
                     withCredentials([file(credentialsId: 'tingle-release-key', variable: 'TINGLE_KEYSTORE'), string(credentialsId: 'tingle-release-password', variable: 'TINGLE_KEYSTORE_PASSWORD')]) { build() }
                   }
                 } else {
                   withEnv(['APK_TASK=assembleDebug']) { build() }
                 }
-                // develop · master 머지면 APK 를 공개한다: develop → https://도메인/app/dev/latest.apk, master → /app/latest.apk (nginx /app/ → /srv/tingle/app).
-                // 앱이 바뀐 커밋에서만 갱신된다.
-                def apkDir = [develop: '/srv/tingle/app/dev', master: '/srv/tingle/app'][env.gitlabSourceBranch]
+                // 공개: develop → https://도메인/app/dev/latest.apk, master → /app/latest.apk (nginx /app/ → /srv/tingle/app). 앱이 바뀐 커밋에서만 갱신된다.
                 def apk = release ? 'release/androidApp-release.apk' : 'debug/androidApp-debug.apk'
-                if (env.gitlabActionType == 'PUSH' && apkDir) {
+                if (publish) {
                   sh """
                     mkdir -p ${apkDir}
                     cp front/app/androidApp/build/outputs/apk/${apk} ${apkDir}/latest.apk.tmp
