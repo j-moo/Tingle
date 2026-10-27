@@ -87,6 +87,15 @@ server {
         proxy_pass http://$up;
     }
 
+    # 앱 설치 파일 — 개발 APK 는 Jenkins 가 develop 머지 때 /srv/tingle/app/dev/latest.apk 로 쓴다
+    location /app/ {
+        alias /srv/tingle/app/;
+        types {
+            application/vnd.android.package-archive apk;
+        }
+        add_header Cache-Control no-cache; # 같은 이름으로 덮어쓰므로 항상 새로 확인
+    }
+
     # Jenkins 는 --prefix=/jenkins 로 떠서 접두사를 그대로 넘긴다
     location /jenkins/ {
         set $up jenkins:8080;

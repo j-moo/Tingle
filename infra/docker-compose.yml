@@ -16,6 +16,7 @@ services:
       - /etc/letsencrypt:/etc/letsencrypt:ro
       - /var/www/certbot:/var/www/certbot:ro # certbot webroot 갱신 경로
       - /srv/tingle/nginx-state:/etc/nginx/state:ro # 블루-그린 운영 색 (infra/deploy-bluegreen.sh 가 씀)
+      - /srv/tingle/app:/srv/tingle/app:ro # /app/ 앱 설치 파일 (Jenkins 가 씀)
     depends_on:
       - web
       - web-dev
