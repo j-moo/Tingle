@@ -10,6 +10,7 @@ while true; do
     echo '# TYPE tingle_container_memory_bytes gauge'
     echo '# TYPE tingle_container_cpu_seconds_total counter'
     docker ps --no-trunc --format '{{.ID}} {{.Names}}' | while read -r id name; do
+      case $name in tingle-*) ;; *) continue ;; esac # Jenkins 검사용 임시 컨테이너(이름 무작위)는 뺀다
       d=/sys/fs/cgroup/system.slice/docker-$id.scope
       [ -r "$d/memory.current" ] || continue
       mem=$(awk -v cur="$(cat "$d/memory.current")" '$1 == "inactive_file" { print cur - $2 }' "$d/memory.stat")
