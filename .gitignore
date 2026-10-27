@@ -20,3 +20,7 @@ __pycache__/
 # 빌드 결과·실행 로그
 build/
 *.log
+
+# 가상 키링에서 내보낸 실제 시험 데이터 (어느 폴더에 복사해도 제외)
+keyring-received-*.json
+keyring-lab-*.json
