@@ -102,15 +102,17 @@ fi
 yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null || true
 sh gradlew check :androidApp:assembleDebug --no-daemon -Dorg.gradle.jvmargs=-Xmx3g -Pkotlin.compiler.execution.strategy=in-process
 ''')
-              // develop 머지면 개발 APK 를 https://도메인/app/dev/latest.apk 로 공개한다 (nginx /app/ → /srv/tingle/app). 앱이 바뀐 커밋에서만 갱신된다.
+              // develop · master 머지면 APK 를 공개한다: develop → https://도메인/app/dev/latest.apk, master → /app/latest.apk (nginx /app/ → /srv/tingle/app).
+              // 앱이 바뀐 커밋에서만 갱신된다. ponytail: master 도 아직 디버그 서명 APK — 서명 키가 정해지면 master 는 assembleRelease + Credentials 서명으로 바꾼다 (그때 기존 설치본은 지우고 다시 설치).
               script {
-                if (env.gitlabActionType == 'PUSH' && env.gitlabSourceBranch == 'develop') {
-                  sh '''
-                    mkdir -p /srv/tingle/app/dev
-                    cp front/app/androidApp/build/outputs/apk/debug/androidApp-debug.apk /srv/tingle/app/dev/latest.apk.tmp
-                    mv /srv/tingle/app/dev/latest.apk.tmp /srv/tingle/app/dev/latest.apk
-                    echo "개발 APK 공개: $(git rev-parse --short HEAD) ($(du -h /srv/tingle/app/dev/latest.apk | cut -f1))"
-                  '''
+                def apkDir = [develop: '/srv/tingle/app/dev', master: '/srv/tingle/app'][env.gitlabSourceBranch]
+                if (env.gitlabActionType == 'PUSH' && apkDir) {
+                  sh """
+                    mkdir -p ${apkDir}
+                    cp front/app/androidApp/build/outputs/apk/debug/androidApp-debug.apk ${apkDir}/latest.apk.tmp
+                    mv ${apkDir}/latest.apk.tmp ${apkDir}/latest.apk
+                    echo "APK 공개 (${env.gitlabSourceBranch}): \$(git rev-parse --short HEAD) (\$(du -h ${apkDir}/latest.apk | cut -f1))"
+                  """
                 }
               }
             }
