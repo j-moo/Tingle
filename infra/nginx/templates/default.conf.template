@@ -39,11 +39,15 @@ server {
     client_max_body_size 20m;
     access_log /var/log/nginx/access.log tingle;
 
+    # 공통 헤더. location 에 proxy_set_header 를 하나라도 쓰면 여기 값이 상속되지 않으므로 WebSocket 헤더도 여기서 함께 넘긴다
+    # (일반 요청은 $connection_upgrade 가 close). 2026-10-27 Grafana 가 Host 를 grafana:3000 으로 받아 "origin not allowed" 로 로그인 실패한 원인.
     proxy_http_version 1.1;
     proxy_set_header Host              $host;
     proxy_set_header X-Real-IP         $remote_addr;
     proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
     proxy_set_header X-Forwarded-Proto https;
+    proxy_set_header Upgrade           $http_upgrade;
+    proxy_set_header Connection        $connection_upgrade;
 
     # 운영 — back 은 블루-그린. 상태 파일(infra/deploy-bluegreen.sh 가 씀)이 있으면 그 색, 없으면 blue
     location /api/ {
@@ -55,8 +59,6 @@ server {
         set $up back-blue:8080;
         include /etc/nginx/state/back*.conf;
         proxy_pass http://$up;
-        proxy_set_header Upgrade    $http_upgrade;
-        proxy_set_header Connection $connection_upgrade;
         proxy_read_timeout 3600s;
     }
     location / {
@@ -77,8 +79,6 @@ server {
         set $up back-dev:8080;
         rewrite ^/dev(/.*)$ $1 break;
         proxy_pass http://$up;
-        proxy_set_header Upgrade    $http_upgrade;
-        proxy_set_header Connection $connection_upgrade;
         proxy_read_timeout 3600s;
     }
     location /dev/ {
@@ -103,12 +103,10 @@ server {
         proxy_request_buffering off;
     }
 
-    # Grafana 는 /grafana/ 하위 경로로 떠서(GF_SERVER_SERVE_FROM_SUB_PATH) 접두사를 그대로 넘긴다. 실시간 갱신은 WebSocket
+    # Grafana 는 /grafana/ 하위 경로로 떠서(GF_SERVER_SERVE_FROM_SUB_PATH) 접두사를 그대로 넘긴다
     location /grafana/ {
         set $up grafana:3000;
         proxy_pass http://$up;
-        proxy_set_header Upgrade    $http_upgrade;
-        proxy_set_header Connection $connection_upgrade;
     }
 }
 
