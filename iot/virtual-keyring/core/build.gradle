@@ -1,0 +1,51 @@
+plugins {
+	id 'java-library'
+}
+
+java {
+	sourceCompatibility = JavaVersion.VERSION_17
+	targetCompatibility = JavaVersion.VERSION_17
+}
+
+tasks.withType(JavaCompile).configureEach {
+	options.encoding = 'UTF-8'
+}
+
+tasks.register('verifyCore', JavaExec) {
+	dependsOn testClasses
+	classpath = sourceSets.test.runtimeClasspath
+	mainClass = 'com.e106.keyring.core.CoreTest'
+}
+
+tasks.named('check') { dependsOn verifyCore }
+
+tasks.register('verifyContract', JavaExec) {
+	dependsOn testClasses
+	classpath = sourceSets.test.runtimeClasspath
+	mainClass = 'com.e106.keyring.core.ContractTest'
+}
+
+tasks.named('verifyCore') { dependsOn verifyContract }
+
+tasks.register('verifyMultiDevice', JavaExec) {
+	dependsOn testClasses
+	classpath = sourceSets.test.runtimeClasspath
+	mainClass = 'com.e106.keyring.core.MultiDeviceTest'
+}
+
+tasks.named('verifyCore') { dependsOn verifyMultiDevice }
+
+tasks.register('verifyIndependent', JavaExec) {
+	dependsOn testClasses
+	classpath = sourceSets.test.runtimeClasspath
+	mainClass = 'com.e106.keyring.core.IndependentTest'
+}
+
+tasks.named('verifyCore') { dependsOn verifyIndependent }
+
+// This suite has an executable entry point instead of JUnit annotations.
+// Keep normal test/check commands wired to the same assertions.
+tasks.named('test') {
+	dependsOn verifyCore
+	failOnNoDiscoveredTests = false
+}

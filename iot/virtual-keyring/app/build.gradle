@@ -1,0 +1,28 @@
+plugins {
+	id 'com.android.application'
+}
+
+android {
+	namespace 'com.e106.keyring.lab'
+	compileSdk 36
+	defaultConfig {
+		applicationId 'com.e106.keyring.lab'
+		minSdk 26
+		targetSdk 36
+		versionCode 13
+		versionName '0.13.0-lab'
+		testInstrumentationRunner 'com.e106.keyring.lab.StorageInstrumentation'
+	}
+	compileOptions {
+		sourceCompatibility JavaVersion.VERSION_17
+		targetCompatibility JavaVersion.VERSION_17
+	}
+	lint {
+		abortOnError true
+		checkReleaseBuilds false
+	}
+}
+
+dependencies {
+	implementation project(':core')
+}
