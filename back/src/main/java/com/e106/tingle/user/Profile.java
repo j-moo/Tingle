@@ -36,30 +36,30 @@ public class Profile {
 	@Id
 	private Long userId;
 
-	@Column(length = 20)
+	@Column(columnDefinition = "text")
 	private String nickname;
 
 	// 대소문자를 무시한 중복 금지용(John Smith = john smith). 닉네임이 없는 초안은 null 이라 유니크에 걸리지 않는다.
-	@Column(length = 20, unique = true)
+	@Column(columnDefinition = "text", unique = true)
 	private String nicknameKey;
 
 	private LocalDate birthDate;
 
 	@Enumerated(EnumType.STRING)
-	@Column(length = 10)
+	@Column(columnDefinition = "text")
 	private Gender gender;
 
 	@Enumerated(EnumType.STRING)
-	@Column(length = 20)
+	@Column(columnDefinition = "text")
 	private SmokingStatus smokingStatus;
 
-	// 가장 긴 코드 SPECIAL_OCCASIONS_ONLY 가 22자다.
+	// 저장은 text, 허용 전송 코드는 DrinkingFrequency 에서 제한한다.
 	@Enumerated(EnumType.STRING)
-	@Column(length = 30)
+	@Column(columnDefinition = "text")
 	private DrinkingFrequency drinkingFrequency;
 
 	@Enumerated(EnumType.STRING)
-	@Column(length = 20)
+	@Column(columnDefinition = "text")
 	private Religion religion;
 
 	// 200자는 보이는 글자 기준이라 이모지가 섞이면 varchar(200)을 넘을 수 있어 text 로 둔다.
@@ -67,6 +67,7 @@ public class Profile {
 	private String introduction;
 
 	// 현재 프로필 사진의 저장소 주소. 사진 API가 생기면 채운다.
+	@Column(columnDefinition = "text")
 	private String imageUrl;
 
 	// "프로필 등록 완료"에 성공한 시각. 이때부터 생년월일·성별이 고정되고 프로필 단계를 마친다(기능 명세 PRO-01).

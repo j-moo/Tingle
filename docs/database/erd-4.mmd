@@ -1,5 +1,7 @@
 erDiagram
     chat_rooms {
+        uuid public_id
+        bigint source_proposal_id
         bigint chat_room_id PK
         bigint pair_id
         timestamptz created_at
@@ -16,6 +18,9 @@ erDiagram
         timestamptz end_notice_acked_at
     }
     chat_messages {
+        uuid public_id
+        uuid request_key
+        text request_hash
         bigint message_id PK
         bigint chat_room_id
         bigint sender_id
@@ -23,6 +28,20 @@ erDiagram
         bigint sequence
         text body
         timestamptz created_at
+    }
+    chat_message_reads {
+        bigint receipt_id PK
+        bigint message_id
+        bigint user_id
+        timestamptz read_at
+    }
+    chat_safety_notices {
+        bigint notice_id PK
+        bigint chat_room_id
+        bigint user_id
+        text notice_type
+        timestamptz sent_at
+        timestamptz displayed_at
     }
     user_blocks {
         bigint block_id PK
@@ -39,6 +58,11 @@ erDiagram
         text detail
         text status
         timestamptz created_at
+        timestamptz resolved_at
+    }
+    report_messages {
+        bigint report_id PK
+        bigint message_id PK
     }
     ai_results {
         bigint job_id PK
@@ -51,6 +75,9 @@ erDiagram
         timestamptz created_at
     }
     push_installations {
+        uuid session_family_id
+        uuid binding_id
+        timestamptz linked_at
         bigint installation_id PK
         uuid client_installation_id
         bigint user_id
@@ -59,6 +86,7 @@ erDiagram
         timestamptz updated_at
     }
     background_jobs {
+        uuid public_id
         bigint job_id PK
         text job_type
         text business_key
@@ -74,3 +102,5 @@ erDiagram
     chat_rooms ||--o{ chat_members : "chat_room_id logical"
     chat_rooms ||--o{ chat_messages : "chat_room_id logical"
     background_jobs ||--o{ ai_results : "job_id logical"
+    reports ||--o{ report_messages : "report_id logical"
+    chat_rooms ||--o{ chat_safety_notices : "chat_room_id logical"

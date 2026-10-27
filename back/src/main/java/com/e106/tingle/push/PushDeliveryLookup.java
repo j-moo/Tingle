@@ -4,6 +4,7 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Clock;
+import java.time.Instant;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Objects;
@@ -42,7 +43,8 @@ public class PushDeliveryLookup {
 		return installations.findByUserIdOrderById(userId).stream()
 			.filter(installation -> eligible(installation, kind))
 			.map(installation -> new Candidate(installation.getId(), userId, installation.getClientInstallationId(),
-				kind, fingerprint(installation.getTokenCiphertext())))
+				kind, fingerprint(installation.getTokenCiphertext()), installation.getBindingId(),
+				installation.getLinkedAt()))
 			.toList();
 	}
 
@@ -59,6 +61,18 @@ public class PushDeliveryLookup {
 				installation.getClientInstallationId(), installation.getPlatform(),
 				encryption.decrypt(installation.getClientInstallationId(), candidate.userId(),
 					installation.getTokenCiphertext())));
+	}
+
+	@Transactional
+	public boolean invalidate(Candidate candidate) {
+		return installations.findById(candidate.internalId())
+			.filter(installation -> installation.getUserId() == candidate.userId()
+				&& installation.getClientInstallationId().equals(candidate.installationId())
+				&& Objects.equals(installation.getBindingId(), candidate.bindingId())
+				&& fingerprint(installation.getTokenCiphertext()).equals(candidate.fingerprint()))
+			.map(installation -> installations.removeRejected(installation.getId(),
+				candidate.bindingId(), installation.getTokenCiphertext()) == 1)
+			.orElse(false);
 	}
 
 	private boolean activeUser(long userId) {
@@ -82,6 +96,6 @@ public class PushDeliveryLookup {
 	}
 
 	public record Candidate(long internalId, long userId, UUID installationId,
-		PushNotificationKind kind, String fingerprint) {
+		PushNotificationKind kind, String fingerprint, UUID bindingId, Instant linkedAt) {
 	}
 }

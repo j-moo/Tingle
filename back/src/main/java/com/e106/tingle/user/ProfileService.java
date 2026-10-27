@@ -42,7 +42,7 @@ public class ProfileService {
 	/**
 	 * PATCH 의미로 저장한다. 보낸 필드만 바꾸고(생략 = 유지), 선택 항목은 null 로 비울 수 있다.
 	 * 필수 항목(닉네임·성별·생년월일·흡연·음주)은 null 로 비울 수 없다(INVALID_REQUEST).
-	 * 가입을 마친 뒤 성별·생년월일은 바꿀 수 없다(PROFILE_FIELD_LOCKED, 정책 POL-02 결정 전까지).
+	 * 프로필 completed 이후 성별·생년월일은 다른 값으로 바꿀 수 없다(PROFILE_FIELD_LOCKED).
 	 */
 	@Transactional
 	public ProfileResponse patch(long userId, JsonNode body) {

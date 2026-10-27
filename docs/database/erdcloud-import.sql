@@ -5,10 +5,13 @@
 CREATE TABLE app_users (
     user_id bigint NOT NULL,
     provider text NOT NULL,
-    provider_subject text NOT NULL,
+    provider_subject text,
     status text NOT NULL,
     created_at timestamptz NOT NULL,
     signup_completed_at timestamptz,
+    email text,
+    withdrawal_due_at timestamptz,
+    withdrawn_at timestamptz,
     CONSTRAINT pk_app_users PRIMARY KEY (user_id),
     CONSTRAINT uq_app_users_1 UNIQUE (provider, provider_subject)
 );
@@ -34,7 +37,17 @@ CREATE TABLE user_consents (
     document_version text NOT NULL,
     agreed boolean NOT NULL,
     recorded_at timestamptz NOT NULL,
+    locale text,
+    consent_screen text,
     CONSTRAINT pk_user_consents PRIMARY KEY (consent_id)
+);
+
+-- 탈퇴 후 72시간 재가입 제한(회원 데이터와 분리)
+CREATE TABLE signup_restrictions (
+    provider text NOT NULL,
+    subject_hmac bytea NOT NULL,
+    rejoin_allowed_at timestamptz NOT NULL,
+    CONSTRAINT pk_signup_restrictions PRIMARY KEY (provider, subject_hmac)
 );
 
 -- 회원 프로필과 사진 한 장
@@ -49,6 +62,7 @@ CREATE TABLE profiles (
     religion text,
     introduction text,
     image_url text,
+    completed_at timestamptz,
     CONSTRAINT pk_profiles PRIMARY KEY (user_id),
     CONSTRAINT uq_profiles_1 UNIQUE (nickname_key)
 );
@@ -72,6 +86,8 @@ CREATE TABLE keyrings (
     serial_hash bytea NOT NULL,
     verification_key_ref text NOT NULL,
     firmware_version text NOT NULL,
+    blocked_at timestamptz,
+    block_reason text,
     CONSTRAINT pk_keyrings PRIMARY KEY (device_id),
     CONSTRAINT uq_keyrings_1 UNIQUE (serial_hash),
     CONSTRAINT uq_keyrings_public_device_id UNIQUE (public_device_id)
@@ -112,6 +128,7 @@ CREATE TABLE keyring_sync_runs (
 
 -- 설문 회차·문항별 응답·재개 상태
 CREATE TABLE survey_responses (
+    public_id uuid NOT NULL DEFAULT gen_random_uuid(),
     response_id bigint NOT NULL,
     user_id bigint NOT NULL,
     version_code text NOT NULL,
@@ -119,6 +136,7 @@ CREATE TABLE survey_responses (
     response_json jsonb NOT NULL,
     revision bigint NOT NULL,
     completed_at timestamptz,
+    CONSTRAINT uq_survey_responses_public_id UNIQUE (public_id),
     CONSTRAINT pk_survey_responses PRIMARY KEY (response_id),
     CONSTRAINT uq_survey_responses_1 UNIQUE (user_id, client_request_id)
 );
@@ -153,6 +171,7 @@ CREATE TABLE user_pairs (
     user_high bigint NOT NULL,
     declined_until timestamptz,
     declined_proposal_id bigint,
+    rematch_banned_at timestamptz,
     CONSTRAINT pk_user_pairs PRIMARY KEY (pair_id),
     CONSTRAINT uq_user_pairs_1 UNIQUE (user_low, user_high)
 );
@@ -197,6 +216,10 @@ CREATE TABLE match_proposals (
     high_decided_at timestamptz,
     low_request_key uuid,
     high_request_key uuid,
+    low_cancelled_at timestamptz,
+    high_cancelled_at timestamptz,
+    low_cancel_request_key uuid,
+    high_cancel_request_key uuid,
     status text NOT NULL,
     created_at timestamptz NOT NULL,
     expires_at timestamptz NOT NULL,
@@ -209,6 +232,8 @@ CREATE TABLE match_proposals (
 CREATE TABLE chat_rooms (
     chat_room_id bigint NOT NULL,
     pair_id bigint NOT NULL,
+    public_id uuid NOT NULL,
+    source_proposal_id bigint NOT NULL,
     created_at timestamptz NOT NULL,
     expires_at timestamptz NOT NULL,
     closed_at timestamptz,
@@ -232,6 +257,9 @@ CREATE TABLE chat_messages (
     message_id bigint NOT NULL,
     chat_room_id bigint NOT NULL,
     sender_id bigint NOT NULL,
+    public_id uuid NOT NULL,
+    request_key uuid NOT NULL,
+    request_hash text NOT NULL,
     client_message_id uuid NOT NULL,
     sequence bigint NOT NULL,
     body text NOT NULL,
@@ -261,7 +289,16 @@ CREATE TABLE reports (
     detail text,
     status text NOT NULL,
     created_at timestamptz NOT NULL,
-    CONSTRAINT pk_reports PRIMARY KEY (report_id)
+    resolved_at timestamptz,
+    CONSTRAINT pk_reports PRIMARY KEY (report_id),
+    CONSTRAINT uq_reports_1 UNIQUE (reporter_id, target_type, target_id, reason)
+);
+
+-- 신고에 첨부한 메시지(0~5개)
+CREATE TABLE report_messages (
+    report_id bigint NOT NULL,
+    message_id bigint NOT NULL,
+    CONSTRAINT pk_report_messages PRIMARY KEY (report_id, message_id)
 );
 
 -- AI 생성 결과와 위험 분석 결과 한 곳
@@ -282,9 +319,11 @@ CREATE TABLE push_installations (
     installation_id bigint NOT NULL,
     client_installation_id uuid NOT NULL,
     user_id bigint NOT NULL,
-    login_family_id uuid,
     platform text NOT NULL,
     token_ciphertext text NOT NULL,
+    login_family_id uuid,
+    binding_id uuid,
+    linked_at timestamptz,
     updated_at timestamptz NOT NULL,
     CONSTRAINT pk_push_installations PRIMARY KEY (installation_id),
     CONSTRAINT uq_push_installations_1 UNIQUE (client_installation_id)
@@ -293,6 +332,7 @@ CREATE TABLE push_installations (
 -- 안내·AI·삭제의 실제 예약·실패 재시도
 CREATE TABLE background_jobs (
     job_id bigint NOT NULL,
+    public_id uuid,
     job_type text NOT NULL,
     business_key text NOT NULL,
     payload jsonb NOT NULL,
@@ -305,4 +345,27 @@ CREATE TABLE background_jobs (
     finished_at timestamptz,
     CONSTRAINT pk_background_jobs PRIMARY KEY (job_id),
     CONSTRAINT uq_background_jobs_1 UNIQUE (business_key)
+);
+
+
+-- 실제 화면에 표시한 수신 메시지별 읽음; 다운로드/순서 위치만으로 추정하지 않음
+CREATE TABLE chat_message_reads (
+    receipt_id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
+    message_id bigint NOT NULL,
+    user_id bigint NOT NULL,
+    read_at timestamptz NOT NULL,
+    CONSTRAINT pk_chat_message_reads PRIMARY KEY (receipt_id),
+    CONSTRAINT uq_chat_message_reads_1 UNIQUE (message_id, user_id)
+);
+
+-- AI 위험 안내 배너의 사용자별 1회 표시
+CREATE TABLE chat_safety_notices (
+    notice_id bigint NOT NULL,
+    chat_room_id bigint NOT NULL,
+    user_id bigint NOT NULL,
+    notice_type text NOT NULL,
+    sent_at timestamptz NOT NULL,
+    displayed_at timestamptz,
+    CONSTRAINT pk_chat_safety_notices PRIMARY KEY (notice_id),
+    CONSTRAINT uq_chat_safety_notices_1 UNIQUE (chat_room_id, user_id, notice_type)
 );

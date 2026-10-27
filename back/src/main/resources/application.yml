@@ -67,9 +67,9 @@ app:
     # 구매처를 임의 지정하지 않는다. 미설정이면 API는 purchaseUrl:null을 반환한다.
     purchase-url: ${KEYRING_PURCHASE_URL:}
 
-  push:
-    # JWT와 별도인 Base64 32바이트 키. 누락 시 등록은 503, 본인 설치 해제는 허용한다.
-    token-encryption-key: ${PUSH_TOKEN_ENCRYPTION_KEY:}
+  # 새 설문 회차가 쓰는 설문 버전 (resources/survey/questionnaires/{버전}.json). 바꿔도 이미 시작한 회차는 원래 버전을 쓴다.
+  survey:
+    current-version: SIS-Q-1.1-100
 
   # 현재 적용 중인 동의 항목. 화면 제목은 messages.properties 의 agreement.{type}.title. 항목 추가·삭제, 버전 변경은 여기만 고치면 된다 (코드·앱 수정 불필요).
   # 버전을 올리면 이전 버전으로 들어온 가입 요청은 AGREEMENT_VERSION_OUTDATED 가 된다. 목록 순서대로 화면에 표시된다.
@@ -91,3 +91,12 @@ app:
       - type: ADULT
         version: "2026-10-19"
         required: true
+
+  push:
+    enabled: ${PUSH_ENABLED:false}
+    project-id: ${FIREBASE_PROJECT_ID:}
+    # JWT와 별도인 Base64 32바이트 키. 누락 시 등록은 503, 본인 설치 해제는 허용한다.
+    token-encryption-key: ${PUSH_TOKEN_ENCRYPTION_KEY:}
+  chat-notices:
+    scheduling-enabled: true
+    poll-ms: 15000

@@ -6,14 +6,19 @@
 CREATE TABLE app_users (
     user_id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
     provider text NOT NULL,
-    provider_subject text NOT NULL,
+    provider_subject text,
     status text NOT NULL,
     created_at timestamptz NOT NULL,
     signup_completed_at timestamptz,
     email text,
+    withdrawal_due_at timestamptz,
+    withdrawn_at timestamptz,
     CONSTRAINT pk_app_users PRIMARY KEY (user_id),
     CONSTRAINT uq_app_users_1 UNIQUE (provider, provider_subject),
-    CONSTRAINT ck_app_users_1 CHECK (status IN ('ACTIVE','SUSPENDED','WITHDRAWN'))
+    CONSTRAINT ck_app_users_1 CHECK (status IN ('ACTIVE','SUSPENDED','WITHDRAWAL_PENDING','WITHDRAWN')),
+    CONSTRAINT ck_app_users_2 CHECK ((status='WITHDRAWAL_PENDING')=(withdrawal_due_at IS NOT NULL)),
+    CONSTRAINT ck_app_users_3 CHECK (withdrawn_at IS NULL OR status='WITHDRAWN'),
+    CONSTRAINT ck_app_users_4 CHECK (status='WITHDRAWN' OR provider_subject IS NOT NULL)
 );
 
 -- 리프레시 토큰·회전 계열; 인증 담당과 조정할 초안
@@ -38,7 +43,17 @@ CREATE TABLE user_consents (
     document_version text NOT NULL,
     agreed boolean NOT NULL,
     recorded_at timestamptz NOT NULL,
+    locale text,
+    consent_screen text,
     CONSTRAINT pk_user_consents PRIMARY KEY (consent_id)
+);
+
+-- 탈퇴 후 72시간 재가입 제한(회원 데이터와 분리)
+CREATE TABLE signup_restrictions (
+    provider text NOT NULL,
+    subject_hmac bytea NOT NULL,
+    rejoin_allowed_at timestamptz NOT NULL,
+    CONSTRAINT pk_signup_restrictions PRIMARY KEY (provider, subject_hmac)
 );
 
 -- 회원 프로필과 사진 한 장
@@ -65,7 +80,7 @@ CREATE TABLE matching_settings (
     desired_genders text[],
     age_min integer,
     age_max integer,
-    matching_enabled boolean NOT NULL DEFAULT false,
+    matching_enabled boolean NOT NULL DEFAULT true,
     require_partner_photo boolean NOT NULL DEFAULT false,
     settings_version bigint NOT NULL DEFAULT 0,
     CONSTRAINT pk_matching_settings PRIMARY KEY (user_id),
@@ -81,9 +96,13 @@ CREATE TABLE keyrings (
     serial_hash bytea NOT NULL,
     verification_key_ref text NOT NULL,
     firmware_version text NOT NULL,
+    blocked_at timestamptz,
+    block_reason text,
     CONSTRAINT pk_keyrings PRIMARY KEY (device_id),
     CONSTRAINT uq_keyrings_1 UNIQUE (serial_hash),
-    CONSTRAINT uq_keyrings_public_device_id UNIQUE (public_device_id)
+    CONSTRAINT uq_keyrings_public_device_id UNIQUE (public_device_id),
+    CONSTRAINT ck_keyrings_1 CHECK ((blocked_at IS NULL)=(block_reason IS NULL)),
+    CONSTRAINT ck_keyrings_2 CHECK (block_reason IS NULL OR block_reason IN ('LOST','AGE_DEADLINE'))
 );
 
 -- 기기 소유 연결 이력
@@ -123,6 +142,7 @@ CREATE TABLE keyring_sync_runs (
 
 -- 설문 회차·문항별 응답·재개 상태
 CREATE TABLE survey_responses (
+    public_id uuid NOT NULL DEFAULT gen_random_uuid(),
     response_id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
     user_id bigint NOT NULL,
     version_code text NOT NULL,
@@ -130,6 +150,7 @@ CREATE TABLE survey_responses (
     response_json jsonb NOT NULL,
     revision bigint NOT NULL DEFAULT 0,
     completed_at timestamptz,
+    CONSTRAINT uq_survey_responses_public_id UNIQUE (public_id),
     CONSTRAINT pk_survey_responses PRIMARY KEY (response_id),
     CONSTRAINT uq_survey_responses_1 UNIQUE (user_id, client_request_id),
     CONSTRAINT ck_survey_responses_1 CHECK (revision>=0),
@@ -170,6 +191,7 @@ CREATE TABLE user_pairs (
     user_high bigint NOT NULL,
     declined_until timestamptz,
     declined_proposal_id bigint,
+    rematch_banned_at timestamptz,
     CONSTRAINT pk_user_pairs PRIMARY KEY (pair_id),
     CONSTRAINT uq_user_pairs_1 UNIQUE (user_low, user_high),
     CONSTRAINT ck_user_pairs_1 CHECK (user_low<user_high),
@@ -220,6 +242,10 @@ CREATE TABLE match_proposals (
     high_decided_at timestamptz,
     low_request_key uuid,
     high_request_key uuid,
+    low_cancelled_at timestamptz,
+    high_cancelled_at timestamptz,
+    low_cancel_request_key uuid,
+    high_cancel_request_key uuid,
     status text NOT NULL,
     created_at timestamptz NOT NULL,
     expires_at timestamptz NOT NULL,
@@ -230,25 +256,33 @@ CREATE TABLE match_proposals (
     CONSTRAINT ck_match_proposals_2 CHECK (high_decision IS NULL OR high_decision IN ('ACCEPT','DECLINE')),
     CONSTRAINT ck_match_proposals_3 CHECK ((low_decision IS NULL)=(low_decided_at IS NULL)),
     CONSTRAINT ck_match_proposals_4 CHECK ((high_decision IS NULL)=(high_decided_at IS NULL)),
-    CONSTRAINT ck_match_proposals_5 CHECK (status IN ('PENDING','WAITING_FOR_OTHER','ACCEPTED','REJECTED','EXPIRED')),
+    CONSTRAINT ck_match_proposals_5 CHECK (status IN ('PENDING','WAITING_FOR_OTHER','ACCEPTED','REJECTED','EXPIRED','CLOSED')),
     CONSTRAINT ck_match_proposals_6 CHECK (expires_at=created_at+interval '24 hours'),
     CONSTRAINT ck_match_proposals_7 CHECK ((low_decision IS NULL)=(low_request_key IS NULL)),
-    CONSTRAINT ck_match_proposals_8 CHECK ((high_decision IS NULL)=(high_request_key IS NULL))
+    CONSTRAINT ck_match_proposals_8 CHECK ((high_decision IS NULL)=(high_request_key IS NULL)),
+    CONSTRAINT ck_match_proposals_9 CHECK ((low_cancelled_at IS NULL)=(low_cancel_request_key IS NULL)),
+    CONSTRAINT ck_match_proposals_10 CHECK ((high_cancelled_at IS NULL)=(high_cancel_request_key IS NULL)),
+    CONSTRAINT ck_match_proposals_11 CHECK (low_cancelled_at IS NULL OR (low_decision='ACCEPT' AND low_cancelled_at>=low_decided_at)),
+    CONSTRAINT ck_match_proposals_12 CHECK (high_cancelled_at IS NULL OR (high_decision='ACCEPT' AND high_cancelled_at>=high_decided_at))
 );
 
 -- 7일 대화와 종료 후 30일 보관
 CREATE TABLE chat_rooms (
     chat_room_id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
     pair_id bigint NOT NULL,
+    public_id uuid NOT NULL,
+    source_proposal_id bigint NOT NULL,
     created_at timestamptz NOT NULL,
     expires_at timestamptz NOT NULL,
     closed_at timestamptz,
     delete_at timestamptz,
     last_sequence bigint NOT NULL DEFAULT 0,
     CONSTRAINT pk_chat_rooms PRIMARY KEY (chat_room_id),
+    CONSTRAINT uq_chat_rooms_public_id UNIQUE (public_id),
+    CONSTRAINT uq_chat_rooms_source UNIQUE (source_proposal_id),
     CONSTRAINT ck_chat_rooms_1 CHECK (expires_at=created_at+interval '168 hours'),
     CONSTRAINT ck_chat_rooms_2 CHECK (last_sequence>=0),
-    CONSTRAINT ck_chat_rooms_3 CHECK ((closed_at IS NULL AND delete_at IS NULL) OR (closed_at IS NOT NULL AND delete_at=closed_at+interval '720 hours'))
+    CONSTRAINT ck_chat_rooms_3 CHECK ((closed_at IS NULL AND delete_at IS NULL) OR (closed_at IS NOT NULL AND delete_at>closed_at))
 );
 
 -- 참여자별 입장·두 안내의 표시 확인
@@ -266,11 +300,16 @@ CREATE TABLE chat_messages (
     message_id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
     chat_room_id bigint NOT NULL,
     sender_id bigint NOT NULL,
+    public_id uuid NOT NULL,
+    request_key uuid NOT NULL,
+    request_hash text NOT NULL,
     client_message_id uuid NOT NULL,
     sequence bigint NOT NULL,
     body text NOT NULL,
     created_at timestamptz NOT NULL,
     CONSTRAINT pk_chat_messages PRIMARY KEY (message_id),
+    CONSTRAINT uq_chat_messages_public_id UNIQUE (public_id),
+    CONSTRAINT uq_chat_messages_request UNIQUE (sender_id, request_key),
     CONSTRAINT uq_chat_messages_1 UNIQUE (chat_room_id, sender_id, client_message_id),
     CONSTRAINT uq_chat_messages_2 UNIQUE (chat_room_id, sequence),
     CONSTRAINT ck_chat_messages_1 CHECK (sequence>0)
@@ -297,9 +336,19 @@ CREATE TABLE reports (
     detail text,
     status text NOT NULL,
     created_at timestamptz NOT NULL,
+    resolved_at timestamptz,
     CONSTRAINT pk_reports PRIMARY KEY (report_id),
     CONSTRAINT ck_reports_1 CHECK (target_type IN ('PROPOSAL','CHAT_ROOM','MESSAGE')),
-    CONSTRAINT ck_reports_2 CHECK (status IN ('RECEIVED','REVIEWING','RESOLVED'))
+    CONSTRAINT uq_reports_1 UNIQUE (reporter_id, target_type, target_id, reason),
+    CONSTRAINT ck_reports_2 CHECK (status IN ('RECEIVED','REVIEWING','RESOLVED','DISMISSED')),
+    CONSTRAINT ck_reports_3 CHECK ((status IN ('RESOLVED','DISMISSED'))=(resolved_at IS NOT NULL))
+);
+
+-- 신고에 첨부한 메시지(0~5개)
+CREATE TABLE report_messages (
+    report_id bigint NOT NULL,
+    message_id bigint NOT NULL,
+    CONSTRAINT pk_report_messages PRIMARY KEY (report_id, message_id)
 );
 
 -- AI 생성 결과와 위험 분석 결과 한 곳
@@ -322,9 +371,11 @@ CREATE TABLE push_installations (
     installation_id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
     client_installation_id uuid NOT NULL,
     user_id bigint NOT NULL,
-    login_family_id uuid,
     platform text NOT NULL,
     token_ciphertext text NOT NULL,
+    login_family_id uuid,
+    binding_id uuid,
+    linked_at timestamptz,
     updated_at timestamptz NOT NULL,
     CONSTRAINT pk_push_installations PRIMARY KEY (installation_id),
     CONSTRAINT uq_push_installations_1 UNIQUE (client_installation_id),
@@ -334,6 +385,7 @@ CREATE TABLE push_installations (
 -- 안내·AI·삭제의 실제 예약·실패 재시도
 CREATE TABLE background_jobs (
     job_id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
+    public_id uuid,
     job_type text NOT NULL,
     business_key text NOT NULL,
     payload jsonb NOT NULL,
@@ -346,7 +398,8 @@ CREATE TABLE background_jobs (
     finished_at timestamptz,
     CONSTRAINT pk_background_jobs PRIMARY KEY (job_id),
     CONSTRAINT uq_background_jobs_1 UNIQUE (business_key),
-    CONSTRAINT ck_background_jobs_1 CHECK (job_type IN ('CHAT_CREATE','FIRST_ENTRY','END_NOTICE','AI','CHAT_DELETE')),
+    CONSTRAINT uq_background_jobs_public_id UNIQUE (public_id),
+    CONSTRAINT ck_background_jobs_1 CHECK (job_type IN ('CHAT_CREATE','FIRST_ENTRY','END_NOTICE','AI','CHAT_DELETE','WITHDRAWAL','USER_DATA_DELETE')),
     CONSTRAINT ck_background_jobs_2 CHECK (status IN ('PENDING','RUNNING','SUCCEEDED','FAILED','CANCELLED')),
     CONSTRAINT ck_background_jobs_3 CHECK (attempts>=0),
     CONSTRAINT ck_background_jobs_4 CHECK ((status='RUNNING')=(lease_until IS NOT NULL)),
@@ -373,3 +426,26 @@ CREATE INDEX ix_background_jobs_2 ON background_jobs (lease_until) WHERE status=
 
 CREATE INDEX ix_match_proposals_low_request ON match_proposals (low_request_key);
 CREATE INDEX ix_match_proposals_high_request ON match_proposals (high_request_key);
+
+
+-- 실제 화면에 표시한 수신 메시지별 읽음; 다운로드/순서 위치만으로 추정하지 않음
+CREATE TABLE chat_message_reads (
+    receipt_id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
+    message_id bigint NOT NULL,
+    user_id bigint NOT NULL,
+    read_at timestamptz NOT NULL,
+    CONSTRAINT pk_chat_message_reads PRIMARY KEY (receipt_id),
+    CONSTRAINT uq_chat_message_reads_1 UNIQUE (message_id, user_id)
+);
+
+-- AI 위험 안내 배너의 사용자별 1회 표시
+CREATE TABLE chat_safety_notices (
+    notice_id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
+    chat_room_id bigint NOT NULL,
+    user_id bigint NOT NULL,
+    notice_type text NOT NULL,
+    sent_at timestamptz NOT NULL,
+    displayed_at timestamptz,
+    CONSTRAINT pk_chat_safety_notices PRIMARY KEY (notice_id),
+    CONSTRAINT uq_chat_safety_notices_1 UNIQUE (chat_room_id, user_id, notice_type)
+);

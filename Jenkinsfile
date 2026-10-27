@@ -4,11 +4,11 @@
 
 def PARTS = [back: 'back/', ai: 'ai-server/', web: 'front/web/', app: 'front/app/', iot: 'iot/']
 // 브랜치별 배포: 코드를 dir 에 풀고 services(infra/docker-compose.yml 서비스 이름 → 응답 확인 주소)만 다시 띄운다.
-// bluegreen 은 infra/deploy-bluegreen.sh 로 무중단 전환한다 (운영 back). ai 가 생기면 여기에 더한다 (확인 주소 /health).
-// back 확인은 Actuator — DB 연결까지 정상이면 200, 아니면 503.
+// bluegreen 은 infra/deploy-bluegreen.sh 로 무중단 전환한다 (운영 back · ai). ai 를 먼저 바꾼다 — 새 ai 가 옛 back 요청도 받아야 한다 (인프라 계획 7절).
+// back 확인은 Actuator — DB 연결까지 정상이면 200, 아니면 503. ai 는 /health.
 def DEPLOY = [
-  develop: [dir: '/srv/tingle/dev', services: ['web-dev': 'http://web-dev/', 'back-dev': 'http://back-dev:8080/actuator/health']],
-  master: [dir: '/srv/tingle/repo', services: ['web': 'http://web/'], bluegreen: ['back'], backup: true],
+  develop: [dir: '/srv/tingle/dev', services: ['web-dev': 'http://web-dev/', 'back-dev': 'http://back-dev:8080/actuator/health', 'ai-dev': 'http://ai-dev:8000/health']],
+  master: [dir: '/srv/tingle/repo', services: ['web': 'http://web/'], bluegreen: ['ai', 'back'], backup: true],
 ]
 def changed = []
 
@@ -102,6 +102,19 @@ fi
 yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null || true
 sh gradlew check :androidApp:assembleDebug --no-daemon -Dorg.gradle.jvmargs=-Xmx3g -Pkotlin.compiler.execution.strategy=in-process
 ''')
+              // develop · master 머지면 APK 를 공개한다: develop → https://도메인/app/dev/latest.apk, master → /app/latest.apk (nginx /app/ → /srv/tingle/app).
+              // 앱이 바뀐 커밋에서만 갱신된다. ponytail: master 도 아직 디버그 서명 APK — 서명 키가 정해지면 master 는 assembleRelease + Credentials 서명으로 바꾼다 (그때 기존 설치본은 지우고 다시 설치).
+              script {
+                def apkDir = [develop: '/srv/tingle/app/dev', master: '/srv/tingle/app'][env.gitlabSourceBranch]
+                if (env.gitlabActionType == 'PUSH' && apkDir) {
+                  sh """
+                    mkdir -p ${apkDir}
+                    cp front/app/androidApp/build/outputs/apk/debug/androidApp-debug.apk ${apkDir}/latest.apk.tmp
+                    mv ${apkDir}/latest.apk.tmp ${apkDir}/latest.apk
+                    echo "APK 공개 (${env.gitlabSourceBranch}): \$(git rev-parse --short HEAD) (\$(du -h ${apkDir}/latest.apk | cut -f1))"
+                  """
+                }
+              }
             }
           }
         }
@@ -137,8 +150,29 @@ sh gradlew check :androidApp:assembleDebug --no-daemon -Dorg.gradle.jvmargs=-Xmx
               echo "PUSH_TOKEN_ENCRYPTION_KEY=$PUSH_TOKEN_ENCRYPTION_KEY"
             } > /srv/tingle/app.env.tmp
             mv /srv/tingle/app.env.tmp /srv/tingle/app.env
+            mkdir -p /srv/tingle/secrets # back 이 읽기 전용으로 마운트한다. 없으면 docker 가 root 소유로 만들어 Jenkins 가 못 쓴다
             echo "app.env 갱신: $(grep -c = /srv/tingle/app.env)개 값"
           '''
+        }
+        // 푸시(FCM, -141): Credentials 에 tingle-fcm(Secret file, Firebase 서비스 계정 JSON)이 있으면 키 파일을 쓰고 푸시를 켠다.
+        // 없으면 꺼진 채로 둔다 (back 은 PUSH_ENABLED=false 면 키를 읽지 않는다). 프로젝트 ID 는 JSON 의 project_id 를 쓴다.
+        script {
+          try {
+            withCredentials([file(credentialsId: 'tingle-fcm', variable: 'FCM_JSON')]) {
+              sh '''
+                set +x
+                umask 077
+                cp "$FCM_JSON" /srv/tingle/secrets/fcm.json.tmp
+                mv /srv/tingle/secrets/fcm.json.tmp /srv/tingle/secrets/fcm.json
+                project=$(sed -n 's/.*"project_id": *"\\([^"]*\\)".*/\\1/p' /srv/tingle/secrets/fcm.json)
+                printf 'PUSH_ENABLED=true\\nFIREBASE_PROJECT_ID=%s\\n' "$project" >> /srv/tingle/app.env
+                echo "FCM 키 반영 (Firebase 프로젝트 $project) — 푸시 켬"
+              '''
+            }
+          } catch (e) {
+            if (!(e.message ?: '').contains('tingle-fcm')) { throw e }
+            echo 'FCM 키 없음 (Credentials tingle-fcm) — 푸시 꺼짐'
+          }
         }
       }
     }

@@ -32,11 +32,11 @@ public class UserConsent {
 	private Long userId;
 
 	// 동의 항목 종류 (app.agreement.items 의 type)
-	@Column(nullable = false, length = 30)
+	@Column(nullable = false, columnDefinition = "text")
 	private String consentType;
 
 	// 사용자가 확인한 정확한 문서 버전
-	@Column(nullable = false, length = 30)
+	@Column(nullable = false, columnDefinition = "text")
 	private String documentVersion;
 
 	@Column(nullable = false)

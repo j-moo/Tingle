@@ -1,12 +1,14 @@
 # 키링 데이터 구조 — 서버 ERD·내부 저장·송수신
 
+> 2026-10-27 참조 정리: 아래 v0.1.92/v0.1.81 링크는 작성 당시 기준으로 고정했다. 현재 제품 기준은 [MVP 명세](../../specifications/functional-spec-mvp.md)와 [상세 명세](../../specifications/functional-spec-v3.md)이며, 본 계약의 후속 합의 반영·실제 기기 검증은 별도다. 이번 변경은 링크 정리이며 통신 계약 구현 완료를 뜻하지 않는다.
+
 v0.5.1-draft / 2026-10-22 / S15P31E106-90 / 작성: 김종무(IOT)
 
 통신 계약과 화면설계를 기준으로 꼭 필요한 정보를 정리한 전달 초안이다. 컬럼명은 전달용 표기이며, 실제 테이블·API 이름은 BE와 맞춘다. 검사 결과 `{}`의 세부 필드는 추후 협의한다.
 
 영향 파트는 FE·BE·IOT이며 성향 데이터는 AI와도 협의한다. 화면 기능에 필요한 기기 정보와 앱 상태를 보완했으며 FE·BE 검토 전이다. 상세 형식은 [통신 계약](./protocol-contract-v1.md)과 함께 맞춘다.
 
-최신 기준은 [가입·매칭 정책 v0.1.92](../matching/profile-policy-v1.md) §4.1·4.2·5, [기능 명세 v0.1.81](../../specifications/functional-spec-v1.md)의 KEY-01~06·MAT-03·05·PRO-03과 [OpenAPI](../api/openapi.json)다. 기존 활성 한 개안은 복수 기기 동시 사용으로 대체하고, 서비스 초기화 완료 조건과 만남 당시 업로드 정보 보존을 보완했다.
+최신 기준은 [가입·매칭 정책 v0.1.92](https://lab.ssafy.com/s15-final/S15P31E106/-/blob/c4c8131dc4ee09481880a98ee5b0842705e4886b/docs/contracts/matching/profile-policy-v1.md) §4.1·4.2·5, [기능 명세 v0.1.81](https://lab.ssafy.com/s15-final/S15P31E106/-/blob/c4c8131dc4ee09481880a98ee5b0842705e4886b/docs/specifications/functional-spec-v1.md)의 KEY-01~06·MAT-03·05·PRO-03과 [OpenAPI](../api/openapi.json)다. 기존 활성 한 개안은 복수 기기 동시 사용으로 대체하고, 서비스 초기화 완료 조건과 만남 당시 업로드 정보 보존을 보완했다.
 
 ## 서버 ERD에 전달할 내용
 

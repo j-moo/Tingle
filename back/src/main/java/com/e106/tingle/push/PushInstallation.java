@@ -41,6 +41,10 @@ public class PushInstallation {
 	// null인 기존 행은 로그인 중이라고 가정하지 않는다. 새 제안 알림 연결만 유지한다.
 	private UUID loginFamilyId;
 
+	private UUID bindingId;
+
+	private Instant linkedAt;
+
 	@Enumerated(EnumType.STRING)
 	@Column(nullable = false, columnDefinition = "text")
 	private PushPlatform platform;

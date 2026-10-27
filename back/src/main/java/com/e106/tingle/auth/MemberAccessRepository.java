@@ -13,6 +13,8 @@ import org.springframework.core.env.Environment;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
+import com.e106.tingle.agreement.AgreementPolicy;
+
 @Repository
 public class MemberAccessRepository {
 	private final JdbcTemplate jdbc;
@@ -34,7 +36,8 @@ public class MemberAccessRepository {
 		return Boolean.TRUE.equals(jdbc.queryForObject("select exists (select 1 from survey_responses sr "
 			+ "join analysis_results a on a.response_id=sr.response_id where sr.user_id=? "
 			+ "and sr.completed_at is not null and a.outcome='SUCCEEDED' "
-			+ "and sr.response_id=(select max(response_id) from survey_responses where user_id=?))",
+			+ "and sr.response_id=(select max(response_id) from survey_responses "
+			+ "where user_id=? and completed_at is not null))",
 			Boolean.class, userId, userId));
 	}
 
@@ -48,9 +51,27 @@ public class MemberAccessRepository {
 	}
 
 	public boolean ready(long userId, Instant now) {
+		if (!requiredAgreementsSatisfied(userId, signupCompleted(userId))) {
+			return false;
+		}
+		return matchingDataReady(userId, now);
+	}
+
+	// 기존 제안 응답은 기기·현재 설문/설정 반영과 분리한다. 회원 행 잠금 후 최신 상태를 검사한다.
+	public boolean canRespondToProposal(long userId) {
+		return signupCompleted(userId) && requiredAgreementsSatisfied(userId, true);
+	}
+
+	public boolean signupCompleted(long userId) {
+		return Boolean.TRUE.equals(jdbc.queryForObject("select exists (select 1 from app_users "
+			+ "where user_id=? and status='ACTIVE' and signup_completed_at is not null)", Boolean.class, userId));
+	}
+
+	private boolean requiredAgreementsSatisfied(long userId, boolean signupCompleted) {
 		List<AgreementItem> items = Binder.get(environment)
 			.bind("app.agreement.items", Bindable.listOf(AgreementItem.class)).orElse(List.of());
-		List<AgreementItem> required = items.stream().filter(AgreementItem::required).toList();
+		List<AgreementItem> required = items.stream()
+			.filter(item -> AgreementPolicy.requiredForAccess(item.type(), item.required(), signupCompleted)).toList();
 		if (required.isEmpty()) {
 			return false;
 		}
@@ -62,6 +83,10 @@ public class MemberAccessRepository {
 				return false;
 			}
 		}
+		return true;
+	}
+
+	private boolean matchingDataReady(long userId, Instant now) {
 		LocalDate adultBefore = now.atZone(ZoneId.of("Asia/Seoul")).toLocalDate().minusYears(19);
 		return Boolean.TRUE.equals(jdbc.queryForObject("select exists (select 1 from app_users u "
 			+ "join profiles p on p.user_id=u.user_id join matching_settings m on m.user_id=u.user_id "
@@ -74,7 +99,8 @@ public class MemberAccessRepository {
 			+ "join keyring_sync_runs k on k.snapshot_id=ss.snapshot_id "
 			+ "join keyring_bindings b on b.binding_id=k.binding_id "
 			+ "where sr.user_id=u.user_id and sr.completed_at is not null and a.outcome='SUCCEEDED' "
-			+ "and sr.response_id=(select max(response_id) from survey_responses where user_id=u.user_id) "
+			+ "and sr.response_id=(select max(response_id) from survey_responses "
+			+ "where user_id=u.user_id and completed_at is not null) "
 			+ "and ss.user_id=u.user_id and ss.settings_version=m.settings_version "
 			+ "and b.user_id=u.user_id and b.unbound_at is null "
 			+ "and k.status='ACKNOWLEDGED' and k.acknowledged_at is not null))",
