@@ -97,9 +97,10 @@ server {
         proxy_pass http://$up;
     }
 
-    # 운영 APK — Jenkins 가 master 머지 때 /srv/tingle/app/latest.apk 로 쓴다. 옛 개발 APK 주소(/app/dev/)는 /dev/app/ 으로 보낸다 (2026-10-28 변경)
+    # 운영 APK — Jenkins 가 master 머지 때 /srv/tingle/app/latest.apk 로 쓴다.
+    # 개발 APK 폴더도 /srv/tingle/app/dev/ 안에 있어 /app/ 로 열리므로 막는다 — 개발 APK 주소는 /dev/app/ 만 쓴다 (2026-10-28)
     location /app/dev/ {
-        rewrite ^/app/dev/(.*)$ /dev/app/$1 permanent;
+        return 404;
     }
     location /app/ {
         alias /srv/tingle/app/;
