@@ -1,0 +1,22 @@
+{
+  "date": "2026-10-28",
+  "scope": "Existing Notion survey six pages: request/response tables and examples",
+  "channel": "in-app browser",
+  "pages": [
+    {"operation": "GET /api/surveys/current", "pageId": "3ffc91ccb66080a0bdf9d1217395bd21", "jsonExamples": 1, "numericIdCells": 0, "savedReadback": true, "reloadedAfterEdit": true},
+    {"operation": "POST /api/survey-sessions", "pageId": "3ffc91ccb66080c8b0b8dca0bf35eba7", "jsonExamples": 2, "numericIdCells": 1, "savedReadback": true},
+    {"operation": "GET /api/survey-sessions/{sessionId}", "pageId": "3ffc91ccb66080148b01d1d88e13be07", "jsonExamples": 1, "numericIdCells": 2, "savedReadback": true},
+    {"operation": "GET /api/survey-sessions/{sessionId}/questionnaire", "pageId": "3ffc91ccb66080d49d2dcc5cf2c87b8f", "jsonExamples": 1, "numericIdCells": 1, "savedReadback": true, "reloadedAfterEdit": true},
+    {"operation": "PUT /api/survey-sessions/{sessionId}/answers/{questionId}", "pageId": "3ffc91ccb66080b8af6be8d59468163f", "jsonExamples": 2, "numericIdCells": 2, "savedReadback": true},
+    {"operation": "DELETE /api/survey-sessions/{sessionId}/answers/{questionId}", "pageId": "3ffc91ccb66080b3a521cd781f623d7f", "jsonExamples": 1, "numericIdCells": 2, "savedReadback": true, "reloadedAfterEdit": true}
+  ],
+  "checks": {
+    "jsonExampleCount": 8,
+    "jsonParseErrors": 0,
+    "exampleConsistencyErrors": 0,
+    "legacyTableReferenceCount": 0,
+    "legacyFieldsInExamples": [],
+    "checked": ["numeric sessionId", "surveyVersion max 30", "questionId max 50", "scalar answer value max 100 when stored as text", "answeredCount equals answers length", "completedAt and status consistency", "SHA-256 example format", "definition excerpt explicitly labelled"]
+  },
+  "limitations": ["Documentation readback only", "Server implementation and team approval not verified", "Local OpenAPI schema reconciliation remains separate", "Zero-filled contentHash is an example placeholder"]
+}

@@ -1,61 +1,112 @@
+%% ERD21 design view; relationships are logical, not production FK proof.
 erDiagram
-    app_users {
-        bigint user_id PK
-        text provider
-        text provider_subject
-        text status
-        timestamptz created_at
+    users {
+        bigint id PK
+        auth_provider provider
+        varchar provider_user_id
+        varchar email
         timestamptz signup_completed_at
-        timestamptz withdrawal_due_at
-        timestamptz withdrawn_at
+        timestamptz agreed_at
+        boolean is_operator
     }
-    refresh_tokens {
-        bigint token_id PK
+    refresh_token {
+        bigint id PK
         bigint user_id
         uuid family_id
         bytea token_hash
         timestamptz expires_at
         timestamptz used_at
         timestamptz revoked_at
+        varchar device_name
+        timestamptz last_used_at
     }
-    user_consents {
-        bigint consent_id PK
+    push_installation {
+        bigint id PK
+        uuid client_installation_id
         bigint user_id
-        text consent_type
-        text document_version
-        boolean agreed
-        timestamptz recorded_at
-        text locale
-        text consent_screen
+        uuid login_family_id
+        device_platform platform
+        text token_ciphertext
+        timestamptz updated_at
     }
-    signup_restrictions {
-        text provider PK
-        bytea subject_hmac PK
-        timestamptz rejoin_allowed_at
-    }
-    profiles {
+    profile {
         bigint user_id PK
-        text nickname
-        text nickname_key
+        varchar nickname
         date birth_date
-        text gender
-        text smoking_status
-        text drinking_frequency
-        text religion
+        gender gender
+        smoking_status smoking_status
+        drinking_frequency drinking_frequency
+        religion religion
         text introduction
-        text image_url
+        varchar photo_url
         timestamptz completed_at
+        bigint active_personality_id
     }
-    matching_settings {
+    matching_preference {
         bigint user_id PK
-        text_array desired_genders
-        integer age_min
-        integer age_max
         boolean matching_enabled
-        boolean require_partner_photo
+        boolean age_preference_mode
+        integer min_age
+        integer max_age
+        boolean photo_required
+    }
+    user_setting {
+        bigint user_id PK
+        boolean vibration_enabled
+        boolean led_enabled
         bigint settings_version
     }
-    app_users ||--o{ refresh_tokens : "user_id logical"
-    app_users ||--o{ user_consents : "user_id logical"
-    app_users ||--o{ profiles : "user_id logical"
-    app_users ||--o{ matching_settings : "user_id logical"
+    keyring {
+        bigint id PK
+        varchar serial_number
+        varchar firmware_version
+        bigint owner_user_id
+        keyring_state state
+        bigint synced_settings_version
+        timestamptz synced_at
+    }
+    chat_participant {
+        bigint id PK
+    }
+    matching {
+        bigint id PK
+    }
+    matching_participant {
+        bigint matching_id PK
+        bigint user_id PK
+    }
+    operator_audit {
+        bigint id PK
+    }
+    personality {
+        bigint id PK
+    }
+    service_case {
+        bigint id PK
+    }
+    service_case_history {
+        bigint id PK
+    }
+    survey {
+        bigint id PK
+    }
+    users ||--o{ refresh_token : "user_id"
+    users o|--o{ push_installation : "user_id"
+    users o|--o{ operator_audit : "operator_id"
+    users ||--o{ matching : "user_low_id"
+    users ||--o{ matching : "user_high_id"
+    users o|--o{ keyring : "owner_user_id"
+    users ||--o{ survey : "user_id"
+    users ||--o| profile : "user_id"
+    users ||--o| user_setting : "user_id"
+    users ||--o| matching_preference : "user_id"
+    personality o|--o{ profile : "active_personality_id"
+    users ||--o{ service_case : "requester_user_id"
+    users o|--o{ service_case : "assigned_operator_id"
+    users ||--o{ matching_participant : "user_id"
+    keyring o|--o{ matching_participant : "encounter_keyring_id"
+    users o|--o{ chat_participant : "user_id"
+    keyring o|--o{ service_case : "lost_keyring_id"
+    users o|--o{ service_case_history : "actor_user_id"
+    users o|--o{ operator_audit : "target_user_id"
+    keyring o|--o{ operator_audit : "target_keyring_id"
