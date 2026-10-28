@@ -9,7 +9,7 @@ import org.springframework.data.jpa.repository.Query;
 
 public interface SurveyResponseRepository extends JpaRepository<SurveyResponse, Long> {
 
-	Optional<SurveyResponse> findByPublicIdAndUserId(UUID publicId, Long userId);
+	Optional<SurveyResponse> findByIdAndUserId(Long id, Long userId);
 
 	Optional<SurveyResponse> findByUserIdAndClientRequestId(Long userId, UUID clientRequestId);
 

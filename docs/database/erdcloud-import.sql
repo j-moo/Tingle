@@ -1,4 +1,4 @@
--- ERD21 design source / 2026-10-28 / 21 tables, 151 columns
+-- ERD21 source + approved preservation amendments / 2026-10-28 / 22 tables, 176 columns
 -- Documentation only. Not a migration. Not executed against any database.
 -- ERDCloud diagram import syntax; mixed display types, not executable PostgreSQL DDL.
 -- FOREIGN KEY statements below describe diagram edges, not approved physical FK policy.
@@ -23,9 +23,23 @@ CREATE TABLE `users` (
     `signup_completed_at` timestamptz COMMENT '가입 완료 시각 — 최초 가입을 모두 완료한 시각',
     `agreed_at` timestamptz COMMENT '일괄 동의 시각 — 첫 화면에서 약관·개인정보·AI 분석 등에 한 번에 동의한 시각. 비어 있거나 새 약관 시행일보다 이르면 재동의 받음',
     `is_operator` boolean NOT NULL DEFAULT false COMMENT '운영자 여부 — 운영 화면 접근 가능 여부. 일반 회원은 false',
+    `status` text NOT NULL COMMENT '회원 상태 — 기존 ACTIVE / WITHDRAWAL_PENDING / SUSPENDED / WITHDRAWN 값을 보존. 정지·탈퇴 계정을 ACTIVE로 추정하지 않음',
+    `created_at` timestamptz NOT NULL COMMENT '회원 생성 시각 — 최초 소셜 로그인 때 서버가 확정한 기존 시각을 보존. 이관 시 현재 시각으로 바꾸지 않음',
     CONSTRAINT `pk_users` PRIMARY KEY (`id`)
 );
 CREATE UNIQUE INDEX `uq_users_provider_account` ON `users` (`provider`, `provider_user_id`);
+
+-- 항목별 동의·철회 이력 — 문서 버전·참거짓·기록 시각을 수정 없이 누적하며 users.agreed_at으로 합치거나 과거 일괄 동의를 추정하지 않음
+CREATE TABLE `user_consents` (
+    `consent_id` bigint NOT NULL COMMENT '동의 이력 ID — 기존 기록 순서와 번호를 보존',
+    `user_id` bigint NOT NULL COMMENT '동의한 회원 ID — users.id',
+    `consent_type` text NOT NULL COMMENT '동의 항목 — 설정 파일에 정의된 약관·개인정보·AI 등 정확한 항목 코드',
+    `document_version` text NOT NULL COMMENT '사용자가 확인한 정확한 문서 버전 — 최신 버전으로 덮어쓰지 않음',
+    `agreed` boolean NOT NULL COMMENT '해당 항목 동의 여부 — 동의 true, 거절·철회 false. 선택 동의를 일괄 true로 추정하지 않음',
+    `recorded_at` timestamptz NOT NULL COMMENT '동의·거절·철회가 확정된 서버 시각 — 기존 시각 보존',
+    CONSTRAINT `pk_user_consents` PRIMARY KEY (`consent_id`)
+);
+CREATE INDEX `ix_user_consents_user` ON `user_consents` (`user_id`);
 
 -- 로그인 토큰(기기별)
 CREATE TABLE `refresh_token` (
@@ -43,12 +57,16 @@ CREATE TABLE `refresh_token` (
 );
 CREATE INDEX `ix_refresh_token_family` ON `refresh_token` (`family_id`);
 
+CREATE INDEX `ix_refresh_token_user` ON `refresh_token` (`user_id`);
+
 -- 푸시 알림 기기
 CREATE TABLE `push_installation` (
     `id` bigint NOT NULL COMMENT '설치 번호',
     `client_installation_id` uuid NOT NULL COMMENT '앱 설치 ID — 앱이 발급, 재설치 전까지 유지',
     `user_id` bigint COMMENT '연결된 회원 ID — 로그아웃하면 비움',
     `login_family_id` uuid COMMENT '연결된 로그인 기기 — refresh_token.family_id. 그 로그인이 끝나면 비움. 알림 기기 목록 기준',
+    `binding_id` uuid COMMENT '현재 수신 연결 세대 — 최초 연결·재연결 때 발급, 같은 family 토큰 교체에는 유지. linked_at과 함께 저장·해제하며 로그아웃 때 비움. 과거 누락 값 추정 금지',
+    `linked_at` timestamptz COMMENT '현재 연결 최초 확정 시각 — binding_id와 함께 저장·해제. 토큰 교체·재시도로 연장하지 않음',
     `platform` device_platform NOT NULL COMMENT '기기 종류 — ANDROID / IOS',
     `token_ciphertext` text NOT NULL COMMENT '푸시 토큰 — 암호화한 FCM 토큰',
     `updated_at` timestamptz NOT NULL COMMENT '마지막 갱신 시각',
@@ -88,6 +106,7 @@ CREATE TABLE `matching` (
     `status` matching_status NOT NULL COMMENT '매칭 상태 — WAITING(한쪽 기록 대기) / NOT_MATCHED / PENDING(제안 보냄) / ONE_ACCEPTED(한쪽만 수락) / ACCEPTED / REJECTED / EXPIRED / CLOSED. WAITING(한쪽 기록만)·NOT_MATCHED(대기 만료·검증 실패)는 다시 만나면 같은 줄을 WAITING으로 재사용. PENDING(제안) 이후는 영구 재매칭 금지. 같은 두 사람은 uq_matching_pair로 한 줄만',
     `proposed_at` timestamptz COMMENT '제안 시각 — 양쪽 만남 기록 검증 후 서버에서 제안 생성을 확정한 최초 시각. 푸시 발송·수신 시각이 아니다. 응답 기한 24시간의 기산점이며 재전송·알림 실패로 연장하지 않는다.',
     `raw_delete_at` timestamptz COMMENT '만남 원본 삭제 기한 — 제안 생성·대기 만료·최종 검증 불가 기준 시각부터 14일. 행은 남기고 matching_participant.encounter_*만 비운다. 이전 삭제 작업은 같은 matching.id만 보고 새 기록을 삭제하면 안 된다. 선점한 만남 세대·삭제 기한이 현재와 같을 때만 삭제해야 하며 세대 저장 방식은 합의 전이다.',
+    `legacy_state` jsonb COMMENT '기존 pair/proposal/encounter·제한·취소 전용 과거 증거. 최신 응답으로 덮어쓰지 않음',
     CONSTRAINT `pk_matching` PRIMARY KEY (`id`)
 );
 CREATE UNIQUE INDEX `uq_matching_pair` ON `matching` (`user_low_id`, `user_high_id`);
@@ -121,6 +140,7 @@ CREATE TABLE `chat_message` (
     `request_key` uuid NOT NULL COMMENT '중복 요청 방지 키 — 전송 요청의 Idempotency-Key. 기존 계약의 발신자 범위 중복 판정에 사용',
     `request_hash` bytea NOT NULL COMMENT '요청 내용 해시 — 정규화된 원문·요청 의미의 서버 계산 SHA-256. 원문 없이 다른 내용 재사용을 판정',
     `created_at` timestamptz NOT NULL COMMENT '메시지 저장 시각 — 최초 서버 저장 시각. 정상 재전송에 같은 값 반환',
+    `legacy_public_id` uuid COMMENT '과거 공개 메시지 UUID 보존. 현재 공개 ID는 chat_message.id',
     CONSTRAINT `pk_chat_message` PRIMARY KEY (`id`)
 );
 CREATE UNIQUE INDEX `uq_chat_message_seq` ON `chat_message` (`chat_id`, `seq`);
@@ -133,6 +153,11 @@ CREATE TABLE `survey` (
     `user_id` bigint NOT NULL COMMENT '회원 ID — 응답 소유 회원 ID',
     `survey_version` varchar(30) NOT NULL COMMENT '설문 버전 — 회차 시작 때 고정한 설문 버전 이름. 문항·보기 내용은 DB가 아니라 서버 설정 파일(survey/{버전}.json)에 있음',
     `completed_at` timestamptz COMMENT '설문 제출 시각 — 제출 완료 시각. NULL이면 진행 중이며 계산 성공과는 별개',
+    `client_request_id` uuid COMMENT '최초 생성 요청 키. 회원별 재시도는 같은 회차. 과거 미상은 NULL',
+    `revision` bigint NOT NULL DEFAULT 0 COMMENT '응답 동시성 증거. 기존 revision을 보존하고 임의 초기화하지 않음',
+    `legacy_public_id` uuid COMMENT '과거 공개 회차 UUID. 기존 값만 보존하고 신규 숫자 ID와 구분',
+    `response_context` jsonb COMMENT 'answers 외 원본 업무 문맥. 문항별 답변의 중복 저장이 아님',
+    `definition_snapshot` jsonb COMMENT '시작 시 검증한 불변 문항·manifest 증거. 과거 미상은 NULL',
     CONSTRAINT `pk_survey` PRIMARY KEY (`id`)
 );
 CREATE INDEX `ix_survey_user_version` ON `survey` (`user_id`, `survey_version`);
@@ -148,6 +173,9 @@ CREATE TABLE `chat` (
     `icebreakers` jsonb NOT NULL COMMENT 'AI 시작 질문 — AI 시작 질문 3개·버전과 상태 {status, attempts, nextRetryAt}. 실패 시 주기 작업이 재시도, 최종 실패면 서버 설정 파일의 기본 질문으로 대체. 질문 사용 없이 대화 가능',
     `ai_state` jsonb NOT NULL COMMENT 'AI 위험 분석 상태 — 마지막 분석한 메시지 순번·상태 {status, attempts, nextRetryAt}. 실패 시 주기 작업이 재시도. 미분석/실패를 안전으로 표시하지 않음',
     `retain_until` timestamptz COMMENT '신고 보관 기한 — 최초 신고 + 90일. 이 기한 전에는 탈퇴해도 방·메시지를 지우지 않고, 기한이 지나면 삭제',
+    `expires_at` timestamptz NOT NULL COMMENT '최초 이용 만료 시각. 생성+168시간 또는 검증한 기존 deadline. 재시도로 연장하지 않음',
+    `delete_at` timestamptz COMMENT '일반 삭제 예약 시각 보존. 신고 retain_until보다 먼저 삭제하지 않음',
+    `legacy_public_id` uuid COMMENT '과거 공개 방 UUID 보존. 현재 공개 ID는 chat.id',
     CONSTRAINT `pk_chat` PRIMARY KEY (`id`),
     CONSTRAINT `uq_chat_matching_id` UNIQUE (`matching_id`)
 );
@@ -202,6 +230,8 @@ CREATE TABLE `matching_participant` (
     `response` proposal_response COMMENT '제안 응답 — ACCEPTED(수락) / REJECTED(거절). NULL이면 아직 응답 안 함. 한 번 정하면 못 바꿈',
     `responded_at` timestamptz COMMENT '응답 시각 — 수락·거절을 누른 시각',
     `blocked_at` timestamptz COMMENT '차단 시각 — 이 사람이 상대를 차단한 시각. NULL이면 차단 안 함. 차단은 나가기와 구분',
+    `decision_request_key` uuid COMMENT '최초 응답 확정 키. 회원 범위 중복 사용 차단과 최초 선택·시각 보존',
+    `request_state` jsonb COMMENT '명령·재전송 receipt 및 구 취소 키/시각. 새 수락 취소 성공을 뜻하지 않음',
     CONSTRAINT `pk_matching_participant` PRIMARY KEY (`matching_id`, `user_id`)
 );
 CREATE INDEX `ix_matching_participant_user` ON `matching_participant` (`user_id`);
@@ -213,6 +243,8 @@ CREATE TABLE `chat_participant` (
     `user_id` bigint COMMENT '회원 ID — 이 참여자 회원. 신고 보관 중인 방에서 이 회원이 탈퇴하면 NULL로 비움(줄은 남겨 발신자 구분 유지)',
     `last_read_message_seq` bigint NOT NULL DEFAULT 0 COMMENT '마지막 실제 표시 순번 — 본인 화면에 정상 표시된 마지막 chat_message.seq. 새 수신 메시지는 이보다 큰 순번 중 발신 참여자가 본인이 아닌 메시지다. 상대에게 공개하지 않는다. 건너뛴 메시지를 잘못 확인하지 않도록 연속 표시 범위·ACK 계약은 별도 검증한다.',
     `left_at` timestamptz COMMENT '나간 시각 — 이 사람이 방을 나간 시각. NULL이면 아직 방에 있음',
+    `notice_state` jsonb NOT NULL DEFAULT '{}' COMMENT '일반안내·예약·최초ACK·선점·lease·재시도·설치별 전달 결과. AI 상태와 분리',
+    `read_state` jsonb NOT NULL DEFAULT '{}' COMMENT '본인 messageId별 최초 표시 시각·기존 receipt. 불연속 배치를 max(seq) 읽음으로 추정하지 않음',
     CONSTRAINT `pk_chat_participant` PRIMARY KEY (`id`)
 );
 CREATE UNIQUE INDEX `uq_chat_participant_member` ON `chat_participant` (`chat_id`, `user_id`);
@@ -256,7 +288,8 @@ CREATE TABLE `survey_answer` (
     `survey_id` bigint NOT NULL COMMENT '설문 회차 ID — survey.id',
     `question_id` varchar(50) NOT NULL COMMENT '문항 ID — 설문 파일에 있는 문항 번호(예: Q07)',
     `answer_value` varchar(100) NOT NULL COMMENT '고른 답 — 설문 파일의 보기 ID나 점수(예: 4). 설문 버전의 보기 목록으로 검증',
-    `answered_at` timestamptz NOT NULL COMMENT '답한 시각 — 같은 문항을 다시 고르면 값과 시각을 덮어씀',
+    `answered_at` timestamptz COMMENT '답한 시각 — 같은 문항을 다시 고르면 값과 시각을 덮어씀',
+    `answer_type` text COMMENT 'scalar 원래 형식 STRING/NUMBER/BOOLEAN/NULL. 증거 미상은 추정하지 않음',
     CONSTRAINT `pk_survey_answer` PRIMARY KEY (`survey_id`, `question_id`)
 );
 
@@ -329,3 +362,12 @@ ALTER TABLE `operator_audit` ADD CONSTRAINT `rel_operator_audit_target_user_id` 
 ALTER TABLE `operator_audit` ADD CONSTRAINT `rel_operator_audit_target_service_case_id` FOREIGN KEY (`target_service_case_id`) REFERENCES `service_case` (`id`);
 ALTER TABLE `operator_audit` ADD CONSTRAINT `rel_operator_audit_target_keyring_id` FOREIGN KEY (`target_keyring_id`) REFERENCES `keyring` (`id`);
 ALTER TABLE `operator_audit` ADD CONSTRAINT `rel_operator_audit_target_chat_report_id` FOREIGN KEY (`target_chat_report_id`) REFERENCES `chat_report` (`id`);
+ALTER TABLE `user_consents` ADD CONSTRAINT `rel_user_consents_user_id` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`);
+
+-- Approved domain preservation indexes; no shared DB execution.
+CREATE UNIQUE INDEX `uq_survey_user_request` ON `survey` (`user_id`, `client_request_id`);
+CREATE UNIQUE INDEX `uq_survey_legacy_public_id` ON `survey` (`legacy_public_id`);
+CREATE UNIQUE INDEX `uq_survey_draft` ON `survey` (`user_id`, `survey_version`) WHERE `completed_at` IS NULL;
+CREATE UNIQUE INDEX `uq_chat_legacy_public_id` ON `chat` (`legacy_public_id`);
+CREATE UNIQUE INDEX `uq_chat_message_legacy_public_id` ON `chat_message` (`legacy_public_id`);
+CREATE UNIQUE INDEX `uq_matching_participant_user_request` ON `matching_participant` (`user_id`, `decision_request_key`);

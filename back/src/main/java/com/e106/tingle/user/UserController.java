@@ -19,6 +19,7 @@ import tools.jackson.databind.JsonNode;
 
 /**
  * 가입 단계 조회, 본인 프로필, 닉네임 확인. 경로는 docs/contracts/api/auth.md 를 따른다.
+ * 경로의 {userId}가 로그인한 회원인지는 UserPathInterceptor 가 먼저 확인하므로 여기서는 토큰의 회원번호를 쓴다.
  */
 @RestController
 @RequiredArgsConstructor
@@ -27,21 +28,21 @@ public class UserController {
 	private final OnboardingService onboardingService;
 	private final ProfileService profileService;
 
-	@GetMapping("/api/v1/users/me/onboarding")
+	@GetMapping("/api/users/{userId}/onboarding")
 	@RequiresOnboarding(OnboardingStatus.AGREEMENT_REQUIRED)
 	public OnboardingDetailResponse onboarding(@AuthenticationPrincipal Jwt jwt) {
 		return onboardingService.detail(userId(jwt));
 	}
 
 	// ponytail: 키링 등록 API(B 담당) 전이라 프로필은 약관 동의 직후부터 허용한다. 키링 API가 생기면 PROFILE_REQUIRED 로 되돌린다.
-	@GetMapping("/api/v1/users/me/profile")
+	@GetMapping("/api/users/{userId}/profile")
 	@RequiresOnboarding(OnboardingStatus.KEYRING_REQUIRED)
 	public ProfileResponse getProfile(@AuthenticationPrincipal Jwt jwt) {
 		return profileService.get(userId(jwt));
 	}
 
 	// 생략과 null 을 구분해야 해서(PATCH) 정해진 DTO 대신 JSON 그대로 받는다.
-	@PatchMapping("/api/v1/users/me/profile")
+	@PatchMapping("/api/users/{userId}/profile")
 	@RequiresOnboarding(OnboardingStatus.KEYRING_REQUIRED)
 	public ProfileResponse patchProfile(@AuthenticationPrincipal Jwt jwt, @RequestBody JsonNode body) {
 		ProfileResponse profile = profileService.patch(userId(jwt), body);
@@ -50,14 +51,14 @@ public class UserController {
 	}
 
 	// 프로필 등록 완료(기능 명세 PRO-01). 다음 가입 단계를 돌려준다.
-	@PostMapping("/api/v1/users/me/profile/complete")
+	@PostMapping("/api/users/{userId}/profile/complete")
 	@RequiresOnboarding(OnboardingStatus.KEYRING_REQUIRED)
 	public OnboardingResponse completeProfile(@AuthenticationPrincipal Jwt jwt) {
 		profileService.register(userId(jwt));
 		return new OnboardingResponse(onboardingService.recordProgress(userId(jwt)));
 	}
 
-	@GetMapping("/api/v1/users/nickname-availability")
+	@GetMapping("/api/users/nickname-availability")
 	@RequiresOnboarding(OnboardingStatus.KEYRING_REQUIRED)
 	public NicknameAvailabilityResponse checkNickname(@AuthenticationPrincipal Jwt jwt,
 		@RequestParam String nickname) {

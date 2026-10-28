@@ -28,8 +28,8 @@ import com.e106.tingle.chat.notice.ChatNoticeService;
 import com.e106.tingle.global.error.BusinessException;
 import com.e106.tingle.global.error.ErrorCode;
 import com.e106.tingle.proposal.MatchProposal;
-import com.e106.tingle.proposal.PairRelation;
-import com.e106.tingle.proposal.PairRelationRepository;
+import com.e106.tingle.proposal.MatchingParticipant;
+import com.e106.tingle.proposal.MatchingParticipantRepository;
 import com.e106.tingle.proposal.ProposalRepository;
 import com.e106.tingle.proposal.ProposalService;
 
@@ -51,7 +51,7 @@ class ChatIntegrationTest extends IntegrationTestSupport {
 	@Autowired
 	private ProposalRepository proposalRows;
 	@Autowired
-	private PairRelationRepository pairs;
+	private MatchingParticipantRepository participantRows;
 	@Autowired
 	private Clock testClock;
 	private JsonNode first;
@@ -73,13 +73,10 @@ class ChatIntegrationTest extends IntegrationTestSupport {
 	}
 
 	private ChatRoom createRoom(long firstUserId, long secondUserId) {
-		PairRelation pair = pairs.saveAndFlush(new PairRelation(firstUserId, secondUserId));
 		Instant now = testClock.instant();
-		Long encounter = jdbc.queryForObject("insert into encounters(pair_id,event_key,occurred_at,"
-			+ "opportunity_expires_at,counterpart_deadline_at,status) values (?,?,?,?,?,'VERIFIED') "
-			+ "returning encounter_id", Long.class, pair.getId(), UUID.randomUUID().toString(), Timestamp.from(now),
-			Timestamp.from(now.plus(Duration.ofDays(7))), Timestamp.from(now.plus(Duration.ofDays(7))));
-		MatchProposal proposal = proposalRows.saveAndFlush(new MatchProposal(pair.getId(), encounter, now));
+		MatchProposal proposal = proposalRows.saveAndFlush(MatchProposal.proposed(firstUserId, secondUserId, now));
+		participantRows.saveAllAndFlush(List.of(new MatchingParticipant(proposal.getId(), firstUserId),
+			new MatchingParticipant(proposal.getId(), secondUserId)));
 		proposalId = proposal.getId();
 		proposals.decide(proposalId, firstUserId, MatchProposal.Decision.ACCEPT, UUID.randomUUID(),
 			proposals.profile(proposalId, firstUserId).profileVersion());
@@ -99,16 +96,16 @@ class ChatIntegrationTest extends IntegrationTestSupport {
 	void mutualAcceptancePersistsOneRoomAndKeepsItsOriginalLifetime() throws Exception {
 		var result = proposals.get(proposalId, firstId);
 		assertThat(result.chatAvailable()).isTrue();
-		assertThat(result.chatRoomId()).isEqualTo(room.getPublicId().toString());
+		assertThat(result.chatRoomId()).isEqualTo(room.getPublicId());
 		proposals.decide(proposalId, firstId, MatchProposal.Decision.ACCEPT, UUID.randomUUID(), "stale-retry");
 		ChatRoom saved = rooms.findBySourceProposalId(proposalId).orElseThrow();
 		assertThat(saved.getPublicId()).isEqualTo(room.getPublicId());
 		assertThat(saved.getCreatedAt()).isEqualTo(room.getCreatedAt());
 		assertThat(saved.getExpiresAt()).isEqualTo(room.getCreatedAt().plus(Duration.ofHours(168)));
 		assertThat(proposals.list(firstId, null, 100).items()).isEmpty();
-		perform(get("/api/v1/chat-rooms"), first, null).andExpect(status().isOk())
+		perform(get("/api/chat-rooms"), first, null).andExpect(status().isOk())
 			.andExpect(header().string("Cache-Control", "no-store"))
-			.andExpect(jsonPath("$.items[0].chatRoomId").value(room.getPublicId().toString()));
+			.andExpect(jsonPath("$.items[0].chatRoomId").value(room.getPublicId()));
 	}
 
 	@Test
@@ -120,7 +117,7 @@ class ChatIntegrationTest extends IntegrationTestSupport {
 		assertThat(sent.text()).hasSizeGreaterThan(1000).doesNotContain("x.co");
 		MessageView retry = chats.send(room.getPublicId(), firstId, client, key, text);
 		assertThat(retry).isEqualTo(sent);
-		assertThat(jdbc.queryForObject("select count(*) from chat_messages where chat_room_id=?", Long.class,
+		assertThat(jdbc.queryForObject("select count(*) from chat_message where chat_id=?", Long.class,
 			room.getId())).isEqualTo(1);
 		assertThat(chats.messages(room.getPublicId(), secondId, null, 20).items().getFirst().sender())
 			.isEqualTo("PARTNER");
@@ -162,36 +159,44 @@ class ChatIntegrationTest extends IntegrationTestSupport {
 		MessageView older = send("older");
 		MessageView newer = send("newer");
 		perform(get(path() + "/messages"), second, null).andExpect(status().isOk());
-		assertThat(chats.messages(room.getPublicId(), firstId, null, 20).items())
-			.allMatch(message -> !message.readByPartner());
+		assertThat(jdbc.queryForObject("select read_state from chat_participant where chat_id=? and user_id=?",
+			String.class, room.getId(), secondId)).isEqualTo("{}");
 		perform(post(path() + "/reads"), second, toJson(Map.of("messageIds", List.of(newer.messageId()))))
 			.andExpect(status().isOk());
+		perform(get(path() + "/messages"), first, null).andExpect(status().isOk())
+			.andExpect(jsonPath("$.items[0].readByPartner").doesNotExist());
 		var page = chats.messages(room.getPublicId(), firstId, null, 20);
-		assertThat(page.items().getFirst().readByPartner()).isTrue();
 		assertThat(page.items().getLast().messageId()).isEqualTo(older.messageId());
-		assertThat(page.items().getLast().readByPartner()).isFalse();
-		Instant recorded = jdbc.queryForObject("select read_at from chat_message_reads r join chat_messages m "
-			+ "on m.message_id=r.message_id where m.public_id=?", Timestamp.class, newer.messageId()).toInstant();
+		assertThat(jdbc.queryForObject("select last_read_message_seq from chat_participant "
+			+ "where chat_id=? and user_id=?", Long.class, room.getId(), secondId)).isZero();
+		Instant recorded = jdbc.queryForObject("select cast(read_state->?->>'readAt' as timestamptz) "
+			+ "from chat_participant where chat_id=? and user_id=?", Timestamp.class,
+			newer.messageId().toString(), room.getId(), secondId).toInstant();
 		chats.read(room.getPublicId(), secondId, List.of(newer.messageId(), newer.messageId()));
-		assertThat(jdbc.queryForObject("select read_at from chat_message_reads r join chat_messages m "
-			+ "on m.message_id=r.message_id where m.public_id=?", Timestamp.class, newer.messageId()).toInstant())
-			.isEqualTo(recorded);
+		assertThat(jdbc.queryForObject("select cast(read_state->?->>'readAt' as timestamptz) "
+			+ "from chat_participant where chat_id=? and user_id=?", Timestamp.class,
+			newer.messageId().toString(), room.getId(), secondId).toInstant()).isEqualTo(recorded);
+		chats.read(room.getPublicId(), secondId, List.of(older.messageId()));
+		assertThat(jdbc.queryForObject("select last_read_message_seq from chat_participant "
+			+ "where chat_id=? and user_id=?", Long.class, room.getId(), secondId)).isEqualTo(2);
 	}
 
 	@Test
 	void invalidReadBatchHasNoPartialSideEffectsAndOwnMessagesCannotBeAcknowledged() throws Exception {
 		MessageView message = send("hello");
-		assertCode(() -> chats.read(room.getPublicId(), secondId, List.of(message.messageId(), UUID.randomUUID())),
+		assertCode(() -> chats.read(room.getPublicId(), secondId, List.of(message.messageId(), Long.MAX_VALUE)),
 			ErrorCode.RESOURCE_NOT_FOUND);
 		assertCode(() -> chats.read(room.getPublicId(), firstId, List.of(message.messageId())),
 			ErrorCode.INVALID_REQUEST);
-		assertThat(chats.messages(room.getPublicId(), firstId, null, 20).items().getFirst().readByPartner()).isFalse();
+		assertThat(jdbc.queryForObject("select read_state from chat_participant where chat_id=? and user_id=?",
+			String.class, room.getId(), secondId)).isEqualTo("{}");
 		List<?> results = runConcurrently(
 			() -> chats.read(room.getPublicId(), secondId, List.of(message.messageId())),
 			() -> chats.read(room.getPublicId(), secondId, List.of(message.messageId())));
 		assertThat(results).hasSize(2);
-		assertThat(jdbc.queryForObject("select count(*) from chat_message_reads r join chat_messages m "
-			+ "on m.message_id=r.message_id where m.public_id=?", Long.class, message.messageId())).isEqualTo(1);
+		assertThat(jdbc.queryForObject("select count(*) from chat_participant p cross join lateral "
+			+ "jsonb_object_keys(p.read_state) r where p.chat_id=? and p.user_id=?", Long.class,
+			room.getId(), secondId)).isEqualTo(1);
 	}
 
 	@Test
@@ -203,10 +208,10 @@ class ChatIntegrationTest extends IntegrationTestSupport {
 		}
 		perform(post(path() + "/messages").header("Idempotency-Key", UUID.randomUUID()), outsider,
 			toJson(Map.of("clientMessageId", UUID.randomUUID(), "text", "hello"))).andExpect(status().isNotFound());
-		perform(post(path() + "/reads"), outsider, toJson(Map.of("messageIds", List.of(UUID.randomUUID()))))
+		perform(post(path() + "/reads"), outsider, toJson(Map.of("messageIds", List.of(Long.MAX_VALUE))))
 			.andExpect(status().isNotFound());
-		jdbc.update("insert into user_blocks(blocker_id,blocked_id,created_at) values (?,?,?)", firstId, secondId,
-			Timestamp.from(testClock.instant()));
+		jdbc.update("update matching_participant set blocked_at=? where matching_id=? and user_id=?",
+			Timestamp.from(testClock.instant()), room.getPairId(), firstId);
 		perform(get(path() + "/messages"), first, null).andExpect(status().isGone());
 		assertThat(chats.list(firstId, null, 20).items()).isEmpty();
 	}
@@ -281,7 +286,7 @@ class ChatIntegrationTest extends IntegrationTestSupport {
 	}
 
 	private String path() {
-		return "/api/v1/chat-rooms/" + room.getPublicId();
+		return "/api/chat-rooms/" + room.getPublicId();
 	}
 
 	private void assertCode(org.assertj.core.api.ThrowableAssert.ThrowingCallable call, ErrorCode code) {

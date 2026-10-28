@@ -20,7 +20,7 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 
 @RestController
-@RequestMapping("/api/v1/push-installations")
+@RequestMapping("/api/push-installations")
 @RequiredArgsConstructor
 public class PushInstallationController {
 

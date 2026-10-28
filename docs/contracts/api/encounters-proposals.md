@@ -1,5 +1,9 @@
 # Tingle(팅글) 만남 기록과 매칭 제안 API 명세
 
+## 2026-10-28 사용자 결정·저장 이관
+
+제안 생성(PENDING) 이후 두 사람은 영구 재매칭 금지다. 기존 거절 후 30일·만료 후 재생성과의 충돌은 이 결정으로 해소했다. WAITING/NOT_MATCHED의 재접수와 공개 제안은 구분한다. matching.id는 현재 관계·제안의 숫자 ID이며 상호 수락으로 연결한 chatRoomId도 숫자다. 최초 응답·시각·UUID 요청 키는 matching_participant의 전용 칸에, 구 pair/제안/취소·제한 자료는 matching.legacy_state/request_state에 보존한다. 과거 식별자를 다른 기록에 재사용하지 않는다. 실제 구현·검증 상태는 [175 검증 기록](../../verification/erd22-storage-175.md)을 따른다.
+
 v0.2.0-erd21-review / 2026-10-28 / 담당 김영빈 / S15P31E106-91·92
 
 사용자 제공 21개 테이블·151개 컬럼과 기존 노션 API의 경로·표·예시를 맞춘 검토 계약이다. 현재 전송 기준은 [OpenAPI](openapi.json), 전체 범위는 [API 안내](README.md), 데이터·미합의는 [ERD 설명](../../database/erd.md)을 따른다. 서버·기기·실DB·배포 실행 결과와 구분한다. 기획·기능·정책 원문은 수정하지 않는다.
@@ -83,7 +87,7 @@ PublicProfile DTO 모양은 유지하고 profile의 허용 필드와 photo_url�
 
 ## 5 수락·거절과 원자 방 생성
 
-`POST /api/match-proposals/{proposalId}/accept`는 기존 profileVersion 요청을 유지한다. `POST .../decline`은 본문이 없다. 기존 UUID Idempotency-Key 헤더 계약을 보존하지만 선택 키 전용 저장 칸이 없는 ERD21에서 영속 중복 판정·다른 명령 재사용 검출·응답 재현을 보장한 것으로 기술하지 않는다. 해당 저장 대안은 합의 전이다.
+`POST /api/match-proposals/{proposalId}/accept`는 기존 profileVersion 요청을 유지한다. `POST .../decline`은 본문이 없다. UUID Idempotency-Key 계약은 유지한다. 최초 decision_request_key와 request_state에 해당 명령·재전송 증거를 보존하고, 같은 회원의 다른 관계/응답 명령에 재사용하면 충돌로 거부한다. 회원→matching 잠금 뒤 최초 응답을 확정하며 재전송으로 최초 선택·시각·기한을 바꾸지 않는다.
 
 matching 단위 잠금 안에서 당사자·현재 상태·기한·차단·공개 필드 해시를 재검사하고 최초 response·responded_at을 확정한다. 응답은 한 번 확정한 뒤 되돌리지 않는다. 동시 두 번째 수락·거절·만료는 일관된 한 결과로 직렬화한다. 상호 수락, chat 생성, 두 chat_participant 생성은 같은 트랜잭션에서 완료한다. 중복 수락은 같은 방·최초 시각을 사용하며 방이 실제 준비되기 전 chatAvailable=true를 보내지 않는다.
 
@@ -101,7 +105,7 @@ matching 단위 잠금 안에서 당사자·현재 상태·기한·차단·공�
 }
 ```
 
-기존 제품의 거절30일 제한·자동 만료 재매칭과 ERD의 PENDING 이후 영구 재매칭 금지는 충돌한다. 정책 원문을 바꾸거나 영구 제한으로 임의 확정하지 않고 제품·BE 합의 항목으로 남긴다. 조기 퇴장·보관·외부 사본 삭제 범위 POL-09도 그대로 미합의다. 일반 종료 후30일 보관/삭제와 신고용90일 후속 설계를 혼동하지 않는다.
+사용자가 새 ERD의 PENDING 이후 영구 재매칭 금지를 확정했다. 같은 두 사람의 과거 제안·응답 기록을 삭제하거나 30일 후 새 제안 ID를 발급해 재매칭하지 않는다. 조기 퇴장·보관·외부 사본 삭제 범위 POL-09도 그대로 미합의다. 일반 종료 후30일 보관/삭제와 신고용90일 후속 설계를 혼동하지 않는다.
 
 ## 6 설명 생성·조회와 내부 계산
 

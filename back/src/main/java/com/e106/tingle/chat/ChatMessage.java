@@ -1,6 +1,7 @@
 package com.e106.tingle.chat;
 
 import java.time.Instant;
+import java.util.HexFormat;
 import java.util.UUID;
 
 import jakarta.persistence.Column;
@@ -15,47 +16,52 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 
 @Entity
-@Table(name = "chat_messages", uniqueConstraints = {
-	@UniqueConstraint(name = "uq_chat_messages_public_id", columnNames = "public_id"),
-	@UniqueConstraint(name = "uq_chat_messages_request", columnNames = {"sender_id", "request_key"}),
-	@UniqueConstraint(name = "uq_chat_messages_1", columnNames = {"chat_room_id", "sender_id", "client_message_id"}),
-	@UniqueConstraint(name = "uq_chat_messages_2", columnNames = {"chat_room_id", "sequence"})})
+@Table(name = "chat_message", uniqueConstraints = {
+	@UniqueConstraint(name = "uq_chat_message_legacy_public_id", columnNames = "legacy_public_id"),
+	@UniqueConstraint(name = "uq_chat_message_request", columnNames = {"sender_participant_id", "request_key"}),
+	@UniqueConstraint(name = "uq_chat_message_client", columnNames = {"sender_participant_id", "client_message_id"}),
+	@UniqueConstraint(name = "uq_chat_message_seq", columnNames = {"chat_id", "seq"})})
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class ChatMessage {
 	@Id
 	@GeneratedValue(strategy = GenerationType.IDENTITY)
-	@Column(name = "message_id")
 	private Long id;
-	@Column(nullable = false)
-	private UUID publicId;
-	@Column(nullable = false)
+	private UUID legacyPublicId;
+	@Column(name = "chat_id", nullable = false)
 	private Long chatRoomId;
 	@Column(nullable = false)
-	private Long senderId;
+	private Long senderParticipantId;
 	@Column(nullable = false)
 	private UUID clientMessageId;
 	@Column(nullable = false)
 	private UUID requestKey;
-	@Column(nullable = false, columnDefinition = "text")
-	private String requestHash;
 	@Column(nullable = false)
+	private byte[] requestHash;
+	@Column(name = "seq", nullable = false)
 	private long sequence;
 	@Column(nullable = false, columnDefinition = "text")
 	private String body;
 	@Column(nullable = false)
 	private Instant createdAt;
 
-	public ChatMessage(long roomId, long userId, UUID clientId, UUID key, String hash,
+	public ChatMessage(long roomId, long participantId, UUID clientId, UUID key, String hash,
 		long sequence, String body, Instant now) {
-		this.publicId = UUID.randomUUID();
 		this.chatRoomId = roomId;
-		this.senderId = userId;
+		this.senderParticipantId = participantId;
 		this.clientMessageId = clientId;
 		this.requestKey = key;
-		this.requestHash = hash;
+		this.requestHash = HexFormat.of().parseHex(hash);
 		this.sequence = sequence;
 		this.body = body;
 		this.createdAt = now.truncatedTo(java.time.temporal.ChronoUnit.MICROS);
+	}
+
+	public Long getPublicId() {
+		return id;
+	}
+
+	public String getRequestHash() {
+		return HexFormat.of().formatHex(requestHash);
 	}
 }

@@ -1,24 +1,22 @@
 # 첫 입장·종료 안내와 설치별 알림
 
-2026-10-28 / 김영빈 담당 채팅 안내의 21개 테이블 대조. 채팅 기본 계약은 [chat.md](chat.md), 기계 판독 계약은 [OpenAPI](openapi.json), 최신 저장 정의는 [ERD](../../database/erd.md)를 따른다. 아래 현재 기준과 과거 구현 기록을 구분한다.
+2026-10-28 / 승인된 22표 보존 설계. [채팅](chat.md)·[OpenAPI](openapi.json)·[ERD](../../database/erd.md)를 따른다. 현재 코드·DB 검증은 [175 기록](../../verification/erd22-storage-175.md)에 구분한다.
 
-## 현재 21개 테이블 기준
+## 현재 22개 테이블 기준
 
-| API | 식별자·역할 | 저장·합의 상태 |
+| API | 식별자·역할 | 영속 상태 |
 | --- | --- | --- |
-| POST /api/chat-rooms/{chatRoomId}/entries | chatRoomId는 chat.id의 숫자 int64. 기존 FIRST_ENTRY 안내 확보 계약 | 안내·최초 entry 키·표시 ACK 전용 저장 칸 없음. 기존 재진입/중복 방지 계약을 유지하되 영속 대안 합의 필요 |
-| GET /api/chat-rooms/{chatRoomId}/notices | 숫자 방 ID의 본인 미확인 입장·종료 안내 조회 | 예약·미확인/확인·기한 내 복구의 영속 대안 합의 필요 |
-| PUT /api/chat-rooms/{chatRoomId}/notices/{noticeId}/ack | 숫자 방 ID, 기존 noticeId UUID 계약은 저장 대안 합의 전 | 최초 표시 ACK 시각·소유권·멱등 키 저장 대안 합의 필요 |
+| POST /api/chat-rooms/{chatRoomId}/entries | 방은 양수 int64. 본인 최초 입장 안내 확보 | chat_participant.notice_state의 최초 entry 키·안내 UUID |
+| GET /api/chat-rooms/{chatRoomId}/notices | 본인 미확인 입장·종료 안내 | 같은 참여자 상태의 예약·미확인·최초 ACK·복구 증거 |
+| PUT /api/chat-rooms/{chatRoomId}/notices/{noticeId}/ack | noticeId UUID·본인 실제 표시 확인 | 해당 업무의 ack 키·최초 ACK 시각. 다른 방/사용자 안내는404 |
 
-**chat_safety_notice는 AI 위험 안내 전용이다.** FIRST_ENTRY·ONE_HOUR_BEFORE_END의 저장소로 대신 쓰거나 noticeId를 그 테이블 bigint ID라고 확정하지 않는다. background_jobs도 최신 21개 테이블에는 없다. 기존 noticeId·예약·업무 키·표시 ACK·공급자 접수/재시작 복구를 정의하지 않은 채 작동한다고 표시하지 않는다. 안내 상태 저장 대안이 미확정이므로 해당 UUID는 현재 설계에서 지원이 확정된 공개 DB ID가 아니다.
+일반 안내는 참여자의 명시적인 notice_state에 저장한다. FIRST_ENTRY와 종료 안내별 UUID·businessKey·payload·상태·예약시각·attempt/lease·최초 ACK·설치 연결별 결과를 보존한다. background_jobs 표나 메모리 큐를 추가하지 않고, chat_safety_notice 또는 무관 AI 상태로 대신하지 않는다. 안내 UUID 중복·요청 키 충돌, 늦은 worker 완료는 실제 현재 소유·선점 세대와 비교한다. 기존 자료의 증거가 부족하면 추정 이관하지 않는다.
 
-권한·종료·실제 표시 조건은 기존 기능 계약을 보존한다. 첫 입장 안내 확인 전 메시지 조회·전송·읽음을 403 CHAT_NOTICE_REQUIRED로 제한하는 계약도 저장 대안과 함께 검증해야 한다. 같은 방이라도 사용자별 안내/ACK는 분리하며 최초 ACK는 재시도·중복 요청으로 바꾸지 않는다. 다른 사용자/방의 안내는 404, 아직 시간이 오지 않은 종료 안내 ACK는 409 NOTICE_STATE_CONFLICT다. 종료 뒤 허용하는 기존 안내 ACK가 방·메시지 권한을 복구하지 않는다.
+안내 상태와 read_state는 같은 참여자 행에서 갱신되므로 잠금 후 현재 자료를 다시 읽어 다른 상태를 덮어쓰지 않는다. 미확인 첫 안내는 메시지 조회/전송/읽음을 제한하며 최초 ACK 뒤 현재 권한을 다시 계산한다. 이른 종료 안내 ACK는409, 종료 후 ACK가 방 권한을 되살리지 않는 계약을 유지한다.
 
-방의 최초 created_at+168시간 및 최초 closed_at은 재시도·알림 실패·배치 지연으로 연장하지 않는다. 실제 종료시각과 남은 시간으로 안내하고 외부 접수·단말 수신·화면 표시/ACK를 하나의 성공으로 합치지 않는다. 중복/누락·앱 종료/백그라운드 표시 보장은 FE·실기기 검증 대상이다.
+방 기한은 최초 생성·상호 수락 시각의 원래168시간이며 늦은 방 복구/worker/재시도로 연장하지 않는다. 신고 retain_until이 일반 삭제 예약보다 우선한다. 외부 공급자 접수·단말 수신·화면 표시 ACK는 서로 다른 증거이며 합성 회귀로 실기기 성공을 주장하지 않는다.
 
-설치 연결은 인증 담당의 push_installation(user_id·login_family_id·client_installation_id 등)을 참조한다. 설치 UUID와 refresh family UUID는 숫자 API ID 전환 대상이 아니다. 기존 bindingId·linkedAt은 최신 ERD에서 저장 칸이 없어 인증/푸시 담당과 지연 전송 차단 대안을 합의해야 한다. 다른 담당의 동의·키링·설치 정의를 이 문서에서 임의 변경하지 않는다.
-
-노션 entries의 빈 notices 예시는 첫 안내 확인 후 재입장한 경우다. 이때 활성 방의 expiresAt은 createdAt+168시간, closedAt/deleteAt은 null, 나머지 권한을 충족하면 canRead/canSend는 true다. 최초 미확인 입장 예시와 혼동하지 않는다.
+설치는 push_installation의 현재 user/family/설치UUID·binding_id·linked_at으로 재검사한다. 사용자 결정으로 보존한 연결 세대·최초 시각을 사용하며 정상 토큰 교체와 해제 후 재연결을 구분한다. 설치/session UUID는 숫자 방·메시지 ID와 별개다. 첫 안내 ACK 후 재입장은 빈 notices일 수 있으며 최초 미확인 예시와 구분한다.
 
 ## 2026-10-22 구현 이력 — 구스키마 기록
 

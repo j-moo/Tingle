@@ -35,8 +35,8 @@ import com.e106.tingle.chat.notice.NoticeDispatcher;
 import com.e106.tingle.global.error.BusinessException;
 import com.e106.tingle.global.error.ErrorCode;
 import com.e106.tingle.proposal.MatchProposal;
-import com.e106.tingle.proposal.PairRelation;
-import com.e106.tingle.proposal.PairRelationRepository;
+import com.e106.tingle.proposal.MatchingParticipant;
+import com.e106.tingle.proposal.MatchingParticipantRepository;
 import com.e106.tingle.proposal.ProposalRepository;
 import com.e106.tingle.proposal.ProposalService;
 import com.e106.tingle.push.PushGateway;
@@ -75,7 +75,7 @@ class ChatNoticeIntegrationTest extends IntegrationTestSupport {
 	@Autowired
 	private ProposalRepository proposalRows;
 	@Autowired
-	private PairRelationRepository pairs;
+	private MatchingParticipantRepository participantRows;
 	@Autowired
 	private Clock testClock;
 	private JsonNode first;
@@ -87,7 +87,7 @@ class ChatNoticeIntegrationTest extends IntegrationTestSupport {
 
 	@BeforeEach
 	void prepareChat() throws Exception {
-		jdbc.update("delete from background_jobs where job_type in ('FIRST_ENTRY','END_NOTICE')");
+		jdbc.update("update chat_participant set notice_state='{}'");
 		given(gateway.ready()).willReturn(true);
 		given(gateway.send(anyString(), anyString(),
 			anyMap(), any())).willReturn(PushGateway.Result.ACCEPTED);
@@ -101,14 +101,10 @@ class ChatNoticeIntegrationTest extends IntegrationTestSupport {
 	}
 
 	private ChatRoom createRoom(long firstUserId, long secondUserId) {
-		PairRelation pair = pairs.saveAndFlush(new PairRelation(firstUserId, secondUserId));
 		Instant now = testClock.instant();
-		Long encounter = jdbc.queryForObject("insert into encounters(pair_id,event_key,occurred_at,"
-			+ "opportunity_expires_at,counterpart_deadline_at,status) values (?,?,?,?,?,'VERIFIED') "
-			+ "returning encounter_id", Long.class, pair.getId(), UUID.randomUUID().toString(),
-			Timestamp.from(now),
-			Timestamp.from(now.plus(Duration.ofDays(7))), Timestamp.from(now.plus(Duration.ofDays(7))));
-		MatchProposal proposal = proposalRows.saveAndFlush(new MatchProposal(pair.getId(), encounter, now));
+		MatchProposal proposal = proposalRows.saveAndFlush(MatchProposal.proposed(firstUserId, secondUserId, now));
+		participantRows.saveAllAndFlush(List.of(new MatchingParticipant(proposal.getId(), firstUserId),
+			new MatchingParticipant(proposal.getId(), secondUserId)));
 		proposalId = proposal.getId();
 		proposals.decide(proposalId, firstUserId, MatchProposal.Decision.ACCEPT, UUID.randomUUID(),
 			proposals.profile(proposalId, firstUserId).profileVersion());
@@ -131,11 +127,13 @@ class ChatNoticeIntegrationTest extends IntegrationTestSupport {
 			.isEqualTo(firstNotice.noticeId());
 		UUID ack = UUID.randomUUID();
 		notices.ack(room.getPublicId(), firstNotice.noticeId(), firstId, ack);
-		Instant at = jdbc.queryForObject("select first_notice_acked_at from chat_members "
-			+ "where chat_room_id=? and user_id=?", Timestamp.class, room.getId(), firstId).toInstant();
+		Instant at = jdbc.queryForObject("select cast(notice_state->'FIRST_ENTRY'->>'ackedAt' as timestamptz) "
+			+ "from chat_participant "
+			+ "where chat_id=? and user_id=?", Timestamp.class, room.getId(), firstId).toInstant();
 		notices.ack(room.getPublicId(), firstNotice.noticeId(), firstId, ack);
-		assertThat(jdbc.queryForObject("select first_notice_acked_at from chat_members "
-			+ "where chat_room_id=? and user_id=?", Timestamp.class, room.getId(), firstId).toInstant())
+		assertThat(jdbc.queryForObject("select cast(notice_state->'FIRST_ENTRY'->>'ackedAt' as timestamptz) "
+			+ "from chat_participant "
+			+ "where chat_id=? and user_id=?", Timestamp.class, room.getId(), firstId).toInstant())
 			.isEqualTo(at);
 		assertThat(notices.enter(room.getPublicId(), firstId, UUID.randomUUID()).notices()).isEmpty();
 		assertThat(chats.room(room.getPublicId(), firstId).canSend()).isTrue();
@@ -163,12 +161,12 @@ class ChatNoticeIntegrationTest extends IntegrationTestSupport {
 	@Test
 	void installationHttpRegistrationBindsJwtAndDoesNotReturnTheToken() throws Exception {
 		UUID id = UUID.randomUUID();
-		perform(put("/api/v1/push-installations"), first,
+		perform(put("/api/push-installations"), first,
 			toJson(Map.of("installationId", id, "platform", "ANDROID", "token", "synthetic-token")))
 			.andExpect(status().isOk()).andExpect(jsonPath("$.bindingId").isString())
 			.andExpect(jsonPath("$.token").doesNotExist());
-		perform(delete("/api/v1/push-installations/" + id), second, null).andExpect(status().isNotFound());
-		perform(delete("/api/v1/push-installations/" + id), first, null).andExpect(status().isNoContent());
+		perform(delete("/api/push-installations/" + id), second, null).andExpect(status().isNotFound());
+		perform(delete("/api/push-installations/" + id), first, null).andExpect(status().isNoContent());
 	}
 
 	@Test
@@ -180,7 +178,9 @@ class ChatNoticeIntegrationTest extends IntegrationTestSupport {
 		assertThat(entries.getLast().notices().getFirst().noticeId()).isEqualTo(id);
 		runConcurrently(() -> notices.ack(room.getPublicId(), id, firstId, UUID.randomUUID()),
 			() -> notices.ack(room.getPublicId(), id, firstId, UUID.randomUUID()));
-		assertThat(jdbc.queryForObject("select count(*) from background_jobs where business_key=?", Long.class,
+		assertThat(jdbc.queryForObject("select count(*) from chat_participant p "
+			+ "cross join lateral jsonb_each(p.notice_state) n "
+			+ "where n.value->>'businessKey'=?", Long.class,
 			ChatNoticeJob.key(room.getId(), firstId, "FIRST_ENTRY"))).isEqualTo(1);
 	}
 
@@ -230,16 +230,17 @@ class ChatNoticeIntegrationTest extends IntegrationTestSupport {
 		Mockito.verify(gateway).send(eq("synthetic-token"),
 			eq(endJob(firstId).getPublicId().toString()),
 			anyMap(), eq(room.getExpiresAt()));
-		assertThat(jdbc.queryForObject("select end_notice_acked_at from chat_members "
-			+ "where chat_room_id=? and user_id=?", Timestamp.class, room.getId(), firstId)).isNull();
+		assertThat(jdbc.queryForObject("select cast(notice_state->'END_NOTICE'->>'ackedAt' as timestamptz) "
+			+ "from chat_participant "
+			+ "where chat_id=? and user_id=?", Timestamp.class, room.getId(), firstId)).isNull();
 		assertThat(notices.list(room.getPublicId(), firstId).items()).hasSize(1);
 	}
 
 	@Test
-	void logoutSuppressesOnlyThatInstallationsSessionAndKeepsItsStoredConnection() throws Exception {
+	void logoutClearsThatSessionConnectionAndKeepsTheInstallationRow() throws Exception {
 		UUID installation = UUID.randomUUID();
 		register(first, installation, "synthetic-token");
-		String socialId = jdbc.queryForObject("select provider_subject from app_users where user_id=?",
+		String socialId = jdbc.queryForObject("select provider_user_id from users where id=?",
 			String.class, firstId);
 		login("google", socialId);
 		logout(first.path("refreshToken").asString()).andExpect(status().isNoContent());
@@ -247,7 +248,10 @@ class ChatNoticeIntegrationTest extends IntegrationTestSupport {
 		dispatcher.runDue();
 		Mockito.verify(gateway, Mockito.never()).send(anyString(),
 			anyString(), anyMap(), any());
-		assertThat(installationRows.findByClientInstallationIdAndUserId(installation, firstId)).isPresent();
+		assertThat(installationRows.findByClientInstallationIdAndUserId(installation, firstId)).isEmpty();
+		assertThat(jdbc.queryForMap("select user_id,login_family_id,binding_id,linked_at from push_installation "
+			+ "where client_installation_id=?", installation)).containsEntry("user_id", null)
+			.containsEntry("login_family_id", null).containsEntry("binding_id", null).containsEntry("linked_at", null);
 	}
 
 	@Test
@@ -313,7 +317,7 @@ class ChatNoticeIntegrationTest extends IntegrationTestSupport {
 		dispatcher.runDue();
 		given(testClock.instant()).willReturn(due.plusSeconds(31));
 		logout(first.path("refreshToken").asString()).andExpect(status().isNoContent());
-		String subject = jdbc.queryForObject("select provider_subject from app_users where user_id=?",
+		String subject = jdbc.queryForObject("select provider_user_id from users where id=?",
 			String.class, firstId);
 		JsonNode loggedIn = login("google", subject);
 		register(loggedIn, installation, "new-token");
@@ -330,11 +334,11 @@ class ChatNoticeIntegrationTest extends IntegrationTestSupport {
 		assertThat(claims.getFirst().jobId()).isNotEqualTo(claims.getLast().jobId());
 		given(testClock.instant()).willReturn(due.plusSeconds(31));
 		var replacement = delivery.claim();
-		var old = claims.stream().filter(c -> c.jobId() == replacement.jobId()).findFirst().orElseThrow();
+		var old = claims.stream().filter(c -> c.jobId().equals(replacement.jobId())).findFirst().orElseThrow();
 		delivery.finish(old, false);
-		assertThat(jobs.findById(replacement.jobId()).orElseThrow().getStatus()).isEqualTo("RUNNING");
+		assertThat(jobs.findByPublicId(replacement.jobId()).orElseThrow().getStatus()).isEqualTo("RUNNING");
 		delivery.finish(replacement, false);
-		assertThat(jobs.findById(replacement.jobId()).orElseThrow().getStatus()).isEqualTo("SUCCEEDED");
+		assertThat(jobs.findByPublicId(replacement.jobId()).orElseThrow().getStatus()).isEqualTo("SUCCEEDED");
 	}
 
 	@Test
@@ -380,12 +384,12 @@ class ChatNoticeIntegrationTest extends IntegrationTestSupport {
 	void sameAccountNewLoginGetsNewBindingAndOldRefreshProofCannotReleaseIt() throws Exception {
 		UUID installation = UUID.randomUUID();
 		UUID original = register(first, installation, "old-token");
-		String subject = jdbc.queryForObject("select provider_subject from app_users where user_id=?",
+		String subject = jdbc.queryForObject("select provider_user_id from users where id=?",
 			String.class, firstId);
 		JsonNode signedIn = login("google", subject);
 		UUID replacement = register(signedIn, installation, "new-token");
 		assertThat(replacement).isNotEqualTo(original);
-		mockMvc.perform(post("/api/v1/auth/logout").contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+		mockMvc.perform(post("/api/auth/logout").contentType(org.springframework.http.MediaType.APPLICATION_JSON)
 			.content(toJson(Map.of("refreshToken", first.path("refreshToken").asString(),
 				"releaseInstallationId", installation))))
 			.andExpect(status().isNoContent());
@@ -398,12 +402,12 @@ class ChatNoticeIntegrationTest extends IntegrationTestSupport {
 		UUID installation = UUID.randomUUID();
 		UUID original = register(first, installation, "original-token");
 		UUID session = family(first);
-		jdbc.update("update refresh_tokens set expires_at=? where family_id=?",
+		jdbc.update("update refresh_token set expires_at=? where family_id=?",
 			Timestamp.from(testClock.instant().minusSeconds(1)), session);
 		assertCode(() -> register(first, installation, "replacement"), ErrorCode.SESSION_REVOKED);
 		assertCode(() -> installations.remove(firstId, session, installation), ErrorCode.SESSION_REVOKED);
 
-		jdbc.update("update refresh_tokens set expires_at=?,used_at=? where family_id=?",
+		jdbc.update("update refresh_token set expires_at=?,used_at=? where family_id=?",
 			Timestamp.from(testClock.instant().plusSeconds(3600)), Timestamp.from(testClock.instant()), session);
 		assertCode(() -> register(first, installation, "replacement"), ErrorCode.SESSION_REVOKED);
 		assertThat(installationRows.findByClientInstallationIdAndUserId(installation, firstId).orElseThrow()
@@ -426,7 +430,7 @@ class ChatNoticeIntegrationTest extends IntegrationTestSupport {
 	}
 
 	private String path() {
-		return "/api/v1/chat-rooms/" + room.getPublicId();
+		return "/api/chat-rooms/" + room.getPublicId();
 	}
 
 	private void assertCode(org.assertj.core.api.ThrowableAssert.ThrowingCallable call, ErrorCode code) {

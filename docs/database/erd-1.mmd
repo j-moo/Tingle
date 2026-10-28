@@ -8,6 +8,16 @@ erDiagram
         timestamptz signup_completed_at
         timestamptz agreed_at
         boolean is_operator
+        text status
+        timestamptz created_at
+    }
+    user_consents {
+        bigint consent_id PK
+        bigint user_id
+        text consent_type
+        text document_version
+        boolean agreed
+        timestamptz recorded_at
     }
     refresh_token {
         bigint id PK
@@ -25,6 +35,8 @@ erDiagram
         uuid client_installation_id
         bigint user_id
         uuid login_family_id
+        uuid binding_id
+        timestamptz linked_at
         device_platform platform
         text token_ciphertext
         timestamptz updated_at
@@ -67,13 +79,18 @@ erDiagram
     }
     chat_participant {
         bigint id PK
+        jsonb notice_state
+        jsonb read_state
     }
     matching {
         bigint id PK
+        jsonb legacy_state
     }
     matching_participant {
         bigint matching_id PK
         bigint user_id PK
+        uuid decision_request_key
+        jsonb request_state
     }
     operator_audit {
         bigint id PK
@@ -89,6 +106,11 @@ erDiagram
     }
     survey {
         bigint id PK
+        uuid client_request_id
+        bigint revision
+        uuid legacy_public_id UK
+        jsonb response_context
+        jsonb definition_snapshot
     }
     users ||--o{ refresh_token : "user_id"
     users o|--o{ push_installation : "user_id"
@@ -110,3 +132,4 @@ erDiagram
     users o|--o{ service_case_history : "actor_user_id"
     users o|--o{ operator_audit : "target_user_id"
     keyring o|--o{ operator_audit : "target_keyring_id"
+    users ||--o{ user_consents : "user_id"

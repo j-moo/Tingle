@@ -1,5 +1,6 @@
--- ERD21 design source / 2026-10-28 / 21 tables, 151 columns
--- Documentation only. Not a migration. Not executed against any database.
+-- ERD21 source + approved preservation amendments / 2026-10-28 / 22 tables, 176 columns
+-- Design DDL, not an automatic migration. Not applied to shared/production DBs.
+-- Verified only with disposable PostgreSQL test databases.
 -- Empty-database PostgreSQL design DDL. Logical references only; no physical FOREIGN KEY constraints.
 -- FK/delete ordering and product-policy conflicts remain review items in erd.md.
 CREATE TYPE "auth_provider" AS ENUM ('GOOGLE', 'KAKAO', 'NAVER');
@@ -50,6 +51,8 @@ CREATE TABLE "users" (
     "signup_completed_at" timestamptz,
     "agreed_at" timestamptz,
     "is_operator" boolean NOT NULL DEFAULT false,
+    "status" text NOT NULL,
+    "created_at" timestamptz NOT NULL,
     CONSTRAINT "pk_users" PRIMARY KEY ("id")
 );
 COMMENT ON TABLE "users" IS '회원·인증·동의';
@@ -60,7 +63,28 @@ COMMENT ON COLUMN "users"."email" IS '연락용 이메일 — 동의 조건을 �
 COMMENT ON COLUMN "users"."signup_completed_at" IS '가입 완료 시각 — 최초 가입을 모두 완료한 시각';
 COMMENT ON COLUMN "users"."agreed_at" IS '일괄 동의 시각 — 첫 화면에서 약관·개인정보·AI 분석 등에 한 번에 동의한 시각. 비어 있거나 새 약관 시행일보다 이르면 재동의 받음';
 COMMENT ON COLUMN "users"."is_operator" IS '운영자 여부 — 운영 화면 접근 가능 여부. 일반 회원은 false';
+COMMENT ON COLUMN "users"."status" IS '회원 상태 — 기존 ACTIVE / WITHDRAWAL_PENDING / SUSPENDED / WITHDRAWN 값을 보존. 정지·탈퇴 계정을 ACTIVE로 추정하지 않음';
+COMMENT ON COLUMN "users"."created_at" IS '회원 생성 시각 — 최초 소셜 로그인 때 서버가 확정한 기존 시각을 보존. 이관 시 현재 시각으로 바꾸지 않음';
 CREATE UNIQUE INDEX "uq_users_provider_account" ON "users" ("provider", "provider_user_id");
+
+-- 항목별 동의·철회 이력 — 문서 버전·참거짓·기록 시각을 수정 없이 누적하며 users.agreed_at으로 합치거나 과거 일괄 동의를 추정하지 않음
+CREATE TABLE "user_consents" (
+    "consent_id" bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
+    "user_id" bigint NOT NULL,
+    "consent_type" text NOT NULL,
+    "document_version" text NOT NULL,
+    "agreed" boolean NOT NULL,
+    "recorded_at" timestamptz NOT NULL,
+    CONSTRAINT "pk_user_consents" PRIMARY KEY ("consent_id")
+);
+COMMENT ON TABLE "user_consents" IS '항목별 동의·철회 이력 — 문서 버전·참거짓·기록 시각을 수정 없이 누적하며 users.agreed_at으로 합치거나 과거 일괄 동의를 추정하지 않음';
+COMMENT ON COLUMN "user_consents"."consent_id" IS '동의 이력 ID — 기존 기록 순서와 번호를 보존';
+COMMENT ON COLUMN "user_consents"."user_id" IS '동의한 회원 ID — users.id';
+COMMENT ON COLUMN "user_consents"."consent_type" IS '동의 항목 — 설정 파일에 정의된 약관·개인정보·AI 등 정확한 항목 코드';
+COMMENT ON COLUMN "user_consents"."document_version" IS '사용자가 확인한 정확한 문서 버전 — 최신 버전으로 덮어쓰지 않음';
+COMMENT ON COLUMN "user_consents"."agreed" IS '해당 항목 동의 여부 — 동의 true, 거절·철회 false. 선택 동의를 일괄 true로 추정하지 않음';
+COMMENT ON COLUMN "user_consents"."recorded_at" IS '동의·거절·철회가 확정된 서버 시각 — 기존 시각 보존';
+CREATE INDEX "ix_user_consents_user" ON "user_consents" ("user_id");
 
 -- 로그인 토큰(기기별)
 CREATE TABLE "refresh_token" (
@@ -88,12 +112,16 @@ COMMENT ON COLUMN "refresh_token"."device_name" IS '기기 이름 — 로그인 
 COMMENT ON COLUMN "refresh_token"."last_used_at" IS '마지막 사용 시각 — 로그인·재발급한 시각. 로그인 기기 목록에 표시';
 CREATE INDEX "ix_refresh_token_family" ON "refresh_token" ("family_id");
 
+CREATE INDEX "ix_refresh_token_user" ON "refresh_token" ("user_id");
+
 -- 푸시 알림 기기
 CREATE TABLE "push_installation" (
     "id" bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
     "client_installation_id" uuid NOT NULL,
     "user_id" bigint,
     "login_family_id" uuid,
+    "binding_id" uuid,
+    "linked_at" timestamptz,
     "platform" "device_platform" NOT NULL,
     "token_ciphertext" text NOT NULL,
     "updated_at" timestamptz NOT NULL,
@@ -105,6 +133,8 @@ COMMENT ON COLUMN "push_installation"."id" IS '설치 번호';
 COMMENT ON COLUMN "push_installation"."client_installation_id" IS '앱 설치 ID — 앱이 발급, 재설치 전까지 유지';
 COMMENT ON COLUMN "push_installation"."user_id" IS '연결된 회원 ID — 로그아웃하면 비움';
 COMMENT ON COLUMN "push_installation"."login_family_id" IS '연결된 로그인 기기 — refresh_token.family_id. 그 로그인이 끝나면 비움. 알림 기기 목록 기준';
+COMMENT ON COLUMN "push_installation"."binding_id" IS '설치의 현재 수신 연결 세대 UUID — 최초 연결·재연결 시 발급, 같은 로그인 family의 토큰 교체에는 유지. linked_at과 함께 저장·해제하며 로그아웃 때 둘 다 비움. 과거 행의 누락 값은 추정해서 채우지 않음';
+COMMENT ON COLUMN "push_installation"."linked_at" IS '현재 수신 연결의 최초 확정 시각 — binding_id와 함께 저장·해제. 토큰 교체·재시도로 연장하지 않으며 updated_at 또는 현재 시각으로 과거 값을 생성하지 않음';
 COMMENT ON COLUMN "push_installation"."platform" IS '기기 종류 — ANDROID / IOS';
 COMMENT ON COLUMN "push_installation"."token_ciphertext" IS '푸시 토큰 — 암호화한 FCM 토큰';
 COMMENT ON COLUMN "push_installation"."updated_at" IS '마지막 갱신 시각';
@@ -153,8 +183,10 @@ CREATE TABLE "matching" (
     "status" "matching_status" NOT NULL,
     "proposed_at" timestamptz,
     "raw_delete_at" timestamptz,
+    "legacy_state" jsonb,
     CONSTRAINT "pk_matching" PRIMARY KEY ("id")
 );
+COMMENT ON COLUMN "matching"."legacy_state" IS '기존 pair/proposal/encounter·제한·취소 전용 과거 증거. 최신 응답으로 덮어쓰지 않음';
 COMMENT ON TABLE "matching" IS '만남·제안·차단 관계 — 두 사람당 한 줄. 사람별 기록(만남 기록·수락/거절·차단)은 matching_participant에';
 COMMENT ON COLUMN "matching"."id" IS '매칭 ID — 두 사람당 한 줄. 별도 제안 번호 칸은 없음. 앱이 제안을 조회·수락·거절할 때도 이 번호로 가리킴';
 COMMENT ON COLUMN "matching"."user_low_id" IS '작은 쪽 회원 ID — 두 회원 번호 중 작은 쪽. 탈퇴하면 이 행 삭제';
@@ -206,8 +238,10 @@ CREATE TABLE "chat_message" (
     "request_key" uuid NOT NULL,
     "request_hash" bytea NOT NULL,
     "created_at" timestamptz NOT NULL,
+    "legacy_public_id" uuid,
     CONSTRAINT "pk_chat_message" PRIMARY KEY ("id")
 );
+COMMENT ON COLUMN "chat_message"."legacy_public_id" IS '과거 공개 메시지 UUID 보존. 현재 공개 ID는 chat_message.id';
 COMMENT ON TABLE "chat_message" IS '채팅 메시지';
 COMMENT ON COLUMN "chat_message"."id" IS '메시지 ID — 공개 메시지 ID. API messageId';
 COMMENT ON COLUMN "chat_message"."chat_id" IS '채팅방 ID — 메시지가 속한 채팅방 ID';
@@ -228,8 +262,18 @@ CREATE TABLE "survey" (
     "user_id" bigint NOT NULL,
     "survey_version" varchar(30) NOT NULL,
     "completed_at" timestamptz,
+    "client_request_id" uuid,
+    "revision" bigint NOT NULL DEFAULT 0,
+    "legacy_public_id" uuid,
+    "response_context" jsonb,
+    "definition_snapshot" jsonb,
     CONSTRAINT "pk_survey" PRIMARY KEY ("id")
 );
+COMMENT ON COLUMN "survey"."client_request_id" IS '최초 생성 요청 키. 회원별 재시도는 같은 회차. 과거 미상은 NULL';
+COMMENT ON COLUMN "survey"."revision" IS '응답 동시성 증거. 기존 revision을 보존하고 임의 초기화하지 않음';
+COMMENT ON COLUMN "survey"."legacy_public_id" IS '과거 공개 회차 UUID. 기존 값만 보존하고 신규 숫자 ID와 구분';
+COMMENT ON COLUMN "survey"."response_context" IS 'answers 외 원본 업무 문맥. 문항별 답변의 중복 저장이 아님';
+COMMENT ON COLUMN "survey"."definition_snapshot" IS '시작 시 검증한 불변 문항·manifest 증거. 과거 미상은 NULL';
 COMMENT ON TABLE "survey" IS '설문 회차 — 설문 한 번 = 한 줄. 문항별 답은 survey_answer에';
 COMMENT ON COLUMN "survey"."id" IS '설문 회차 ID — 공개 설문 회차 ID. API sessionId';
 COMMENT ON COLUMN "survey"."user_id" IS '회원 ID — 응답 소유 회원 ID';
@@ -248,9 +292,15 @@ CREATE TABLE "chat" (
     "icebreakers" jsonb NOT NULL,
     "ai_state" jsonb NOT NULL,
     "retain_until" timestamptz,
+    "expires_at" timestamptz NOT NULL,
+    "delete_at" timestamptz,
+    "legacy_public_id" uuid,
     CONSTRAINT "pk_chat" PRIMARY KEY ("id"),
     CONSTRAINT "uq_chat_matching_id" UNIQUE ("matching_id")
 );
+COMMENT ON COLUMN "chat"."expires_at" IS '최초 이용 만료 시각. 생성+168시간 또는 검증한 기존 deadline. 재시도로 연장하지 않음';
+COMMENT ON COLUMN "chat"."delete_at" IS '일반 삭제 예약 시각 보존. 신고 retain_until보다 먼저 삭제하지 않음';
+COMMENT ON COLUMN "chat"."legacy_public_id" IS '과거 공개 방 UUID 보존. 현재 공개 ID는 chat.id';
 COMMENT ON TABLE "chat" IS '채팅방 — 매칭 한 건당 방 하나. 사람별 상태는 chat_participant에. 참여자 한 명이 탈퇴하면 방과 딸린 표 모두 삭제. 단 신고된 방은 retain_until까지 보관';
 COMMENT ON COLUMN "chat"."id" IS '채팅방 ID — 공개 채팅방 ID. API chatRoomId';
 COMMENT ON COLUMN "chat"."matching_id" IS '관계 ID — 방을 생성한 두 사람 관계의 내부 번호 (중복 금지)';
@@ -337,8 +387,12 @@ CREATE TABLE "matching_participant" (
     "response" "proposal_response",
     "responded_at" timestamptz,
     "blocked_at" timestamptz,
+    "decision_request_key" uuid,
+    "request_state" jsonb,
     CONSTRAINT "pk_matching_participant" PRIMARY KEY ("matching_id", "user_id")
 );
+COMMENT ON COLUMN "matching_participant"."decision_request_key" IS '최초 응답 확정 키. 회원 범위 중복 사용 차단과 최초 선택·시각 보존';
+COMMENT ON COLUMN "matching_participant"."request_state" IS '명령·재전송 receipt 및 구 취소 키/시각. 새 수락 취소 성공을 뜻하지 않음';
 COMMENT ON TABLE "matching_participant" IS '매칭 참여자별 기록 — 매칭 한 건에 두 사람이니 두 줄. 각자 보낸 만남 기록, 수락/거절, 차단을 사람별로 저장';
 COMMENT ON COLUMN "matching_participant"."matching_id" IS '매칭 ID — 어느 매칭의 참여자인지(matching.id)';
 COMMENT ON COLUMN "matching_participant"."user_id" IS '회원 ID — 이 줄의 주인. 탈퇴하면 매칭째로 삭제';
@@ -358,8 +412,12 @@ CREATE TABLE "chat_participant" (
     "user_id" bigint,
     "last_read_message_seq" bigint NOT NULL DEFAULT 0,
     "left_at" timestamptz,
+    "notice_state" jsonb NOT NULL DEFAULT '{}',
+    "read_state" jsonb NOT NULL DEFAULT '{}',
     CONSTRAINT "pk_chat_participant" PRIMARY KEY ("id")
 );
+COMMENT ON COLUMN "chat_participant"."notice_state" IS '일반안내·예약·최초ACK·선점·lease·재시도·설치별 전달 결과. AI 상태와 분리';
+COMMENT ON COLUMN "chat_participant"."read_state" IS '본인 messageId별 최초 표시 시각·기존 receipt. 불연속 배치를 max(seq) 읽음으로 추정하지 않음';
 COMMENT ON TABLE "chat_participant" IS '채팅방 참여자 — 채팅방 하나에 두 사람이니 두 줄. 각자 어디까지 읽었는지, 나갔는지 저장';
 COMMENT ON COLUMN "chat_participant"."id" IS '채팅 참여자 번호 — 메시지·신고·위험 안내가 이 번호로 사람을 가리킴';
 COMMENT ON COLUMN "chat_participant"."chat_id" IS '채팅방 ID — 어느 방의 참여자인지(chat.id)';
@@ -425,9 +483,11 @@ CREATE TABLE "survey_answer" (
     "survey_id" bigint NOT NULL,
     "question_id" varchar(50) NOT NULL,
     "answer_value" varchar(100) NOT NULL,
-    "answered_at" timestamptz NOT NULL,
+    "answered_at" timestamptz,
+    "answer_type" text,
     CONSTRAINT "pk_survey_answer" PRIMARY KEY ("survey_id", "question_id")
 );
+COMMENT ON COLUMN "survey_answer"."answer_type" IS 'scalar 원래 형식 STRING/NUMBER/BOOLEAN/NULL. 증거 미상은 추정하지 않음';
 COMMENT ON TABLE "survey_answer" IS '설문 문항별 답 — 설문 한 번에 문항 수만큼 줄. 문항·보기 내용은 설문 파일(survey/{버전}.json)에 있고 여기엔 고른 값만';
 COMMENT ON COLUMN "survey_answer"."survey_id" IS '설문 회차 ID — survey.id';
 COMMENT ON COLUMN "survey_answer"."question_id" IS '문항 ID — 설문 파일에 있는 문항 번호(예: Q07)';
@@ -523,3 +583,13 @@ CREATE INDEX "ix_service_case_closed" ON "service_case" ("closed_at");
 -- operator_audit.target_service_case_id >? service_case.id
 -- operator_audit.target_keyring_id >? keyring.id
 -- operator_audit.target_chat_report_id >? chat_report.id
+-- user_consents.user_id > users.id
+
+-- Approved domain preservation indexes; no shared DB execution.
+CREATE UNIQUE INDEX "uq_survey_user_request" ON "survey" ("user_id", "client_request_id");
+CREATE UNIQUE INDEX "uq_survey_legacy_public_id" ON "survey" ("legacy_public_id");
+CREATE UNIQUE INDEX "uq_survey_draft" ON "survey" ("user_id", "survey_version") WHERE "completed_at" IS NULL;
+CREATE UNIQUE INDEX "uq_chat_legacy_public_id" ON "chat" ("legacy_public_id");
+CREATE UNIQUE INDEX "uq_chat_message_legacy_public_id" ON "chat_message" ("legacy_public_id");
+CREATE UNIQUE INDEX "uq_matching_participant_user_request" ON "matching_participant" ("user_id", "decision_request_key");
+COMMENT ON COLUMN "survey_answer"."answered_at" IS '답한 시각 — 같은 문항을 다시 고르면 값과 시각을 덮어씀；구 JSON에 문항별 시각이 없으면 NULL. 현재·완료 시각 추정 금지';

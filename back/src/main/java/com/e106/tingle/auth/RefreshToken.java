@@ -15,23 +15,23 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 
 /**
- * 리프레시 토큰 (ERD refresh_tokens). 원문 대신 SHA-256 해시를 저장한다.
+ * 리프레시 토큰 (ERD refresh_token). 원문 대신 SHA-256 해시를 저장한다.
  *
  * <p>familyId 가 로그인 세션이다. 소셜 로그인 한 번(기기 하나)마다 새 family 가 생기고, 재발급한 토큰은 같은 family 를 잇는다.
  * 액세스 토큰의 sid 가 이 값이며, family 에 폐기되지 않은 토큰이 하나도 없으면 세션이 끝난 것이다(로그아웃·탈취 감지).
  * 재발급에 쓰이면 usedAt 이, 폐기되면 revokedAt 이 채워진다.
  */
 @Entity
-@Table(name = "refresh_tokens", indexes = {
-	@Index(name = "ix_refresh_tokens_user", columnList = "user_id"),
-	@Index(name = "ix_refresh_tokens_family", columnList = "family_id")})
+@Table(name = "refresh_token", indexes = {
+	@Index(name = "ix_refresh_token_user", columnList = "user_id"),
+	@Index(name = "ix_refresh_token_family", columnList = "family_id")})
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class RefreshToken {
 
 	@Id
 	@GeneratedValue(strategy = GenerationType.IDENTITY)
-	@Column(name = "token_id")
+	@Column(name = "id")
 	private Long id;
 
 	@Column(nullable = false)
@@ -50,11 +50,23 @@ public class RefreshToken {
 
 	private Instant revokedAt;
 
+	@Column(length = 100)
+	private String deviceName;
+
+	private Instant lastUsedAt;
+
 	public RefreshToken(Long userId, UUID familyId, byte[] tokenHash, Instant expiresAt) {
+		this(userId, familyId, tokenHash, expiresAt, null, null);
+	}
+
+	public RefreshToken(Long userId, UUID familyId, byte[] tokenHash, Instant expiresAt,
+		String deviceName, Instant lastUsedAt) {
 		this.userId = userId;
 		this.familyId = familyId;
 		this.tokenHash = tokenHash;
 		this.expiresAt = expiresAt;
+		this.deviceName = deviceName;
+		this.lastUsedAt = lastUsedAt;
 	}
 
 	public boolean isUsable(Instant now) {
@@ -69,6 +81,7 @@ public class RefreshToken {
 	public void markUsed(Instant now) {
 		if (usedAt == null) {
 			usedAt = now;
+			lastUsedAt = now;
 		}
 	}
 

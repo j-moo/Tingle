@@ -41,7 +41,7 @@ import tools.jackson.databind.JsonNode;
 class PushInstallationIntegrationTest extends IntegrationTestSupport {
 
 	static final String TEST_KEY = "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=";
-	private static final String PATH = "/api/v1/push-installations";
+	private static final String PATH = "/api/push-installations";
 	private final PushTokenCipher cipher = new PushTokenCipher(TEST_KEY);
 
 	@MockitoSpyBean
@@ -73,7 +73,7 @@ class PushInstallationIntegrationTest extends IntegrationTestSupport {
 		UUID otherId = UUID.randomUUID();
 		register(user, installationId, "ANDROID", "synthetic-old").andExpect(status().isOk());
 		register(user, otherId, "ANDROID", "synthetic-other").andExpect(status().isOk());
-		Object internalId = row(installationId).get("installation_id");
+		Object internalId = row(installationId).get("id");
 		Object updatedAt = row(installationId).get("updated_at");
 		String otherCiphertext = storedToken(otherId);
 		timeShift.set(Duration.ofSeconds(1));
@@ -82,7 +82,7 @@ class PushInstallationIntegrationTest extends IntegrationTestSupport {
 		register(user, installationId, "IOS", "synthetic-new").andExpect(status().isOk());
 
 		assertThat(count(installationId)).isEqualTo(1);
-		assertThat(row(installationId)).containsEntry("installation_id", internalId).containsEntry("platform", "IOS");
+		assertThat(row(installationId)).containsEntry("id", internalId).containsEntry("platform", "IOS");
 		assertThat(row(installationId).get("updated_at")).isNotEqualTo(updatedAt);
 		assertThat(cipher.decrypt(installationId, userIdOf(user), storedToken(installationId)))
 			.isEqualTo("synthetic-new");
@@ -95,7 +95,7 @@ class PushInstallationIntegrationTest extends IntegrationTestSupport {
 		JsonNode user = readyUser();
 		UUID installationId = UUID.randomUUID();
 		register(user, installationId, "ANDROID", "synthetic-old").andExpect(status().isOk());
-		Object oldId = row(installationId).get("installation_id");
+		Object oldId = row(installationId).get("id");
 
 		perform(delete(PATH + "/" + installationId), user, null).andExpect(status().isNoContent())
 			.andExpect(header().string("Cache-Control", "no-store")).andExpect(content().string(""));
@@ -104,7 +104,7 @@ class PushInstallationIntegrationTest extends IntegrationTestSupport {
 			.andExpect(jsonPath("$.code").value("NOT_FOUND"));
 		register(user, installationId, "ANDROID", "synthetic-reregister").andExpect(status().isOk());
 
-		assertThat(row(installationId).get("installation_id")).isNotEqualTo(oldId);
+		assertThat(row(installationId).get("id")).isNotEqualTo(oldId);
 		assertThat(cipher.decrypt(installationId, userIdOf(user), storedToken(installationId)))
 			.isEqualTo("synthetic-reregister");
 	}
@@ -151,14 +151,16 @@ class PushInstallationIntegrationTest extends IntegrationTestSupport {
 		JsonNode user = readyUser();
 		UUID installationId = UUID.randomUUID();
 		register(user, installationId, "ANDROID", "synthetic-original").andExpect(status().isOk());
-		Map<String, Object> before = row(installationId);
 		logout(user.path("refreshToken").asString()).andExpect(status().isNoContent());
+		Map<String, Object> before = row(installationId);
+		assertThat(before).containsEntry("user_id", null).containsEntry("login_family_id", null)
+			.containsEntry("binding_id", null).containsEntry("linked_at", null);
 		register(user, installationId, "ANDROID", "synthetic-revoked").andExpect(status().isUnauthorized());
 		perform(delete(PATH + "/" + installationId), user, null).andExpect(status().isUnauthorized());
 		assertThat(row(installationId)).isEqualTo(before);
 
 		JsonNode suspended = readyUser();
-		jdbc.update("update app_users set status='SUSPENDED' where user_id=?", userIdOf(suspended));
+		jdbc.update("update users set status='SUSPENDED' where id=?", userIdOf(suspended));
 		register(suspended, UUID.randomUUID(), "ANDROID", "synthetic-suspended")
 			.andExpect(status().isUnauthorized());
 	}
@@ -250,7 +252,7 @@ class PushInstallationIntegrationTest extends IntegrationTestSupport {
 	}
 
 	private Map<String, Object> row(UUID installationId) {
-		return jdbc.queryForMap("select * from push_installations where client_installation_id=?", installationId);
+		return jdbc.queryForMap("select * from push_installation where client_installation_id=?", installationId);
 	}
 
 	private String storedToken(UUID installationId) {
@@ -258,7 +260,7 @@ class PushInstallationIntegrationTest extends IntegrationTestSupport {
 	}
 
 	private int count(UUID installationId) {
-		return jdbc.queryForObject("select count(*) from push_installations where client_installation_id=?",
+		return jdbc.queryForObject("select count(*) from push_installation where client_installation_id=?",
 			Integer.class, installationId);
 	}
 }

@@ -10,6 +10,9 @@ erDiagram
         jsonb icebreakers
         jsonb ai_state
         timestamptz retain_until
+        timestamptz expires_at
+        timestamptz delete_at
+        uuid legacy_public_id UK
     }
     chat_participant {
         bigint id PK
@@ -17,6 +20,8 @@ erDiagram
         bigint user_id
         bigint last_read_message_seq
         timestamptz left_at
+        jsonb notice_state
+        jsonb read_state
     }
     chat_message {
         bigint id PK
@@ -28,6 +33,7 @@ erDiagram
         uuid request_key
         bytea request_hash
         timestamptz created_at
+        uuid legacy_public_id UK
     }
     chat_report {
         bigint id PK
@@ -90,6 +96,7 @@ erDiagram
     }
     matching {
         bigint id PK
+        jsonb legacy_state
     }
     users {
         bigint id PK

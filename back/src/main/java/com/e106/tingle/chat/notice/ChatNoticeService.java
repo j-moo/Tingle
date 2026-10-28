@@ -34,7 +34,7 @@ public class ChatNoticeService {
 	private final Clock clock;
 
 	@Transactional
-	public EntryView enter(UUID roomId, long userId, UUID key) {
+	public EntryView enter(long roomId, long userId, UUID key) {
 		ChatService.NoticeAccess access = chats.noticeAccess(roomId, userId, true, false);
 		ChatNoticeJob first = store.ensure(access.room(), userId, "FIRST_ENTRY", clock.instant());
 		bind(first, userId, key, "entry");
@@ -42,7 +42,7 @@ public class ChatNoticeService {
 	}
 
 	@Transactional
-	public NoticesView list(UUID roomId, long userId) {
+	public NoticesView list(long roomId, long userId) {
 		ChatService.NoticeAccess access = chats.noticeAccess(roomId, userId, true, false);
 		ChatNoticeJob first = jobs.findByBusinessKey(ChatNoticeJob.key(access.room().getId(), userId, "FIRST_ENTRY"))
 			.orElse(null);
@@ -50,7 +50,7 @@ public class ChatNoticeService {
 	}
 
 	@Transactional
-	public NoticeAck ack(UUID roomId, UUID noticeId, long userId, UUID key) {
+	public NoticeAck ack(long roomId, UUID noticeId, long userId, UUID key) {
 		ChatService.NoticeAccess access = chats.noticeAccess(roomId, userId, true, true);
 		ChatNoticeJob job = jobs.findByPublicId(noticeId).orElseThrow(this::notFound);
 		if ((!job.getJobType().equals("FIRST_ENTRY") && !job.getJobType().equals("END_NOTICE"))
