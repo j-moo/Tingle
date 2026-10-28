@@ -1,0 +1,445 @@
+{
+  "surveyVersion": "SIS-Q-1.1-100",
+  "calculationVersion": "local-personal-js100-port-1",
+  "answers": [
+    {
+      "questionId": "Q001",
+      "value": 3
+    },
+    {
+      "questionId": "Q002",
+      "value": 4
+    },
+    {
+      "questionId": "Q003",
+      "value": 4
+    },
+    {
+      "questionId": "Q004",
+      "value": 3
+    },
+    {
+      "questionId": "Q005",
+      "value": 3
+    },
+    {
+      "questionId": "Q006",
+      "value": 4
+    },
+    {
+      "questionId": "Q007",
+      "value": 2
+    },
+    {
+      "questionId": "Q008",
+      "value": 2
+    },
+    {
+      "questionId": "Q009",
+      "value": 3
+    },
+    {
+      "questionId": "Q010",
+      "value": 4
+    },
+    {
+      "questionId": "Q011",
+      "value": 2
+    },
+    {
+      "questionId": "Q012",
+      "value": 4
+    },
+    {
+      "questionId": "Q013",
+      "value": 4
+    },
+    {
+      "questionId": "Q014",
+      "value": 2
+    },
+    {
+      "questionId": "Q015",
+      "value": 4
+    },
+    {
+      "questionId": "Q016",
+      "value": 4
+    },
+    {
+      "questionId": "Q017",
+      "value": 3
+    },
+    {
+      "questionId": "Q018",
+      "value": 3
+    },
+    {
+      "questionId": "Q019",
+      "value": 4
+    },
+    {
+      "questionId": "Q020",
+      "value": 4
+    },
+    {
+      "questionId": "Q021",
+      "value": 3
+    },
+    {
+      "questionId": "Q022",
+      "value": 4
+    },
+    {
+      "questionId": "Q023",
+      "value": 4
+    },
+    {
+      "questionId": "Q024",
+      "value": 4
+    },
+    {
+      "questionId": "Q025",
+      "value": 2
+    },
+    {
+      "questionId": "Q026",
+      "value": 2
+    },
+    {
+      "questionId": "Q027",
+      "value": 3
+    },
+    {
+      "questionId": "Q028",
+      "value": 2
+    },
+    {
+      "questionId": "Q029",
+      "value": 2
+    },
+    {
+      "questionId": "Q030",
+      "value": 4
+    },
+    {
+      "questionId": "Q031",
+      "value": 2
+    },
+    {
+      "questionId": "Q032",
+      "value": 2
+    },
+    {
+      "questionId": "Q033",
+      "value": 4
+    },
+    {
+      "questionId": "Q034",
+      "value": 2
+    },
+    {
+      "questionId": "Q035",
+      "value": 4
+    },
+    {
+      "questionId": "Q036",
+      "value": 2
+    },
+    {
+      "questionId": "Q037",
+      "value": 2
+    },
+    {
+      "questionId": "Q038",
+      "value": 4
+    },
+    {
+      "questionId": "Q039",
+      "value": 2
+    },
+    {
+      "questionId": "Q040",
+      "value": [
+        "talk",
+        "walk"
+      ]
+    },
+    {
+      "questionId": "Q041",
+      "value": 2
+    },
+    {
+      "questionId": "Q042",
+      "value": 4
+    },
+    {
+      "questionId": "Q043",
+      "value": 4
+    },
+    {
+      "questionId": "Q044",
+      "value": "change"
+    },
+    {
+      "questionId": "Q045",
+      "value": "help"
+    },
+    {
+      "questionId": "Q046",
+      "value": 2
+    },
+    {
+      "questionId": "Q047",
+      "value": 2
+    },
+    {
+      "questionId": "Q048",
+      "value": 3
+    },
+    {
+      "questionId": "Q049",
+      "value": "alternate"
+    },
+    {
+      "questionId": "Q050",
+      "value": "experience"
+    },
+    {
+      "questionId": "Q051",
+      "value": 4
+    },
+    {
+      "questionId": "Q052",
+      "value": [
+        "afternoon",
+        "evening"
+      ]
+    },
+    {
+      "questionId": "Q053",
+      "value": "local"
+    },
+    {
+      "questionId": "Q054",
+      "value": 2
+    },
+    {
+      "questionId": "Q055",
+      "value": "none"
+    },
+    {
+      "questionId": "Q056",
+      "value": "none"
+    },
+    {
+      "questionId": "Q057",
+      "value": 3
+    },
+    {
+      "questionId": "Q058",
+      "value": "undecided"
+    },
+    {
+      "questionId": "Q059",
+      "value": 4
+    },
+    {
+      "questionId": "Q060",
+      "value": "none"
+    },
+    {
+      "questionId": "Q061",
+      "value": "low"
+    },
+    {
+      "questionId": "Q062",
+      "value": "high"
+    },
+    {
+      "questionId": "Q063",
+      "value": "high"
+    },
+    {
+      "questionId": "Q064",
+      "value": "low"
+    },
+    {
+      "questionId": "Q065",
+      "value": 4
+    },
+    {
+      "questionId": "Q066",
+      "value": 2
+    },
+    {
+      "questionId": "Q067",
+      "value": 2
+    },
+    {
+      "questionId": "Q068",
+      "value": 4
+    },
+    {
+      "questionId": "Q069",
+      "value": 2
+    },
+    {
+      "questionId": "Q070",
+      "value": 4
+    },
+    {
+      "questionId": "Q071",
+      "value": 2
+    },
+    {
+      "questionId": "Q072",
+      "value": 2
+    },
+    {
+      "questionId": "Q073",
+      "value": 4
+    },
+    {
+      "questionId": "Q074",
+      "value": 2
+    },
+    {
+      "questionId": "Q075",
+      "value": [
+        "talk",
+        "walk"
+      ]
+    },
+    {
+      "questionId": "Q076",
+      "value": 2
+    },
+    {
+      "questionId": "Q077",
+      "value": 4
+    },
+    {
+      "questionId": "Q078",
+      "value": 4
+    },
+    {
+      "questionId": "Q079",
+      "value": [
+        "change"
+      ]
+    },
+    {
+      "questionId": "Q080",
+      "value": [
+        "help"
+      ]
+    },
+    {
+      "questionId": "Q081",
+      "value": 2
+    },
+    {
+      "questionId": "Q082",
+      "value": 2
+    },
+    {
+      "questionId": "Q083",
+      "value": 3
+    },
+    {
+      "questionId": "Q084",
+      "value": [
+        "alternate"
+      ]
+    },
+    {
+      "questionId": "Q085",
+      "value": [
+        "experience"
+      ]
+    },
+    {
+      "questionId": "Q086",
+      "value": 4
+    },
+    {
+      "questionId": "Q087",
+      "value": [
+        "afternoon",
+        "evening"
+      ]
+    },
+    {
+      "questionId": "Q088",
+      "value": [
+        "local"
+      ]
+    },
+    {
+      "questionId": "Q089",
+      "value": 2
+    },
+    {
+      "questionId": "Q090",
+      "value": [
+        "none"
+      ]
+    },
+    {
+      "questionId": "Q091",
+      "value": [
+        "none"
+      ]
+    },
+    {
+      "questionId": "Q092",
+      "value": 3
+    },
+    {
+      "questionId": "Q093",
+      "value": [
+        "undecided"
+      ]
+    },
+    {
+      "questionId": "Q094",
+      "value": 4
+    },
+    {
+      "questionId": "Q095",
+      "value": [
+        "none"
+      ]
+    },
+    {
+      "questionId": "Q096",
+      "value": [
+        "approach",
+        "connection",
+        "experience"
+      ]
+    },
+    {
+      "questionId": "Q097",
+      "value": "any"
+    },
+    {
+      "questionId": "Q098",
+      "value": "some"
+    },
+    {
+      "questionId": "Q099",
+      "value": "fit"
+    },
+    {
+      "questionId": "Q100",
+      "value": "my_wishes"
+    }
+  ],
+  "metadata": {
+    "ownAge": null,
+    "desiredAgeMin": null,
+    "desiredAgeMax": null
+  }
+}
