@@ -12,6 +12,7 @@ kotlin {
         namespace = "com.ssafy.e106.shared"
         compileSdk = libs.versions.compileSdk.get().toInt()
         minSdk = libs.versions.minSdk.get().toInt()
+        androidResources.enable = true
         compilerOptions {
             jvmTarget = JvmTarget.JVM_17
         }
@@ -29,7 +30,11 @@ kotlin {
             implementation(libs.compose.runtime)
             implementation(libs.compose.foundation)
             implementation(libs.compose.material)
+            implementation(libs.compose.material3)
             implementation(libs.compose.ui)
+            implementation(libs.compose.resources)
         }
     }
 }
+
+compose.resources { packageOfResClass = "com.ssafy.e106.resources" }
