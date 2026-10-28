@@ -24,6 +24,7 @@ import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.web.servlet.ResultActions;
 
 import com.e106.tingle.IntegrationTestSupport;
 import com.e106.tingle.TestProtectedController;
@@ -43,9 +44,7 @@ import tools.jackson.databind.JsonNode;
 @Import({TestcontainersConfiguration.class, TestProtectedController.class})
 class OnboardingIntegrationTest extends IntegrationTestSupport {
 
-	private static final String ONBOARDING = "/api/v1/users/me/onboarding";
-	private static final String PROFILE = "/api/v1/users/me/profile";
-	private static final String NICKNAME_CHECK = "/api/v1/users/nickname-availability";
+	private static final String NICKNAME_CHECK = "/api/users/nickname-availability";
 
 	@Autowired
 	private UserConsentRepository userConsentRepository;
@@ -59,7 +58,8 @@ class OnboardingIntegrationTest extends IntegrationTestSupport {
 	@DisplayName("약관 → 키링 → 프로필 → 설문 → 희망 조건 → 키링 반영 순서로 진행되고, 실제로 다 마쳐야 READY")
 	void onboardingProceedsFromAgreementToReady() throws Exception {
 		JsonNode tokens = login("kakao", newSocialId());
-		perform(get(ONBOARDING), tokens, null).andExpect(jsonPath("$.nextStep").value("AGREEMENT_REQUIRED"))
+		perform(get(me(tokens, "/onboarding")), tokens, null)
+			.andExpect(jsonPath("$.nextStep").value("AGREEMENT_REQUIRED"))
 			.andExpect(jsonPath("$.signupCompleted").value(false))
 			.andExpect(jsonPath("$.onboardingCompleted").value(false))
 			// 설문 회차가 없으면 현재 버전의 첫 문항부터. 설정 반영 필드는 기능 전이라 임시값이지만 키는 항상 있다
@@ -83,7 +83,7 @@ class OnboardingIntegrationTest extends IntegrationTestSupport {
 			.andExpect(jsonPath("$.onboardingStatus").value("SURVEY_REQUIRED"));
 
 		// 프로필까지 마쳐도 남은 단계가 있으면 가입 완료가 아니다
-		perform(get(ONBOARDING), tokens, null).andExpect(jsonPath("$.nextStep").value("SURVEY_REQUIRED"))
+		perform(get(me(tokens, "/onboarding")), tokens, null).andExpect(jsonPath("$.nextStep").value("SURVEY_REQUIRED"))
 			.andExpect(jsonPath("$.signupCompleted").value(false))
 			.andExpect(jsonPath("$.matchingReady").value(false));
 		assertThat(userRepository.findById(userId).orElseThrow().getSignupCompletedAt()).isNull();
@@ -93,7 +93,7 @@ class OnboardingIntegrationTest extends IntegrationTestSupport {
 		setPreferences(userId);
 		assertNextStep(tokens, "SYNC_PENDING");
 		acknowledgeSync(userId, bindingId, analysisId);
-		perform(get(ONBOARDING), tokens, null).andExpect(jsonPath("$.nextStep").value("READY"))
+		perform(get(me(tokens, "/onboarding")), tokens, null).andExpect(jsonPath("$.nextStep").value("READY"))
 			.andExpect(jsonPath("$.signupCompleted").value(true))
 			.andExpect(jsonPath("$.onboardingCompleted").value(true))
 			.andExpect(jsonPath("$.matchingReady").value(true))
@@ -103,11 +103,11 @@ class OnboardingIntegrationTest extends IntegrationTestSupport {
 	}
 
 	private void assertNextStep(JsonNode tokens, String step) throws Exception {
-		perform(get(ONBOARDING), tokens, null).andExpect(jsonPath("$.nextStep").value(step));
+		perform(get(me(tokens, "/onboarding")), tokens, null).andExpect(jsonPath("$.nextStep").value(step));
 	}
 
 	@Test
-	@DisplayName("아직 오지 않은 단계의 API는 403 ONBOARDING_REQUIRED, /api/v1/auth 아래도 마찬가지. 프로필은 약관 동의 직후부터")
+	@DisplayName("아직 오지 않은 단계의 API는 403 ONBOARDING_REQUIRED, /api/auth 아래도 마찬가지. 프로필은 약관 동의 직후부터")
 	void apisOfLaterStepsAreBlocked() throws Exception {
 		JsonNode tokens = login("kakao", newSocialId());
 
@@ -119,7 +119,7 @@ class OnboardingIntegrationTest extends IntegrationTestSupport {
 		agree(tokens).andExpect(status().isOk());
 		perform(get("/api/v1/test/protected"), tokens, null).andExpect(status().isForbidden())
 			.andExpect(jsonPath("$.code").value("ONBOARDING_REQUIRED"));
-		perform(get("/api/v1/auth/test-protected"), tokens, null).andExpect(status().isForbidden());
+		perform(get("/api/auth/test-protected"), tokens, null).andExpect(status().isForbidden());
 
 		// 키링 등록 API 전이라 프로필은 키링 단계에서도 저장할 수 있다. 그래도 가입을 다 마치기 전엔 막힌다.
 		patchProfile(tokens, fullProfile(uniqueNickname())).andExpect(status().isOk());
@@ -133,8 +133,33 @@ class OnboardingIntegrationTest extends IntegrationTestSupport {
 	@Test
 	@DisplayName("가입 단계 조회는 토큰이 없으면 401")
 	void onboardingRequiresToken() throws Exception {
-		mockMvc.perform(get(ONBOARDING)).andExpect(status().isUnauthorized())
+		mockMvc.perform(get("/api/users/1/onboarding")).andExpect(status().isUnauthorized())
 			.andExpect(jsonPath("$.code").value("AUTH_REQUIRED"));
+	}
+
+	@Test
+	@DisplayName("경로의 회원번호가 본인이 아니면 아무것도 하지 않고 403 FORBIDDEN, 예전 /api/v1/users/me 경로는 없다")
+	void otherUsersPathIsForbidden() throws Exception {
+		JsonNode tokens = login("kakao", newSocialId());
+		JsonNode other = login("kakao", newSocialId());
+		agree(tokens).andExpect(status().isOk());
+
+		perform(get(me(other, "/onboarding")), tokens, null).andExpect(status().isForbidden())
+			.andExpect(jsonPath("$.code").value("FORBIDDEN"));
+		perform(post(me(other, "/agreements")), tokens, toJson(Map.of("agreements", agreementAnswers())))
+			.andExpect(status().isForbidden());
+		perform(patch(me(other, "/profile")), tokens, toJson(fullProfile(uniqueNickname())))
+			.andExpect(status().isForbidden());
+		perform(post(me(other, "/profile/complete")), tokens, null).andExpect(status().isForbidden());
+		perform(get("/api/users/not-a-number/profile"), tokens, null).andExpect(status().isForbidden());
+		// 남의 번호로 보낸 요청은 저장하지 않았다
+		long otherId = userIdOf(other);
+		assertThat(jdbc.queryForObject("select count(*) from user_consents where user_id = ?", Integer.class,
+			otherId)).isZero();
+		assertThat(jdbc.queryForObject("select count(*) from profile where user_id = ?", Integer.class,
+			otherId)).isZero();
+
+		perform(get("/api/v1/users/me/onboarding"), tokens, null).andExpect(status().isNotFound());
 	}
 
 	// ---------- 약관 동의 ----------
@@ -171,7 +196,8 @@ class OnboardingIntegrationTest extends IntegrationTestSupport {
 		agree(tokens, declined).andExpect(status().isBadRequest())
 			.andExpect(jsonPath("$.code").value("REQUIRED_AGREEMENT_MISSING"));
 
-		perform(get(ONBOARDING), tokens, null).andExpect(jsonPath("$.nextStep").value("AGREEMENT_REQUIRED"));
+		perform(get(me(tokens, "/onboarding")), tokens, null)
+			.andExpect(jsonPath("$.nextStep").value("AGREEMENT_REQUIRED"));
 	}
 
 	@Test
@@ -212,7 +238,7 @@ class OnboardingIntegrationTest extends IntegrationTestSupport {
 	void emptyProfileBeforeFirstSave() throws Exception {
 		JsonNode tokens = agreedUser();
 
-		perform(get(PROFILE), tokens, null).andExpect(status().isOk())
+		perform(get(me(tokens, "/profile")), tokens, null).andExpect(status().isOk())
 			.andExpect(jsonPath("$.completed").value(false))
 			.andExpect(jsonPath("$.hasProfilePhoto").value(false))
 			.andExpect(jsonPath("$.imageUrl").value(nullValue()))
@@ -227,7 +253,8 @@ class OnboardingIntegrationTest extends IntegrationTestSupport {
 
 		patchProfile(tokens, Map.of("nickname", nickname)).andExpect(status().isOk())
 			.andExpect(jsonPath("$.completed").value(false));
-		perform(get(ONBOARDING), tokens, null).andExpect(jsonPath("$.nextStep").value("KEYRING_REQUIRED"));
+		perform(get(me(tokens, "/onboarding")), tokens, null)
+			.andExpect(jsonPath("$.nextStep").value("KEYRING_REQUIRED"));
 
 		patchProfile(tokens, Map.of("gender", "MALE", "birthDate", "2000-01-01")).andExpect(status().isOk())
 			.andExpect(jsonPath("$.nickname").value(nickname))
@@ -266,7 +293,7 @@ class OnboardingIntegrationTest extends IntegrationTestSupport {
 		patchProfile(tokens, Map.of("gender", "MALE", "birthDate", "1999-01-01")).andExpect(status().isOk());
 		patchProfile(tokens, Map.of("gender", "FEMALE", "birthDate", "2001-03-15")).andExpect(status().isOk());
 		completeProfile(tokens).andExpect(status().isOk());
-		perform(get(PROFILE), tokens, null).andExpect(jsonPath("$.completed").value(true));
+		perform(get(me(tokens, "/profile")), tokens, null).andExpect(jsonPath("$.completed").value(true));
 
 		patchProfile(tokens, Map.of("gender", "MALE")).andExpect(status().is(422))
 			.andExpect(jsonPath("$.code").value("PROFILE_FIELD_LOCKED"));
@@ -296,12 +323,84 @@ class OnboardingIntegrationTest extends IntegrationTestSupport {
 	void completedMemberKeepsAccessWithoutKeyring() throws Exception {
 		JsonNode tokens = login("kakao", newSocialId());
 		completeOnboarding(tokens);
-		jdbc.update("update keyring_bindings set unbound_at=now() where user_id=?", userIdOf(tokens));
+		jdbc.update("update keyring set owner_user_id=null,state='UNBOUND',synced_settings_version=null,"
+			+ "synced_at=null where owner_user_id=?", userIdOf(tokens));
 
-		perform(get(ONBOARDING), tokens, null).andExpect(jsonPath("$.nextStep").value("KEYRING_REQUIRED"))
+		perform(get(me(tokens, "/onboarding")), tokens, null)
+			.andExpect(jsonPath("$.nextStep").value("KEYRING_REQUIRED"))
 			.andExpect(jsonPath("$.signupCompleted").value(true))
 			.andExpect(jsonPath("$.matchingReady").value(false));
 		perform(get("/api/v1/test/protected"), tokens, null).andExpect(status().isOk());
+	}
+
+	@Test
+	@DisplayName("본인 등록 기기의 가장 높은 확인 버전을 표시하고 하나라도 최신이면 준비된다")
+	void reportsActualVersionsAcrossOwnedRegisteredKeyrings() throws Exception {
+		JsonNode tokens = login("kakao", newSocialId());
+		completeOnboarding(tokens);
+		long userId = userIdOf(tokens);
+		jdbc.update("update user_setting set settings_version=7 where user_id=?", userId);
+		jdbc.update("update keyring set synced_settings_version=2 where owner_user_id=?", userId);
+		long another = bindKeyring(userId);
+		jdbc.update("update keyring set synced_settings_version=4 where id=?", another);
+		long unknown = bindKeyring(userId);
+		long invalidFuture = bindKeyring(userId);
+		jdbc.update("update keyring set synced_settings_version=12 where id=?", invalidFuture);
+		jdbc.update("insert into keyring(serial_number,firmware_version,owner_user_id,state,synced_settings_version) "
+			+ "values (?,'test',?,'UNBOUND',6)", newSocialId(), userId);
+		JsonNode other = login("kakao", newSocialId());
+		long foreign = bindKeyring(userIdOf(other));
+		jdbc.update("update keyring set synced_settings_version=6 where id=?", foreign);
+		assertVersions(tokens, 7, 4L, false);
+		jdbc.update("update keyring set synced_settings_version=7 where id=?", another);
+		assertVersions(tokens, 7, 7L, true);
+		jdbc.update("update keyring set owner_user_id=null,state='UNBOUND' where id=?", another);
+		assertVersions(tokens, 7, 2L, false);
+		assertThat(jdbc.queryForObject("select synced_settings_version from keyring where id=?",
+			Long.class, unknown)).isNull();
+	}
+
+	@Test
+	@DisplayName("설정 행 유실·음수 버전을 안전값으로 표시하며 임의 설정이나 ACK를 복원하지 않는다")
+	void missingOrNegativeSettingsDoNotInventAcknowledgement() throws Exception {
+		JsonNode tokens = login("kakao", newSocialId());
+		completeOnboarding(tokens);
+		long userId = userIdOf(tokens);
+		jdbc.update("update user_setting set settings_version=-1 where user_id=?", userId);
+		assertVersions(tokens, 0, null, false);
+		assertThat(jdbc.queryForObject("select settings_version from user_setting where user_id=?",
+			Long.class, userId)).isEqualTo(-1);
+		jdbc.update("delete from user_setting where user_id=?", userId);
+		assertVersions(tokens, 0, null, false);
+		assertThat(jdbc.queryForObject("select count(*) from user_setting where user_id=?", Integer.class, userId))
+			.isZero();
+	}
+
+	@Test
+	@DisplayName("미확인·영·음수 ACK와 다른 회원·해제 기기의 값은 확인 버전으로 표시하지 않는다")
+	void unknownOrInvalidAcknowledgementsRemainNull() throws Exception {
+		JsonNode tokens = login("kakao", newSocialId());
+		completeOnboarding(tokens);
+		long userId = userIdOf(tokens);
+		for (Long invalid : List.of(0L, -1L, 2L)) {
+			jdbc.update("update keyring set synced_settings_version=? where owner_user_id=?", invalid, userId);
+			assertVersions(tokens, 1, null, false);
+		}
+		jdbc.update("update keyring set synced_settings_version=null where owner_user_id=?", userId);
+		assertVersions(tokens, 1, null, false);
+		jdbc.update("update keyring set synced_settings_version=1,state='UNBOUND' where owner_user_id=?", userId);
+		assertVersions(tokens, 1, null, false);
+	}
+
+	private void assertVersions(JsonNode tokens, long required, Long acknowledged, boolean ready) throws Exception {
+		ResultActions response = perform(get(me(tokens, "/onboarding")), tokens, null)
+			.andExpect(status().isOk()).andExpect(jsonPath("$.requiredSettingsVersion").value(required))
+			.andExpect(jsonPath("$.matchingReady").value(ready));
+		if (acknowledged == null) {
+			response.andExpect(jsonPath("$.acknowledgedSettingsVersion").value(nullValue()));
+		} else {
+			response.andExpect(jsonPath("$.acknowledgedSettingsVersion").value(acknowledged));
+		}
 	}
 
 	@Test
@@ -313,7 +412,7 @@ class OnboardingIntegrationTest extends IntegrationTestSupport {
 
 		patchProfile(tokens, Map.of("birthDate", eighteen)).andExpect(status().isForbidden())
 			.andExpect(jsonPath("$.code").value("UNDER_AGE"));
-		perform(get(PROFILE), tokens, null).andExpect(jsonPath("$.birthDate").doesNotExist());
+		perform(get(me(tokens, "/profile")), tokens, null).andExpect(jsonPath("$.birthDate").doesNotExist());
 
 		patchProfile(tokens, Map.of("birthDate", today.minusYears(19).toString())).andExpect(status().isOk());
 		patchProfile(tokens, Map.of("birthDate", today.plusDays(1).toString())).andExpect(status().isBadRequest())
@@ -359,8 +458,8 @@ class OnboardingIntegrationTest extends IntegrationTestSupport {
 		patchProfile(tokens, Map.of("smokingStatus", 1)).andExpect(status().isBadRequest());
 		patchProfile(tokens, Map.of("nickname", uniqueNickname(), "hobby", "산책")).andExpect(status().isBadRequest())
 			.andExpect(jsonPath("$.code").value("INVALID_REQUEST"));
-		perform(get(PROFILE), tokens, null).andExpect(jsonPath("$.nickname").value(nullValue()));
-		perform(patch(PROFILE), tokens, "[]")
+		perform(get(me(tokens, "/profile")), tokens, null).andExpect(jsonPath("$.nickname").value(nullValue()));
+		perform(patch(me(tokens, "/profile")), tokens, "[]")
 			.andExpect(status().isBadRequest());
 	}
 
@@ -399,7 +498,7 @@ class OnboardingIntegrationTest extends IntegrationTestSupport {
 	private JsonNode loginWithEmail(String socialId, String email) throws Exception {
 		given(socialVerifier.verify(eq(SocialProvider.GOOGLE), eq("email-" + socialId)))
 			.willReturn(new SocialAccount(socialId, email));
-		String response = mockMvc.perform(post("/api/v1/auth/google")
+		String response = mockMvc.perform(post("/api/auth/google")
 				.contentType(MediaType.APPLICATION_JSON)
 				.content("{\"token\":\"email-" + socialId + "\"}"))
 			.andExpect(status().isOk())

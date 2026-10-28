@@ -53,9 +53,9 @@ public class SecurityConfig {
 	private static final int MIN_SECRET_BYTES = 32;
 	private static final String TOKEN_EXPIRED = "token_expired";
 	private static final String SESSION_REVOKED = "session_revoked";
-	// POST /api/v1/auth/{provider} (소셜 로그인)와 /api/v1/auth/logout.
+	// POST /api/auth/{provider} (소셜 로그인)와 /api/auth/logout.
 	// 지원하지 않는 provider 는 컨트롤러가 400 INVALID_PROVIDER 로 응답한다.
-	private static final Pattern SOCIAL_LOGIN = Pattern.compile("^/api/v1/auth/[^/]+$");
+	private static final Pattern SOCIAL_LOGIN = Pattern.compile("^/api/auth/[^/]+$");
 
 	@Bean
 	SecurityFilterChain securityFilterChain(HttpSecurity http, JsonMapper jsonMapper) throws Exception {
@@ -86,10 +86,10 @@ public class SecurityConfig {
 		String path = request.getRequestURI();
 		String method = request.getMethod();
 		if (HttpMethod.GET.matches(method)) {
-			return path.equals("/api/v1/agreements") || path.equals("/actuator/health");
+			return path.equals("/api/agreements") || path.equals("/actuator/health");
 		}
 		return HttpMethod.POST.matches(method)
-			&& (path.equals("/api/v1/auth/token/refresh") || SOCIAL_LOGIN.matcher(path).matches());
+			&& (path.equals("/api/auth/token/refresh") || SOCIAL_LOGIN.matcher(path).matches());
 	}
 
 	/**

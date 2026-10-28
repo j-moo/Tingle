@@ -9,6 +9,7 @@ import java.util.ArrayList;
 import java.util.Base64;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -64,7 +65,16 @@ public class ChatService {
 			if (active != null) {
 				return active;
 			}
-			ChatRoom room = rooms.saveAndFlush(new ChatRoom(pair.getId(), proposal.getId(), clock.instant()));
+			// 복구 재시도도 최초 상호 수락 시각에서 시작한다. 현재 시각으로 7일을 다시 열지 않는다.
+			entityManager.flush();
+			List<Timestamp> responses = jdbc.queryForList("select responded_at from matching_participant "
+				+ "where matching_id=? and user_id in (?,?) and response='ACCEPTED' and responded_at is not null",
+				Timestamp.class, proposal.getId(), pair.getUserLow(), pair.getUserHigh());
+			if (responses.size() != 2) {
+				throw new BusinessException(ErrorCode.SERVICE_UNAVAILABLE);
+			}
+			Instant acceptedAt = responses.stream().map(Timestamp::toInstant).max(Instant::compareTo).orElseThrow();
+			ChatRoom room = rooms.saveAndFlush(new ChatRoom(pair.getId(), proposal.getId(), acceptedAt));
 			participants.save(new ChatMember(room.getId(), pair.getUserLow()));
 			participants.save(new ChatMember(room.getId(), pair.getUserHigh()));
 			noticeJobs.ensure(room, pair.getUserLow(), "END_NOTICE", clock.instant());
@@ -76,6 +86,11 @@ public class ChatService {
 	@Transactional(readOnly = true)
 	public ChatRoom linked(long roomId) {
 		return rooms.findById(roomId).orElseThrow(this::notFound);
+	}
+
+	@Transactional(readOnly = true)
+	public Optional<ChatRoom> linkedForMatching(long matchingId) {
+		return rooms.findBySourceProposalId(matchingId);
 	}
 
 	@Transactional(readOnly = true)
@@ -95,7 +110,7 @@ public class ChatService {
 		if (cursor != null) {
 			String[] parts = decode(cursor, "r", Long.toString(userId));
 			try {
-				ChatRoom position = rooms.findByPublicId(UUID.fromString(parts[2])).orElseThrow(this::notFound);
+				ChatRoom position = rooms.findByPublicId(Long.parseLong(parts[2])).orElseThrow(this::notFound);
 				owned(position, userId);
 				before = position.getId();
 			} catch (IllegalArgumentException exception) {
@@ -125,7 +140,7 @@ public class ChatService {
 	}
 
 	@Transactional(readOnly = true)
-	public ChatRoomView room(UUID id, long userId) {
+	public ChatRoomView room(long id, long userId) {
 		Owned owned = owned(rooms.findByPublicId(id).orElseThrow(this::notFound), userId);
 		if (!owned.room().active(clock.instant())) {
 			return roomView(owned.room(), false);
@@ -135,12 +150,12 @@ public class ChatService {
 	}
 
 	@Transactional(readOnly = true)
-	public MessagePage messages(UUID id, long userId, String cursor, int limit) {
+	public MessagePage messages(long id, long userId, String cursor, int limit) {
 		Owned owned = find(id, userId, false);
 		long before = Long.MAX_VALUE;
 		if (cursor != null) {
 			try {
-				before = Long.parseLong(decode(cursor, "m", id.toString())[2]);
+				before = Long.parseLong(decode(cursor, "m", Long.toString(id))[2]);
 				if (before <= 0) {
 					throw invalid();
 				}
@@ -150,15 +165,14 @@ public class ChatService {
 		}
 		List<ChatMessage> rows = messages.page(owned.room().getId(), before, PageRequest.of(0, limit + 1));
 		List<ChatMessage> page = rows.stream().limit(limit).toList();
-		Set<Long> acknowledged = acknowledged(owned.pair().partnerOf(userId), page);
 		requireAccess(owned);
 		String next = rows.size() > limit ? encode("m|" + id + "|" + page.getLast().getSequence()) : null;
-		return new MessagePage(page.stream().map(m -> messageView(m, userId, acknowledged)).toList(),
+		return new MessagePage(page.stream().map(m -> messageView(m, owned.member().getId())).toList(),
 			next, clock.instant());
 	}
 
 	@Transactional
-	public MessageView send(UUID id, long userId, UUID clientId, UUID key, String raw) {
+	public MessageView send(long id, long userId, UUID clientId, UUID key, String raw) {
 		members.lockMember(userId);
 		Owned owned = find(id, userId, true);
 		String normalized = ChatText.normalize(raw);
@@ -176,7 +190,7 @@ public class ChatService {
 			if (!previous.getRequestHash().equals(hash)) {
 				throw new BusinessException(ErrorCode.IDEMPOTENCY_CONFLICT);
 			}
-			return messageView(previous, userId, acknowledged(owned.pair().partnerOf(userId), List.of(previous)));
+			return messageView(previous, owned.member().getId());
 		}
 		String processed = ChatText.mask(normalized);
 		requireAccess(owned);
@@ -184,21 +198,21 @@ public class ChatService {
 		if (!owned.room().active(now)) {
 			throw new BusinessException(ErrorCode.CHAT_CLOSED);
 		}
-		ChatMessage saved = messages.saveAndFlush(new ChatMessage(owned.room().getId(), userId, clientId, key, hash,
-			owned.room().nextSequence(), processed, now));
-		return messageView(saved, userId, Set.of());
+		ChatMessage saved = messages.saveAndFlush(new ChatMessage(owned.room().getId(), owned.member().getId(),
+			clientId, key, hash, owned.room().nextSequence(), processed, now));
+		return messageView(saved, owned.member().getId());
 	}
 
 	@Transactional
-	public ReadMessagesResult read(UUID id, long userId, List<UUID> publicIds) {
+	public ReadMessagesResult read(long id, long userId, List<Long> publicIds) {
 		members.lockMember(userId);
 		Owned owned = find(id, userId, true);
-		Set<UUID> requested = new HashSet<>(publicIds);
+		Set<Long> requested = new HashSet<>(publicIds);
 		List<ChatMessage> rows = messages.findByChatRoomIdAndPublicIdIn(owned.room().getId(), requested);
 		if (rows.size() != requested.size()) {
 			throw notFound();
 		}
-		if (rows.stream().anyMatch(m -> m.getSenderId() == userId)) {
+		if (rows.stream().anyMatch(m -> m.getSenderParticipantId().equals(owned.member().getId()))) {
 			throw invalid();
 		}
 		Set<Long> previous = acknowledged(userId, rows);
@@ -212,13 +226,15 @@ public class ChatService {
 				reads.save(new ChatRead(message.getId(), userId, now));
 			}
 		}
+		reads.advanceContiguous(owned.member());
 		return new ReadMessagesResult(publicIds.stream().distinct().toList(), now);
 	}
 
-	private Owned find(UUID id, long userId, boolean lock) {
+	private Owned find(long id, long userId, boolean lock) {
 		ChatRoom room = (lock ? rooms.lockByPublicId(id) : rooms.findByPublicId(id)).orElseThrow(this::notFound);
 		if (lock) {
 			entityManager.refresh(room, LockModeType.PESSIMISTIC_WRITE);
+			lockParticipant(room.getId(), userId);
 		}
 		Owned owned = owned(room, userId);
 		requireAccess(owned);
@@ -229,13 +245,14 @@ public class ChatService {
 	}
 
 	@Transactional
-	public NoticeAccess noticeAccess(UUID id, long userId, boolean lock, boolean allowClosedAck) {
+	public NoticeAccess noticeAccess(long id, long userId, boolean lock, boolean allowClosedAck) {
 		if (lock) {
 			members.lockMember(userId);
 		}
 		ChatRoom room = (lock ? rooms.lockByPublicId(id) : rooms.findByPublicId(id)).orElseThrow(this::notFound);
 		if (lock) {
 			entityManager.refresh(room, LockModeType.PESSIMISTIC_WRITE);
+			lockParticipant(room.getId(), userId);
 		}
 		Owned owned = owned(room, userId);
 		if (allowClosedAck) {
@@ -251,8 +268,14 @@ public class ChatService {
 	public record NoticeAccess(ChatRoom room, ChatMember member) {
 	}
 
+	private void lockParticipant(long roomId, long userId) {
+		ChatMember member = participants.lockMember(roomId, userId).orElseThrow(this::notFound);
+		// Read receipts and notice workers share this row; refresh after locking to preserve both JSON documents.
+		entityManager.refresh(member, LockModeType.PESSIMISTIC_WRITE);
+	}
+
 	private Owned owned(ChatRoom room, long userId) {
-		ChatMember member = participants.findById(new ChatMember.Key(room.getId(), userId)).orElseThrow(this::notFound);
+		ChatMember member = participants.findByChatRoomIdAndUserId(room.getId(), userId).orElseThrow(this::notFound);
 		PairRelation pair = pairs.findById(room.getPairId()).orElseThrow(this::notFound);
 		if (!pair.includes(userId)) {
 			throw notFound();
@@ -295,11 +318,10 @@ public class ChatService {
 			.collect(Collectors.toSet());
 	}
 
-	private MessageView messageView(ChatMessage message, long userId, Set<Long> acknowledged) {
-		boolean mine = message.getSenderId() == userId;
+	private MessageView messageView(ChatMessage message, long participantId) {
+		boolean mine = message.getSenderParticipantId() == participantId;
 		return new MessageView(message.getPublicId(), message.getClientMessageId(), mine ? "ME" : "PARTNER",
-			message.getSequence(), message.getBody(), message.getCreatedAt(),
-			mine && acknowledged.contains(message.getId()));
+			message.getSequence(), message.getBody(), message.getCreatedAt());
 	}
 
 	private ChatRoomView roomView(ChatRoom room, boolean allowed) {
@@ -308,6 +330,9 @@ public class ChatService {
 		Instant closed = room.getClosedAt() != null ? room.getClosedAt() : active ? null : room.getExpiresAt();
 		Instant deletion = room.getDeleteAt() != null ? room.getDeleteAt()
 			: closed == null ? null : closed.plus(Duration.ofDays(30));
+		if (deletion != null && room.getRetainUntil() != null && room.getRetainUntil().isAfter(deletion)) {
+			deletion = room.getRetainUntil();
+		}
 		return new ChatRoomView(room.getPublicId(), active ? "ACTIVE" : "CLOSED", room.getCreatedAt(),
 			room.getExpiresAt(), closed, deletion, now, active && allowed, active && allowed);
 	}

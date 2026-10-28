@@ -28,7 +28,7 @@ import lombok.RequiredArgsConstructor;
  * ponytail: 키링 등록 API 전이라 KEYRING_REQUIRED 단계부터 열고, 회차 시작은 서비스에서 프로필 등록 여부를 본다.
  */
 @RestController
-@RequestMapping("/api/v1")
+@RequestMapping("/api")
 @RequiredArgsConstructor
 public class SurveyController {
 
@@ -50,13 +50,13 @@ public class SurveyController {
 
 	@RequiresOnboarding(OnboardingStatus.KEYRING_REQUIRED)
 	@GetMapping("/survey-sessions/{sessionId}")
-	public ResponseEntity<SurveySessionResponse> get(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID sessionId) {
+	public ResponseEntity<SurveySessionResponse> get(@AuthenticationPrincipal Jwt jwt, @PathVariable long sessionId) {
 		return withETag(ResponseEntity.ok(), surveyService.get(userId(jwt), sessionId));
 	}
 
 	@RequiresOnboarding(OnboardingStatus.KEYRING_REQUIRED)
 	@GetMapping("/survey-sessions/{sessionId}/questionnaire")
-	public QuestionnaireResponse questionnaire(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID sessionId) {
+	public QuestionnaireResponse questionnaire(@AuthenticationPrincipal Jwt jwt, @PathVariable long sessionId) {
 		return surveyService.questionnaireOf(userId(jwt), sessionId);
 	}
 

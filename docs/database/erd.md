@@ -1,5 +1,26 @@
 # Tingle(팅글) ERD·테이블 정의
 
+## 2026-10-28 B 저장 이관 — 22표 유지·업무별 증거 보존
+
+현재 검토 설계는 **22개 테이블·176개 컬럼·36개 논리 관계**다. 사용자가 22표를 유지하면서 업무소유표에 전용 보존 컬럼을 추가하도록 승인했다. 이전 22/161은 A151 보완 시점 이력이며 원본 자료와 구분한다.
+
+- 설문 요청·동시성·과거 UUID·비답변 문맥·검증한 정의·문항별 scalar 형식을 보존한다. 과거 문항 시각·정의가 없으면 NULL이며 임의 시각/파일로 복구하지 않는다.
+- 일반 안내 예약·ACK·재시도·lease·설치별 전달 결과와 불연속 읽음은 참여자의 전용 notice_state/read_state에 보존한다. 무관 AI JSON이나 별도 legacy 표로 우회하지 않는다.
+- 제안 생성(PENDING) 이후 영구 재매칭 금지. 과거 pair/제안/제한/취소 이력은 전용 보존 자료이며 새 선택을 뒤집거나 공개 ID를 재사용하지 않는다.
+- 원본 source_sha256·22표·논리 관계·비관련 표를 유지한다. 실행 migration이 아니며 공유 DB 적용은 없다. 실제 코드/22표 전체 검증 상태는 각 이관 검증 기록을 따른다.
+
+## 2026-10-28 A151 사용자 결정 — 회원 상태·동의 이력 보존
+
+현재 검토 설계는 **22개 테이블·161개 컬럼·36개 논리 관계**다. 기존 `users.status`(ACTIVE / WITHDRAWAL_PENDING / SUSPENDED / WITHDRAWN)와 `created_at`을 보존하고, 기존 `user_consents`의 6개 필드와 이력을 그대로 유지한다. 회원 상태·생성 시각을 삭제하거나 전원 ACTIVE·현재 시각으로 바꾸지 않는다. 항목별 동의·거절·철회·문서 버전으로 과거 `users.agreed_at` 일괄 동의를 추정하지 않는다. 신규 일괄 동의 시각과 개별 선택 동의 이력은 서로 대체하지 않는다.
+
+원본 첨부 21개·151컬럼의 source hash와 이전 푸시 보완 21개·153컬럼 기록은 보존한다. 추가한 1개 관계는 `user_consents.user_id > users.id`의 논리 참조이며 물리 FK는 추가하지 않았다. 이 설계 보완을 공유 DB에 적용하지 않았다. 아래 과거 검토 이력은 당시 기준이다.
+
+## 2026-10-28 사용자 결정 반영 — 푸시 연결 세대 보존
+
+S15P31E106-176·178: 키링 응답의 등록 시각 `boundAt`은 제거하고 keyring ERD를 유지한다. 푸시의 현재 연결 ID `binding_id`(nullable UUID)와 최초 연결 시각 `linked_at`(nullable timestamptz)은 `push_installation`에 보존한다. 현재 합계는 **21개 테이블·153개 컬럼·35개 논리 관계**다. 원본 첨부의 151개 컬럼과 아래 과거 검토 이력은 당시 기준이다.
+
+두 푸시 값은 같은 트랜잭션에서 함께 저장/해제하며 같은 로그인 family의 정상 토큰 교체에는 유지한다. 최초 연결·해제 후 재연결은 새 연결 세대와 최초 시각을 사용하고, 로그아웃 연결 비움에는 user_id/login_family_id와 함께 비운다. 과거 행의 누락 값을 현재 시각·새 UUID로 임의 채우지 않는다. 이미 존재하는 JPA 동명 필드를 재사용하며 중복 세대 컬럼을 만들지 않는다. 물리 FK/새 관계는 추가하지 않았다. 설계 반영과 실제 JPA 테이블/로그아웃 이관·공유 DB 적용은 구분한다.
+
 ## 2026-10-27 21개 테이블 설명 보완과 미해결 계약
 
 담당 김영빈(BE), 관련 S15P31E106-91·92, 영향 FE·BE·AI·IoT. 기준 develop `3c26bbb8f82a78e442d56e57373ad21a25988989`. 사용자 제공 2026-10-27 DBML과 후속 SQL을 대조한 설명 보완이다. 첨부 원본과 실제 DB는 보존한다. 로컬 설계 artifact는 아래 최신 21개 정의로 갱신한다. 아래 로컬 SQL·metadata·관계도는 21개 테이블 설계로 정합화했다. 서버·JPA·공용 DB 적용은 별도이며 완료하지 않았다. 기획·기능 명세·정책·UX 원문은 수정하지 않는다.
@@ -74,20 +95,21 @@ DBML 상단의 단계별 변경 이력보다 실제 Table·컬럼 정의를 기�
 
 위 설명은 설계 대조다. 아래 2026-10-22 통합 자료의 테이블 수·DDL·구현 상태를 21개 테이블 적용 근거로 사용하지 않는다. 저장소의 과거 25/185·28/204 표기도 서로 다른 시점의 자료이며 첨부의 검증 수치로 대체하지 않는다.
 
-## 현재 설계 정의 — 2026-10-28 / 21개 테이블·151개 컬럼
+## 현재 설계 정의 — 2026-10-28 / 22개 테이블·161개 컬럼
 
 사용자 제공 2026-10-27 DBML의 실제 Table·컬럼·enum·인덱스·Ref를 기준으로 작성했다. 과거 25/185·28/204 자료는 변경 이력의 당시 상태이며 현재 정의가 아니다. 원본 첨부는 보존했다.
 
 [기계 판독 정의](tables.json) · [PostgreSQL 설계 DDL](schema.sql) · [ERDCloud 도식 가져오기](erdcloud-import.sql) · [검증](../verification/erd21-alignment-20261028.md)
 
-관계는 35개의 논리 참조다. 기존 프로젝트의 물리 FK 미사용 원칙을 유지한다. 특히 회원·matching 삭제와 신고 채팅 보관의 참조 잔존은 합의가 필요하다. SQL은 새 빈 DB용 검토 설계일 뿐 마이그레이션·실행·배포 증거가 아니다.
+관계는 원본 35개와 보존 이력 1개를 합한 36개의 논리 참조다. 기존 프로젝트의 물리 FK 미사용 원칙을 유지한다. 특히 회원·matching 삭제와 신고 채팅 보관의 참조 잔존은 합의가 필요하다. SQL은 새 빈 DB용 검토 설계일 뿐 마이그레이션·실행·배포 증거가 아니다.
 
 | 표 | 컬럼 수 | 역할 |
 | --- | ---: | --- |
 | `personality` | 5 | 성향 분석 결과 — 설문 한 번 분석 = 한 줄. 분석 결과만 담고, 매칭 조건은 matching_preference에 |
-| `users` | 7 | 회원·인증·동의 |
+| `users` | 9 | 회원·인증·동의 |
+| `user_consents` | 6 | 항목별 동의·철회·버전·기록 시각 이력 |
 | `refresh_token` | 9 | 로그인 토큰(기기별) |
-| `push_installation` | 7 | 푸시 알림 기기 |
+| `push_installation` | 9 | 푸시 알림 기기 |
 | `operator_audit` | 11 | 운영자 활동 기록 — 운영자가 회원 정보를 보거나 고치거나 권한을 바꾼 일을 남기는 기록 |
 | `matching` | 11 | 만남·제안·차단 관계 — 두 사람당 한 줄. 사람별 기록(만남 기록·수락/거절·차단)은 matching_participant에 |
 | `keyring` | 7 | 실물 키링 |
@@ -133,8 +155,25 @@ DBML 상단의 단계별 변경 이력보다 실제 Table·컬럼 정의를 기�
 | `signup_completed_at` | `timestamptz` | 가능 |  | 가입 완료 시각 — 최초 가입을 모두 완료한 시각 |
 | `agreed_at` | `timestamptz` | 가능 |  | 일괄 동의 시각 — 첫 화면에서 약관·개인정보·AI 분석 등에 한 번에 동의한 시각. 비어 있거나 새 약관 시행일보다 이르면 재동의 받음 |
 | `is_operator` | `boolean` | 불가 |  | 운영자 여부 — 운영 화면 접근 가능 여부. 일반 회원은 false |
+| `status` | `text` | 불가 |  | 회원 상태 — 기존 ACTIVE / WITHDRAWAL_PENDING / SUSPENDED / WITHDRAWN 값을 보존. 정지·탈퇴 계정을 ACTIVE로 추정하지 않음 |
+| `created_at` | `timestamptz` | 불가 |  | 회원 생성 시각 — 최초 소셜 로그인 때 서버가 확정한 기존 시각을 보존. 이관 시 현재 시각으로 바꾸지 않음 |
 
 인덱스: UNIQUE provider, provider_user_id (`uq_users_provider_account`).
+
+### user_consents
+
+항목별 동의·철회 이력 — 문서 버전·참거짓·기록 시각을 수정 없이 누적하며 users.agreed_at으로 합치거나 과거 일괄 동의를 추정하지 않음
+
+| 컬럼 | 타입 | NULL | 키·참조 | 설명 |
+| --- | --- | --- | --- | --- |
+| `consent_id` | `bigint` | 불가 | PK, 자동 증가 | 동의 이력 ID — 기존 기록 순서와 번호를 보존 |
+| `user_id` | `bigint` | 불가 | users.id | 동의한 회원 ID — users.id |
+| `consent_type` | `text` | 불가 |  | 동의 항목 — 설정 파일에 정의된 약관·개인정보·AI 등 정확한 항목 코드 |
+| `document_version` | `text` | 불가 |  | 사용자가 확인한 정확한 문서 버전 — 최신 버전으로 덮어쓰지 않음 |
+| `agreed` | `boolean` | 불가 |  | 해당 항목 동의 여부 — 동의 true, 거절·철회 false. 선택 동의를 일괄 true로 추정하지 않음 |
+| `recorded_at` | `timestamptz` | 불가 |  | 동의·거절·철회가 확정된 서버 시각 — 기존 시각 보존 |
+
+인덱스: INDEX user_id (`ix_user_consents_user`).
 
 ### refresh_token
 
@@ -154,6 +193,8 @@ DBML 상단의 단계별 변경 이력보다 실제 Table·컬럼 정의를 기�
 
 인덱스: INDEX family_id (`ix_refresh_token_family`).
 
+인덱스: INDEX user_id (`ix_refresh_token_user`) — 기존 회원별 토큰 조회·폐기 경로 보존.
+
 ### push_installation
 
 푸시 알림 기기
@@ -164,6 +205,8 @@ DBML 상단의 단계별 변경 이력보다 실제 Table·컬럼 정의를 기�
 | `client_installation_id` | `uuid` | 불가 | UNIQUE | 앱 설치 ID — 앱이 발급, 재설치 전까지 유지 |
 | `user_id` | `bigint` | 가능 | users.id | 연결된 회원 ID — 로그아웃하면 비움 |
 | `login_family_id` | `uuid` | 가능 |  | 연결된 로그인 기기 — refresh_token.family_id. 그 로그인이 끝나면 비움. 알림 기기 목록 기준 |
+| `binding_id` | `uuid` | 가능 |  | 현재 수신 연결 세대 — 최초 연결·재연결 때 발급, 같은 family 토큰 교체에는 유지. linked_at과 함께 저장·해제, 로그아웃 때 비움. 과거 누락 값 추정 금지 |
+| `linked_at` | `timestamptz` | 가능 |  | 현재 연결 최초 확정 시각 — binding_id와 함께 저장·해제. 토큰 교체·재시도로 연장하지 않음 |
 | `platform` | `device_platform` | 불가 |  | 기기 종류 — ANDROID / IOS |
 | `token_ciphertext` | `text` | 불가 |  | 푸시 토큰 — 암호화한 FCM 토큰 |
 | `updated_at` | `timestamptz` | 불가 |  | 마지막 갱신 시각 |
@@ -498,6 +541,8 @@ erDiagram
         uuid client_installation_id
         bigint user_id
         uuid login_family_id
+        uuid binding_id
+        timestamptz linked_at
         device_platform platform
         text token_ciphertext
         timestamptz updated_at

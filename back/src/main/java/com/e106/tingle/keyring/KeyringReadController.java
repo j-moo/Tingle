@@ -16,7 +16,7 @@ import com.e106.tingle.user.RequiresOnboarding;
 import lombok.RequiredArgsConstructor;
 
 @RestController
-@RequestMapping("/api/v1/keyrings")
+@RequestMapping("/api/keyrings")
 @RequiredArgsConstructor
 public class KeyringReadController {
 

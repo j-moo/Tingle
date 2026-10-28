@@ -1,7 +1,10 @@
 package com.e106.tingle.survey;
 
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -27,11 +30,12 @@ import tools.jackson.databind.json.JsonMapper;
 @RequiredArgsConstructor
 public class SurveyService {
 
-	// 새 회차의 응답 JSON. 응답은 문항 ID 키로 쌓고, 나이 정보는 비워 둔다.
-	private static final String EMPTY_RESPONSE =
-		"{\"answers\":{},\"metadata\":{\"ownAge\":null,\"desiredAgeMin\":null,\"desiredAgeMax\":null}}";
+	// 현재 API의 기존 metadata 응답만 보존한다. 문항 답은 survey_answer에만 저장한다.
+	private static final String EMPTY_CONTEXT =
+		"{\"metadata\":{\"ownAge\":null,\"desiredAgeMin\":null,\"desiredAgeMax\":null}}";
 
 	private final SurveyResponseRepository surveyResponseRepository;
+	private final SurveyAnswerRepository surveyAnswerRepository;
 	private final SurveyCatalog catalog;
 	private final ProfileRepository profileRepository;
 	private final UserRepository userRepository;
@@ -59,30 +63,33 @@ public class SurveyService {
 			if (!previous.getVersionCode().equals(surveyVersion)) {
 				throw new BusinessException(ErrorCode.IDEMPOTENCY_CONFLICT);
 			}
-			return view(previous, definition);
+			return view(previous, definitionOf(previous).definition());
 		}
 		SurveyResponse draft = surveyResponseRepository
 			.findByUserIdAndVersionCodeAndCompletedAtIsNull(userId, surveyVersion).orElse(null);
 		if (draft == null) {
+			String snapshot = jsonMapper.writeValueAsString(new FrozenDefinition(definition, catalog.metadataSchema()));
 			return view(surveyResponseRepository.save(
-				SurveyResponse.start(userId, surveyVersion, idempotencyKey, EMPTY_RESPONSE)), definition);
+				SurveyResponse.start(userId, surveyVersion, idempotencyKey, EMPTY_CONTEXT, snapshot)), definition);
 		}
 		// 이어가는 회차에 이번 키를 연결해, 완료 뒤 이 키로 재시도해도 같은 회차를 돌려준다.
 		// ponytail: 회차당 키 하나(최근 키)만 기억한다. 그 전 키로 완료 뒤 재시도하면 새 초안이 생긴다.
 		// 모든 키를 지켜야 하면 키 이력 테이블이 필요하다(ERD 변경).
 		surveyResponseRepository.rebindRequest(draft.getId(), idempotencyKey);
-		return view(draft, definition);
+		return view(draft, definitionOf(draft).definition());
 	}
 
 	@Transactional(readOnly = true)
-	public SurveySessionResponse get(long userId, UUID sessionId) {
+	public SurveySessionResponse get(long userId, long sessionId) {
 		SurveyResponse response = owned(userId, sessionId);
-		return view(response, definitionOf(response));
+		return view(response, definitionOf(response).definition());
 	}
 
 	@Transactional(readOnly = true)
-	public QuestionnaireResponse questionnaireOf(long userId, UUID sessionId) {
-		return questionnaire(definitionOf(owned(userId, sessionId)));
+	public QuestionnaireResponse questionnaireOf(long userId, long sessionId) {
+		FrozenDefinition stored = definitionOf(owned(userId, sessionId));
+		return new QuestionnaireResponse(Manifest.of(stored.definition()), stored.definition().questionCount(),
+			stored.definition().questions(), stored.metadataSchema());
 	}
 
 	/**
@@ -94,19 +101,19 @@ public class SurveyService {
 		return surveyResponseRepository.findByUserIdAndVersionCodeAndCompletedAtIsNull(userId,
 				current.surveyVersion())
 			.map(draft -> {
-				SurveySessionResponse view = view(draft, current);
+				SurveySessionResponse view = view(draft, definitionOf(draft).definition());
 				return new Progress(view.sessionId(), view.answeredCount(), view.questionCount(),
 					view.nextQuestionId());
 			})
 			.orElseGet(() -> new Progress(null, 0, current.questionCount(), current.questionIds().getFirst()));
 	}
 
-	public record Progress(UUID sessionId, int answeredCount, int questionCount, String nextQuestionId) {
+	public record Progress(Long sessionId, int answeredCount, int questionCount, String nextQuestionId) {
 	}
 
-	private SurveyResponse owned(long userId, UUID sessionId) {
+	private SurveyResponse owned(long userId, long sessionId) {
 		// 남의 회차와 없는 회차를 구분하지 않는다(존재 여부를 알려 주지 않기 위해).
-		return surveyResponseRepository.findByPublicIdAndUserId(sessionId, userId)
+		return surveyResponseRepository.findByIdAndUserId(sessionId, userId)
 			.orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
 	}
 
@@ -118,9 +125,26 @@ public class SurveyService {
 		}
 	}
 
-	private SurveyDefinition definitionOf(SurveyResponse response) {
-		return catalog.find(response.getVersionCode())
-			.orElseThrow(() -> new IllegalStateException("설문 버전 파일이 없습니다: " + response.getVersionCode()));
+	private FrozenDefinition definitionOf(SurveyResponse response) {
+		if (response.getDefinitionSnapshot() != null) {
+			FrozenDefinition stored;
+			try {
+				stored = jsonMapper.readValue(response.getDefinitionSnapshot(), FrozenDefinition.class);
+			} catch (RuntimeException exception) {
+				throw new BusinessException(ErrorCode.SERVICE_UNAVAILABLE);
+			}
+			if (stored == null || stored.definition() == null || stored.metadataSchema() == null
+				|| !response.getVersionCode().equals(stored.definition().surveyVersion())
+				|| stored.definition().contentHash() == null || stored.definition().questions() == null
+				|| stored.definition().questionIds() == null) {
+				throw new BusinessException(ErrorCode.SERVICE_UNAVAILABLE);
+			}
+			return stored;
+		}
+		// 과거 파일의 해시/문항을 새 snapshot으로 역추정하지 않는다. 없는 버전은 복구 전까지 차단한다.
+		SurveyDefinition definition = catalog.find(response.getVersionCode())
+			.orElseThrow(() -> new BusinessException(ErrorCode.SERVICE_UNAVAILABLE));
+		return new FrozenDefinition(definition, catalog.metadataSchema());
 	}
 
 	private QuestionnaireResponse questionnaire(SurveyDefinition definition) {
@@ -129,18 +153,27 @@ public class SurveyService {
 	}
 
 	private SurveySessionResponse view(SurveyResponse response, SurveyDefinition definition) {
-		JsonNode stored = jsonMapper.readTree(response.getResponseJson());
-		JsonNode answers = stored.get("answers");
+		Map<String, SurveyAnswer> answers = surveyAnswerRepository.findBySurveyId(response.getId()).stream()
+			.collect(Collectors.toMap(SurveyAnswer::getQuestionId, Function.identity()));
+		if (!definition.questionIds().containsAll(answers.keySet())) {
+			throw new BusinessException(ErrorCode.SERVICE_UNAVAILABLE);
+		}
 		List<SurveySessionResponse.Answer> answered = definition.questionIds().stream()
-			.filter(answers::has)
-			.map(id -> new SurveySessionResponse.Answer(id, answers.get(id)))
+			.filter(answers::containsKey)
+			.map(id -> new SurveySessionResponse.Answer(id, answers.get(id).value(jsonMapper)))
 			.toList();
 		String nextQuestionId = definition.questionIds().stream()
-			.filter(id -> !answers.has(id))
+			.filter(id -> !answers.containsKey(id))
 			.findFirst()
 			.orElse(null);
-		return new SurveySessionResponse(response.getPublicId(), Manifest.of(definition),
+		JsonNode context = response.getResponseContext() == null ? null
+			: jsonMapper.readTree(response.getResponseContext());
+		return new SurveySessionResponse(response.getId(), Manifest.of(definition),
 			response.isCompleted() ? "COMPLETED" : "DRAFT", response.getRevision(), answered.size(),
-			definition.questionCount(), nextQuestionId, answered, stored.get("metadata"), response.getCompletedAt());
+			definition.questionCount(), nextQuestionId, answered, context == null ? null : context.get("metadata"),
+			response.getCompletedAt());
+	}
+
+	public record FrozenDefinition(SurveyDefinition definition, JsonNode metadataSchema) {
 	}
 }

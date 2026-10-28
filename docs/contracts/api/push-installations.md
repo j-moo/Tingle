@@ -1,12 +1,28 @@
 # 본인 푸시 단말 등록·교체·해제
 
+## 2026-10-28 경로 이관 단위 · S15P31E106-176
+
+현재 구현 경로는 `PUT /api/push-installations`·`DELETE /api/push-installations/{installationId}`다. 이전 `/api/v1` 경로는 별칭으로 제공하지 않는다. Bearer 인증·현재 로그인 family·가입 단계·설치 UUID·no-store 및 기존 등록/해제 동작을 유지한다. 설치 UUID와 family UUID는 숫자 ID로 바꾸지 않는다.
+
+176·178 사용자 결정으로 `push_installation.binding_id`·`linked_at`을 ERD에 보존했다. bindingId 응답·안내/예약·발송 완료 식별은 같은 연결 세대를 사용한다. 두 값은 함께 저장/해제하며 같은 로그인 family의 토큰 교체에는 유지한다. 최초 연결·해제 후 재연결 때 새 연결 ID와 최초 시각을 확정하고 로그아웃 때 소유자·family와 함께 비운다. 과거 행의 누락 값을 현재 시각·새 UUID로 추정하지 않는다. 현재 JPA의 동명 필드를 재사용하며 중복 컬럼을 추가하지 않는다.
+
+현재 JPA/native SQL은 `push_installation.id`·nullable `user_id`와 canonical `device_platform` enum을 사용한다. 설치 UUID와 기존 암호화 AAD는 유지한다. 같은 owner/family와 완전한 bindingId/linkedAt 쌍만 정상 토큰 교체 때 보존하며, 한쪽이 없는 기존 행은 인증된 재등록 때 두 값을 함께 새로 확정한다. 소유자가 비워진 행은 새 계정으로 등록할 수 있으나 다른 활성 owner의 행은 이전하지 않는다.
+
+일반 로그아웃은 리프레시 증명으로 확인한 회원·family의 모든 설치에서 user_id/login_family_id/binding_id/linked_at을 같은 트랜잭션으로 비우고 해당 family를 폐기한다. 내부 ID·설치 UUID·플랫폼·암호문은 보존한다. 선택 입력 releaseInstallationId는 이전 클라이언트 호환용이며 다른 설치나 세션을 해제할 권한을 주지 않는다. 이미 비워진 연결·다른 회원이나 새 family로 재등록된 연결은 늦은 재시도가 비우지 않는다. 기존 탈취 감지의 회원 전체 세션 폐기 경로도 그 회원의 연결을 함께 비우며 기존 401/noRollbackFor 동작을 유지한다. 명시적 DELETE는 현재 본인 설치 행을 실제 삭제하는 별도 동작이다.
+
+모든 알림 종류는 현재 owner·family·완전한 연결 쌍과 유효한 해당 세션을 요구한다. 로그아웃·폐기·만료·family 미상의 기존 행은 새 제안도 수신하지 않는다. 같은 family의 정상 토큰 재발급은 연결을 유지한다. 후보 해석은 현재 owner·UUID·bindingId·linkedAt·암호문 지문을 다시 확인하며 이전 후보의 무효 토큰 정리도 새 연결을 삭제하지 않는다. 도메인별 현재 수신 권한은 호출 워커가 계속 확인한다.
+
+공유 DB에 SQL을 실행하지 않았고 실제 FCM 발송도 실행하지 않았다. FE 경로 전환은 서버와 함께 적용하며 저장/세션 이관 검증 전 전체 기능 완료로 표시하지 않는다. [176번 검증·남은 작업](../../verification/keyring-push-176.md).
+
+## 이전 구현 계약 · 2026-10-22 (로그아웃·세션 수신 정책은 위 2026-10-28 계약으로 대체)
+
 - 버전: 0.2.0-local, 2026-10-22. 담당 김영빈(BE), S15P31E106-82.
 - 기계 판독 계약: [OpenAPI](openapi.json)의 `registerPush`, `removePush`, `PushToken`, `PushRegistration`.
 - 영향: FE 설치 UUID·토큰 교체·해제 처리, 가을(BE)의 인증·계정 전환 연동. 로컬 구현 단계이며 팀 승인·병합·배포 또는 실제 푸시 발송 완료를 뜻하지 않는다.
 
 ## 등록과 토큰 교체
 
-`PUT /api/v1/push-installations`에 서비스 액세스 토큰을 보낸다. 기존 JWT 서명·만료·현재 세션·회원 상태 검사와 가입 단계 검사를 그대로 적용한다. UUID는 기기 소유 증명이나 회원 인증 자격이 아니다.
+`PUT /api/push-installations`에 서비스 액세스 토큰을 보낸다. 기존 JWT 서명·만료·현재 세션·회원 상태 검사와 가입 단계 검사를 그대로 적용한다. UUID는 기기 소유 증명이나 회원 인증 자격이 아니다.
 
 ```json
 {
@@ -25,7 +41,7 @@
 
 ## 해제와 재등록
 
-`DELETE /api/v1/push-installations/{installationId}`도 인증 및 가입 단계 검사를 적용한다.
+`DELETE /api/push-installations/{installationId}`도 인증 및 가입 단계 검사를 적용한다.
 
 - 본인 소유의 현재 행만 실제 삭제하고 204(본문 없음)를 반환한다.
 - 다른 회원 소유·미등록·이미 해제한 UUID는 같은 404 `NOT_FOUND` 응답이다. 반복 해제에서도 삭제된 행을 복원하지 않는다.
@@ -42,7 +58,7 @@
 
 ## 로그아웃과 계정 전환
 
-일반 `POST /api/v1/auth/logout`은 기존 `{refreshToken}` 요청과 204 응답을 유지한다. 연결은 남기고 기존 세션 family를 폐기한다. 다른 설치의 로그인은 이 설치의 로그인 상태를 대신하지 않는다.
+일반 `POST /api/auth/logout`은 기존 `{refreshToken}` 요청과 204 응답을 유지한다. 연결은 남기고 기존 세션 family를 폐기한다. 다른 설치의 로그인은 이 설치의 로그인 상태를 대신하지 않는다.
 
 계정 전환 시에는 같은 로그아웃 경로에 선택 필드를 보낸다.
 
@@ -86,3 +102,11 @@
 정상/오류·재등록·소유권·동시 등록 테스트의 실행 결과는 [구현 기록](../../verification/push-installations-82.md)에 남긴다.
 
 2026-10-22 후속 웹 대조: 요청받은 채팅·설치·로그아웃8개와 키링2개 API의 노션 현재 계약·저장 검증을 완료했다. 이 기록은 다른 API 전체나 서버/공용 DB/단말 검증으로 확대하지 않는다. [현재 통합 검증](../../verification/mr29-unified-integration-20261022.md)과 [10개 API 증거](../../verification/notion-api-ten-20261022.json)를 따른다.
+
+## ERD 21개 테이블 대조 (2026-10-27, 가을)
+
+2026-10-27 ERD 수정본(21개 테이블)의 `push_installation`은 `id`, `client_installation_id`(unique), `user_id`, `login_family_id`, `platform`, `token_ciphertext`, `updated_at` 7칸이다. 위 본문은 당시 구현 기록이다. 경로의 `/v1`은 뺐다.
+
+- `installationId`는 앱이 만드는 `client_installation_id`(UUID)라 그대로다.
+- 본문 "저장과 설정"의 `binding_id`·`linked_at` 칸이 ERD에 없다. 등록 응답의 `bindingId`를 무엇으로 만들지, 지연 알림 차단을 `login_family_id`만으로 할지 합의가 필요하다. 지금 코드는 두 칸을 쓰고 있어 ERD를 적용하면 코드와 맞지 않는다.
+- 로그아웃은 `refresh_token`의 family를 폐기하고, 선택 해제(`releaseInstallationId`) 규칙은 그대로다. 탈퇴하면 그 회원의 설치 연결을 해제한다.

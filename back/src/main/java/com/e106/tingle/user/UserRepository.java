@@ -31,9 +31,9 @@ public interface UserRepository extends JpaRepository<User, Long> {
 	@Transactional
 	@Modifying
 	@Query(value = """
-		INSERT INTO app_users (provider, provider_subject, status, created_at)
-		VALUES (:provider, :providerSubject, 'ACTIVE', :createdAt)
-		ON CONFLICT (provider, provider_subject) DO NOTHING
+		INSERT INTO users (provider, provider_user_id, status, created_at, is_operator)
+		VALUES (CAST(:provider AS auth_provider), :providerSubject, 'ACTIVE', :createdAt, false)
+		ON CONFLICT (provider, provider_user_id) DO NOTHING
 		""", nativeQuery = true)
 	void insertIfAbsent(String provider, String providerSubject, Instant createdAt);
 

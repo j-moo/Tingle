@@ -2,8 +2,8 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Tingle(팅글) 전체 API 계약",
-    "version": "1.4.0-erd21-owned-review",
-    "description": "영빈 담당 40개 API의 경로·본문·타입을 ERD21(21개 테이블·151개 컬럼·35개 논리 관계)에 정합화한 검토 계약. 담당 활성36개·제외4개, 전체 활성67개·기존 포함 제외15개. 다른 담당31개는 허용된 본인 preferences/settings 경로4개의 userId/403 보완 외에 보존했다. 팀 승인·서버 구현·실DB 적용·배포 검증과 구분한다.\n\n### 모든 API 공통 응답 (2026-10-23 정리)\n\n- 429 `RATE_LIMITED`: 요청 제한을 도입하면 모든 API에서 날 수 있다. `Retry-After` 후 재시도. 현재 미구현이라 API별로 적지 않는다.\n- 503 `SERVICE_UNAVAILABLE`: 일시 장애·점검 시 모든 API에서 날 수 있다. 외부 서버에 의존하는 API(내부 AI, 푸시 등록)만 API별로 적는다.\n- 500 `INTERNAL_ERROR`: 예상하지 못한 서버 오류.\n- 공개 API(로그인·토큰 재발급·약관 조회 등)는 액세스 토큰 401 코드를 적지 않는다. 남의 자원은 403이 아니라 404 `RESOURCE_NOT_FOUND`로 응답한다."
+    "version": "1.4.2-erd22-common-mapping-review",
+    "description": "영빈 담당 40개 API의 경로·본문·타입을 ERD21(21개 테이블·151개 컬럼·35개 논리 관계)에 정합화한 검토 계약. 담당 활성36개·제외4개, 전체 활성67개·기존 포함 제외15개. 다른 담당31개는 허용된 본인 preferences/settings 경로4개의 userId/403 보완 외에 보존했다. 팀 승인·서버 구현·실DB 적용·배포 검증과 구분한다.\n\n### 모든 API 공통 응답 (2026-10-23 정리)\n\n- 429 `RATE_LIMITED`: 요청 제한을 도입하면 모든 API에서 날 수 있다. `Retry-After` 후 재시도. 현재 미구현이라 API별로 적지 않는다.\n- 503 `SERVICE_UNAVAILABLE`: 일시 장애·점검 시 모든 API에서 날 수 있다. 외부 서버에 의존하는 API(내부 AI, 푸시 등록)만 API별로 적는다.\n- 500 `INTERNAL_ERROR`: 예상하지 못한 서버 오류.\n- 공개 API(로그인·토큰 재발급·약관 조회 등)는 액세스 토큰 401 코드를 적지 않는다. 남의 자원은 403이 아니라 404 `RESOURCE_NOT_FOUND`로 응답한다.\n\n2026-10-28 S15P31E106-176/178 사용자 결정: 키링 응답 boundAt 제거, push_installation.binding_id/linked_at 보존. 현재 ERD21은 21표153컬럼35관계이며 원본151컬럼과 구분한다. 전체 저장/로그아웃 이관 완료는 별도 검증한다.\n\n2026-10-28 A151 통합: 인증·약관·회원 경로를 /api 및 본인 숫자 userId로 정합화. 저장 기준은 승인된 22표176컬럼36논리관계. 동의 항목 이력·회원 상태/생성 시각과 설문 revision/response_context를 보존한다. 활성 채팅 API는 Erd21* 명명 스키마의 숫자 ID·상대 읽음 비공개 계약을 사용하며 구 Message 등 미사용 스키마는 과거 호환 참조다. Notion·리뷰·MR 병합과 실제 DB 이관은 별도 확인한다."
   },
   "servers": [
     {
@@ -17,7 +17,7 @@
     }
   ],
   "paths": {
-    "/api/v1/auth/{provider}": {
+    "/api/auth/{provider}": {
       "post": {
         "operationId": "socialLogin",
         "summary": "소셜 로그인 (수정 2026-10-21 14:16)",
@@ -209,8 +209,8 @@
         "x-inspected-backend-commit": "4f691085ea2bbf6ef1c7e5f2ff3e4152de98e45b",
         "x-notion-page": "https://app.notion.com/p/3fec91ccb6608136b254f15817f50a6b",
         "x-contract-status": "REVIEW_REQUIRED",
-        "x-storage-design": "unified25-185-review",
-        "x-reviewed-at": "2026-10-21 14:16 KST",
+        "x-storage-design": "erd22-canonical-151",
+        "x-reviewed-at": "2026-10-28",
         "x-confirmation-required": [],
         "x-change-history": [
           {
@@ -231,12 +231,16 @@
               "x-inspected-auth-contract": "7020a08",
               "x-inspected-backend-commit": "93b39a3"
             }
+          },
+          {
+            "date": "2026-10-28",
+            "revised": "A151 경로 정합화: /api/v1/auth/{provider} → /api/auth/{provider}. 본인 회원 번호 검사 및 승인된 22표 보존 매핑. 미구현 사진 API의 개발 완료를 뜻하지 않는다."
           }
         ],
         "x-auth-alignment": "AUTH-OPEN-01~05는 README의 2026-10-22 확정 내용 참조. 과거 x-change-history/inspected-ref는 당시 기록."
       }
     },
-    "/api/v1/auth/token/refresh": {
+    "/api/auth/token/refresh": {
       "post": {
         "operationId": "refreshTokens",
         "summary": "토큰 재발급 (수정 2026-10-21 14:16)",
@@ -378,8 +382,8 @@
         "x-inspected-backend-commit": "4f691085ea2bbf6ef1c7e5f2ff3e4152de98e45b",
         "x-notion-page": "https://app.notion.com/p/3fec91ccb6608185a106e4753f53c439",
         "x-contract-status": "REVIEW_REQUIRED",
-        "x-storage-design": "unified25-185-review",
-        "x-reviewed-at": "2026-10-21 14:16 KST",
+        "x-storage-design": "erd22-canonical-151",
+        "x-reviewed-at": "2026-10-28",
         "x-confirmation-required": [],
         "x-change-history": [
           {
@@ -393,12 +397,16 @@
               "x-inspected-auth-contract": "7020a08",
               "x-inspected-backend-commit": "93b39a3"
             }
+          },
+          {
+            "date": "2026-10-28",
+            "revised": "A151 경로 정합화: /api/v1/auth/token/refresh → /api/auth/token/refresh. 본인 회원 번호 검사 및 승인된 22표 보존 매핑. 미구현 사진 API의 개발 완료를 뜻하지 않는다."
           }
         ],
         "x-auth-alignment": "AUTH-OPEN-01~05는 README의 2026-10-22 확정 내용 참조. 과거 x-change-history/inspected-ref는 당시 기록."
       }
     },
-    "/api/v1/auth/logout": {
+    "/api/auth/logout": {
       "post": {
         "operationId": "logout",
         "summary": "현재 로그인 로그아웃 (수정 2026-10-21 14:16)",
@@ -525,8 +533,8 @@
         "x-inspected-backend-commit": "4f691085ea2bbf6ef1c7e5f2ff3e4152de98e45b",
         "x-notion-page": "https://app.notion.com/p/3ffc91ccb6608089b245d8cdda63d67c",
         "x-contract-status": "REVIEW_REQUIRED",
-        "x-storage-design": "unified25-185-review",
-        "x-reviewed-at": "2026-10-21 14:16 KST",
+        "x-storage-design": "erd22-canonical-151",
+        "x-reviewed-at": "2026-10-28",
         "x-confirmation-required": [],
         "x-change-history": [
           {
@@ -547,12 +555,16 @@
               "x-inspected-auth-contract": "7020a08",
               "x-inspected-backend-commit": "93b39a3"
             }
+          },
+          {
+            "date": "2026-10-28",
+            "revised": "A151 경로 정합화: /api/v1/auth/logout → /api/auth/logout. 본인 회원 번호 검사 및 승인된 22표 보존 매핑. 미구현 사진 API의 개발 완료를 뜻하지 않는다."
           }
         ],
         "x-auth-alignment": "AUTH-OPEN-01~05는 README의 2026-10-22 확정 내용 참조. 과거 x-change-history/inspected-ref는 당시 기록."
       }
     },
-    "/api/v1/agreements": {
+    "/api/agreements": {
       "get": {
         "operationId": "listAgreements",
         "summary": "약관 조회",
@@ -668,12 +680,18 @@
         "x-inspected-backend-commit": "93b39a3",
         "x-notion-page": "https://app.notion.com/p/3fec91ccb66081be99e6d9097814e3f9",
         "x-contract-status": "REVIEW_REQUIRED",
-        "x-storage-design": "unified25-185-review",
-        "x-reviewed-at": "2026-10-21 11:47 KST",
-        "x-confirmation-required": []
+        "x-storage-design": "erd22-canonical-151",
+        "x-reviewed-at": "2026-10-28",
+        "x-confirmation-required": [],
+        "x-change-history": [
+          {
+            "date": "2026-10-28",
+            "revised": "A151 경로 정합화: /api/v1/agreements → /api/agreements. 본인 회원 번호 검사 및 승인된 22표 보존 매핑. 미구현 사진 API의 개발 완료를 뜻하지 않는다."
+          }
+        ]
       }
     },
-    "/api/v1/users/me/agreements": {
+    "/api/users/{userId}/agreements": {
       "post": {
         "operationId": "submitAgreements",
         "summary": "약관 동의 저장 (수정 2026-10-21 14:16)",
@@ -685,6 +703,17 @@
         ],
         "x-auth-role": "user",
         "parameters": [
+          {
+            "name": "userId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            },
+            "description": "토큰의 회원 번호와 같은 본인만 허용. 다르면 403 FORBIDDEN."
+          },
           {
             "$ref": "#/components/parameters/AcceptLanguage"
           }
@@ -847,6 +876,23 @@
             "x-error-codes": [
               "AGREEMENT_VERSION_OUTDATED"
             ]
+          },
+          "403": {
+            "description": "FORBIDDEN: 경로 회원과 인증 회원 불일치",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "code": "FORBIDDEN",
+                  "message": "본인 정보만 조회·변경할 수 있습니다."
+                }
+              }
+            },
+            "x-error-codes": [
+              "FORBIDDEN"
+            ]
           }
         },
         "x-source-auth-contract": "https://lab.ssafy.com/s15-final/S15P31E106/-/blob/80310e6b6a1a169a89bdda85947a006815e2965e/docs/contracts/api/auth.md",
@@ -858,10 +904,14 @@
             "revised": "로그인 직후 첫 가입 단계에서 약관 조회로 표시한 항목의 선택을 저장한다. Bearer 인증이 필요하며 AGREEMENT_REQUIRED 단계부터 호출한다. userId를 요청으로 받지 않고 검증한 JWT sub를 사용한다.\n\n### 요청·응답\n\n- 요청 {agreements:[{type,version,agreed}]}, 성공200 {onboardingStatus}다. type/version은 매번 GET /api/v1/agreements로 조회한 값을 보낸다.\n- 필수 항목 false는400 REQUIRED_AGREEMENT_MISSING, 중복 type/형식 오류는400 INVALID_REQUEST다.\n- 현재 없는 항목·빠진 항목·빈 목록·버전 불일치는409 AGREEMENT_VERSION_OUTDATED다. 최신 목록을 다시 보여 준 뒤 재요청한다.\n- 같은 버전·선택 재전송은 현재 상태를 반환하며 같은 이력을 중복 추가하지 않는다. 필수 항목 철회는 이 API에서 허용하지 않는다.\n- user_consents에 문서 버전·선택·기록 시각을 남긴다. 가입·프로필 동작을 한 요청으로 합치지 않는다.\n\n### 구현과 목표 단계 구분\n\n정책상 약관 다음은 KEYRING_REQUIRED다. 현재 로그인 소스가 키링·설문·조건·동기화 검사를 생략해 PROFILE_REQUIRED 또는 READY를 반환하는 한계는 AUTH-OPEN-06에 남긴다. 이 예시는 정책 계약이며 모든 가입 게이트의 구현 완료 증거가 아니다.",
             "apiImpact": "인증 담당 연락 및 최신 소스 기준 명세 동기화. 구현 코드 수정·FE 합의·통합 검증은 수행하지 않음.",
             "previousInspection": {}
+          },
+          {
+            "date": "2026-10-28",
+            "revised": "A151 경로 정합화: /api/v1/users/me/agreements → /api/users/{userId}/agreements. 본인 회원 번호 검사 및 승인된 22표 보존 매핑. 미구현 사진 API의 개발 완료를 뜻하지 않는다."
           }
         ],
         "description": "현재 표시된 모든 가입 동의 항목의 type/version/agreed를 기록한다. 최초 가입에서는 AI_RISK_DETECTION을 포함한 필수 항목 모두 필요하다. 필수 항목의 철회를 이 가입 API로 처리하지 않는다. 가입 후 AI 동의 철회·채팅 종료/재동의는 별도 위험 분석 동의 계약을 따른다. AI 철회 기록이 있는 기존 회원의 제안·매칭 권한을 가입 게이트로 차단하지 않는다.",
-        "x-reviewed-at": "2026-10-21 14:16 KST",
+        "x-reviewed-at": "2026-10-28",
         "x-inspected-auth-contract": "80310e6b6a1a169a89bdda85947a006815e2965e",
         "x-inspected-backend-commit": "4f691085ea2bbf6ef1c7e5f2ff3e4152de98e45b",
         "x-implementation-status": "SOURCE_PRESENT_INTEGRATION_UNVERIFIED",
@@ -869,10 +919,11 @@
         "x-confirmation-required": [
           "AUTH-OPEN-06"
         ],
-        "x-auth-alignment": "AUTH-OPEN-01~05는 README의 2026-10-22 확정 내용 참조. 과거 x-change-history/inspected-ref는 당시 기록."
+        "x-auth-alignment": "AUTH-OPEN-01~05는 README의 2026-10-22 확정 내용 참조. 과거 x-change-history/inspected-ref는 당시 기록.",
+        "x-storage-design": "erd22-canonical-151"
       }
     },
-    "/api/v1/users/me/onboarding": {
+    "/api/users/{userId}/onboarding": {
       "get": {
         "operationId": "getOnboarding",
         "summary": "다음 미완료 단계 조회 (수정 2026-10-21 14:16)",
@@ -885,6 +936,17 @@
         ],
         "x-auth-role": "user",
         "parameters": [
+          {
+            "name": "userId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            },
+            "description": "토큰의 회원 번호와 같은 본인만 허용. 다르면 403 FORBIDDEN."
+          },
           {
             "$ref": "#/components/parameters/AcceptLanguage"
           }
@@ -996,6 +1058,23 @@
               "ACCESS_TOKEN_INVALID",
               "SESSION_REVOKED"
             ]
+          },
+          "403": {
+            "description": "FORBIDDEN: 경로 회원과 인증 회원 불일치",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "code": "FORBIDDEN",
+                  "message": "본인 정보만 조회·변경할 수 있습니다."
+                }
+              }
+            },
+            "x-error-codes": [
+              "FORBIDDEN"
+            ]
           }
         },
         "x-implementation-status": "PARTIAL_SOURCE_ONBOARDING_GATES_AND_FIELDS_MISSING",
@@ -1003,10 +1082,9 @@
         "x-inspected-backend-commit": "4f691085ea2bbf6ef1c7e5f2ff3e4152de98e45b",
         "x-notion-page": "https://app.notion.com/p/3ffc91ccb66080c9b134c1fb3c93f5ca",
         "x-contract-status": "REVIEW_REQUIRED",
-        "x-storage-design": "unified25-185-review",
-        "x-reviewed-at": "2026-10-21 14:16 KST",
+        "x-storage-design": "erd22-canonical-151",
+        "x-reviewed-at": "2026-10-28",
         "x-confirmation-required": [
-          "ERD의 bigint는 내부 저장 타입이다. 기존 API의 UUID 표현을 자동으로 숫자 ID로 바꾸지 않으며 외부 식별자 형식·매핑은 호출자와 확정해야 한다.",
           "AUTH-OPEN-06"
         ],
         "x-change-history": [
@@ -1028,11 +1106,15 @@
               "x-inspected-auth-contract": "7020a08",
               "x-inspected-backend-commit": "93b39a3"
             }
+          },
+          {
+            "date": "2026-10-28",
+            "revised": "A151 경로 정합화: /api/v1/users/me/onboarding → /api/users/{userId}/onboarding. 본인 회원 번호 검사 및 승인된 22표 보존 매핑. 미구현 사진 API의 개발 완료를 뜻하지 않는다."
           }
         ]
       }
     },
-    "/api/v1/users/nickname-availability": {
+    "/api/users/nickname-availability": {
       "get": {
         "operationId": "checkNickname",
         "summary": "닉네임 중복 확인",
@@ -1167,12 +1249,18 @@
         "x-inspected-backend-commit": "93b39a3",
         "x-notion-page": "https://app.notion.com/p/3fec91ccb660817c9715ce4e437adebe",
         "x-contract-status": "REVIEW_REQUIRED",
-        "x-storage-design": "unified25-185-review",
-        "x-reviewed-at": "2026-10-21 11:47 KST",
-        "x-confirmation-required": []
+        "x-storage-design": "erd22-canonical-151",
+        "x-reviewed-at": "2026-10-28",
+        "x-confirmation-required": [],
+        "x-change-history": [
+          {
+            "date": "2026-10-28",
+            "revised": "A151 경로 정합화: /api/v1/users/nickname-availability → /api/users/nickname-availability. 본인 회원 번호 검사 및 승인된 22표 보존 매핑. 미구현 사진 API의 개발 완료를 뜻하지 않는다."
+          }
+        ]
       }
     },
-    "/api/v1/keyrings/purchase-info": {
+    "/api/keyrings/purchase-info": {
       "get": {
         "operationId": "purchaseInfo",
         "summary": "구매 안내",
@@ -1332,10 +1420,13 @@
         },
         "x-notion-page": "https://app.notion.com/p/3ffc91ccb66080a18a84e6d6687c923a",
         "x-contract-status": "REVIEW_REQUIRED",
-        "x-storage-design": "unified25-185-review",
+        "x-storage-design": "erd22-canonical-176",
         "x-reviewed-at": "2026-10-21 11:47 KST",
         "x-confirmation-required": [],
-        "x-implementation-ref": "keyring-read.md"
+        "x-implementation-ref": "keyring-read.md",
+        "x-implementation-stage": "PATH_ALIGNED_STORAGE_REVIEW_REQUIRED",
+        "x-erd21-storage-followup": "S15P31E106-176 / S15P31E106-178: owner/ACK/read DTO and push login-generation storage need agreement.",
+        "x-verification-note": "2026-10-28 !92 source35166ea: 새22표176컬럼36논리관계에서 이4API와 기존로그아웃 연결해제의 로컬저장/HTTP·전체clean build422개·Checkstyle/패키징 통과. 신규70 통합전이며 교차승인/병합은 별도. 등록67/100·sync68/69의 최종기기증명/ACK와 nonce/run/당시payload/소유세대 영속정의, 과거자료 실제이관·Notion일치·실기기/FCM/공유DB/배포는 미완료. 임의증명·새API/칼럼 추가없음."
       }
     },
     "/api/v1/keyrings/registration-challenges": {
@@ -1604,7 +1695,6 @@
                 "example": {
                   "deviceId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
                   "status": "REGISTERED",
-                  "boundAt": "2026-10-20T06:00:00Z",
                   "firmwareVersion": "example"
                 }
               }
@@ -1786,7 +1876,9 @@
         "x-confirmation-required": [
           "정책 합의 항목: POL-03. 기존의 미합의 조건을 이 문서만으로 활성화하지 않는다."
         ]
-      },
+      }
+    },
+    "/api/keyrings": {
       "get": {
         "operationId": "listKeyrings",
         "summary": "본인 키링 조회",
@@ -1945,13 +2037,16 @@
         },
         "x-notion-page": "https://app.notion.com/p/3ffc91ccb66080769f1ae85633d8d913",
         "x-contract-status": "REVIEW_REQUIRED",
-        "x-storage-design": "unified25-185-review",
+        "x-storage-design": "erd22-canonical-176",
         "x-reviewed-at": "2026-10-21 11:47 KST",
         "x-confirmation-required": [],
-        "x-implementation-ref": "keyring-read.md"
+        "x-implementation-ref": "keyring-read.md",
+        "x-implementation-stage": "PATH_ALIGNED_STORAGE_REVIEW_REQUIRED",
+        "x-erd21-storage-followup": "S15P31E106-176 / S15P31E106-178: owner/ACK/read DTO and push login-generation storage need agreement.",
+        "x-verification-note": "2026-10-28 !92 source35166ea: 새22표176컬럼36논리관계에서 이4API와 기존로그아웃 연결해제의 로컬저장/HTTP·전체clean build422개·Checkstyle/패키징 통과. 신규70 통합전이며 교차승인/병합은 별도. 등록67/100·sync68/69의 최종기기증명/ACK와 nonce/run/당시payload/소유세대 영속정의, 과거자료 실제이관·Notion일치·실기기/FCM/공유DB/배포는 미완료. 임의증명·새API/칼럼 추가없음."
       }
     },
-    "/api/v1/users/me/profile": {
+    "/api/users/{userId}/profile": {
       "get": {
         "operationId": "getMyProfile",
         "summary": "본인 프로필 조회 (수정 2026-10-21 14:16)",
@@ -1964,6 +2059,17 @@
         ],
         "x-auth-role": "user",
         "parameters": [
+          {
+            "name": "userId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            },
+            "description": "토큰의 회원 번호와 같은 본인만 허용. 다르면 403 FORBIDDEN."
+          },
           {
             "$ref": "#/components/parameters/AcceptLanguage"
           }
@@ -2075,14 +2181,30 @@
               "ACCESS_TOKEN_INVALID",
               "SESSION_REVOKED"
             ]
+          },
+          "403": {
+            "description": "FORBIDDEN: 경로 회원과 인증 회원 불일치",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "code": "FORBIDDEN",
+                  "message": "본인 정보만 조회·변경할 수 있습니다."
+                }
+              }
+            },
+            "x-error-codes": [
+              "FORBIDDEN"
+            ]
           }
         },
         "x-notion-page": "https://app.notion.com/p/3ffc91ccb660802a8f86eccdb6e9db7b",
         "x-contract-status": "REVIEW_REQUIRED",
-        "x-storage-design": "unified25-185-review",
-        "x-reviewed-at": "2026-10-21 14:16 KST",
+        "x-storage-design": "erd22-canonical-151",
+        "x-reviewed-at": "2026-10-28",
         "x-confirmation-required": [
-          "ERD의 bigint는 내부 저장 타입이다. 기존 API의 UUID 표현을 자동으로 숫자 ID로 바꾸지 않으며 외부 식별자 형식·매핑은 호출자와 확정해야 한다.",
           "프로필 profileVersion/ETag/If-Match 중복 구조는 제외한다. 설문 revision과 If-Match 규칙은 유지한다.",
           "AUTH-OPEN-06"
         ],
@@ -2101,6 +2223,10 @@
             "revised": "내 프로필과 현재 사진 정보를 조회합니다.\n\n### 처리 규칙\n\n- 현재 프로필은 profiles 한 행에 저장하고 사진은 image_url 한 개 또는 null로 관리함.\n\n- nickname_key는 정규화한 닉네임 중복 비교용으로 남김.\n\n- 별도 profile_version·updated_at·사진 행은 두지 않음.\n\n- 필요한 설정 변경은 settings_version을 증가시키고 동기화 사본을 갱신함.\n\n### 확인할 사항\n\n- ERD의 bigint는 내부 저장 타입이다. 기존 API의 UUID 표현을 자동으로 숫자 ID로 바꾸지 않으며 외부 식별자 형식·매핑은 호출자와 확정해야 한다.\n\n- 프로필 profileVersion/ETag/If-Match 중복 구조는 제외한다. 설문 revision과 If-Match 규칙은 유지한다.\n\n### 이번 API 변경\n\n응답 photoId는 imageUrl로 바꾸고 hasProfilePhoto·completed는 저장값에서 계산함. profileVersion과 이를 전제로 한 프로필 ETag/If-Match 필수 규칙은 이 수정안에서 제외함. 설문의 revision/If-Match에는 영향 없음. 동시 프로필 수정 충돌 정책이 필요하면 별도 버전 필드 도입 여부부터 결정함.\n\n### 인증 동기화 확인 사항\n\nAUTH-OPEN-06: 현재 소스의 단계 조회는5개 필드만 구현했고 일부 가입 게이트를 생략한다. 전체 가입/설문 진행도/설정 버전 계약과 필수 nullable 응답은 후속 검토하며 문서 동기화를 실행 검증 완료로 표시하지 않는다.",
             "apiImpact": "인증 담당 연락 및 최신 소스 기준 명세 동기화. 구현 코드 수정·FE 합의·통합 검증은 수행하지 않음.",
             "previousInspection": {}
+          },
+          {
+            "date": "2026-10-28",
+            "revised": "A151 경로 정합화: /api/v1/users/me/profile → /api/users/{userId}/profile. 본인 회원 번호 검사 및 승인된 22표 보존 매핑. 미구현 사진 API의 개발 완료를 뜻하지 않는다."
           }
         ],
         "x-inspected-auth-contract": "80310e6b6a1a169a89bdda85947a006815e2965e",
@@ -2120,6 +2246,17 @@
         ],
         "x-auth-role": "user",
         "parameters": [
+          {
+            "name": "userId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            },
+            "description": "토큰의 회원 번호와 같은 본인만 허용. 다르면 403 FORBIDDEN."
+          },
           {
             "$ref": "#/components/parameters/AcceptLanguage"
           }
@@ -2309,6 +2446,23 @@
             "x-provisional-error-codes": {
               "PROFILE_FIELD_LOCKED": "AGREEMENT_REQUIRED: AUTH-OPEN-02/POL-02"
             }
+          },
+          "403": {
+            "description": "FORBIDDEN: 경로 회원과 인증 회원 불일치",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "code": "FORBIDDEN",
+                  "message": "본인 정보만 조회·변경할 수 있습니다."
+                }
+              }
+            },
+            "x-error-codes": [
+              "FORBIDDEN"
+            ]
           }
         },
         "requestBody": {
@@ -2324,10 +2478,9 @@
         },
         "x-notion-page": "https://app.notion.com/p/3ffc91ccb66080139badf8221717b3eb",
         "x-contract-status": "REVIEW_REQUIRED",
-        "x-storage-design": "unified25-185-review",
-        "x-reviewed-at": "2026-10-21 14:16 KST",
+        "x-storage-design": "erd22-canonical-151",
+        "x-reviewed-at": "2026-10-28",
         "x-confirmation-required": [
-          "ERD의 bigint는 내부 저장 타입이다. 기존 API의 UUID 표현을 자동으로 숫자 ID로 바꾸지 않으며 외부 식별자 형식·매핑은 호출자와 확정해야 한다.",
           "프로필 profileVersion/ETag/If-Match 중복 구조는 제외한다. 설문 revision과 If-Match 규칙은 유지한다.",
           "정책 합의 항목: POL-02. 기존의 미합의 조건을 이 문서만으로 활성화하지 않는다.",
           "AUTH-OPEN-06"
@@ -2347,6 +2500,10 @@
             "revised": "가입 중인 프로필 초안을 저장하거나 허용된 프로필 정보를 수정합니다.\n\n### 처리 규칙\n\n- 현재 프로필은 profiles 한 행에 저장하고 사진은 image_url 한 개 또는 null로 관리함.\n\n- nickname_key는 정규화한 닉네임 중복 비교용으로 남김.\n\n- 별도 profile_version·updated_at·사진 행은 두지 않음.\n\n- 필요한 설정 변경은 settings_version을 증가시키고 동기화 사본을 갱신함.\n\n### 확인할 사항\n\n- ERD의 bigint는 내부 저장 타입이다. 기존 API의 UUID 표현을 자동으로 숫자 ID로 바꾸지 않으며 외부 식별자 형식·매핑은 호출자와 확정해야 한다.\n\n- 프로필 profileVersion/ETag/If-Match 중복 구조는 제외한다. 설문 revision과 If-Match 규칙은 유지한다.\n\n- 정책 합의 항목: POL-02. 기존의 미합의 조건을 이 문서만으로 활성화하지 않는다.\n\n### 이번 API 변경\n\n응답 photoId는 imageUrl로 바꾸고 hasProfilePhoto·completed는 저장값에서 계산함. profileVersion과 이를 전제로 한 프로필 ETag/If-Match 필수 규칙은 이 수정안에서 제외함. 설문의 revision/If-Match에는 영향 없음. 동시 프로필 수정 충돌 정책이 필요하면 별도 버전 필드 도입 여부부터 결정함.\n\n### 인증 담당 연락 반영\n\n약관 동의와 분리한 PATCH 경로를 유지한다. 통합 signup 경로는 활성 목록에서 제거한다. 저장 후 다음 단계는 단계 조회로 확인하며 프로필 완료만으로 전체 가입 READY를 의미하지 않는다.\n\n### 합의 필요: AUTH-OPEN-02\n\n현재 소스의 성별·생년월일 변경 거부는422 PROFILE_FIELD_LOCKED다. 이 이름과 잠금 기산점(프로필 완료/전체 가입 완료), 재수락·매칭 영향은 임시안이며 POL-02 합의 전 확정하지 않는다. POLICY_UNRESOLVED와 같은 의미로 섞지 않는다. 그 외 PATCH/사진 URL/필수 nullable 계약은 유지하며 구현과의 차이는 AUTH-OPEN-05·06에 기록한다.",
             "apiImpact": "인증 담당 연락 및 최신 소스 기준 명세 동기화. 구현 코드 수정·FE 합의·통합 검증은 수행하지 않음.",
             "previousInspection": {}
+          },
+          {
+            "date": "2026-10-28",
+            "revised": "A151 경로 정합화: /api/v1/users/me/profile → /api/users/{userId}/profile. 본인 회원 번호 검사 및 승인된 22표 보존 매핑. 미구현 사진 API의 개발 완료를 뜻하지 않는다."
           }
         ],
         "x-inspected-auth-contract": "80310e6b6a1a169a89bdda85947a006815e2965e",
@@ -2355,7 +2512,7 @@
         "x-auth-alignment": "AUTH-OPEN-01~05는 README의 2026-10-22 확정 내용 참조. 과거 x-change-history/inspected-ref는 당시 기록."
       }
     },
-    "/api/v1/users/me/profile/photos": {
+    "/api/users/{userId}/profile/photos": {
       "post": {
         "operationId": "uploadPhoto",
         "summary": "사진 업로드·처리 시작 (수정 2026-10-21 11:12)",
@@ -2368,6 +2525,17 @@
         ],
         "x-auth-role": "user",
         "parameters": [
+          {
+            "name": "userId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            },
+            "description": "토큰의 회원 번호와 같은 본인만 허용. 다르면 403 FORBIDDEN."
+          },
           {
             "name": "Idempotency-Key",
             "in": "header",
@@ -2562,6 +2730,23 @@
                 }
               }
             }
+          },
+          "403": {
+            "description": "FORBIDDEN: 경로 회원과 인증 회원 불일치",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "code": "FORBIDDEN",
+                  "message": "본인 정보만 조회·변경할 수 있습니다."
+                }
+              }
+            },
+            "x-error-codes": [
+              "FORBIDDEN"
+            ]
           }
         },
         "x-policy-gate": "POL-04",
@@ -2580,8 +2765,8 @@
         },
         "x-notion-page": "https://app.notion.com/p/3ffc91ccb66080aab111f84fbf38445d",
         "x-contract-status": "REVIEW_REQUIRED",
-        "x-storage-design": "unified25-185-review",
-        "x-reviewed-at": "2026-10-21 11:47 KST",
+        "x-storage-design": "erd22-canonical-151",
+        "x-reviewed-at": "2026-10-28",
         "x-confirmation-required": [
           "기존 POST /api/v1/users/me/profile/photos는 JSON imageUrl을 받는 현재 사진 URL 저장 API로 수정함. 응답은 200 imageUrl, hasProfilePhoto. 기존 multipart file/crop와 202 photoId/status는 기존안으로 보존하고 새 구현 대상으로 삼지 않음. 실제 파일 업로드·URL 발급 경로/허용 저장소는 FE·BE 사진 계약 확인 사항임.",
           "정책 합의 항목: POL-04. 기존의 미합의 조건을 이 문서만으로 활성화하지 않는다."
@@ -2593,11 +2778,15 @@
             "previousDescription": "multipart file 1개, 최대10MB(본 설계10,000,000bytes), 실제 형식 검증 JPG/PNG/WebP/HEIC. 정사각형 crop JSON, EXIF방향 적용·메타 제거. 실패 시 기존 photo 유지. 서버 처리 완료 트랜잭션에서만 활성 교체.",
             "revised": "서버는 검증한 현재 이미지 URL 한 개를 profiles.image_url에 저장함. 파일 업로드 완료 후 URL을 저장하는 방식으로 단순화하며 서버 내 사진별 PROCESSING/READY·crop·사진 ID 관리 구조는 현재 범위에서 제외함. 소유권이 확인된 이미지 자원만 연결하며 임의 외부 URL을 서버가 무조건 가져오지 않음. 검증/저장 실패 시 기존 URL을 유지함.",
             "apiImpact": "기존 POST /api/v1/users/me/profile/photos는 JSON imageUrl을 받는 현재 사진 URL 저장 API로 수정함. 응답은 200 imageUrl, hasProfilePhoto. 기존 multipart file/crop와 202 photoId/status는 기존안으로 보존하고 새 구현 대상으로 삼지 않음. 실제 파일 업로드·URL 발급 경로/허용 저장소는 FE·BE 사진 계약 확인 사항임."
+          },
+          {
+            "date": "2026-10-28",
+            "revised": "A151 경로 정합화: /api/v1/users/me/profile/photos → /api/users/{userId}/profile/photos. 본인 회원 번호 검사 및 승인된 22표 보존 매핑. 미구현 사진 API의 개발 완료를 뜻하지 않는다."
           }
         ]
       }
     },
-    "/api/v1/users/me/profile/photo": {
+    "/api/users/{userId}/profile/photo": {
       "delete": {
         "operationId": "deletePhoto",
         "summary": "현재 사진 삭제 (수정 2026-10-21 11:24)",
@@ -2610,6 +2799,17 @@
         ],
         "x-auth-role": "user",
         "parameters": [
+          {
+            "name": "userId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            },
+            "description": "토큰의 회원 번호와 같은 본인만 허용. 다르면 403 FORBIDDEN."
+          },
           {
             "name": "Idempotency-Key",
             "in": "header",
@@ -2757,12 +2957,29 @@
             "x-error-codes": [
               "IDEMPOTENCY_CONFLICT"
             ]
+          },
+          "403": {
+            "description": "FORBIDDEN: 경로 회원과 인증 회원 불일치",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "code": "FORBIDDEN",
+                  "message": "본인 정보만 조회·변경할 수 있습니다."
+                }
+              }
+            },
+            "x-error-codes": [
+              "FORBIDDEN"
+            ]
           }
         },
         "x-notion-page": "https://app.notion.com/p/3ffc91ccb6608041b433e84bbce7ffdc",
         "x-contract-status": "REVIEW_REQUIRED",
-        "x-storage-design": "unified25-185-review",
-        "x-reviewed-at": "2026-10-21 11:47 KST",
+        "x-storage-design": "erd22-canonical-151",
+        "x-reviewed-at": "2026-10-28",
         "x-confirmation-required": [
           "DELETE 경로·204 응답은 유지함. 이전 imageUrl의 회수·접근 차단은 저장소/사진 전달 방식 계약 사항이며 DB 연결 해제만으로 외부 캐시/다운로드 파일이 지워졌다고 표시하지 않음."
         ],
@@ -2773,6 +2990,10 @@
             "previousDescription": "반복 삭제204. 원자적으로 연결 해제·hasProfilePhoto=false·버전 증가, 이전 인증 이미지 경로410. 파일 삭제 outbox. 기존 제안 자동 취소 금지.",
             "revised": "profiles.image_url을 null로 바꾸고 hasProfilePhoto=false로 계산함. 사진 삭제 상태·active 행·profileVersion은 따로 관리하지 않음. 반복 삭제 204와 기존 제안 자동 취소 금지는 유지함. 연결 해제와 실제 저장소 파일 삭제는 구분하며 파일 정리 책임/방식은 사진 업로드 계약에서 정해야 함.",
             "apiImpact": "DELETE 경로·204 응답은 유지함. 이전 imageUrl의 회수·접근 차단은 저장소/사진 전달 방식 계약 사항이며 DB 연결 해제만으로 외부 캐시/다운로드 파일이 지워졌다고 표시하지 않음."
+          },
+          {
+            "date": "2026-10-28",
+            "revised": "A151 경로 정합화: /api/v1/users/me/profile/photo → /api/users/{userId}/profile/photo. 본인 회원 번호 검사 및 승인된 22표 보존 매핑. 미구현 사진 API의 개발 완료를 뜻하지 않는다."
           }
         ]
       }
@@ -4750,6 +4971,12 @@
                   "type": "string"
                 },
                 "description": "민감 응답 no-store"
+              },
+              "ETag": {
+                "description": "따옴표로 감싼 revision 값. 예: \"0\"",
+                "schema": {
+                  "type": "string"
+                }
               }
             },
             "content": {
@@ -4769,7 +4996,9 @@
                   "questionCount": 100,
                   "nextQuestionId": "Q001",
                   "answers": [],
-                  "completedAt": null
+                  "completedAt": null,
+                  "revision": 0,
+                  "metadata": null
                 }
               }
             }
@@ -4995,6 +5224,12 @@
                   "type": "string"
                 },
                 "description": "민감 응답 no-store"
+              },
+              "ETag": {
+                "description": "따옴표로 감싼 revision 값. 예: \"0\"",
+                "schema": {
+                  "type": "string"
+                }
               }
             },
             "content": {
@@ -5023,7 +5258,9 @@
                       "value": "unknown"
                     }
                   ],
-                  "completedAt": null
+                  "completedAt": null,
+                  "revision": 0,
+                  "metadata": null
                 }
               }
             }
@@ -5475,7 +5712,9 @@
                       "value": 4
                     }
                   ],
-                  "completedAt": null
+                  "completedAt": null,
+                  "revision": 0,
+                  "metadata": null
                 }
               }
             }
@@ -5764,7 +6003,9 @@
                       "value": 4
                     }
                   ],
-                  "completedAt": null
+                  "completedAt": null,
+                  "revision": 0,
+                  "metadata": null
                 }
               }
             }
@@ -6394,7 +6635,9 @@
                       "value": 3
                     }
                   ],
-                  "completedAt": "2026-10-27T10:15:30+09:00"
+                  "completedAt": "2026-10-27T10:15:30+09:00",
+                  "revision": 0,
+                  "metadata": null
                 }
               }
             }
@@ -6873,7 +7116,9 @@
                       "value": "unknown"
                     }
                   ],
-                  "completedAt": null
+                  "completedAt": null,
+                  "revision": 0,
+                  "metadata": null
                 }
               }
             }
@@ -7723,7 +7968,7 @@
       "get": {
         "operationId": "listProposals",
         "summary": "본인 제안 목록 (수정 2026-10-21 11:20)",
-        "description": "proposalId=matching.id, chatRoomId=chat.id(integer int64 또는 null). createdAt=matching.proposed_at(서버 제안 생성 최초 확정 시각), expiresAt=그 시각+24시간으로 고정하며 푸시·재전송으로 연장하지 않는다. myDecision NONE/ACCEPT/DECLINE은 본인 matching_participant.response NULL/ACCEPTED/REJECTED에 대응하고 responded_at은 최초 서버 확정 시각이다. 상대 선행 응답·차단·내부 ONE_ACCEPTED를 미응답자에게 공개하지 않으며 기존 API 상태 투영을 유지한다.\n\nmatching 단위로 잠그고 현재 소유·참여·기한·차단·응답 상태를 재검사한다. 상호 수락·chat와 두 chat_participant 생성은 같은 트랜잭션에서 확정한다. 중복 수락이 새 방이나 최초 시각을 만들지 않는다. 응답은 한 번 확정하면 바꾸지 않는다. Idempotency-Key 전용 저장 칸이 없으므로 기존 요청 헤더의 영속 중복 판정 대안은 미합의다. 기존 30일 제한과 ERD의 PENDING 이후 영구 재매칭 금지 정책 충돌은 제품 합의 전 임의 확정하지 않는다.\n본인 제안만 createdAt 내림차순·proposalId 보조키로 조회하고 불투명 cursor를 사용한다.",
+        "description": "proposalId=matching.id, chatRoomId=chat.id(integer int64 또는 null). createdAt=matching.proposed_at(서버 제안 생성 최초 확정 시각), expiresAt=그 시각+24시간으로 고정하며 푸시·재전송으로 연장하지 않는다. myDecision NONE/ACCEPT/DECLINE은 본인 matching_participant.response NULL/ACCEPTED/REJECTED에 대응하고 responded_at은 최초 서버 확정 시각이다. 상대 선행 응답·차단·내부 ONE_ACCEPTED를 미응답자에게 공개하지 않으며 기존 API 상태 투영을 유지한다.\n\nmatching 단위로 잠그고 현재 소유·참여·기한·차단·응답 상태를 재검사한다. 상호 수락·chat와 두 chat_participant 생성은 같은 트랜잭션에서 확정한다. 중복 수락이 새 방이나 최초 시각을 만들지 않는다. 응답은 한 번 확정하면 바꾸지 않는다. 최초 요청 키·응답 영수증은 matching_participant.decision_request_key/request_state에 보존한다. 사용자 확정에 따라 PENDING으로 제안이 생성된 이후에는 같은 쌍의 재매칭을 영구 금지한다. WAITING/NOT_MATCHED의 새 만남 기회와 구분하며 과거 원본 기록은 삭제하거나 다른 제안의 식별자로 재사용하지 않는다.\n본인 제안만 createdAt 내림차순·proposalId 보조키로 조회하고 불투명 cursor를 사용한다.",
         "tags": [
           "PROP"
         ],
@@ -7918,8 +8163,9 @@
           }
         ],
         "x-erd21": {
-          "design": "21 tables / 151 columns",
-          "implementationVerified": false
+          "design": "22 tables / 176 columns",
+          "implementationVerified": true,
+          "verificationScope": "175 일회용 PostgreSQL·실제 HTTP 회귀. 외부 소셜·FCM·기기·배포 검증은 별도."
         }
       }
     },
@@ -7927,7 +8173,7 @@
       "get": {
         "operationId": "getProposal",
         "summary": "제안 상태 조회 (수정 2026-10-21 11:21)",
-        "description": "proposalId=matching.id, chatRoomId=chat.id(integer int64 또는 null). createdAt=matching.proposed_at(서버 제안 생성 최초 확정 시각), expiresAt=그 시각+24시간으로 고정하며 푸시·재전송으로 연장하지 않는다. myDecision NONE/ACCEPT/DECLINE은 본인 matching_participant.response NULL/ACCEPTED/REJECTED에 대응하고 responded_at은 최초 서버 확정 시각이다. 상대 선행 응답·차단·내부 ONE_ACCEPTED를 미응답자에게 공개하지 않으며 기존 API 상태 투영을 유지한다.\n\nmatching 단위로 잠그고 현재 소유·참여·기한·차단·응답 상태를 재검사한다. 상호 수락·chat와 두 chat_participant 생성은 같은 트랜잭션에서 확정한다. 중복 수락이 새 방이나 최초 시각을 만들지 않는다. 응답은 한 번 확정하면 바꾸지 않는다. Idempotency-Key 전용 저장 칸이 없으므로 기존 요청 헤더의 영속 중복 판정 대안은 미합의다. 기존 30일 제한과 ERD의 PENDING 이후 영구 재매칭 금지 정책 충돌은 제품 합의 전 임의 확정하지 않는다.",
+        "description": "proposalId=matching.id, chatRoomId=chat.id(integer int64 또는 null). createdAt=matching.proposed_at(서버 제안 생성 최초 확정 시각), expiresAt=그 시각+24시간으로 고정하며 푸시·재전송으로 연장하지 않는다. myDecision NONE/ACCEPT/DECLINE은 본인 matching_participant.response NULL/ACCEPTED/REJECTED에 대응하고 responded_at은 최초 서버 확정 시각이다. 상대 선행 응답·차단·내부 ONE_ACCEPTED를 미응답자에게 공개하지 않으며 기존 API 상태 투영을 유지한다.\n\nmatching 단위로 잠그고 현재 소유·참여·기한·차단·응답 상태를 재검사한다. 상호 수락·chat와 두 chat_participant 생성은 같은 트랜잭션에서 확정한다. 중복 수락이 새 방이나 최초 시각을 만들지 않는다. 응답은 한 번 확정하면 바꾸지 않는다. 최초 요청 키·응답 영수증은 matching_participant.decision_request_key/request_state에 보존한다. 사용자 확정에 따라 PENDING으로 제안이 생성된 이후에는 같은 쌍의 재매칭을 영구 금지한다. WAITING/NOT_MATCHED의 새 만남 기회와 구분하며 과거 원본 기록은 삭제하거나 다른 제안의 식별자로 재사용하지 않는다.",
         "tags": [
           "PROP"
         ],
@@ -8142,8 +8388,9 @@
           }
         ],
         "x-erd21": {
-          "design": "21 tables / 151 columns",
-          "implementationVerified": false
+          "design": "22 tables / 176 columns",
+          "implementationVerified": true,
+          "verificationScope": "175 일회용 PostgreSQL·실제 HTTP 회귀. 외부 소셜·FCM·기기·배포 검증은 별도."
         }
       }
     },
@@ -8438,8 +8685,9 @@
           }
         ],
         "x-erd21": {
-          "design": "21 tables / 151 columns",
-          "implementationVerified": false
+          "design": "22 tables / 176 columns",
+          "implementationVerified": true,
+          "verificationScope": "175 일회용 PostgreSQL·실제 HTTP 회귀. 외부 소셜·FCM·기기·배포 검증은 별도."
         }
       }
     },
@@ -8447,7 +8695,7 @@
       "post": {
         "operationId": "acceptProposal",
         "summary": "제안 수락 (수정 2026-10-21 11:22)",
-        "description": "proposalId=matching.id, chatRoomId=chat.id(integer int64 또는 null). createdAt=matching.proposed_at(서버 제안 생성 최초 확정 시각), expiresAt=그 시각+24시간으로 고정하며 푸시·재전송으로 연장하지 않는다. myDecision NONE/ACCEPT/DECLINE은 본인 matching_participant.response NULL/ACCEPTED/REJECTED에 대응하고 responded_at은 최초 서버 확정 시각이다. 상대 선행 응답·차단·내부 ONE_ACCEPTED를 미응답자에게 공개하지 않으며 기존 API 상태 투영을 유지한다.\n\nmatching 단위로 잠그고 현재 소유·참여·기한·차단·응답 상태를 재검사한다. 상호 수락·chat와 두 chat_participant 생성은 같은 트랜잭션에서 확정한다. 중복 수락이 새 방이나 최초 시각을 만들지 않는다. 응답은 한 번 확정하면 바꾸지 않는다. Idempotency-Key 전용 저장 칸이 없으므로 기존 요청 헤더의 영속 중복 판정 대안은 미합의다. 기존 30일 제한과 ERD의 PENDING 이후 영구 재매칭 금지 정책 충돌은 제품 합의 전 임의 확정하지 않는다.",
+        "description": "proposalId=matching.id, chatRoomId=chat.id(integer int64 또는 null). createdAt=matching.proposed_at(서버 제안 생성 최초 확정 시각), expiresAt=그 시각+24시간으로 고정하며 푸시·재전송으로 연장하지 않는다. myDecision NONE/ACCEPT/DECLINE은 본인 matching_participant.response NULL/ACCEPTED/REJECTED에 대응하고 responded_at은 최초 서버 확정 시각이다. 상대 선행 응답·차단·내부 ONE_ACCEPTED를 미응답자에게 공개하지 않으며 기존 API 상태 투영을 유지한다.\n\nmatching 단위로 잠그고 현재 소유·참여·기한·차단·응답 상태를 재검사한다. 상호 수락·chat와 두 chat_participant 생성은 같은 트랜잭션에서 확정한다. 중복 수락이 새 방이나 최초 시각을 만들지 않는다. 응답은 한 번 확정하면 바꾸지 않는다. 최초 요청 키·응답 영수증은 matching_participant.decision_request_key/request_state에 보존한다. 사용자 확정에 따라 PENDING으로 제안이 생성된 이후에는 같은 쌍의 재매칭을 영구 금지한다. WAITING/NOT_MATCHED의 새 만남 기회와 구분하며 과거 원본 기록은 삭제하거나 다른 제안의 식별자로 재사용하지 않는다.",
         "tags": [
           "PROP"
         ],
@@ -8755,8 +9003,9 @@
           }
         },
         "x-erd21": {
-          "design": "21 tables / 151 columns",
-          "implementationVerified": false
+          "design": "22 tables / 176 columns",
+          "implementationVerified": true,
+          "verificationScope": "175 일회용 PostgreSQL·실제 HTTP 회귀. 외부 소셜·FCM·기기·배포 검증은 별도."
         }
       }
     },
@@ -8764,7 +9013,7 @@
       "post": {
         "operationId": "declineProposal",
         "summary": "제안 거절 (수정 2026-10-21 11:22)",
-        "description": "proposalId=matching.id, chatRoomId=chat.id(integer int64 또는 null). createdAt=matching.proposed_at(서버 제안 생성 최초 확정 시각), expiresAt=그 시각+24시간으로 고정하며 푸시·재전송으로 연장하지 않는다. myDecision NONE/ACCEPT/DECLINE은 본인 matching_participant.response NULL/ACCEPTED/REJECTED에 대응하고 responded_at은 최초 서버 확정 시각이다. 상대 선행 응답·차단·내부 ONE_ACCEPTED를 미응답자에게 공개하지 않으며 기존 API 상태 투영을 유지한다.\n\nmatching 단위로 잠그고 현재 소유·참여·기한·차단·응답 상태를 재검사한다. 상호 수락·chat와 두 chat_participant 생성은 같은 트랜잭션에서 확정한다. 중복 수락이 새 방이나 최초 시각을 만들지 않는다. 응답은 한 번 확정하면 바꾸지 않는다. Idempotency-Key 전용 저장 칸이 없으므로 기존 요청 헤더의 영속 중복 판정 대안은 미합의다. 기존 30일 제한과 ERD의 PENDING 이후 영구 재매칭 금지 정책 충돌은 제품 합의 전 임의 확정하지 않는다.",
+        "description": "proposalId=matching.id, chatRoomId=chat.id(integer int64 또는 null). createdAt=matching.proposed_at(서버 제안 생성 최초 확정 시각), expiresAt=그 시각+24시간으로 고정하며 푸시·재전송으로 연장하지 않는다. myDecision NONE/ACCEPT/DECLINE은 본인 matching_participant.response NULL/ACCEPTED/REJECTED에 대응하고 responded_at은 최초 서버 확정 시각이다. 상대 선행 응답·차단·내부 ONE_ACCEPTED를 미응답자에게 공개하지 않으며 기존 API 상태 투영을 유지한다.\n\nmatching 단위로 잠그고 현재 소유·참여·기한·차단·응답 상태를 재검사한다. 상호 수락·chat와 두 chat_participant 생성은 같은 트랜잭션에서 확정한다. 중복 수락이 새 방이나 최초 시각을 만들지 않는다. 응답은 한 번 확정하면 바꾸지 않는다. 최초 요청 키·응답 영수증은 matching_participant.decision_request_key/request_state에 보존한다. 사용자 확정에 따라 PENDING으로 제안이 생성된 이후에는 같은 쌍의 재매칭을 영구 금지한다. WAITING/NOT_MATCHED의 새 만남 기회와 구분하며 과거 원본 기록은 삭제하거나 다른 제안의 식별자로 재사용하지 않는다.",
         "tags": [
           "PROP"
         ],
@@ -9057,8 +9306,9 @@
           }
         ],
         "x-erd21": {
-          "design": "21 tables / 151 columns",
-          "implementationVerified": false
+          "design": "22 tables / 176 columns",
+          "implementationVerified": true,
+          "verificationScope": "175 일회용 PostgreSQL·실제 HTTP 회귀. 외부 소셜·FCM·기기·배포 검증은 별도."
         }
       }
     },
@@ -9325,7 +9575,7 @@
           }
         ],
         "x-erd21": {
-          "design": "21 tables / 151 columns",
+          "design": "22 tables / 176 columns",
           "implementationVerified": false
         }
       }
@@ -9582,7 +9832,7 @@
           }
         ],
         "x-erd21": {
-          "design": "21 tables / 151 columns",
+          "design": "22 tables / 176 columns",
           "implementationVerified": false
         }
       }
@@ -9591,7 +9841,7 @@
       "get": {
         "operationId": "listChats",
         "summary": "참여 채팅 목록 (수정 2026-10-21 11:21)",
-        "description": "활성 방 참여자만. 성사 제안은 제안 목록 대신 채팅 목록에서 관리한다. chat.id에 대응하는 숫자 chatRoomId를 반환한다. 내 가입·현재 필수 비AI 약관·AI 동의, 참여/퇴장·양쪽 계정/차단·방 만료를 재검사한다. 종료 방 및 철회로 사용 종료된 방은 제외한다. 사용자·방 숫자 ID 기반 불투명 커서이며 다운로드로 읽음 처리하지 않는다. 21개 테이블 저장은 chat·chat_participant·chat_message이며 숫자ID·순번·현재 권한을 함께 검사한다. 첫 입장/종료 안내 저장·동의 철회 상태·회원 범위 멱등 키와 참여자 범위 고유키 차이는 합의 전이다.",
+        "description": "활성 방 참여자만. 성사 제안은 제안 목록 대신 채팅 목록에서 관리한다. chat.id에 대응하는 숫자 chatRoomId를 반환한다. 내 가입·현재 필수 비AI 약관·AI 동의, 참여/퇴장·양쪽 계정/차단·방 만료를 재검사한다. 종료 방 및 철회로 사용 종료된 방은 제외한다. 사용자·방 숫자 ID 기반 불투명 커서이며 다운로드로 읽음 처리하지 않는다. 22개 테이블 내 chat·chat_participant·chat_message에 저장한다. 안내 예약·ACK·전달 결과·재시도·선점 세대는 참여자의 notice_state에, 실제 표시한 개별 수신 메시지의 최초 읽음 시각은 read_state에 보존한다. 회원 범위 요청 중복 판정은 회원 행 잠금과 현재 참여자 JOIN으로 검사한다.",
         "tags": [
           "CHAT"
         ],
@@ -9812,12 +10062,10 @@
             "chat_participant",
             "chat_message"
           ],
-          "runtimeVerified": false,
-          "gaps": [
-            "입장·종료 안내 영속 대안",
-            "동의 철회 상태 저장",
-            "회원 범위 멱등 키와 참여자 범위 유일성 차이"
-          ]
+          "runtimeVerified": true,
+          "gaps": [],
+          "design": "22 tables / 176 columns",
+          "verificationScope": "175 일회용 PostgreSQL·실제 HTTP 회귀. 외부 소셜·FCM·기기·배포 검증은 별도."
         }
       }
     },
@@ -9825,7 +10073,7 @@
       "get": {
         "operationId": "getChat",
         "summary": "채팅 수명·권한 조회 (수정 2026-10-21 11:21)",
-        "description": "참여자만 방 메타데이터 조회. 타인/없는 방은 동일404. 종료 방 메타데이터는200 CLOSED·canRead/canSend=false이며 대화 내용은 없다. 현재 동의가 없으면403 AI_RISK_CONSENT_REQUIRED, 권한 종료는410 CHAT_CLOSED. 응답 no-store. 21개 테이블 저장은 chat·chat_participant·chat_message이며 숫자ID·순번·현재 권한을 함께 검사한다. 첫 입장/종료 안내 저장·동의 철회 상태·회원 범위 멱등 키와 참여자 범위 고유키 차이는 합의 전이다.",
+        "description": "참여자만 방 메타데이터 조회. 타인/없는 방은 동일404. 종료 방 메타데이터는200 CLOSED·canRead/canSend=false이며 대화 내용은 없다. 현재 동의가 없으면403 AI_RISK_CONSENT_REQUIRED, 권한 종료는410 CHAT_CLOSED. 응답 no-store. 22개 테이블 내 chat·chat_participant·chat_message에 저장한다. 안내 예약·ACK·전달 결과·재시도·선점 세대는 참여자의 notice_state에, 실제 표시한 개별 수신 메시지의 최초 읽음 시각은 read_state에 보존한다. 회원 범위 요청 중복 판정은 회원 행 잠금과 현재 참여자 JOIN으로 검사한다.",
         "tags": [
           "CHAT"
         ],
@@ -10080,12 +10328,10 @@
             "chat_participant",
             "chat_message"
           ],
-          "runtimeVerified": false,
-          "gaps": [
-            "입장·종료 안내 영속 대안",
-            "동의 철회 상태 저장",
-            "회원 범위 멱등 키와 참여자 범위 유일성 차이"
-          ]
+          "runtimeVerified": true,
+          "gaps": [],
+          "design": "22 tables / 176 columns",
+          "verificationScope": "175 일회용 PostgreSQL·실제 HTTP 회귀. 외부 소셜·FCM·기기·배포 검증은 별도."
         }
       }
     },
@@ -10800,7 +11046,7 @@
       "post": {
         "operationId": "enterChat",
         "summary": "사용자별 첫 입장 안내 확보 (수정 2026-10-21 11:24)",
-        "description": "현재 활성 방의 본인 최초 입장 안내를 확보한다. 사용자+방+FIRST_ENTRY 업무 키로 생성하며 미확인 재입장은 같은 noticeId, 확인 후에는 빈 배열이다. 첫 입장 안내 ACK 전에는 메시지 조회/전송/읽음이403 CHAT_NOTICE_REQUIRED이며 ChatRoom.canRead/canSend=false다. 종료1시간 이내 첫 입장은 FIRST_ENTRY와 ONE_HOUR_BEFORE_END를 별도 표시하고 각각 확인한다. 만료/차단/철회 등 이용 종료는410이며 기한을 연장하지 않는다. Idempotency-Key의 최초 바인딩을 저장하고 다른 업무 재사용은409다. 입장·종료 안내·noticeId·예약·표시 ACK·업무 멱등 키의 전용 저장 칸은21개 테이블에 없어 영속 대안 합의가 필요하다. chat_safety_notice는 위험 안내 전용이며 대체 저장소가 아니다. 21개 테이블 저장은 chat·chat_participant·chat_message이며 숫자ID·순번·현재 권한을 함께 검사한다. 첫 입장/종료 안내 저장·동의 철회 상태·회원 범위 멱등 키와 참여자 범위 고유키 차이는 합의 전이다.",
+        "description": "현재 활성 방의 본인 최초 입장 안내를 확보한다. 사용자+방+FIRST_ENTRY 업무 키로 생성하며 미확인 재입장은 같은 noticeId, 확인 후에는 빈 배열이다. 첫 입장 안내 ACK 전에는 메시지 조회/전송/읽음이403 CHAT_NOTICE_REQUIRED이며 ChatRoom.canRead/canSend=false다. 종료1시간 이내 첫 입장은 FIRST_ENTRY와 ONE_HOUR_BEFORE_END를 별도 표시하고 각각 확인한다. 만료/차단/철회 등 이용 종료는410이며 기한을 연장하지 않는다. Idempotency-Key의 최초 바인딩을 저장하고 다른 업무 재사용은409다. 입장·종료 안내·noticeId·예약·표시 ACK·업무 멱등 키의 전용 저장 칸은21개 테이블에 없어 영속 대안 합의가 필요하다. chat_safety_notice는 위험 안내 전용이며 대체 저장소가 아니다. 22개 테이블 내 chat·chat_participant·chat_message에 저장한다. 안내 예약·ACK·전달 결과·재시도·선점 세대는 참여자의 notice_state에, 실제 표시한 개별 수신 메시지의 최초 읽음 시각은 read_state에 보존한다. 회원 범위 요청 중복 판정은 회원 행 잠금과 현재 참여자 JOIN으로 검사한다.",
         "tags": [
           "CHAT"
         ],
@@ -11097,12 +11343,10 @@
             "chat_participant",
             "chat_message"
           ],
-          "runtimeVerified": false,
-          "gaps": [
-            "입장·종료 안내 영속 대안",
-            "동의 철회 상태 저장",
-            "회원 범위 멱등 키와 참여자 범위 유일성 차이"
-          ]
+          "runtimeVerified": true,
+          "gaps": [],
+          "design": "22 tables / 176 columns",
+          "verificationScope": "175 일회용 PostgreSQL·실제 HTTP 회귀. 외부 소셜·FCM·기기·배포 검증은 별도."
         }
       }
     },
@@ -11110,7 +11354,7 @@
       "get": {
         "operationId": "listNotices",
         "summary": "본인 종료 안내 조회 (수정 2026-10-21 11:24)",
-        "description": "현재 사용자의 미확인 안내만 반환한다. 최초 입장 전에는 FIRST_ENTRY를 새로 만들지 않는다. END_NOTICE는 최초 방 생성 트랜잭션에 사용자별로 expiresAt-1시간에 예약한다. 작업기 지연/푸시 미수신에도 기한 내 재진입 시 현재 필요한 END 안내를 조회한다. 실패/예약/공급자 접수는 표시 ACK가 아니므로 미확인 상태를 유지한다. 늦게 조회한 문구는 실제 종료 시각과 남은 분을 반영한다. 종료 후에는410이며 과거 안내/방을 복구하지 않는다. 입장·종료 안내·noticeId·예약·표시 ACK·업무 멱등 키의 전용 저장 칸은21개 테이블에 없어 영속 대안 합의가 필요하다. chat_safety_notice는 위험 안내 전용이며 대체 저장소가 아니다. 21개 테이블 저장은 chat·chat_participant·chat_message이며 숫자ID·순번·현재 권한을 함께 검사한다. 첫 입장/종료 안내 저장·동의 철회 상태·회원 범위 멱등 키와 참여자 범위 고유키 차이는 합의 전이다.",
+        "description": "현재 사용자의 미확인 안내만 반환한다. 최초 입장 전에는 FIRST_ENTRY를 새로 만들지 않는다. END_NOTICE는 최초 방 생성 트랜잭션에 사용자별로 expiresAt-1시간에 예약한다. 작업기 지연/푸시 미수신에도 기한 내 재진입 시 현재 필요한 END 안내를 조회한다. 실패/예약/공급자 접수는 표시 ACK가 아니므로 미확인 상태를 유지한다. 늦게 조회한 문구는 실제 종료 시각과 남은 분을 반영한다. 종료 후에는410이며 과거 안내/방을 복구하지 않는다. 입장·종료 안내·noticeId·예약·표시 ACK·업무 멱등 키의 전용 저장 칸은21개 테이블에 없어 영속 대안 합의가 필요하다. chat_safety_notice는 위험 안내 전용이며 대체 저장소가 아니다. 22개 테이블 내 chat·chat_participant·chat_message에 저장한다. 안내 예약·ACK·전달 결과·재시도·선점 세대는 참여자의 notice_state에, 실제 표시한 개별 수신 메시지의 최초 읽음 시각은 read_state에 보존한다. 회원 범위 요청 중복 판정은 회원 행 잠금과 현재 참여자 JOIN으로 검사한다.",
         "tags": [
           "CHAT"
         ],
@@ -11355,12 +11599,10 @@
             "chat_participant",
             "chat_message"
           ],
-          "runtimeVerified": false,
-          "gaps": [
-            "입장·종료 안내 영속 대안",
-            "동의 철회 상태 저장",
-            "회원 범위 멱등 키와 참여자 범위 유일성 차이"
-          ]
+          "runtimeVerified": true,
+          "gaps": [],
+          "design": "22 tables / 176 columns",
+          "verificationScope": "175 일회용 PostgreSQL·실제 HTTP 회귀. 외부 소셜·FCM·기기·배포 검증은 별도."
         }
       }
     },
@@ -11368,7 +11610,7 @@
       "put": {
         "operationId": "ackNotice",
         "summary": "안내 표시 확인 (수정 2026-10-21 11:24)",
-        "description": "현재 인증된 방 참여자의 본인 안내만 확인한다. 다른 회원/방/없는 noticeId는404. 아직 시점이 오지 않은 END_NOTICE는409 NOTICE_STATE_CONFLICT. 최초 ACK 시각은 중복/동시 요청에도 보존하며 사용자 간 공유하지 않는다. 기한이 지난 뒤에도 기존 소유자 ACK는 가능하지만 메시지 권한/방은 복구하지 않는다. 사용자+키를 안내 및 entry/ack 업무에 귀속하며 다른 업무 재사용은409 IDEMPOTENCY_CONFLICT. 입장·종료 안내·noticeId·예약·표시 ACK·업무 멱등 키의 전용 저장 칸은21개 테이블에 없어 영속 대안 합의가 필요하다. chat_safety_notice는 위험 안내 전용이며 대체 저장소가 아니다. 21개 테이블 저장은 chat·chat_participant·chat_message이며 숫자ID·순번·현재 권한을 함께 검사한다. 첫 입장/종료 안내 저장·동의 철회 상태·회원 범위 멱등 키와 참여자 범위 고유키 차이는 합의 전이다.",
+        "description": "현재 인증된 방 참여자의 본인 안내만 확인한다. 다른 회원/방/없는 noticeId는404. 아직 시점이 오지 않은 END_NOTICE는409 NOTICE_STATE_CONFLICT. 최초 ACK 시각은 중복/동시 요청에도 보존하며 사용자 간 공유하지 않는다. 기한이 지난 뒤에도 기존 소유자 ACK는 가능하지만 메시지 권한/방은 복구하지 않는다. 사용자+키를 안내 및 entry/ack 업무에 귀속하며 다른 업무 재사용은409 IDEMPOTENCY_CONFLICT. 입장·종료 안내·noticeId·예약·표시 ACK·업무 멱등 키의 전용 저장 칸은21개 테이블에 없어 영속 대안 합의가 필요하다. chat_safety_notice는 위험 안내 전용이며 대체 저장소가 아니다. 22개 테이블 내 chat·chat_participant·chat_message에 저장한다. 안내 예약·ACK·전달 결과·재시도·선점 세대는 참여자의 notice_state에, 실제 표시한 개별 수신 메시지의 최초 읽음 시각은 read_state에 보존한다. 회원 범위 요청 중복 판정은 회원 행 잠금과 현재 참여자 JOIN으로 검사한다.",
         "tags": [
           "CHAT"
         ],
@@ -11663,12 +11905,10 @@
             "chat_participant",
             "chat_message"
           ],
-          "runtimeVerified": false,
-          "gaps": [
-            "입장·종료 안내 영속 대안",
-            "동의 철회 상태 저장",
-            "회원 범위 멱등 키와 참여자 범위 유일성 차이"
-          ]
+          "runtimeVerified": true,
+          "gaps": [],
+          "design": "22 tables / 176 columns",
+          "verificationScope": "175 일회용 PostgreSQL·실제 HTTP 회귀. 외부 소셜·FCM·기기·배포 검증은 별도."
         }
       }
     },
@@ -11676,7 +11916,7 @@
       "get": {
         "operationId": "listMessages",
         "summary": "활성방 메시지 조회",
-        "description": "참여자·유효 권한·미종료 방에서 sequence 내림차순 조회. 커서는 방 숫자 ID(chat.id)에 귀속되며 다른 방 커서는400. 서버에 저장된 URL 치환 결과만 반환하고 읽음 상태를 변경하지 않는다. readByPartner는 응답에서 제거하며 본인 last_read_message_seq를 상대에게 공개하지 않는다. 현재 종료/동의 권한을 매번 재검사한다. 첫 입장 안내 ACK 전에는403 CHAT_NOTICE_REQUIRED. 21개 테이블 저장은 chat·chat_participant·chat_message이며 숫자ID·순번·현재 권한을 함께 검사한다. 첫 입장/종료 안내 저장·동의 철회 상태·회원 범위 멱등 키와 참여자 범위 고유키 차이는 합의 전이다.",
+        "description": "참여자·유효 권한·미종료 방에서 sequence 내림차순 조회. 커서는 방 숫자 ID(chat.id)에 귀속되며 다른 방 커서는400. 서버에 저장된 URL 치환 결과만 반환하고 읽음 상태를 변경하지 않는다. readByPartner는 응답에서 제거하며 본인 last_read_message_seq를 상대에게 공개하지 않는다. 현재 종료/동의 권한을 매번 재검사한다. 첫 입장 안내 ACK 전에는403 CHAT_NOTICE_REQUIRED. 22개 테이블 내 chat·chat_participant·chat_message에 저장한다. 안내 예약·ACK·전달 결과·재시도·선점 세대는 참여자의 notice_state에, 실제 표시한 개별 수신 메시지의 최초 읽음 시각은 read_state에 보존한다. 회원 범위 요청 중복 판정은 회원 행 잠금과 현재 참여자 JOIN으로 검사한다.",
         "tags": [
           "CHAT"
         ],
@@ -11934,18 +12174,16 @@
             "chat_participant",
             "chat_message"
           ],
-          "runtimeVerified": false,
-          "gaps": [
-            "입장·종료 안내 영속 대안",
-            "동의 철회 상태 저장",
-            "회원 범위 멱등 키와 참여자 범위 유일성 차이"
-          ]
+          "runtimeVerified": true,
+          "gaps": [],
+          "design": "22 tables / 176 columns",
+          "verificationScope": "175 일회용 PostgreSQL·실제 HTTP 회귀. 외부 소셜·FCM·기기·배포 검증은 별도."
         }
       },
       "post": {
         "operationId": "sendMessage",
         "summary": "텍스트 메시지 저장",
-        "description": "원문 LF 통일→1000 확장 그래핌 및64KiB 검사→웹 주소 부분 치환→전체 결과 저장 순서. 비텍스트/미정의 필드는400. 원문 본문을 별도로 저장/로그하지 않고 중복 판정용 SHA-256만 저장한다. Idempotency-Key는 발신자 단위, clientMessageId는 방+발신자 단위. 동일 본문 재시도는 같은 messageId/sequence/최초 시각을201로 반환한다. 같은 키나 clientMessageId에 다른 정규화 원문/업무를 넣으면409 IDEMPOTENCY_CONFLICT. 재전송도 현재 방·동의 권한 검사 후 복구한다. 동일 발신자·방 잠금으로 순서/키를 직렬화하고 URL 치환으로 늘어난 결과는 자르지 않는다. 첫 입장 안내 ACK 전에는403 CHAT_NOTICE_REQUIRED. 21개 테이블 저장은 chat·chat_participant·chat_message이며 숫자ID·순번·현재 권한을 함께 검사한다. 첫 입장/종료 안내 저장·동의 철회 상태·회원 범위 멱등 키와 참여자 범위 고유키 차이는 합의 전이다.",
+        "description": "원문 LF 통일→1000 확장 그래핌 및64KiB 검사→웹 주소 부분 치환→전체 결과 저장 순서. 비텍스트/미정의 필드는400. 원문 본문을 별도로 저장/로그하지 않고 중복 판정용 SHA-256만 저장한다. Idempotency-Key는 발신자 단위, clientMessageId는 방+발신자 단위. 동일 본문 재시도는 같은 messageId/sequence/최초 시각을201로 반환한다. 같은 키나 clientMessageId에 다른 정규화 원문/업무를 넣으면409 IDEMPOTENCY_CONFLICT. 재전송도 현재 방·동의 권한 검사 후 복구한다. 동일 발신자·방 잠금으로 순서/키를 직렬화하고 URL 치환으로 늘어난 결과는 자르지 않는다. 첫 입장 안내 ACK 전에는403 CHAT_NOTICE_REQUIRED. 22개 테이블 내 chat·chat_participant·chat_message에 저장한다. 안내 예약·ACK·전달 결과·재시도·선점 세대는 참여자의 notice_state에, 실제 표시한 개별 수신 메시지의 최초 읽음 시각은 read_state에 보존한다. 회원 범위 요청 중복 판정은 회원 행 잠금과 현재 참여자 JOIN으로 검사한다.",
         "tags": [
           "CHAT"
         ],
@@ -12281,12 +12519,10 @@
             "chat_participant",
             "chat_message"
           ],
-          "runtimeVerified": false,
-          "gaps": [
-            "입장·종료 안내 영속 대안",
-            "동의 철회 상태 저장",
-            "회원 범위 멱등 키와 참여자 범위 유일성 차이"
-          ]
+          "runtimeVerified": true,
+          "gaps": [],
+          "design": "22 tables / 176 columns",
+          "verificationScope": "175 일회용 PostgreSQL·실제 HTTP 회귀. 외부 소셜·FCM·기기·배포 검증은 별도."
         }
       }
     },
@@ -12560,10 +12796,9 @@
           ],
           "runtimeVerified": false,
           "gaps": [
-            "입장·종료 안내 영속 대안",
-            "동의 철회 상태 저장",
-            "회원 범위 멱등 키와 참여자 범위 유일성 차이"
-          ]
+            "현재 checkout의 아이스브레이커 API 미구현"
+          ],
+          "design": "22 tables / 176 columns"
         }
       },
       "get": {
@@ -12793,10 +13028,9 @@
           ],
           "runtimeVerified": false,
           "gaps": [
-            "입장·종료 안내 영속 대안",
-            "동의 철회 상태 저장",
-            "회원 범위 멱등 키와 참여자 범위 유일성 차이"
-          ]
+            "현재 checkout의 아이스브레이커 API 미구현"
+          ],
+          "design": "22 tables / 176 columns"
         }
       }
     },
@@ -13931,7 +14165,7 @@
       "post": {
         "operationId": "leaveChat",
         "summary": "자발적 채팅 퇴장",
-        "description": "자동 만료와 사용자가 직접 나가는 동작을 구분한다.\n\n### 처리 규칙\n\n- 자동 만료와 사용자가 직접 나가는 동작을 구분한다.\n\n- 방 종료 범위·삭제 기산점·재매칭 제한 정책이 확정되기 전에는 활성화하지 않는다.\n\n- 아래 기존안의 제안과 정책 미합의 상태를 함께 보존한다.\n\n### 확인할 사항\n\n- 정책 합의 항목: POL-09. 기존의 미합의 조건을 이 문서만으로 활성화하지 않는다.\n\n### 정책 적용 경계\n\n자발적 퇴장 후 재매칭 제한의 유무·기간은 POL-09 미정 사항이다. 영구 제한을 현재 규칙으로 적용하지 않는다. 방 종료 범위·삭제 기산점과 함께 합의하기 전에는 422 POLICY_UNRESOLVED로 처리한다. 자동 만료만으로 재매칭 제한을 만들지 않는다. 21개 테이블 저장은 chat·chat_participant·chat_message이며 숫자ID·순번·현재 권한을 함께 검사한다. 첫 입장/종료 안내 저장·동의 철회 상태·회원 범위 멱등 키와 참여자 범위 고유키 차이는 합의 전이다.",
+        "description": "자동 만료와 사용자가 직접 나가는 동작을 구분한다.\n\n### 처리 규칙\n\n- 자동 만료와 사용자가 직접 나가는 동작을 구분한다.\n\n- 방 종료 범위·삭제 기산점·재매칭 제한 정책이 확정되기 전에는 활성화하지 않는다.\n\n- 아래 기존안의 제안과 정책 미합의 상태를 함께 보존한다.\n\n### 확인할 사항\n\n- 정책 합의 항목: POL-09. 기존의 미합의 조건을 이 문서만으로 활성화하지 않는다.\n\n### 정책 적용 경계\n\n자발적 퇴장 후 재매칭 제한의 유무·기간은 POL-09 미정 사항이다. 영구 제한을 현재 규칙으로 적용하지 않는다. 방 종료 범위·삭제 기산점과 함께 합의하기 전에는 422 POLICY_UNRESOLVED로 처리한다. 자동 만료만으로 재매칭 제한을 만들지 않는다. 22개 테이블 내 chat·chat_participant·chat_message에 저장한다. 안내 예약·ACK·전달 결과·재시도·선점 세대는 참여자의 notice_state에, 실제 표시한 개별 수신 메시지의 최초 읽음 시각은 read_state에 보존한다. 회원 범위 요청 중복 판정은 회원 행 잠금과 현재 참여자 JOIN으로 검사한다.",
         "tags": [
           "SAFE"
         ],
@@ -14183,16 +14417,14 @@
             "chat_participant",
             "chat_message"
           ],
-          "runtimeVerified": false,
-          "gaps": [
-            "입장·종료 안내 영속 대안",
-            "동의 철회 상태 저장",
-            "회원 범위 멱등 키와 참여자 범위 유일성 차이"
-          ]
+          "runtimeVerified": true,
+          "gaps": [],
+          "design": "22 tables / 176 columns",
+          "verificationScope": "175 일회용 PostgreSQL·실제 HTTP 회귀. 외부 소셜·FCM·기기·배포 검증은 별도."
         }
       }
     },
-    "/api/v1/push-installations": {
+    "/api/push-installations": {
       "put": {
         "operationId": "registerPush",
         "summary": "종료 안내 단말 등록",
@@ -14467,15 +14699,18 @@
         "x-policy-gate": "POL-06",
         "x-notion-page": "https://app.notion.com/p/3ffc91ccb660802d879ec77b9f622e02",
         "x-contract-status": "REVIEW_REQUIRED",
-        "x-storage-design": "unified25-185-review",
+        "x-storage-design": "erd22-canonical-176",
         "x-reviewed-at": "2026-10-21 11:47 KST",
         "x-confirmation-required": [
           "정책 합의 항목: POL-06. 기존의 미합의 조건을 이 문서만으로 활성화하지 않는다."
         ],
-        "x-implementation-contract": "push-installations.md"
+        "x-implementation-contract": "push-installations.md",
+        "x-implementation-stage": "PATH_ALIGNED_STORAGE_REVIEW_REQUIRED",
+        "x-erd21-storage-followup": "S15P31E106-176 / S15P31E106-178: owner/ACK/read DTO and push login-generation storage need agreement.",
+        "x-verification-note": "2026-10-28 !92 source35166ea: 새22표176컬럼36논리관계에서 이4API와 기존로그아웃 연결해제의 로컬저장/HTTP·전체clean build422개·Checkstyle/패키징 통과. 신규70 통합전이며 교차승인/병합은 별도. 등록67/100·sync68/69의 최종기기증명/ACK와 nonce/run/당시payload/소유세대 영속정의, 과거자료 실제이관·Notion일치·실기기/FCM/공유DB/배포는 미완료. 임의증명·새API/칼럼 추가없음."
       }
     },
-    "/api/v1/push-installations/{installationId}": {
+    "/api/push-installations/{installationId}": {
       "delete": {
         "operationId": "removePush",
         "summary": "본인 단말 푸시 해제",
@@ -14661,10 +14896,13 @@
         },
         "x-notion-page": "https://app.notion.com/p/3ffc91ccb6608052895cd17258ec1aa2",
         "x-contract-status": "REVIEW_REQUIRED",
-        "x-storage-design": "unified25-185-review",
+        "x-storage-design": "erd22-canonical-176",
         "x-reviewed-at": "2026-10-21 11:47 KST",
         "x-confirmation-required": [],
-        "x-implementation-contract": "push-installations.md"
+        "x-implementation-contract": "push-installations.md",
+        "x-implementation-stage": "PATH_ALIGNED_STORAGE_REVIEW_REQUIRED",
+        "x-erd21-storage-followup": "S15P31E106-176 / S15P31E106-178: owner/ACK/read DTO and push login-generation storage need agreement.",
+        "x-verification-note": "2026-10-28 !92 source35166ea: 새22표176컬럼36논리관계에서 이4API와 기존로그아웃 연결해제의 로컬저장/HTTP·전체clean build422개·Checkstyle/패키징 통과. 신규70 통합전이며 교차승인/병합은 별도. 등록67/100·sync68/69의 최종기기증명/ACK와 nonce/run/당시payload/소유세대 영속정의, 과거자료 실제이관·Notion일치·실기기/FCM/공유DB/배포는 미완료. 임의증명·새API/칼럼 추가없음."
       }
     },
     "/internal/matching/evaluations": {
@@ -15723,7 +15961,7 @@
         }
       }
     },
-    "/api/v1/users/me/profile/complete": {
+    "/api/users/{userId}/profile/complete": {
       "post": {
         "operationId": "completeProfile",
         "summary": "프로필 등록 완료",
@@ -15736,6 +15974,17 @@
         ],
         "x-auth-role": "user",
         "parameters": [
+          {
+            "name": "userId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            },
+            "description": "토큰의 회원 번호와 같은 본인만 허용. 다르면 403 FORBIDDEN."
+          },
           {
             "$ref": "#/components/parameters/AcceptLanguage"
           }
@@ -15835,31 +16084,40 @@
             ]
           },
           "403": {
-            "description": "ONBOARDING_REQUIRED: 필수 동의 등 허용 가입 단계에 도달하지 않음.",
+            "description": "FORBIDDEN: 경로 회원과 인증 회원 불일치",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Error"
                 },
                 "example": {
-                  "code": "ONBOARDING_REQUIRED",
-                  "message": "가입 단계를 먼저 완료해 주세요."
+                  "code": "FORBIDDEN",
+                  "message": "본인 정보만 조회·변경할 수 있습니다."
                 }
               }
             },
             "x-error-codes": [
-              "ONBOARDING_REQUIRED"
+              "FORBIDDEN"
             ]
           }
         },
-        "x-notion-page": "https://app.notion.com/p/401c91ccb660803ba58ce36a65a4e915"
+        "x-notion-page": "https://app.notion.com/p/401c91ccb660803ba58ce36a65a4e915",
+        "x-storage-design": "erd22-canonical-151",
+        "x-reviewed-at": "2026-10-28",
+        "x-confirmation-required": [],
+        "x-change-history": [
+          {
+            "date": "2026-10-28",
+            "revised": "A151 경로 정합화: /api/v1/users/me/profile/complete → /api/users/{userId}/profile/complete. 본인 회원 번호 검사 및 승인된 22표 보존 매핑. 미구현 사진 API의 개발 완료를 뜻하지 않는다."
+          }
+        ]
       }
     },
     "/api/chat-rooms/{chatRoomId}/reads": {
       "post": {
         "operationId": "acknowledgeDisplayedMessages",
         "summary": "실제 표시한 수신 메시지 읽음 확인",
-        "description": "실제 표시한 본인 수신 messageId 숫자 1~100개를 보낸다. 전체 방·수신 소유권 검사 후 처리하며 본인 발신은400, 다른 방/없는 메시지는404. 조회·다운로드·푸시 수신은 ACK가 아니다. 개별 읽음 행이나 readAt은 없으며 chat_participant.last_read_message_seq만 본인 기준으로 관리한다. 상대 읽음 상태·Message.readByPartner는 공개하지 않는다. 누락 순번을 건너뛰지 않는 연속 표시 범위·순번 승격 대안은 합의 전이다. 현재 권한·기한을 매번 검사하며 종료 방을 복원하지 않는다. 첫 입장 안내 ACK 계약과 저장 대안은 별도 합의 전이다. 21개 테이블 저장은 chat·chat_participant·chat_message이며 숫자ID·순번·현재 권한을 함께 검사한다. 첫 입장/종료 안내 저장·동의 철회 상태·회원 범위 멱등 키와 참여자 범위 고유키 차이는 합의 전이다.",
+        "description": "실제 표시한 본인 수신 messageId 숫자 1~100개를 보낸다. 전체 방·수신 소유권 검사 후 처리하며 본인 발신은400, 다른 방/없는 메시지는404. 조회·다운로드·푸시 수신은 ACK가 아니다. chat_participant.read_state에 개별 메시지의 최초 readAt을 보존하고, 실제 표시가 확인된 연속 범위만 last_read_message_seq에 반영한다. 상대 읽음 상태·Message.readByPartner는 공개하지 않는다. 불연속 messageIds 배치를 유지하며 max(seq)만으로 표시하지 않은 메시지를 읽음 처리하지 않는다. 현재 권한·기한을 매번 검사하며 종료 방을 복원하지 않는다. 첫 입장 안내 ACK는 본인 notice_state의 해당 noticeId/요청 키와 최초 시각으로 검사한다. 22개 테이블 내 chat·chat_participant·chat_message에 저장한다. 안내 예약·ACK·전달 결과·재시도·선점 세대는 참여자의 notice_state에, 실제 표시한 개별 수신 메시지의 최초 읽음 시각은 read_state에 보존한다. 회원 범위 요청 중복 판정은 회원 행 잠금과 현재 참여자 JOIN으로 검사한다.",
         "tags": [
           "CHAT"
         ],
@@ -16144,13 +16402,10 @@
             "chat_participant",
             "chat_message"
           ],
-          "runtimeVerified": false,
-          "gaps": [
-            "입장·종료 안내 영속 대안",
-            "동의 철회 상태 저장",
-            "회원 범위 멱등 키와 참여자 범위 유일성 차이",
-            "누락 순번 없는 본인 표시 순번 승격"
-          ]
+          "runtimeVerified": true,
+          "gaps": [],
+          "design": "22 tables / 176 columns",
+          "verificationScope": "175 일회용 PostgreSQL·실제 HTTP 회귀. 외부 소셜·FCM·기기·배포 검증은 별도."
         },
         "x-confirmation-required": [
           "새 숫자 ID와21개 테이블 계약의 FE/BE 이관·기존 행 처리 및 미확정 저장 대안 검증"
@@ -17198,7 +17453,7 @@
           "requiredSettingsVersion": {
             "type": "integer",
             "minimum": 0,
-            "description": "서버가 요구하는 최신 설정 변경 번호"
+            "description": "서버의 실제 user_setting.settings_version. 행이 없거나 음수이면 안전값 0이며 임의로 복구하지 않음"
           },
           "acknowledgedSettingsVersion": {
             "anyOf": [
@@ -17210,7 +17465,7 @@
                 "type": "null"
               }
             ],
-            "description": "기기에 저장됐다고 확인한 설정 변경 번호"
+            "description": "본인 소유 REGISTERED 기기들의 확인된 양수 synced_settings_version 중 최댓값. 현재 설정보다 큰 무효 값은 제외하며 확인 값이 없으면 null. 한 기기라도 현재 설정과 같으면 준비 완료"
           },
           "serverTime": {
             "type": "string",
@@ -17241,8 +17496,8 @@
             "answeredCount": 0,
             "questionCount": 0,
             "nextQuestionId": null,
-            "requiredSettingsVersion": 0,
-            "acknowledgedSettingsVersion": 0,
+            "requiredSettingsVersion": 7,
+            "acknowledgedSettingsVersion": 7,
             "serverTime": "2026-10-20T06:00:00Z"
           }
         ]
@@ -17252,9 +17507,11 @@
         "additionalProperties": false,
         "properties": {
           "deviceId": {
-            "type": "string",
-            "format": "uuid",
-            "description": "키링 공개 UUID; keyrings.public_device_id에 대응하며 내부 bigint device_id와 구분한다"
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1,
+            "maximum": 9223372036854775807,
+            "description": "현재 본인 소유 REGISTERED keyring.id 숫자 ID. 소유 인증 자격이 아님"
           },
           "status": {
             "type": "string",
@@ -17266,11 +17523,6 @@
             ],
             "description": "OpenAPI 허용 값은 REGISTERED/SYNC_PENDING/READY/OFFLINE. 현재 66번 서버 구현은 앞의 세 상태만 계산하며, BLE 온라인 관측 없이 OFFLINE을 추정해 반환하지 않는다. OFFLINE 관측·반환 정책과 구현은 미확정으로 구분한다."
           },
-          "boundAt": {
-            "type": "string",
-            "format": "date-time",
-            "description": "키링과 회원을 연결한 시각"
-          },
           "firmwareVersion": {
             "type": "string",
             "minLength": 1,
@@ -17281,14 +17533,12 @@
         "required": [
           "deviceId",
           "status",
-          "boundAt",
           "firmwareVersion"
         ],
         "examples": [
           {
-            "deviceId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+            "deviceId": 17,
             "status": "REGISTERED",
-            "boundAt": "2026-10-20T06:00:00Z",
             "firmwareVersion": "example"
           }
         ]
@@ -18057,6 +18307,15 @@
               }
             ],
             "description": "survey.completed_at. 제출 완료 서버 시각이며 반복 완료 요청으로 바꾸지 않는다."
+          },
+          "revision": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0,
+            "description": "survey.revision 동시 저장 검사 번호. 현재 조회·생성 응답 ETag와 같다."
+          },
+          "metadata": {
+            "description": "기존 선택 메타데이터와 확장 문맥. survey.response_context에 JSON 원형 보존. 가입 프로필·희망 조건을 자동 변경하지 않는다."
           }
         },
         "required": [
@@ -18067,7 +18326,9 @@
           "questionCount",
           "nextQuestionId",
           "answers",
-          "completedAt"
+          "completedAt",
+          "revision",
+          "metadata"
         ],
         "examples": [
           {
@@ -18082,10 +18343,12 @@
             "questionCount": 100,
             "nextQuestionId": "Q001",
             "answers": [],
-            "completedAt": null
+            "completedAt": null,
+            "revision": 0,
+            "metadata": null
           }
         ],
-        "description": "숫자 회차 ID와 survey·survey_answer의 진행 상태. revision/metadata/ETag는 21개 테이블 계약에서 사용하지 않는다."
+        "description": "survey·survey_answer 진행 상태와 승인된 22표 보존 필드 revision/response_context. 답 저장·완료 등 미구현 HTTP의 개발 완료를 뜻하지 않는다."
       },
       "MigrationPlan": {
         "type": "object",
@@ -21007,7 +21270,7 @@
           "expiresAt": {
             "type": "string",
             "format": "date-time",
-            "description": "chat.created_at + 168시간. 재시도·재접속·배치 지연으로 연장하지 않는다."
+            "description": "chat.expires_at. 최초 상호 수락 시각부터 168시간이며 재시도·재접속·배치 지연으로 연장하지 않는다."
           },
           "closedAt": {
             "anyOf": [
@@ -21031,7 +21294,7 @@
                 "type": "null"
               }
             ],
-            "description": "기존 보관 정책의 계산값. 별도 DB 칸은 없으며 retain_until/탈퇴 보관 정책 차이는 합의 필요. 상대에게 신고 기한을 공개하지 않는다."
+            "description": "chat.delete_at. 원래 삭제 예정 증거이며 retain_until 내부 보관 기한과 별도로 보존한다. 상대에게 신고 기한을 공개하지 않는다."
           },
           "serverTime": {
             "type": "string",
@@ -21252,16 +21515,16 @@
               "format": "int64",
               "minimum": 1
             },
-            "description": "실제 표시한 본인 수신 chat_message.id 숫자 목록. 전체 권한을 검사하고 상대 읽음은 공개하지 않는다. last_read_message_seq로 반영할 연속 표시 범위·누락 순번 처리 규칙은 합의 전이다."
+            "description": "실제 표시한 본인 수신 chat_message.id 숫자 목록. 권한을 모두 검사해 개별 최초 readAt을 read_state에 보존한다. 누락 순번을 건너 max(seq)로 읽음을 추정하지 않으며 상대 읽음 상태는 공개하지 않는다."
           }
         },
         "required": [
           "messageIds"
         ],
         "x-erd21": {
-          "storage": "chat_participant.last_read_message_seq",
-          "status": "CONTRACT_GAP",
-          "gap": "개별 읽음 행·readAt 없음. 단순 max(seq)로 미표시 메시지를 읽음 처리하지 않는다."
+          "storage": "chat_participant.read_state + last_read_message_seq",
+          "status": "APPROVED_22_TABLE_STORAGE",
+          "decision": "22표 유지·업무별 전용 보존 컬럼 사용자 승인. 불연속 읽음 배치와 개별 최초 시각을 보존한다."
         }
       },
       "Erd21ReadMessagesResult": {
@@ -21275,7 +21538,7 @@
               "format": "int64",
               "minimum": 1
             },
-            "description": "실제 표시한 본인 수신 chat_message.id 숫자 목록. 전체 권한을 검사하고 상대 읽음은 공개하지 않는다. last_read_message_seq로 반영할 연속 표시 범위·누락 순번 처리 규칙은 합의 전이다."
+            "description": "실제 표시한 본인 수신 chat_message.id 숫자 목록. 권한을 모두 검사해 개별 최초 readAt을 read_state에 보존한다. 누락 순번을 건너 max(seq)로 읽음을 추정하지 않으며 상대 읽음 상태는 공개하지 않는다."
           },
           "serverTime": {
             "type": "string",
@@ -21287,9 +21550,9 @@
           "serverTime"
         ],
         "x-erd21": {
-          "storage": "chat_participant.last_read_message_seq",
-          "status": "CONTRACT_GAP",
-          "gap": "개별 읽음 행·readAt 없음. 단순 max(seq)로 미표시 메시지를 읽음 처리하지 않는다."
+          "storage": "chat_participant.read_state + last_read_message_seq",
+          "status": "APPROVED_22_TABLE_STORAGE",
+          "decision": "22표 유지·업무별 전용 보존 컬럼 사용자 승인. 불연속 읽음 배치와 개별 최초 시각을 보존한다."
         }
       },
       "Erd21Notice": {
@@ -21351,12 +21614,9 @@
         ],
         "description": "기존 입장·종료 안내 계약 참고. 21개 테이블에는 안내·예약·표시 ACK 저장 칸이 없다. chat_safety_notice는 위험 안내 전용이며 이 계약과 동일시하지 않는다.",
         "x-erd21": {
-          "status": "CONTRACT_GAP",
-          "missing": [
-            "FIRST_ENTRY/END_NOTICE 저장",
-            "예약·표시 ACK·업무 멱등 키",
-            "재시작 복구"
-          ]
+          "status": "APPROVED_22_TABLE_STORAGE",
+          "storage": "chat_participant.notice_state",
+          "evidence": "예약·ACK·요청 키·선점 세대/lease·binding별 전달 영수증을 업무 소유 JSON에 보존한다."
         }
       },
       "Erd21Entry": {

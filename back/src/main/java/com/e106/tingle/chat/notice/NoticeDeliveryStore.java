@@ -53,7 +53,7 @@ public class NoticeDeliveryStore {
 			job.finish("CANCELLED", "CHAT_INELIGIBLE", clock.instant());
 			return List.of();
 		}
-		ChatMember member = members.findById(new ChatMember.Key(room.getId(), job.userId())).orElse(null);
+		ChatMember member = members.findByChatRoomIdAndUserId(room.getId(), job.userId()).orElse(null);
 		if (member == null || member.getEndNoticeAckedAt() != null) {
 			job.finish("SUCCEEDED", "DISPLAY_ACKED", clock.instant());
 			return List.of();
@@ -79,7 +79,7 @@ public class NoticeDeliveryStore {
 		ChatNoticeJob job = current(claim);
 		ChatRoom room = job == null ? null : rooms.findById(job.roomId()).orElse(null);
 		ChatMember member = job == null ? null
-			: members.findById(new ChatMember.Key(job.roomId(), job.userId())).orElse(null);
+			: members.findByChatRoomIdAndUserId(job.roomId(), job.userId()).orElse(null);
 		if (job == null || room == null || member == null || member.getEndNoticeAckedAt() != null
 			|| target.candidate().userId() != job.userId()
 			|| target.candidate().kind() != PushNotificationKind.CHAT_END_NOTICE
@@ -123,7 +123,7 @@ public class NoticeDeliveryStore {
 	private ChatNoticeJob current(Claim claim) {
 		ChatNoticeJob job = jobs.lockById(claim.jobId()).orElse(null);
 		return job != null && job.getStatus().equals("RUNNING") && job.getAttempts() == claim.attempt()
-			&& job.getLeaseUntil().isAfter(clock.instant()) ? job : null;
+			&& job.getLeaseUntil() != null && job.getLeaseUntil().isAfter(clock.instant()) ? job : null;
 	}
 
 	private Target target(ChatNoticeJob job, ChatRoom room, PushDeliveryLookup.Candidate candidate) {
@@ -134,7 +134,7 @@ public class NoticeDeliveryStore {
 		return new Target(candidate, job.getPublicId().toString(), data, room.getExpiresAt());
 	}
 
-	public record Claim(long jobId, int attempt) {
+	public record Claim(UUID jobId, int attempt) {
 	}
 
 	public record Target(PushDeliveryLookup.Candidate candidate, String noticeId,

@@ -2,6 +2,9 @@ package com.e106.tingle.user;
 
 import java.time.Instant;
 
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
+
 import com.e106.tingle.auth.SocialProvider;
 
 import jakarta.persistence.Column;
@@ -18,27 +21,28 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 
 /**
- * 회원 계정 (ERD app_users). 소셜 로그인 때 만들어진다(UserRepository.insertIfAbsent).
+ * 회원 계정 (ERD users). 소셜 로그인 때 만들어진다(UserRepository.insertIfAbsent).
  * 가입 때 입력한 정보는 Profile 에, 동의 기록은 UserConsent 에 따로 있다.
  */
 @Entity
-@Table(name = "app_users", uniqueConstraints = @UniqueConstraint(
-	name = "uq_app_users_provider_subject", columnNames = {"provider", "provider_subject"}))
+@Table(name = "users", uniqueConstraints = @UniqueConstraint(
+	name = "uq_users_provider_account", columnNames = {"provider", "provider_user_id"}))
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class User {
 
 	@Id
 	@GeneratedValue(strategy = GenerationType.IDENTITY)
-	@Column(name = "user_id")
+	@Column(name = "id")
 	private Long id;
 
 	@Enumerated(EnumType.STRING)
-	@Column(nullable = false, columnDefinition = "text")
+	@JdbcTypeCode(SqlTypes.NAMED_ENUM)
+	@Column(nullable = false, columnDefinition = "auth_provider")
 	private SocialProvider provider;
 
 	// 서버가 검증한 소셜 계정 고유 ID
-	@Column(nullable = false, columnDefinition = "text")
+	@Column(name = "provider_user_id", nullable = false, length = 255)
 	private String providerSubject;
 
 	@Enumerated(EnumType.STRING)
@@ -51,8 +55,14 @@ public class User {
 	// 처음으로 모든 가입 단계를 마친(READY) 시각. 한 번 채워지면 바꾸지 않는다.
 	private Instant signupCompletedAt;
 
+	// 기존 항목별 동의 이력에서 일괄 동의 시각을 추정하지 않는다.
+	private Instant agreedAt;
+
+	@Column(name = "is_operator", nullable = false)
+	private boolean operator;
+
 	// 공식 SQL의 선택 연락처. 연락용이며 회원 식별에 쓰지 않는다. 다른 소셜 계정이 같은 이메일을 가질 수 있어 유니크가 아니다.
 	// 개인정보 수집 동의(PRIVACY)를 한 회원만 소셜이 확인한 이메일을 로그인 때 저장한다. 응답에 넣지 않는다.
-	@Column(columnDefinition = "text")
+	@Column(length = 320)
 	private String email;
 }

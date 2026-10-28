@@ -14,7 +14,7 @@ import lombok.RequiredArgsConstructor;
 
 /**
  * 회원의 현재 가입 단계를 계산한다. 단계는 저장하지 않고 각 도메인의 상태를 보고 그때그때 계산한다.
- * 처음으로 모든 단계를 마친 시각만 app_users.signup_completed_at 에 남긴다.
+ * 처음으로 모든 단계를 마친 시각만 users.signup_completed_at 에 남긴다.
  */
 @Service
 @RequiredArgsConstructor
@@ -57,10 +57,10 @@ public class OnboardingService {
 		OnboardingStatus status = recordProgress(userId);
 		boolean ready = status == OnboardingStatus.READY;
 		SurveyService.Progress survey = surveyService.progress(userId);
-		// ponytail: 설정 반영 버전 필드는 키링 동기화 기능 전까지 임시값
+		MemberAccessRepository.SettingsVersions versions = members.settingsVersions(userId);
 		return new OnboardingDetailResponse(status, signupCompleted(userId), ready, ready,
 			survey.sessionId(), survey.answeredCount(), survey.questionCount(), survey.nextQuestionId(),
-			0, null, clock.instant());
+			versions.required(), versions.acknowledged(), clock.instant());
 	}
 
 	/**

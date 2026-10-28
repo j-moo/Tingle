@@ -4,19 +4,14 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Clock;
-import java.time.Duration;
 import java.time.Instant;
 import java.time.Period;
 import java.time.ZoneId;
 import java.util.Base64;
 import java.util.HexFormat;
 import java.util.List;
-import java.util.Map;
 import java.util.UUID;
-import java.util.function.Function;
-import java.util.stream.Collectors;
 
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -43,22 +38,19 @@ public class ProposalService {
 	private final MemberAccessRepository members;
 	private final Clock clock;
 	private final EntityManager entityManager;
-	private final Duration declineDuration;
+	private final MatchingParticipantRepository participants;
 	private final ChatService chats;
 
 	public ProposalService(ProposalRepository proposals, PairRelationRepository relations,
 		PublicProfileRepository profiles, MemberAccessRepository members, Clock clock, EntityManager entityManager,
-		ChatService chats, @Value("${app.proposals.decline-days}") int days) {
-		if (days <= 0) {
-			throw new IllegalArgumentException("Decline duration must be positive");
-		}
+		ChatService chats, MatchingParticipantRepository participants) {
 		this.proposals = proposals;
 		this.relations = relations;
 		this.profiles = profiles;
 		this.members = members;
 		this.clock = clock;
 		this.entityManager = entityManager;
-		this.declineDuration = Duration.ofDays(days);
+		this.participants = participants;
 		this.chats = chats;
 	}
 
@@ -99,9 +91,7 @@ public class ProposalService {
 			String value = last.getCreatedAt() + "|" + last.getId();
 			nextCursor = Base64.getUrlEncoder().withoutPadding().encodeToString(value.getBytes(StandardCharsets.UTF_8));
 		}
-		Map<Long, PairRelation> pairs = relations.findAllById(page.stream().map(MatchProposal::getPairId).toList())
-			.stream().collect(Collectors.toMap(PairRelation::getId, Function.identity()));
-		return new ProposalPage(page.stream().map(p -> view(p, pairs.get(p.getPairId()), userId)).toList(),
+		return new ProposalPage(page.stream().map(p -> view(p, PairRelation.from(p), userId)).toList(),
 			nextCursor, clock.instant());
 	}
 
@@ -109,9 +99,9 @@ public class ProposalService {
 	public PartnerProfileView profile(long id, long userId) {
 		Owned owned = findOwned(id, userId);
 		MatchProposal proposal = owned.proposal();
-		MatchProposal.Status status = proposal.visibleStatus(owned.pair().getUserLow() == userId, clock.instant());
+		MatchProposal.Status status = proposal.visibleStatus(participant(id, userId).decision(), clock.instant());
 		if ((status != MatchProposal.Status.PENDING && status != MatchProposal.Status.WAITING_FOR_OTHER)
-			|| restricted(owned.pair(), proposal)) {
+			|| restricted(owned.pair())) {
 			throw new BusinessException(ErrorCode.PROPOSAL_EXPIRED);
 		}
 		PublicProfile profile = profiles.findById(owned.pair().partnerOf(userId)).orElseThrow(this::notFound);
@@ -156,29 +146,26 @@ public class ProposalService {
 		if (!members.canRespondToProposal(userId)) {
 			throw new BusinessException(ErrorCode.ONBOARDING_REQUIRED);
 		}
-		PairRelation pair = relations.lockById(owned.pair().getId()).orElseThrow(this::notFound);
-		entityManager.refresh(pair, LockModeType.PESSIMISTIC_WRITE);
 		MatchProposal proposal = proposals.lockById(id).orElseThrow(this::notFound);
 		entityManager.refresh(proposal, LockModeType.PESSIMISTIC_WRITE);
-		boolean low = pair.getUserLow() == userId;
-		proposals.findRequest(userId, requestKey).ifPresent(previous -> {
-			if (previous.getId() != id || previous.originalDecisionOf(low) != choice
-				|| requestKey.equals(previous.cancelKeyOf(low))) {
+		PairRelation pair = PairRelation.from(proposal);
+		MatchingParticipant own = participant(id, userId);
+		participants.findRequest(userId, requestKey).ifPresent(previous -> {
+			if (previous.getMatchingId() != id || previous.originalDecision() != choice
+				|| requestKey.equals(previous.legacyCancelKey())) {
 				throw new BusinessException(ErrorCode.IDEMPOTENCY_CONFLICT);
 			}
 		});
 		Instant now = clock.instant();
-		MatchProposal.Decision previous = proposal.originalDecisionOf(low);
-		if (previous == choice) {
-			UUID originalKey = low ? proposal.getLowRequestKey() : proposal.getHighRequestKey();
-			if (proposal.cancelledAt(low) != null && !requestKey.equals(originalKey)) {
+		if (own.originalDecision() == choice) {
+			if (own.wasLegacyCancelled() && !requestKey.equals(own.getDecisionRequestKey())) {
 				throw conflict();
 			}
 			proposal.expire(now);
 			connectChat(proposal, pair);
 			return view(proposal, pair, userId);
 		}
-		if (previous != MatchProposal.Decision.NONE) {
+		if (own.originalDecision() != MatchProposal.Decision.NONE) {
 			throw conflict();
 		}
 		proposal.expire(now);
@@ -187,7 +174,7 @@ public class ProposalService {
 		}
 		if ((proposal.getStatus() != MatchProposal.Status.PENDING
 			&& proposal.getStatus() != MatchProposal.Status.WAITING_FOR_OTHER
-			&& proposal.getStatus() != MatchProposal.Status.REJECTED) || restricted(pair, proposal)) {
+			&& proposal.getStatus() != MatchProposal.Status.REJECTED) || restricted(pair)) {
 			throw conflict();
 		}
 		if (choice == MatchProposal.Decision.ACCEPT) {
@@ -202,88 +189,44 @@ public class ProposalService {
 			proposal.expire(now);
 			throw new ExpiredProposalException();
 		}
-		proposal.decide(low, choice, requestKey, now);
+		MatchingParticipant partner = participant(id, pair.partnerOf(userId));
+		own.decide(choice, requestKey, now);
+		proposal.recordResponses(own.decision(), partner.decision());
 		connectChat(proposal, pair);
-		if (choice == MatchProposal.Decision.DECLINE) {
-			restrictFirstDecline(pair, id, now);
-		}
 		return view(proposal, pair, userId);
-	}
-
-	@Transactional(noRollbackFor = ExpiredProposalException.class)
-	public ProposalView cancel(long id, long userId, UUID requestKey) {
-		if (requestKey == null) {
-			throw new BusinessException(ErrorCode.INVALID_REQUEST);
-		}
-		Owned owned = findOwned(id, userId);
-		members.lockMember(userId);
-		if (!members.canRespondToProposal(userId)) {
-			throw new BusinessException(ErrorCode.ONBOARDING_REQUIRED);
-		}
-		PairRelation pair = relations.lockById(owned.pair().getId()).orElseThrow(this::notFound);
-		entityManager.refresh(pair, LockModeType.PESSIMISTIC_WRITE);
-		MatchProposal proposal = proposals.lockById(id).orElseThrow(this::notFound);
-		entityManager.refresh(proposal, LockModeType.PESSIMISTIC_WRITE);
-		boolean low = pair.getUserLow() == userId;
-		proposals.findRequest(userId, requestKey).ifPresent(previous -> {
-			if (previous.getId() != id || !requestKey.equals(previous.cancelKeyOf(low))) {
-				throw new BusinessException(ErrorCode.IDEMPOTENCY_CONFLICT);
-			}
-		});
-		if (proposal.cancelledAt(low) != null) {
-			return view(proposal, pair, userId);
-		}
-		Instant now = clock.instant();
-		proposal.expire(now);
-		if (!now.isBefore(proposal.getExpiresAt()) && proposal.getStatus() != MatchProposal.Status.ACCEPTED) {
-			throw new ExpiredProposalException();
-		}
-		if (proposal.getStatus() != MatchProposal.Status.WAITING_FOR_OTHER
-			|| proposal.decisionOf(low) != MatchProposal.Decision.ACCEPT
-			|| proposal.decisionOf(!low) != MatchProposal.Decision.NONE || restricted(pair, proposal)) {
-			throw conflict();
-		}
-		proposal.cancel(low, requestKey, now);
-		restrictFirstDecline(pair, id, now);
-		return view(proposal, pair, userId);
-	}
-
-	private void restrictFirstDecline(PairRelation pair, long id, Instant now) {
-		if (!Long.valueOf(id).equals(pair.getDeclinedProposalId())) {
-			pair.restrictUntil(now.plus(declineDuration), id);
-		}
 	}
 
 	private void connectChat(MatchProposal proposal, PairRelation pair) {
-		if (proposal.getStatus() == MatchProposal.Status.ACCEPTED && proposal.getChatRoomId() == null) {
-			proposal.linkChatRoom(chats.connect(proposal, pair).getId());
+		if (proposal.getStatus() == MatchProposal.Status.ACCEPTED) {
+			chats.connect(proposal, pair);
 		}
 	}
 
-	private boolean restricted(PairRelation pair, MatchProposal proposal) {
-		return (pair.isRestricted(clock.instant()) && !proposal.getId().equals(pair.getDeclinedProposalId()))
-			|| members.restrictedPair(pair.getUserLow(), pair.getUserHigh());
+	private boolean restricted(PairRelation pair) {
+		return members.restrictedPair(pair.getUserLow(), pair.getUserHigh());
+	}
+
+	private MatchingParticipant participant(long id, long userId) {
+		return participants.findById(new MatchingParticipant.Key(id, userId))
+			.orElseThrow(() -> new BusinessException(ErrorCode.SERVICE_UNAVAILABLE));
 	}
 
 	private Owned findOwned(long id, long userId) {
 		MatchProposal proposal = proposals.findById(id).orElseThrow(this::notFound);
 		PairRelation pair = relations.findById(proposal.getPairId()).orElseThrow(this::notFound);
-		if (!pair.includes(userId)) {
+		if (!pair.includes(userId) || !proposal.isProposed()) {
 			throw notFound();
 		}
 		return new Owned(proposal, pair);
 	}
 
 	private ProposalView view(MatchProposal proposal, PairRelation pair, long userId) {
-		MatchProposal.Status status = proposal.visibleStatus(pair.getUserLow() == userId, clock.instant());
-		MatchProposal.Decision decision = proposal.decisionOf(pair.getUserLow() == userId);
-		if (status == MatchProposal.Status.WAITING_FOR_OTHER && decision == MatchProposal.Decision.NONE) {
-			status = MatchProposal.Status.PENDING;
-		}
-		ChatRoom room = proposal.getChatRoomId() == null ? null : chats.linked(proposal.getChatRoomId());
+		MatchProposal.Decision decision = participant(proposal.getId(), userId).decision();
+		MatchProposal.Status status = proposal.visibleStatus(decision, clock.instant());
+		ChatRoom room = chats.linkedForMatching(proposal.getId()).orElse(null);
 		boolean available = room != null && chats.available(room, userId);
 		return new ProposalView(proposal.getId(), status.name(), decision.name(), proposal.getCreatedAt(),
-			proposal.getExpiresAt(), available, room == null ? null : room.getPublicId().toString());
+			proposal.getExpiresAt(), available, room == null ? null : room.getPublicId());
 	}
 
 	private BusinessException conflict() {

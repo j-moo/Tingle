@@ -1,42 +1,25 @@
 package com.e106.tingle.proposal;
 
-import java.time.Instant;
-
-import jakarta.persistence.Column;
-import jakarta.persistence.Entity;
-import jakarta.persistence.GeneratedValue;
-import jakarta.persistence.GenerationType;
-import jakarta.persistence.Id;
-import jakarta.persistence.Table;
-import jakarta.persistence.UniqueConstraint;
-import lombok.AccessLevel;
 import lombok.Getter;
-import lombok.NoArgsConstructor;
 
-@Entity
-@Table(name = "user_pairs", uniqueConstraints = @UniqueConstraint(
-	name = "uq_user_pairs_1", columnNames = {"user_low", "user_high"}))
+/** matching의 회원 쌍을 투영한다. 별도 테이블·별도 식별자를 만들지 않는다. */
 @Getter
-@NoArgsConstructor(access = AccessLevel.PROTECTED)
-public class PairRelation {
-	@Id
-	@GeneratedValue(strategy = GenerationType.IDENTITY)
-	@Column(name = "pair_id")
-	private Long id;
-	@Column(name = "user_low", nullable = false)
-	private long userLow;
-	@Column(name = "user_high", nullable = false)
-	private long userHigh;
-	@Column(name = "declined_until")
-	private Instant restrictedUntil;
-	private Long declinedProposalId;
+public final class PairRelation {
+	private final Long id;
+	private final long userLow;
+	private final long userHigh;
 
-	public PairRelation(long first, long second) {
-		if (first <= 0 || second <= 0 || first == second) {
-			throw new IllegalArgumentException("Invalid pair");
+	public PairRelation(long id, long first, long second) {
+		if (id <= 0 || first <= 0 || second <= 0 || first >= second) {
+			throw new IllegalArgumentException("Invalid matching membership");
 		}
-		userLow = Math.min(first, second);
-		userHigh = Math.max(first, second);
+		this.id = id;
+		this.userLow = first;
+		this.userHigh = second;
+	}
+
+	static PairRelation from(MatchProposal matching) {
+		return new PairRelation(matching.getId(), matching.getUserLow(), matching.getUserHigh());
 	}
 
 	public boolean includes(long userId) {
@@ -45,19 +28,8 @@ public class PairRelation {
 
 	public long partnerOf(long userId) {
 		if (!includes(userId)) {
-			throw new IllegalArgumentException("Not a pair member");
+			throw new IllegalArgumentException("Not a matching participant");
 		}
 		return userLow == userId ? userHigh : userLow;
-	}
-
-	public boolean isRestricted(Instant now) {
-		return restrictedUntil != null && now.isBefore(restrictedUntil);
-	}
-
-	public void restrictUntil(Instant until, long proposalId) {
-		if (restrictedUntil == null || until.isAfter(restrictedUntil)) {
-			restrictedUntil = until;
-			declinedProposalId = proposalId;
-		}
 	}
 }

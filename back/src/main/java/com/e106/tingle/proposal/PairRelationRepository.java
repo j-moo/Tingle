@@ -1,16 +1,22 @@
 package com.e106.tingle.proposal;
 
+import java.util.List;
 import java.util.Optional;
 
-import org.springframework.data.jpa.repository.JpaRepository;
-import org.springframework.data.jpa.repository.Lock;
-import org.springframework.data.jpa.repository.Query;
-import org.springframework.data.repository.query.Param;
+import org.springframework.stereotype.Repository;
 
-import jakarta.persistence.LockModeType;
+import lombok.RequiredArgsConstructor;
 
-public interface PairRelationRepository extends JpaRepository<PairRelation, Long> {
-	@Lock(LockModeType.PESSIMISTIC_WRITE)
-	@Query("select p from PairRelation p where p.id = :id")
-	Optional<PairRelation> lockById(@Param("id") long id);
+@Repository
+@RequiredArgsConstructor
+public class PairRelationRepository {
+	private final ProposalRepository proposals;
+
+	public Optional<PairRelation> findById(long id) {
+		return proposals.findById(id).map(PairRelation::from);
+	}
+
+	public List<PairRelation> findAllById(Iterable<Long> ids) {
+		return proposals.findAllById(ids).stream().map(PairRelation::from).toList();
+	}
 }

@@ -12,6 +12,7 @@ erDiagram
         matching_status status
         timestamptz proposed_at
         timestamptz raw_delete_at
+        jsonb legacy_state
     }
     matching_participant {
         bigint matching_id PK
@@ -23,9 +24,14 @@ erDiagram
         proposal_response response
         timestamptz responded_at
         timestamptz blocked_at
+        uuid decision_request_key
+        jsonb request_state
     }
     chat {
         bigint id PK
+        timestamptz expires_at
+        timestamptz delete_at
+        uuid legacy_public_id UK
     }
     keyring {
         bigint id PK

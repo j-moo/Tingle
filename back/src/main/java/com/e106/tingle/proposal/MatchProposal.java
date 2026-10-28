@@ -2,7 +2,11 @@ package com.e106.tingle.proposal;
 
 import java.time.Duration;
 import java.time.Instant;
-import java.util.UUID;
+import java.time.temporal.ChronoUnit;
+import java.util.Map;
+
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -11,138 +15,118 @@ import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.Index;
 import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
+/** 관계와 제안은 같은 matching 행이다. PENDING 이후 같은 쌍의 새 행을 만들지 않는다. */
 @Entity
-@Table(name = "match_proposals", uniqueConstraints = @UniqueConstraint(
-	name = "uq_match_proposals_1", columnNames = "encounter_id"))
+@Table(name = "matching", uniqueConstraints = @UniqueConstraint(
+	name = "uq_matching_pair", columnNames = {"user_low_id", "user_high_id"}), indexes = {
+		@Index(name = "ix_matching_low_status", columnList = "user_low_id,status"),
+		@Index(name = "ix_matching_high_status", columnList = "user_high_id,status"),
+		@Index(name = "ix_matching_proposal_expiration", columnList = "status,proposed_at"),
+		@Index(name = "ix_matching_counterpart_deadline", columnList = "counterpart_deadline_at"),
+		@Index(name = "ix_matching_raw_delete", columnList = "raw_delete_at")})
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class MatchProposal {
 	public enum Status { PENDING, WAITING_FOR_OTHER, ACCEPTED, REJECTED, EXPIRED }
 	public enum Decision { NONE, ACCEPT, DECLINE }
+	public enum MatchingStatus { WAITING, NOT_MATCHED, PENDING, ONE_ACCEPTED, ACCEPTED, REJECTED, EXPIRED, CLOSED }
 
 	@Id
 	@GeneratedValue(strategy = GenerationType.IDENTITY)
-	@Column(name = "proposal_id")
 	private Long id;
-	@Column(nullable = false)
-	private Long pairId;
-	@Column(nullable = false)
-	private Long encounterId;
+	@Column(name = "user_low_id", nullable = false)
+	private long userLow;
+	@Column(name = "user_high_id", nullable = false)
+	private long userHigh;
+	private Instant metAt;
+	@Column(length = 30)
+	private String policyVersion;
+	private Instant opportunityExpiresAt;
+	private Instant counterpartDeadlineAt;
+	@JdbcTypeCode(SqlTypes.JSON)
+	@Column(columnDefinition = "jsonb")
+	private Map<String, Object> evaluation;
 	@Enumerated(EnumType.STRING)
-	@Column(nullable = false, columnDefinition = "text")
-	private Status status;
-	@Enumerated(EnumType.STRING)
-	@Column(columnDefinition = "text")
-	private Decision lowDecision;
-	@Enumerated(EnumType.STRING)
-	@Column(columnDefinition = "text")
-	private Decision highDecision;
-	private Instant lowDecidedAt;
-	private Instant highDecidedAt;
-	private UUID lowRequestKey;
-	private UUID highRequestKey;
-	private Instant lowCancelledAt;
-	private Instant highCancelledAt;
-	private UUID lowCancelRequestKey;
-	private UUID highCancelRequestKey;
-	@Column(nullable = false)
-	private Instant createdAt;
-	@Column(nullable = false)
-	private Instant expiresAt;
-	private Long chatRoomId;
+	@JdbcTypeCode(SqlTypes.NAMED_ENUM)
+	@Column(name = "status", nullable = false, columnDefinition = "matching_status")
+	private MatchingStatus storageStatus;
+	private Instant proposedAt;
+	private Instant rawDeleteAt;
+	@JdbcTypeCode(SqlTypes.JSON)
+	@Column(columnDefinition = "jsonb")
+	private Map<String, Object> legacyState;
 
-	public MatchProposal(long pairId, long encounterId, Instant createdAt) {
-		if (pairId <= 0 || encounterId <= 0) {
-			throw new IllegalArgumentException("Invalid proposal references");
+	/** 검증된 제안 생성자의 입력용. 만남·평가 증거를 이 factory가 만들어 주는 것은 아니다. */
+	public static MatchProposal proposed(long first, long second, Instant proposedAt) {
+		if (first <= 0 || second <= 0 || first == second || proposedAt == null) {
+			throw new IllegalArgumentException("Invalid proposal participants or first proposal time");
 		}
-		this.pairId = pairId;
-		this.encounterId = encounterId;
-		this.status = Status.PENDING;
-		this.createdAt = createdAt;
-		this.expiresAt = createdAt.plus(Duration.ofHours(24));
+		MatchProposal matching = new MatchProposal();
+		matching.userLow = Math.min(first, second);
+		matching.userHigh = Math.max(first, second);
+		matching.proposedAt = proposedAt.truncatedTo(ChronoUnit.MICROS);
+		matching.storageStatus = MatchingStatus.PENDING;
+		return matching;
 	}
 
-	public Decision decisionOf(boolean lowMember) {
-		if (cancelledAt(lowMember) != null) {
-			return Decision.DECLINE;
-		}
-		return originalDecisionOf(lowMember);
+	public long getPairId() {
+		return id;
 	}
 
-	public Decision originalDecisionOf(boolean lowMember) {
-		Decision decision = lowMember ? lowDecision : highDecision;
-		return decision == null ? Decision.NONE : decision;
+	public Instant getCreatedAt() {
+		return proposedAt;
 	}
 
-	public Instant cancelledAt(boolean lowMember) {
-		return lowMember ? lowCancelledAt : highCancelledAt;
+	public Instant getExpiresAt() {
+		return proposedAt == null ? null : proposedAt.plus(Duration.ofHours(24));
 	}
 
-	public void linkChatRoom(long roomId) {
-		if (status != Status.ACCEPTED || (chatRoomId != null && chatRoomId != roomId)) {
-			throw new IllegalStateException("Only an accepted proposal can link one chat room");
-		}
-		chatRoomId = roomId;
+	public boolean isProposed() {
+		return proposedAt != null && storageStatus != MatchingStatus.WAITING
+			&& storageStatus != MatchingStatus.NOT_MATCHED;
 	}
 
-	public UUID cancelKeyOf(boolean lowMember) {
-		return lowMember ? lowCancelRequestKey : highCancelRequestKey;
-	}
-
-	public Status visibleStatus(boolean lowMember, Instant now) {
-		if (decisionOf(lowMember) == Decision.NONE) {
-			return now.isBefore(expiresAt) ? Status.PENDING : Status.EXPIRED;
-		}
-		return effectiveStatus(now);
-	}
-
-	public void cancel(boolean lowMember, UUID requestKey, Instant now) {
-		if (lowMember) {
-			lowCancelledAt = now;
-			lowCancelRequestKey = requestKey;
-		} else {
-			highCancelledAt = now;
-			highCancelRequestKey = requestKey;
-		}
-		status = Status.REJECTED;
+	public Status getStatus() {
+		return switch (storageStatus) {
+			case PENDING -> Status.PENDING;
+			case ONE_ACCEPTED -> Status.WAITING_FOR_OTHER;
+			case ACCEPTED, CLOSED -> Status.ACCEPTED;
+			case REJECTED -> Status.REJECTED;
+			case EXPIRED -> Status.EXPIRED;
+			case WAITING, NOT_MATCHED -> null;
+		};
 	}
 
 	public Status effectiveStatus(Instant now) {
-		if ((status == Status.PENDING || status == Status.WAITING_FOR_OTHER) && !now.isBefore(expiresAt)) {
-			return Status.EXPIRED;
-		}
-		return status;
+		return (storageStatus == MatchingStatus.PENDING || storageStatus == MatchingStatus.ONE_ACCEPTED)
+			&& !now.isBefore(getExpiresAt()) ? Status.EXPIRED : getStatus();
+	}
+
+	public Status visibleStatus(Decision own, Instant now) {
+		return own == Decision.NONE ? now.isBefore(getExpiresAt()) ? Status.PENDING : Status.EXPIRED
+			: effectiveStatus(now);
 	}
 
 	public void expire(Instant now) {
-		status = effectiveStatus(now);
+		if (effectiveStatus(now) == Status.EXPIRED) {
+			storageStatus = MatchingStatus.EXPIRED;
+		}
 	}
 
-	public void decide(boolean lowMember, Decision decision, UUID requestKey, Instant now) {
-		if (decision == null || decision == Decision.NONE || requestKey == null) {
-			throw new IllegalArgumentException("A decision and request key are required");
-		}
-		if (lowMember) {
-			lowDecision = decision;
-			lowDecidedAt = now;
-			lowRequestKey = requestKey;
+	public void recordResponses(Decision first, Decision second) {
+		if (first == Decision.DECLINE || second == Decision.DECLINE) {
+			storageStatus = MatchingStatus.REJECTED;
+		} else if (first == Decision.ACCEPT && second == Decision.ACCEPT) {
+			storageStatus = MatchingStatus.ACCEPTED;
 		} else {
-			highDecision = decision;
-			highDecidedAt = now;
-			highRequestKey = requestKey;
-		}
-		if (decisionOf(true) == Decision.DECLINE || decisionOf(false) == Decision.DECLINE) {
-			status = Status.REJECTED;
-		} else if (decisionOf(true) == Decision.ACCEPT && decisionOf(false) == Decision.ACCEPT) {
-			status = Status.ACCEPTED;
-		} else {
-			status = Status.WAITING_FOR_OTHER;
+			storageStatus = MatchingStatus.ONE_ACCEPTED;
 		}
 	}
 }

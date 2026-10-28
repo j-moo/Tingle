@@ -127,7 +127,7 @@ public class ProfileService {
 		if (!ProfileRules.isValidNickname(raw)) {
 			return new NicknameAvailabilityResponse(nickname, false, "INVALID_FORMAT");
 		}
-		boolean takenByOther = profileRepository.findByNicknameKey(ProfileRules.nicknameKey(nickname))
+		boolean takenByOther = profileRepository.findByNicknameIgnoreCase(nickname)
 			.filter(owner -> !owner.getUserId().equals(userId))
 			.isPresent();
 		return takenByOther
@@ -136,14 +136,13 @@ public class ProfileService {
 	}
 
 	private void changeNickname(Profile profile, String nickname) {
-		String key = ProfileRules.nicknameKey(nickname);
-		boolean takenByOther = profileRepository.findByNicknameKey(key)
+		boolean takenByOther = profileRepository.findByNicknameIgnoreCase(nickname)
 			.filter(owner -> !owner.getUserId().equals(profile.getUserId()))
 			.isPresent();
 		if (takenByOther) {
 			throw new BusinessException(ErrorCode.NICKNAME_DUPLICATED);
 		}
-		profile.changeNickname(nickname, key);
+		profile.changeNickname(nickname);
 	}
 
 	private static void rejectChangeAfterRegistration(boolean registered, Object current, Object requested) {

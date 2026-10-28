@@ -1,6 +1,14 @@
 # Tingle(팅글) API 명세서
 
-1.4.0-erd21-owned-review / 2026-10-28
+1.4.2-common-storage-preservation-review / 2026-10-28
+
+151 사용자 결정: 회원 상태 `users.status`·생성 시각 `created_at`과 기존 `user_consents`의 항목별 동의·철회·버전 이력을 보존한다. 175 사용자 결정에 따라 업무별 영속 증거를 전용 컬럼에 보완한 현재 설계는 **22개 테이블·176개 컬럼·36개 논리 관계**이며, 과거 이력으로 `users.agreed_at`을 추정하지 않는다. 아래 원본 21개·151컬럼과 푸시 보완 21개·153컬럼 기록은 각 당시 기준이다. 공유 DB 적용은 별도다.
+
+176·178 사용자 결정: 키링 공개 응답의 `boundAt`을 제거하고 `deviceId`·`status`·`firmwareVersion`을 유지했다. 푸시 연결 ID·최초 연결 시각은 ERD에 보존하여 이 푸시 보완 당시 21개 테이블·153개 컬럼·35개 논리 관계였다. 아래 151개는 최초 제공 설계 기준이며 이 2개 추가와 구분한다. 숫자 기기 ID·전체 저장 모델/로그아웃 이관의 완료 여부는 [176 검증](../../verification/keyring-push-176.md)을 따른다.
+
+176 현재 이관 범위: 구매 안내·본인 키링 조회와 푸시 단말 등록·해제 4개 operation 및 기존 로그아웃의 연결 해제를 새 **22표·176컬럼·36논리관계**에 연결했다. !92 실행 코드 `35166ea`에서 숫자 기기 ID·현재 소유/ACK·푸시 연결 세대 보존을 검증했고, 전체 앱 clean build 422개와 Checkstyle/패키징이 통과했다. OpenAPI의 이 4개 operation은 `erd22-canonical-176` 저장 기준이며 사람의 교차 리뷰·승인은 아직 필요하다. 이 기록은 신규 70과 통합하기 전 !92 범위이고, !93 전체 연결 검증을 대신하지 않는다.
+
+등록 challenge67·소유 증명100·동기화68/69는 별도 잔여다. 사용자가 최종 등록/ACK 규격이 별도로 없음을 확인했으며, 실제 기기 키 발급·서명 바이트/검증과 nonce 소비·당시 payload/run/소유세대의 영속 정의가 필요하다. 임의 암호 규칙·신규 API/칼럼을 추가하지 않는다. 과거 serial/owner/ACK 대응 자료의 실제 이관·실기기/FCM·공유 DB·배포 및 Notion 일치 확인은 미완료다. [현재 176 검증과 잔여](../../verification/keyring-push-176.md).
 
 영빈 담당 **40개 operation**의 기존 계약을 사용자 제공 **21개 테이블·151개 컬럼·35개 논리 관계** 설계에 맞춘 검토 작업본이다. 담당 활성 **36개**, 후속·제외 **4개**이며, 다른 담당 31개를 합한 전체 활성 API는 **67개**다. 기존 제외 11개와 이번 4개를 합한 제외 이력은 **15개**다. 문서 반영과 팀 승인·서버 구현·실DB 적용·배포 완료를 구분한다.
 
@@ -56,10 +64,10 @@ Spring Boot·JPA·PostgreSQL 운영 기준과 인증·프로필·키링 담당 �
 | POST | `/api/v1/users/me/agreements` | submitAgreements | 다른 담당 기존 계약 |
 | GET | `/api/v1/users/me/onboarding` | getOnboarding | 다른 담당 기존 계약 |
 | GET | `/api/v1/users/nickname-availability` | checkNickname | 다른 담당 기존 계약 |
-| GET | `/api/v1/keyrings/purchase-info` | purchaseInfo | 다른 담당 기존 계약 |
+| GET | `/api/keyrings/purchase-info` | purchaseInfo | 176 새22표 로컬 검증·교차 리뷰 필요 |
 | POST | `/api/v1/keyrings/registration-challenges` | createRegistrationChallenge | 다른 담당 기존 계약 |
 | POST | `/api/v1/keyrings` | registerKeyring | 다른 담당 기존 계약 |
-| GET | `/api/v1/keyrings` | listKeyrings | 다른 담당 기존 계약 |
+| GET | `/api/keyrings` | listKeyrings | 176 새22표 로컬 검증·교차 리뷰 필요 |
 | GET | `/api/v1/users/me/profile` | getMyProfile | 다른 담당 기존 계약 |
 | PATCH | `/api/v1/users/me/profile` | saveProfileDraft | 다른 담당 기존 계약 |
 | POST | `/api/v1/users/me/profile/photos` | uploadPhoto | 다른 담당 기존 계약 |
@@ -79,8 +87,8 @@ Spring Boot·JPA·PostgreSQL 운영 기준과 인증·프로필·키링 담당 �
 | GET | `/api/v1/blocks` | listBlocks | 다른 담당 기존 계약 |
 | POST | `/api/v1/blocks` | createBlock | 다른 담당 기존 계약 |
 | DELETE | `/api/v1/blocks/{blockId}` | removeBlock | 다른 담당 기존 계약 |
-| PUT | `/api/v1/push-installations` | registerPush | 다른 담당 기존 계약 |
-| DELETE | `/api/v1/push-installations/{installationId}` | removePush | 다른 담당 기존 계약 |
+| PUT | `/api/push-installations` | registerPush | 176 새22표 로컬 검증·교차 리뷰 필요 |
+| DELETE | `/api/push-installations/{installationId}` | removePush | 176 새22표 로컬 검증·교차 리뷰 필요 |
 | POST | `/api/v1/users/me/profile/complete` | completeProfile | 다른 담당 기존 계약 |
 | GET | `/api/surveys/current` | getQuestionnaire | 영빈 ERD21 검토 |
 | POST | `/api/survey-sessions` | createSurveySession | 영빈 ERD21 검토 |

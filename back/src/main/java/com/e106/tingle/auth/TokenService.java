@@ -52,7 +52,7 @@ public class TokenService {
 	public IssuedTokens issue(long userId) {
 		Instant now = clock.instant();
 		UUID familyId = UUID.randomUUID();
-		return issued(userId, familyId, now, newRefreshToken(userId, familyId, now));
+		return issued(userId, familyId, now, newRefreshToken(userId, familyId, now, null));
 	}
 
 	/**
@@ -99,7 +99,7 @@ public class TokenService {
 		}
 
 		current.markUsed(now);
-		return issued(userId, familyId, now, newRefreshToken(userId, familyId, now));
+		return issued(userId, familyId, now, newRefreshToken(userId, familyId, now, current.getDeviceName()));
 	}
 
 	/**
@@ -112,8 +112,9 @@ public class TokenService {
 	}
 
 	/**
-	 * 일반 로그아웃은 새 제안 푸시 연결을 보존한다. 계정 전환을 명시하면 이 세션에 귀속된 설치만 해제한다.
-	 * 이미 해제됐거나 다른 회원/세션으로 다시 등록된 설치에는 영향을 주지 않는다.
+	 * 로그아웃은 증명으로 확인한 회원·family의 푸시 연결을 세션 폐기와 원자적으로 비운다.
+	 * releaseInstallationId는 이전 클라이언트의 호환 입력이며 다른 설치/세션을 고르는 권한이 아니다.
+	 * 이미 해제됐거나 다른 회원/세션으로 다시 등록된 설치에는 영향을 주지 않고 행·토큰은 보존한다.
 	 */
 	@Transactional
 	public void logout(String rawRefreshToken, UUID releaseInstallationId) {
@@ -122,10 +123,9 @@ public class TokenService {
 		// 재발급(탈취 감지 시 전체 폐기)과 같은 회원 행 잠금으로 순서를 맞춘다. 서로 다른 순서로 행을 잠가 교착되는 것을 막는다.
 		userRepository.findByIdForUpdate(token.getUserId())
 			.orElseThrow(() -> new BusinessException(ErrorCode.INVALID_REFRESH_TOKEN));
-		if (releaseInstallationId != null) {
-			pushInstallations.releaseForSession(releaseInstallationId, token.getUserId(), token.getFamilyId());
-		}
-		refreshTokenRepository.revokeAllByFamilyId(token.getFamilyId(), clock.instant());
+		Instant now = clock.instant();
+		pushInstallations.clearSessionConnections(token.getUserId(), token.getFamilyId(), now);
+		refreshTokenRepository.revokeAllByFamilyId(token.getFamilyId(), now);
 	}
 
 	/**
@@ -143,6 +143,7 @@ public class TokenService {
 	}
 
 	private BusinessException revokeAll(long userId, Instant now) {
+		pushInstallations.clearUserConnections(userId, now);
 		refreshTokenRepository.revokeAllByUserId(userId, now);
 		return new BusinessException(ErrorCode.INVALID_REFRESH_TOKEN);
 	}
@@ -164,12 +165,12 @@ public class TokenService {
 		return jwtEncoder.encode(JwtEncoderParameters.from(header, claims)).getTokenValue();
 	}
 
-	private NewRefreshToken newRefreshToken(long userId, UUID familyId, Instant now) {
+	private NewRefreshToken newRefreshToken(long userId, UUID familyId, Instant now, String deviceName) {
 		byte[] bytes = new byte[32];
 		RANDOM.nextBytes(bytes);
 		String raw = Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
 		RefreshToken entity = refreshTokenRepository.save(
-			new RefreshToken(userId, familyId, hash(raw), now.plus(properties.refreshTokenTtl())));
+			new RefreshToken(userId, familyId, hash(raw), now.plus(properties.refreshTokenTtl()), deviceName, now));
 		return new NewRefreshToken(raw, entity);
 	}
 
