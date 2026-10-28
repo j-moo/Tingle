@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "1016382149839",
+    "project_id": "tingle-68dd2",
+    "storage_bucket": "tingle-68dd2.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1016382149839:android:98055916d931805c78d3ba",
+        "android_client_info": {
+          "package_name": "com.ssafy.tingle"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "REPLACE_WITH_YOUR_FIREBASE_API_KEY"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
