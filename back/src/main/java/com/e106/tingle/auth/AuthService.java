@@ -7,6 +7,7 @@ import org.springframework.stereotype.Service;
 
 import com.e106.tingle.agreement.AgreementService;
 import com.e106.tingle.auth.dto.TokenResponse;
+import com.e106.tingle.preference.PreferenceProvisioningService;
 import com.e106.tingle.user.OnboardingService;
 import com.e106.tingle.user.User;
 import com.e106.tingle.user.UserRepository;
@@ -28,6 +29,7 @@ public class AuthService {
 	private final UserRepository userRepository;
 	private final AgreementService agreementService;
 	private final OnboardingService onboardingService;
+	private final PreferenceProvisioningService preferenceProvisioning;
 	private final Clock clock;
 
 	/**
@@ -41,6 +43,8 @@ public class AuthService {
 		SocialVerifier.SocialAccount account = socialVerifier.verify(provider, socialToken);
 		userRepository.insertIfAbsent(provider.name(), account.id(), clock.instant());
 		User user = userRepository.findByProviderAndProviderSubject(provider, account.id()).orElseThrow();
+		// 신규 가입·재로그인 모두 누락된 초기 행만 채운다. 기존 희망 조건·기기 설정은 보존한다.
+		preferenceProvisioning.initializeForMember(user.getId());
 		// 우리 서비스의 개인정보 수집 동의 전에는 이메일을 저장하지 않는다(소셜의 제공 동의만으로는 부족하다).
 		if (agreementService.hasActiveConsent(user.getId(), EMAIL_CONSENT_TYPE)) {
 			userRepository.updateEmail(user.getId(), account.email());

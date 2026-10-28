@@ -67,7 +67,9 @@ class KeyringListIntegrationTest extends IntegrationTestSupport {
 			userIdOf(current), id);
 		assertThat(items(previous).isEmpty()).isTrue();
 		assertThat(items(current).get(0).path("deviceId").asLong()).isEqualTo(id);
-		assertThat(items(current).get(0).path("status").asString()).isEqualTo("REGISTERED");
+		assertThat(items(current).get(0).path("status").asString()).isEqualTo("SYNC_PENDING");
+		assertThat(jdbc.queryForObject("select settings_version from user_setting where user_id=?",
+			Long.class, userIdOf(current))).isZero();
 	}
 
 	@Test
@@ -85,6 +87,9 @@ class KeyringListIntegrationTest extends IntegrationTestSupport {
 		JsonNode owner = eligibleUser();
 		long userId = userIdOf(owner);
 		long id = device(userId, "REGISTERED");
+		// 실제 로그인은 초기 설정0을 생성한다. ACK가 없으면 SYNC_PENDING이다.
+		assertStatus(owner, "SYNC_PENDING");
+		jdbc.update("delete from user_setting where user_id=?", userId);
 		assertStatus(owner, "REGISTERED");
 		jdbc.update("insert into user_setting values (?,true,true,2)", userId);
 		assertStatus(owner, "SYNC_PENDING");
