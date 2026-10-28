@@ -3,6 +3,8 @@ agp = "9.1.1"
 kotlin = "2.4.10"
 compose = "1.11.1"
 activity = "1.13.0"
+firebaseBom = "35.1.0"
+googleServices = "4.5.0"
 compileSdk = "37"
 minSdk = "24"
 targetSdk = "37"
@@ -13,6 +15,8 @@ compose-runtime = { module = "org.jetbrains.compose.runtime:runtime", version.re
 compose-foundation = { module = "org.jetbrains.compose.foundation:foundation", version.ref = "compose" }
 compose-material = { module = "org.jetbrains.compose.material:material", version.ref = "compose" }
 compose-ui = { module = "org.jetbrains.compose.ui:ui", version.ref = "compose" }
+firebase-bom = { module = "com.google.firebase:firebase-bom", version.ref = "firebaseBom" }
+firebase-messaging = { module = "com.google.firebase:firebase-messaging" }
 
 [plugins]
 androidApplication = { id = "com.android.application", version.ref = "agp" }
@@ -20,3 +24,4 @@ androidMultiplatformLibrary = { id = "com.android.kotlin.multiplatform.library",
 kotlinMultiplatform = { id = "org.jetbrains.kotlin.multiplatform", version.ref = "kotlin" }
 composeMultiplatform = { id = "org.jetbrains.compose", version.ref = "compose" }
 composeCompiler = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
+googleServices = { id = "com.google.gms.google-services", version.ref = "googleServices" }

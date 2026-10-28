@@ -45,7 +45,7 @@ Android 최소 지원 버전은 API 24입니다.
 Xcode의 빌드 단계가 `:shared:embedAndSignAppleFrameworkForXcode`를 호출하여
 공통 Kotlin 코드를 `Shared.framework`로 빌드하고 연결합니다. CocoaPods는 필요하지 않습니다.
 실기기/배포 시 `iosApp/Configuration/Config.xcconfig`의 `TEAM_ID`와
-`BUNDLE_ID`를 팀 계정에 맞게 설정하세요. 기본 번들 ID는 `com.ssafy.e106`입니다.
+`BUNDLE_ID`를 팀 계정에 맞게 설정하세요. 기본 번들 ID는 `com.ssafy.tingle`입니다.
 iOS 최소 지원 버전은 15.3이며 ARM64 기기와 Apple Silicon 시뮬레이터를 대상으로 합니다.
 Windows에서는 iOS 빌드와 실행을 할 수 없습니다.
 
