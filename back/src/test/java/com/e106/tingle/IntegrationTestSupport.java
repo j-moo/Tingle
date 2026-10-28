@@ -169,7 +169,8 @@ public abstract class IntegrationTestSupport {
 	protected void setPreferences(long userId) {
 		// 이 helper가 명시적으로 나이 범위를 선택한다. 조건 저장으로 ACK를 만들지 않는다.
 		jdbc.update("insert into user_setting(user_id,vibration_enabled,led_enabled,settings_version) "
-			+ "values (?,true,true,1) on conflict(user_id) do nothing", userId);
+			+ "values (?,true,true,1) on conflict(user_id) do update "
+			+ "set settings_version=greatest(user_setting.settings_version,1)", userId);
 		jdbc.update("insert into matching_preference(user_id,matching_enabled,age_preference_mode,min_age,"
 			+ "max_age,photo_required) values (?,true,true,19,null,false) on conflict(user_id) do update "
 			+ "set age_preference_mode=true,min_age=19,max_age=null", userId);

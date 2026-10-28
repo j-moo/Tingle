@@ -1,5 +1,8 @@
 package com.e106.tingle.settings;
 
+import com.e106.tingle.global.error.BusinessException;
+import com.e106.tingle.global.error.ErrorCode;
+
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
@@ -29,4 +32,12 @@ public class UserSetting {
 
 	@Column(name = "settings_version", nullable = false)
 	private Long settingsVersion;
+
+	/** 공용 설정 행을 잠근 트랜잭션에서 호출한다. 유실·잘못된 세대를 추정하지 않는다. */
+	public void advanceVersion() {
+		if (settingsVersion == null || settingsVersion < 0 || settingsVersion == Long.MAX_VALUE) {
+			throw new BusinessException(ErrorCode.SERVICE_UNAVAILABLE);
+		}
+		settingsVersion++;
+	}
 }

@@ -1,5 +1,7 @@
 package com.e106.tingle.preference;
 
+import com.e106.tingle.preference.dto.PreferencesRequest;
+
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
@@ -35,4 +37,10 @@ public class MatchingPreference {
 
 	@Column(name = "photo_required", nullable = false)
 	private Boolean photoRequired;
+
+	void changeAge(PreferencesRequest request) {
+		agePreferenceMode = request.desiredAgeMode() == AgePreferenceMode.RANGE;
+		minAge = request.desiredAgeMin();
+		maxAge = request.desiredAgeMax();
+	}
 }
