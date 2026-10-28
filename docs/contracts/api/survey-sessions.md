@@ -1,58 +1,72 @@
-# 설문 회차 변경 계약과 합의 항목
+# 21개 테이블 기준 설문·분석 API 계약
 
-2026-10-22 / 담당: 가을(설문 구현), 김영빈(통합 API·ERD 정합화). 관련 Story: S15P31E106-61, -63, -64, -65, -91, -92. 영향: FE·BE·AI. 사용자 전달 요청 1~3을 반영한 변경안이며 서버 구현·팀 승인·배포 완료가 아니다.
+2026-10-28 / 설문 구현 가을, 통합 계약 정합화 김영빈. 관련 Story S15P31E106-61·62·63·64·65·91·92, 영향 FE·BE·AI. 사용자 제공 최신 21개 테이블 DBML과 기존 노션 명세의 현재 저장본을 대조한 문서 변경이다. 팀 승인, 서버 구현, 실제 데이터 이관 또는 배포 완료를 뜻하지 않는다.
 
-최초 작성 기준은 develop `fbe0f352d0a013b8aaebf0623c3e9f6a0d5080c8`이며 당시에는 설문 구현을 확인하지 못했다. 2026-10-22 후속 통합에서 develop `e59cbfb12bc6ef780b038d44ec42dadc856c7f09`와 [MR !57](https://lab.ssafy.com/s15-final/S15P31E106/-/merge_requests/57)의 `629ed04a5cd6ef70f62f79b2050e60bf8d5b6a2d` 소스를 확인했다. `surveyVersion` 요청, 세 필드 Manifest, `public_id` UUID 생성·NOT NULL·UNIQUE·DB 기본값 선언은 정적으로 대조했다. 해당 MR의 구현은 설문 조회·회차 시작·회차 조회·회차 문항 조회 4개 경로이며 이 브랜치에 설문 코드를 합친 것은 아니다. 나머지 저장·완료·분석·이관 및 실제 설문 런타임·기존 행 이관은 미검증이다.
+[OpenAPI](openapi.json) / [버전 파일 계약](../survey/versioning.md) / [ERD](../../database/erd.md) / [검증 기록](../../verification/notion-survey-rest-20261028.md) / [통합 검증 결과](../../verification/owned-api-erd-20261028.json)
 
-[OpenAPI](openapi.json) / [설문 버전 계약](../survey/versioning.md) / [ERD](../../database/erd.md) / [SQL](../../database/schema.sql) / [검증·작업 상태](../../verification/survey-session-61.md)
+## 현재 경로와 전송 계약
 
-## 반영한 변경
+모든 경로는 `/api`를 사용한다. 본인은 Bearer 인증 주체로 판별하고 경로의 회차·결과 번호와 소유 회원을 별도 검사한다. 남의 회차·결과와 없는 자원은 같은 `404 RESOURCE_NOT_FOUND`로 응답한다. `sessionId = survey.id`, `resultId = personality.id`이며 양의 `integer(int64)` 숫자다. 공개 UUID 매핑 칸은 없다. X-Request-Id 등 본래 UUID인 추적·요청 식별자와 구분한다.
 
-| 항목 | 변경 계약 |
-| --- | --- |
-| CreateSession | `releaseId` UUID 대신 필수 `surveyVersion` 문자열, 길이 1~100. 예: `SIS-Q-1.1-100`. 생략·null·빈 문자열·이전 releaseId 필드는 스키마에서 거절 |
-| 버전 고정 | DB release 행 없이 배포된 불변 설문 파일을 선택하고 `survey_responses.version_code`에 저장. 허용 구버전 범위와 미지원 버전의 정확한 오류 응답은 구현 확인 필요 |
-| 설문 manifest | `Questionnaire`·`SurveySession`만 별도 `SurveyManifest` 사용. 필수값은 `surveyVersion`, `wordingVersion`, `contentHash` |
-| 이후 분석 manifest | 기존 공유 `Manifest`의 11개 필수값 유지. 규칙 파일이 생긴 뒤 분석에 필요한 버전 조합·해시 범위·releaseId 전환을 합의. 설문용 세 필드로 분석 준비가 끝났다고 보지 않음 |
-| 공개 회차 ID | `survey_responses.public_id uuid NOT NULL DEFAULT gen_random_uuid()` 및 UNIQUE. API `sessionId`는 이 값. 내부 `response_id bigint` PK와 분석의 내부 참조는 유지 |
-| 답변 저장 | 저장 컬럼은 `response_json`, 내부에 answers·metadata 보존. 문항별 조건부 갱신·revision·완료 후 불변성 유지 |
-
-요청 예시는 `{"surveyVersion":"SIS-Q-1.1-100"}`이다. `Idempotency-Key` 헤더 계약은 유지한다. MR !57은 같은 회원·버전의 미완료 회차를 재사용하고 새 회차는 코드에서 UUID를 생성하며, 재사용을 포함한 시작 응답을 201로 반환한다. 회차 조회·시작 응답의 ETag는 revision이다. 이는 소스 확인이며 이 브랜치의 런타임 검증으로 확대하지 않는다. 명세의 100자 상한에 대응하는 `@Size(max=100)` 선언은 MR !57 DTO에 없으므로 작성자 확인 항목으로 남긴다. 상한을 임의 삭제하거나 다른 담당자의 코드를 수정하지 않았다.
-
-UUID를 알아도 권한이 생기지 않는다. 공개 ID 조회 시 인증 회원의 `user_id`를 검사하고, 답변·완료·이관·분석 경로도 같은 공개 ID 매핑을 사용한다. 새 회차는 새 public_id를 가지며 내부 response_id와 기존 참조를 바꾸지 않는다.
-
-## 분석·이관의 미확정 버전 계약
-
-| ID | 남아 있는 계약 | 합의할 내용 |
+| 메서드·경로 | 요청·정상 응답 | 저장·계산 근거 |
 | --- | --- | --- |
-| SURVEY-OPEN-01 | `AnalysisRequest.releaseId` UUID 필수 | 분석 규칙 파일의 호환 버전 묶음과 `analysis_results.version_code`의 의미. surveyVersion으로 단순 치환하면 채점·유형·분석 버전 재현이 빠질 수 있음 |
-| SURVEY-OPEN-02 | migration-plan 쿼리, `MigrateSession` 요청, `MigrationPlan` 응답의 `targetReleaseId` UUID | 대상 surveyVersion 및 이관 정책 파일 선택·policyHash 범위·구버전 지원. 원본 보존과 새 회차 생성은 유지하되 필드 전환/자동 매핑은 합의 전 |
-| SURVEY-OPEN-03 | API/DB 작업 종류·상태·공개 ID 불일치 | 아래 권장안 검토 후 -64/-65 구현 전에 확정 |
+| GET `/api/surveys/current` | 200 Questionnaire | 현재 `survey/{버전}.json`. 이 조회는 DB에 쓰지 않음 |
+| POST `/api/survey-sessions` | `{surveyVersion}` → 201 SurveySession | `survey(user_id, survey_version, completed_at)` 생성 또는 같은 회원·버전 미완료 회차 재사용 |
+| GET `/api/survey-sessions/{sessionId}` | 200 SurveySession | 본인 `survey`·`survey_answer`와 고정 설문 파일 |
+| GET `/api/survey-sessions/{sessionId}/questionnaire` | 200 Questionnaire | 본인 회차의 `survey.survey_version`에 고정된 파일 |
+| PUT `/api/survey-sessions/{sessionId}/answers/{questionId}` | `{value}` → 200 SurveySession | 미완료 회차의 `survey_answer` 문항별 저장·갱신 |
+| DELETE 같은 문항 경로 | 본문 없음 → 200 SurveySession | 해당 답 행 삭제. 이미 없으면 현재 상태를 그대로 반환 |
+| POST `/api/survey-sessions/{sessionId}/complete` | 본문 없음 → 200 SurveySession | 전체 문항 검사 후 `survey.completed_at` 최초 기록 |
+| GET `/api/survey-sessions/{sessionId}/migration-plan` | 필수 `targetSurveyVersion` 쿼리 → 200 MigrationPlan | 원본 답과 서버 이관 규칙 파일 비교. DB 쓰기 없음 |
+| POST `/api/survey-sessions/{sessionId}/migrations` | `{targetSurveyVersion, policyHash}` → 201 SurveySession | 원본을 보존하고 새 회차에 보존 가능한 답만 복사 |
+| POST `/api/survey-sessions/{sessionId}/analyses` | 본문 없음 → 202 AnalysisReceipt | 서버 분석 파일 선택 후 `personality` 생성·재사용 |
+| GET `/api/analysis-results/{resultId}` | 200 AnalysisResult | `personality.survey_id → survey.user_id` 본인 검사 후 상태·공개 결과 |
 
-이 필드들은 이전 계약으로 남기고 OpenAPI에 보류 표시했다. 존재하지 않는 release DB 조회, UUID→surveyVersion 변환, 구체적 실패 응답을 임의로 구현하거나 확정하지 않았다. 기존의 관리자 게시 API 보류 상태도 유지한다.
+현재 노션의 설문 계약은 `Idempotency-Key`, `If-Match`, `ETag`, `revision`, `sessionRevision`, `releaseId`를 요구하지 않는다. 분석 접수는 `jobId` 대신 `resultId`를 돌려준다. 아래 제외·합의 항목과 과거 구현 이력을 현재 활성 계약으로 혼동하지 않는다.
 
-## 작업 상태 권장안 — 미합의, 이번에 변경하지 않음
+## 설문 회차·답변·완료
 
-진행·실패·재시도는 `background_jobs`, 계산이 끝난 결과는 `analysis_results`에 두는 안을 권장한다. 작업의 재실행과 결과의 의미를 분리해 실패 시 불완전한 결과 행을 만들지 않고, 기존 attempts·lease·business_key를 재사용할 수 있다. `INSUFFICIENT`는 계산 실패가 아니라 정보 부족이라는 정상 결과다.
+- `surveyVersion`은 필수 문자열 1~30자이며 `survey.survey_version`에 고정한다. 시작 뒤 현재 게시 버전이 바뀌어도 기존 회차의 문항·보기는 바뀌지 않는다.
+- `SurveyManifest`는 `surveyVersion`, `wordingVersion`, `contentHash` 세 필드다. DB에는 첫 필드만 저장하고 나머지는 버전 파일에서 읽거나 계산한다. `wordingVersion`은 1~100자, `contentHash`는 소문자 16진수 64자리다. 예시의 0 해시는 실제 파일 해시가 아니다.
+- `questionId`는 1~50자다. 답은 해당 버전 파일의 보기 ID 또는 점수 하나(Number 또는 String)로 검증하고 `answer_value varchar(100)`에 문자열로 저장한다. 배열·객체·null은 받지 않는다. `unknown`과 `any`의 허용 여부는 문항 파일을 따른다. 삭제는 미응답이며 `unknown` 응답과 다르다.
+- `(survey_id, question_id)`의 같은 문항을 다시 저장하면 `answer_value`와 `answered_at`을 갱신한다. 현재 노션은 같은 문항에서 나중에 처리한 요청이 남는 설계를 사용한다. 실제 경합 처리와 완료/저장 동시성은 구현 검증 대상이다.
+- `status`, `answeredCount`, `questionCount`, `nextQuestionId`는 별도 DB 칸이 아니다. 각각 `completed_at`, 답 행 수, 고정 파일의 문항 수와 순서로 계산한다.
+- 완료에는 모든 문항의 유효한 답이 필요하다. `unknown`도 답으로 센다. 완료 요청을 반복해도 최초 `completed_at`을 바꾸지 않는다. 완료 뒤 답 저장·삭제는 `409 SESSION_COMPLETED`이며 재응답은 새 회차다. 제출 완료와 분석 성공은 별개다.
+- 현재/회차 문항 정의의 노션 예시는 전체 100문항 중 Q001만, 완료 응답은 100개 답 중 Q001·Q002·Q100만 발췌한 것이다. 기계 판독용 완료 예시는 100개 전체를 담아 답변 수와 배열 길이를 일치시킨다.
 
-현재 SQL의 `job_type` 허용 목록에는 ANALYSIS가 없다. `analysis_results.outcome`은 이미 SUCCEEDED/INSUFFICIENT만 허용하지만 OpenAPI `AnalysisResult.status`에는 FAILED가 있다. `Job.status`는 INSUFFICIENT가 있고 CANCELLED가 없으며 DB 작업 상태는 그 반대다. 따라서 ANALYSIS 하나만 enum에 추가해서 끝낼 수 없다.
+## 원본 보존 이관
 
-권장 상태 대응은 PENDING/RUNNING은 작업에만 저장, 최종 실패는 jobs.FAILED와 비민감 last_error_code, 계산 종료는 jobs.SUCCEEDED와 결과 ID, 결과 outcome은 SUCCEEDED 또는 INSUFFICIENT다. 정보 부족 결과의 작업은 실행 자체가 성공했으므로 jobs.SUCCEEDED로 두는 안이다. API Job도 같은 실행 상태를 쓰고 결과 조회로 정보 부족을 확인하는 안을 함께 검토한다. 이는 확정 계약이 아니다.
+미리보기는 `sourceSessionId`(숫자), `targetSurveyVersion`(1~30자), 보존·재확인·비호환 문항 ID 목록과 `policyHash`를 반환한다. 규칙은 서버 파일에 있고 `policyHash`도 파일에서 계산하므로 DB에 release나 정책 해시 행을 꾸며 넣지 않는다. 지원되지 않는 두 버전 또는 같은 버전은 `409 MIGRATION_UNSUPPORTED`다. 이전 80문항을 임의로 100문항에 자동 매핑하지 않는다.
 
-합의 시 검토할 변경은 ANALYSIS job_type 허용, AnalysisResult의 FAILED 제거, Job의 INSUFFICIENT/CANCELLED 대응, 재시도 가능 여부·최종 실패 경계, result_json의 결과 포인터, 결과와 작업 성공의 원자 저장, 중복 업무 키 구성, 늦은 워커 fencing, 취소·탈퇴·보관 처리다. 현재 jobId/resultId UUID와 DB bigint의 공개 ID 매핑도 미정이며 sessionId 확정으로 함께 해결됐다고 보지 않는다. 개인 계산 ANALYSIS와 후속 AI 생성 작업의 관계도 구분해야 한다. 이번 작업은 해당 enum·DDL·코드를 바꾸지 않았다.
+실제 이관은 현재 규칙 해시와 요청 `policyHash`를 다시 비교한다. 다르면 `409 MIGRATION_POLICY_CHANGED`이며 미리보기를 다시 받아야 한다. 새 `survey`와 보존 가능한 `survey_answer`만 생성하고 원본 회차·답·`personality`는 바꾸지 않는다. 재확인·비호환 문항은 미응답으로 둔다.
 
-## JPA와 기존 행 확인 사항
+**합의 필요:** 같은 회원·대상 버전의 미완료 회차를 재사용할 때 원본 답을 복사할지, 기존 답을 그대로 돌려줄지는 현재 노션에서도 미정이다. 이 정책을 임의 확정하거나 기존 답을 덮어쓰는 구현 보장으로 쓰지 않는다.
 
-MR !57의 SurveyResponse는 response_id의 IDENTITY를 유지하고 생성 시 `UUID.randomUUID()`로 publicId를 채운다. `@Column(nullable=false, unique=true, columnDefinition="uuid default gen_random_uuid()")` 선언도 확인했다. 코드 생성과 DB 기본값은 별도 방어선이다. 이 소스 확인으로 실제 JPA 생성 DDL 실행이나 기존 행 보정이 검증됐다고 보지 않는다. 현재 컨벤션 [db-schema]의 nullable·unique 선언과 코드에서 생성값을 채우는 원칙을 따른다.
+## 개인 분석과 유효 결과 적용
 
-`@ColumnDefault("gen_random_uuid()")`는 DDL 기본값 선언이다. 명시적 NULL INSERT를 자동으로 생성값으로 바꾸는 보장은 없으므로 코드 생성과 DB 기본값을 혼동하지 않는다. DB 생성 방식을 고르면 INSERT에서 컬럼 생략과 생성값 readback까지 검증한다. [Hibernate 공식 설명](https://docs.hibernate.org/orm/7.4/javadocs/org/hibernate/annotations/ColumnDefault.html)을 참고하되 프로젝트에서 실제 선택한 Hibernate 버전으로 확인한다.
+요청 본문은 없으며 서버가 해당 `survey_version`을 지원하는 `analysis/{버전}.json`을 선택한다. 미완료 회차는 `409 SESSION_NOT_COMPLETED`, 지원 규칙이 없으면 `409 ANALYSIS_VERSION_UNSUPPORTED`다. `(survey_id, analysis_version)` 조합의 `personality`를 생성 또는 재사용하고 둘 다 202로 현재 상태를 반환한다.
 
-기존 행이 있는 DB에는 빈 DB용 schema.sql을 실행하지 않는다. 담당자 검토 후 실제 행 수·NULL·중복과 기존 외부 ID 사용 여부를 확인하고, nullable 추가/기존 행별 UUID 부여/NOT NULL·UNIQUE·DEFAULT 설정/검증 순서를 준비한다. 기존에 외부로 발급한 ID가 있다면 호환 매핑부터 결정한다. JPA update만으로 데이터 보정·제약 적용이 끝났다고 보지 않는다. 이번 작업에서 실행 마이그레이션 파일·Flyway를 추가하거나 공용 DB에 접속·적용하지 않았다.
+`AnalysisReceipt`는 `resultId`, `sessionId`, `analysisVersion`(1~30자), `status`다. `AnalysisResult`는 같은 숫자 ID와 별도 `AnalysisManifest {surveyVersion, analysisVersion}`, 상태 및 공개 결과를 제공한다. 이 두 필드 DTO는 설문용 세 필드 SurveyManifest 및 다른 호출자가 쓰는 공유 Manifest 전체 정의와 구분한다.
 
-## 호환성과 적용 순서
+| 상태 | 공개 결과·기존 유효 분석 |
+| --- | --- |
+| PENDING | 결과를 꾸며 내지 않으며 nullable 결과는 null, 목록은 빈 배열. 기존 유효 분석 유지 |
+| SUCCEEDED | `personality.result`에서 공개 점수·유형·해석·참고 추천을 투영 |
+| INSUFFICIENT | 부족 문항을 `missingQuestionIds`로 안내하고 새 회차 재응답으로 연결. 기존 유효 분석 유지 |
+| FAILED | 실패를 유효 결과로 대체하지 않으며 재시도 가능 상태는 서버가 관리. 기존 유효 분석 유지 |
 
-CreateSession의 releaseId 요청은 호환되지 않는 변경이다. FE가 surveyVersion을 보내고 세 필드 설문 manifest를 읽도록 준비한 뒤 서버 DTO·파일 선택·UUID 생성/소유권을 함께 검증해야 한다. 과거 파일 보존과 기존 행 처리 확인 → JPA 제약·DDL 검증 → FE/BE 연결 검증 순으로 적용한다. 분석·이관은 위 미확정 항목을 별도로 합의한다. 이번에 MR 리뷰어 지정·리뷰 요청·커밋·푸시·병합·메시지 전송은 하지 않았다.
+본인 회차·분석 버전·현재 유효한 최신 실행의 SUCCEEDED 결과임을 확인한 경우에만 결과 저장, `profile.active_personality_id` 전환, `user_setting.settings_version` 증가를 같은 트랜잭션에서 처리한다. 늦게 도착한 이전 실행이 새 적용 값을 되돌리지 않아야 한다. 내부 `attempts`, `nextRetryAt`, `lastErrorCode`와 원점수는 공개 응답에 내보내지 않는다.
 
-## 전달 초안 — 미전송
+**합의 필요:** PENDING 5분 정체 복구의 기산점, attempts의 최초 실행 포함 여부와 최대 횟수, 중복 선점·실행 세대·입력 식별, 늦은 결과 차단 기준. 기존 JSON 안에 필요한 정보를 둘지부터 정의하고 재시작·중복 실행 복구를 검증해야 한다. 이 문서가 AI 계산·모델 정책을 정한 것은 아니다.
 
-가을님, 61번 요청의 surveyVersion·설문용 최소 manifest·sessionId=public_id를 통합 API/ERD에 반영했고 MR !57의 핵심 DTO·UUID 생성/제약 선언도 확인했습니다. 시작 요청의 명세상100자 상한과 DTO 검증 선언 차이는 확인 부탁드립니다. 설문 런타임·기존 행 보정은 이번 검증에 포함하지 않았습니다. -64/-65 전에 ANALYSIS 작업 종류와 작업/결과 상태, 분석 releaseId·이관 targetReleaseId의 파일 버전 대응을 합의하면 좋겠습니다. 진행·실패는 background_jobs, 결과는 SUCCEEDED/INSUFFICIENT만 analysis_results에 두는 안을 제안합니다.
+## 제외·보류 계약
+
+- PUT `/api/survey-sessions/{sessionId}/metadata`는 현재 노션에서 이미 제외 상태다. `survey`·`survey_answer`에 나이 metadata 칸을 만들지 않는다. 본인 나이는 `profile.birth_date`, 희망 조건은 별도 `matching_preference` 계약을 따른다.
+- GET `/api/jobs/{jobId}`도 현재 노션에서 이미 제외 상태다. `background_job` 표가 없으므로 설문 분석의 진행 상태는 반환된 `resultId`로 개인 결과 조회를 호출한다. 이를 다른 도메인에 존재하지 않는 공용 작업 저장소를 보장하는 근거로 쓰지 않는다.
+- 관리자 규칙/릴리스 게시 9개 페이지는 담당 가을·제외 상태의 기존 설계 이력으로 보존한다. 21개 테이블에는 해당 관리자 게시 저장소가 없다. 사용자 담당으로 확인되지 않은 페이지의 경로·속성·원문을 임의 변경하지 않는다.
+
+## 과거 구현 증거와 현재 적용 순서
+
+2026-10-22에는 develop `e59cbfb12bc6ef780b038d44ec42dadc856c7f09`와 MR !57 `629ed04a5cd6ef70f62f79b2050e60bf8d5b6a2d`에서 당시의 공개 UUID 생성·제약 선언, 문자열 버전과 세 필드 manifest를 정적으로 대조했다. 당시 `survey_responses.public_id`·100자 버전·revision/ETag는 과거 계약의 구현 기록이며 현재 21개 테이블의 숫자 ID 전환 또는 서버 실행 증거가 아니다.
+
+호환되지 않는 변경은 앱 호출·DTO·서버 경로·소유권 검사·버전 파일·기존 행 이관을 함께 검토한 뒤 적용한다. 실제 DB에는 이 문서를 근거로 SQL을 실행하지 않는다. 기존 데이터가 있으면 이미 발급한 외부 ID와 변경 이력 보존을 확인하고 별도 검토된 이관 절차가 필요하다. 문서/노션 저장 검증과 코드 빌드·통합 테스트·공용 DB 적용·배포는 각각 별도 상태로 보고한다.

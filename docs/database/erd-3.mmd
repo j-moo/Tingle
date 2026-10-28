@@ -1,71 +1,41 @@
+%% ERD21 design view; relationships are logical, not production FK proof.
 erDiagram
-    survey_responses {
-        uuid public_id UK
-        bigint response_id PK
-        bigint user_id
-        text version_code
-        uuid client_request_id
-        jsonb response_json
-        bigint revision
-        timestamptz completed_at
-    }
-    analysis_results {
-        bigint result_id PK
-        bigint response_id
-        text version_code
-        text outcome
-        jsonb result_json
-    }
-    user_pairs {
-        bigint pair_id PK
-        bigint user_low
-        bigint user_high
-        timestamptz declined_until
-        bigint declined_proposal_id
-        timestamptz rematch_banned_at
-    }
-    encounters {
-        bigint encounter_id PK
-        bigint pair_id
-        text event_key
-        timestamptz occurred_at
+    matching {
+        bigint id PK
+        bigint user_low_id
+        bigint user_high_id
+        timestamptz met_at
+        varchar policy_version
         timestamptz opportunity_expires_at
         timestamptz counterpart_deadline_at
-        text status
-        text evaluation_version_code
-        jsonb evaluation_json
+        jsonb evaluation
+        matching_status status
+        timestamptz proposed_at
+        timestamptz raw_delete_at
     }
-    encounter_submissions {
-        bigint receipt_id PK
-        bigint encounter_id
-        bigint binding_id
-        bigint snapshot_id
-        uuid submission_id
-        jsonb proof_json
-        timestamptz received_at
+    matching_participant {
+        bigint matching_id PK
+        bigint user_id PK
+        bigint encounter_keyring_id
+        bytea encounter_signature
+        timestamptz encounter_reported_at
+        timestamptz encounter_verified_at
+        proposal_response response
+        timestamptz responded_at
+        timestamptz blocked_at
     }
-    match_proposals {
-        bigint proposal_id PK
-        bigint pair_id
-        bigint encounter_id
-        text low_decision
-        text high_decision
-        timestamptz low_decided_at
-        timestamptz high_decided_at
-        uuid low_request_key
-        uuid high_request_key
-        timestamptz low_cancelled_at
-        timestamptz high_cancelled_at
-        uuid low_cancel_request_key
-        uuid high_cancel_request_key
-        text status
-        timestamptz created_at
-        timestamptz expires_at
-        bigint chat_room_id
+    chat {
+        bigint id PK
     }
-    survey_responses ||--o{ analysis_results : "response_id logical"
-    match_proposals ||--o{ user_pairs : "declined_proposal_id logical"
-    user_pairs ||--o{ encounters : "pair_id logical"
-    encounters ||--o{ encounter_submissions : "encounter_id logical"
-    user_pairs ||--o{ match_proposals : "pair_id logical"
-    encounters ||--o{ match_proposals : "encounter_id logical"
+    keyring {
+        bigint id PK
+    }
+    users {
+        bigint id PK
+    }
+    users ||--o{ matching : "user_low_id"
+    users ||--o{ matching : "user_high_id"
+    matching ||--o| chat : "matching_id"
+    matching ||--o{ matching_participant : "matching_id"
+    users ||--o{ matching_participant : "user_id"
+    keyring o|--o{ matching_participant : "encounter_keyring_id"

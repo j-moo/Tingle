@@ -62,7 +62,7 @@ v0.4.0, 2026.10.22. 서버 구성 · CI 검사 · develop/master 자동 배포 �
 
 | 산출물 | 만드는 곳 | 배포 방법 |
 | --- | --- | --- |
-| Android APK (개발) | Jenkins `./gradlew assembleDebug -PapiBase=.../dev/api` | `/app/dev/latest.apk` 에 복사. 팀원이 QR 로 설치 |
+| Android APK (개발) | Jenkins `./gradlew assembleDebug -PapiBase=.../dev/api` | `/dev/app/latest.apk` 에 복사. 팀원이 QR 로 설치 |
 | Android APK (운영) | Jenkins `master` 빌드 `./gradlew assembleRelease` | `/app/latest.apk` + GitLab Release 첨부. Play Store 등록 안 함 |
 | iOS | Mac 에서 Xcode 수동 빌드 (Kotlin Multiplatform iOS 타깃) | 개발자 계정 유무에 따라 시뮬레이터 또는 실기기 사이드로드. **Apple Developer Program 가입 여부 결정 필요** |
 | 키링 펌웨어 (.uf2 / .hex) | Jenkins `arduino-cli compile` 로 컴파일 검사 + 산출물 보관 | 실제 굽기는 USB 로 수동. 펌웨어 버전은 태그로 관리하고 앱·서버의 `algorithm_version` 과 맞춘다 |
@@ -87,7 +87,7 @@ checkout
   → [develop] app-env → /srv/tingle/dev 에 풀기 → compose up -d --build --no-deps web-dev back-dev → 응답 확인
   → [master]  app-env → DB 백업 → /srv/tingle/repo 에 풀기 → compose up -d --build --no-deps web → 응답 확인
               → back 블루-그린 (deploy-bluegreen.sh: 새 색 기동 → health → nginx 전환 → 옛 색 정지)
-  → (이후)    develop: APK(dev) → /app/dev/latest.apk / master: APK(prod) → /app/latest.apk, GitLab Release / 펌웨어 산출물 보관
+  → (이후)    develop: APK(dev) → /dev/app/latest.apk / master: APK(prod) → /app/latest.apk, GitLab Release / 펌웨어 산출물 보관
 ```
 
 - `Jenkinsfile` 은 저장소 최상위. 검사 도구는 Jenkins 에 깔지 않고 파트마다 docker 이미지로 돌린다 (작업 폴더는 `--volumes-from` 으로 공유). 캐시는 `tingle-ci-*` docker 볼륨.
@@ -184,7 +184,7 @@ ai 와 back 에 같은 스크립트를 쓴다. ai 를 먼저 전환해 새 back 
 | --- | --- | --- | --- | --- |
 | **0. 서버 준비** | 3주차 (10/19~) 서버 수령 직후 | Docker·Compose, 도메인·certbot, `/srv/tingle/.env`, Jenkins 실행, GitLab Webhook | Jenkins 로그인, MR 에 Jenkins 반응 | 완료 |
 | **1. CI 검사** | 3주차 | Jenkinsfile 검사 단계 (back·ai·app·web·firmware), 파트별 docker 이미지 | MR 에 결과 표시, 실패 시 머지 불가 | 완료 (펌웨어 검사는 코드 생기면) |
-| **2. 개발 환경** | 3~4주차 | compose, back·ai·web Dockerfile, develop 재시작 배포, `/app/dev/latest.apk` | 개발 APK 로 `/dev/api` 접속 성공, `/dev/` 랜딩 표시, back-dev → ai-dev 호출 성공 | web-dev · back-dev · ai-dev 배포 완료 (ai 10/23 MR !59 Dockerfile). APK 남음 |
+| **2. 개발 환경** | 3~4주차 | compose, back·ai·web Dockerfile, develop 재시작 배포, `/dev/app/latest.apk` | 개발 APK 로 `/dev/api` 접속 성공, `/dev/` 랜딩 표시, back-dev → ai-dev 호출 성공 | web-dev · back-dev · ai-dev 배포 완료 (ai 10/23 MR !59 Dockerfile). APK 남음 |
 | **3. 운영 재시작 배포** | 4주차 (10/26~) | master 재시작 배포. **다운타임·WebSocket 끊김 측정** | `/`·`/api` 동작, 다운타임 기록 | 완료 (10/22 첫 master 머지 MR !53, web 재시작 끊김 0.35초, `infra/배포_측정.md`) |
 | **4. 블루-그린** | 5주차 (11/2~11/6) | deploy-bluegreen.sh, upstream 전환(ai·back), 롤백, ShedLock 확인 | 배포 중 1초 간격 요청 실패 0건, 채팅 재접속 3초 이내 | back · ai 전환 · 롤백 구현, back 시험 실패 0건. graceful shutdown · ai 전환 시험 · WebSocket 확인 남음 |
 | **5. 운영 보강** | 6주차 (11/9~11/13) | 매일 백업, 모니터링, 푸시(FCM), 이미지 보관 정책 | 복원 1회 성공, Grafana 에서 배포 전후 확인 | 배포 전 백업만 완료 |
@@ -240,7 +240,7 @@ WebSocket: 테스트 앱 2대를 채팅방에 두고 배포 → 끊김 감지 �
 | 신규 | [INFRA] 도메인·HTTPS 인증서·방화벽 설정 | 0 |
 | ~~신규~~ | ~~[INFRA] Jenkins 에이전트 이미지 구성~~ → 파트별 docker 이미지로 대체(6절), 이슈 불필요 | — |
 | 신규 | [INFRA] web·ai 컨테이너와 Nginx 경로 구성 | 2 |
-| 신규 | [INFRA] 개발 APK 자동 빌드와 `/app/dev` 배포 링크 | 2 |
+| 신규 | [INFRA] 개발 APK 자동 빌드와 `/dev/app` 배포 링크 | 2 |
 | 신규 | [INFRA] 운영 환경 재시작 배포와 다운타임·WebSocket 끊김 측정 | 3 |
 | 신규 | [INFRA] 블루-그린 전환 스크립트와 Nginx upstream·WebSocket 구성 (ai·back) | 4 |
 | 신규 | [INFRA] 블루-그린 무중단 검증 (배포 중 1초 간격 요청 실패 0건·채팅 재접속 3초 이내) | 4 |

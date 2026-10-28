@@ -1,61 +1,139 @@
 {
-  "version": "0.2.5",
-  "date": "2026-10-22",
-  "status": "25/185 통합 문서·ERD 웹 저장 대조 PASS·후속 노션 API10개 검증 PASS·공용 DB 미적용",
-  "total_tables": 28,
-  "total_columns": 204,
+  "version": "1.0.0-erd21-design",
+  "date": "2026-10-28",
+  "status": "사용자21개 설계 정의 대조; 서버/JPA/DB 미적용",
+  "total_tables": 21,
+  "total_columns": 151,
   "physical_foreign_keys": false,
+  "source_sha256": "7641a0f6be97895c42abf724ea5269367f696e30311f7bf600b6546261cbcb21",
+  "source_name": "붙여넣은 텍스트.txt",
   "tables": {
-    "app_users": {
-      "name": "app_users",
-      "purpose": "회원·단일 소셜 로그인 계정",
+    "personality": {
+      "name": "personality",
+      "purpose": "성향 분석 결과 — 설문 한 번 분석 = 한 줄. 분석 결과만 담고, 매칭 조건은 matching_preference에",
       "columns": [
         {
-          "name": "user_id",
+          "name": "id",
           "type": "bigint",
-          "meaning": "내부 식별자; 서버/DB 생성",
+          "meaning": "분석 결과 ID — 공개 분석 결과 ID. API resultId",
           "nullable": false,
           "pk": true,
+          "increment": true,
+          "unique": false,
           "reference": null,
           "default": null,
           "json_shape": null
         },
         {
-          "name": "provider",
-          "type": "text",
-          "meaning": "소셜 제공자 코드; 로그인 계약 기준",
+          "name": "survey_id",
+          "type": "bigint",
+          "meaning": "설문 회차 ID — 분석한 완료 설문 회차 ID. 회원은 survey에서 확인",
           "nullable": false,
           "pk": false,
-          "reference": null,
+          "increment": false,
+          "unique": false,
+          "reference": "survey.id",
           "default": null,
           "json_shape": null
         },
         {
-          "name": "provider_subject",
-          "type": "text",
-          "meaning": "서버가 검증한 공급자 사용자 식별값",
-          "nullable": true,
+          "name": "analysis_version",
+          "type": "varchar(30)",
+          "meaning": "분석 규칙 버전 — 채점·유형 계산 규칙의 버전 이름. 규칙 내용은 DB가 아니라 서버 설정 파일(analysis/{버전}.json)에 있음",
+          "nullable": false,
           "pk": false,
+          "increment": false,
+          "unique": false,
           "reference": null,
           "default": null,
           "json_shape": null
         },
         {
           "name": "status",
-          "type": "text",
-          "meaning": "ACTIVE / SUSPENDED / WITHDRAWN",
+          "type": "analysis_status",
+          "meaning": "분석 상태 — PENDING / SUCCEEDED / INSUFFICIENT / FAILED. PENDING으로 5분 넘게 멈췄거나 FAILED이고 재시도 횟수가 남았으면 주기 작업이 다시 분석",
           "nullable": false,
           "pk": false,
+          "increment": false,
+          "unique": false,
           "reference": null,
           "default": null,
           "json_shape": null
         },
         {
-          "name": "created_at",
-          "type": "timestamptz",
-          "meaning": "최초 계정 생성",
+          "name": "result",
+          "type": "jsonb",
+          "meaning": "분석 결과 — 내부 점수·성향 데이터·사용 버전 또는 재확인/실패의 최소 정보. 재시도 정보 {attempts, nextRetryAt, lastErrorCode} 포함",
+          "nullable": true,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        }
+      ],
+      "indexes": [
+        {
+          "columns": [
+            "survey_id",
+            "analysis_version"
+          ],
+          "primary_key": false,
+          "unique": true,
+          "name": "uq_personality_survey_version",
+          "meaning": null
+        }
+      ]
+    },
+    "users": {
+      "name": "users",
+      "purpose": "회원·인증·동의",
+      "columns": [
+        {
+          "name": "id",
+          "type": "bigint",
+          "meaning": "회원 ID — 서비스 회원 번호. DB가 1씩 올려 발급(재사용 안 함). 탈퇴 후 재가입하면 새 번호",
+          "nullable": false,
+          "pk": true,
+          "increment": true,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "provider",
+          "type": "auth_provider",
+          "meaning": "소셜 로그인 종류 — 소셜 제공자 코드: GOOGLE / KAKAO / NAVER",
           "nullable": false,
           "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "provider_user_id",
+          "type": "varchar(255)",
+          "meaning": "소셜 계정 고유값 — 서버가 제공자 인증으로 확인한 소셜 계정 고유값",
+          "nullable": false,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "email",
+          "type": "varchar(320)",
+          "meaning": "연락용 이메일 — 동의 조건을 충족한 연락용 이메일. 미제공·철회·탈퇴 시 정리하며 계정 식별이나 상대 공개에 사용하지 않음",
+          "nullable": true,
+          "pk": false,
+          "increment": false,
+          "unique": false,
           "reference": null,
           "default": null,
           "json_shape": null
@@ -63,74 +141,65 @@
         {
           "name": "signup_completed_at",
           "type": "timestamptz",
-          "meaning": "최초 전체 가입 완료; 완료 전 NULL",
+          "meaning": "가입 완료 시각 — 최초 가입을 모두 완료한 시각",
           "nullable": true,
           "pk": false,
+          "increment": false,
+          "unique": false,
           "reference": null,
           "default": null,
           "json_shape": null
         },
         {
-          "name": "email",
-          "type": "text",
-          "meaning": "개인정보 동의 후 소셜 로그인에서 받은 선택 연락처; 회원 식별·고유 키로 쓰지 않음",
-          "nullable": true,
-          "pk": false,
-          "reference": null,
-          "default": null,
-          "json_shape": null
-        },
-        {
-          "name": "withdrawal_due_at",
+          "name": "agreed_at",
           "type": "timestamptz",
-          "meaning": "연령 미달 탈퇴 예정 겸 키링 초기화 마감 = 최초 안내+24시간(안내 시각은 여기서 계산); 재안내로 바꾸지 않고 서버가 이 시각에 탈퇴 실행",
+          "meaning": "일괄 동의 시각 — 첫 화면에서 약관·개인정보·AI 분석 등에 한 번에 동의한 시각. 비어 있거나 새 약관 시행일보다 이르면 재동의 받음",
           "nullable": true,
           "pk": false,
+          "increment": false,
+          "unique": false,
           "reference": null,
           "default": null,
           "json_shape": null
         },
         {
-          "name": "withdrawn_at",
-          "type": "timestamptz",
-          "meaning": "서버 탈퇴 완료 시각; 72시간 재가입 제한·1년 재매칭 제한의 기준",
-          "nullable": true,
+          "name": "is_operator",
+          "type": "boolean",
+          "meaning": "운영자 여부 — 운영 화면 접근 가능 여부. 일반 회원은 false",
+          "nullable": false,
           "pk": false,
+          "increment": false,
+          "unique": false,
           "reference": null,
-          "default": null,
+          "default": "false",
           "json_shape": null
         }
       ],
-      "unique": [
-        [
-          "provider",
-          "provider_subject"
-        ]
-      ],
-      "checks": [
-        "status IN ('ACTIVE','SUSPENDED','WITHDRAWAL_PENDING','WITHDRAWN')",
-        "(status='WITHDRAWAL_PENDING')=(withdrawal_due_at IS NOT NULL)",
-        "withdrawn_at IS NULL OR status='WITHDRAWN'",
-        "status='WITHDRAWN' OR provider_subject IS NOT NULL"
-      ],
-      "indexes": [],
-      "service_rules": [
-        "회원당 소셜 계정 하나인 현재 범위. 이메일은 로그인 식별 키로 신뢰하지 않는다.",
-        "가입 단계는 약관·키링·프로필·응답·조건·동기화 원본에서 계산. 별도 onboarding_status와 공통 revision은 두지 않는다.",
-        "signup_completed_at은 최초 전체 가입이 READY가 된 때 기록. 이후 수정으로 동기화가 대기하더라도 최초 완료 사실을 덮어쓰지 않는다.",
-        "PRIVACY 동의 전에는 저장하지 않는다. 동의 뒤 로그인부터 최신 제공값을 저장하고 미제공이면 NULL로 지운다. 이메일 없이도 로그인한다. API 응답에는 넣지 않는다."
+      "indexes": [
+        {
+          "columns": [
+            "provider",
+            "provider_user_id"
+          ],
+          "primary_key": false,
+          "unique": true,
+          "name": "uq_users_provider_account",
+          "meaning": null
+        }
       ]
     },
-    "refresh_tokens": {
-      "name": "refresh_tokens",
-      "purpose": "리프레시 토큰·회전 계열; 인증 담당과 조정할 초안",
+    "refresh_token": {
+      "name": "refresh_token",
+      "purpose": "로그인 토큰(기기별)",
       "columns": [
         {
-          "name": "token_id",
+          "name": "id",
           "type": "bigint",
-          "meaning": "내부 식별자; 서버/DB 생성",
+          "meaning": "토큰 번호",
           "nullable": false,
           "pk": true,
+          "increment": true,
+          "unique": false,
           "reference": null,
           "default": null,
           "json_shape": null
@@ -138,19 +207,23 @@
         {
           "name": "user_id",
           "type": "bigint",
-          "meaning": "회원",
+          "meaning": "회원 ID",
           "nullable": false,
           "pk": false,
-          "reference": "app_users.user_id",
+          "increment": false,
+          "unique": false,
+          "reference": "users.id",
           "default": null,
           "json_shape": null
         },
         {
           "name": "family_id",
           "type": "uuid",
-          "meaning": "같은 로그인에서 회전된 토큰 계열; sid 로그인 세션 테이블과 별개",
+          "meaning": "로그인 기기 ID(sid) — 같은 기기에서 재발급된 토큰은 같은 값. 로그인 기기 목록 = 폐기 안 된 family 목록",
           "nullable": false,
           "pk": false,
+          "increment": false,
+          "unique": false,
           "reference": null,
           "default": null,
           "json_shape": null
@@ -158,9 +231,11 @@
         {
           "name": "token_hash",
           "type": "bytea",
-          "meaning": "고엔트로피 난수 토큰의 SHA-256; 원문 미저장",
+          "meaning": "리프레시 토큰 해시 — 원문 저장 안 함",
           "nullable": false,
           "pk": false,
+          "increment": false,
+          "unique": true,
           "reference": null,
           "default": null,
           "json_shape": null
@@ -168,9 +243,11 @@
         {
           "name": "expires_at",
           "type": "timestamptz",
-          "meaning": "이 토큰의 만료",
+          "meaning": "만료 시각",
           "nullable": false,
           "pk": false,
+          "increment": false,
+          "unique": false,
           "reference": null,
           "default": null,
           "json_shape": null
@@ -178,9 +255,11 @@
         {
           "name": "used_at",
           "type": "timestamptz",
-          "meaning": "정상 회전에서 소비된 시각",
+          "meaning": "재발급에 쓴 시각 — 이미 쓴 토큰이 다시 오면 그 family 전체 폐기(탈취 감지)",
           "nullable": true,
           "pk": false,
+          "increment": false,
+          "unique": false,
           "reference": null,
           "default": null,
           "json_shape": null
@@ -188,2121 +267,64 @@
         {
           "name": "revoked_at",
           "type": "timestamptz",
-          "meaning": "서버가 폐기한 시각",
+          "meaning": "폐기 시각 — 로그아웃·탈취 감지·탈퇴",
           "nullable": true,
           "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "device_name",
+          "type": "varchar(100)",
+          "meaning": "기기 이름 — 로그인 기기 목록에 보여 줄 이름(예: Galaxy S24). 재발급 때 그대로 이어받음",
+          "nullable": true,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "last_used_at",
+          "type": "timestamptz",
+          "meaning": "마지막 사용 시각 — 로그인·재발급한 시각. 로그인 기기 목록에 표시",
+          "nullable": true,
+          "pk": false,
+          "increment": false,
+          "unique": false,
           "reference": null,
           "default": null,
           "json_shape": null
         }
       ],
-      "unique": [
-        [
-          "token_hash"
-        ]
-      ],
-      "checks": [
-        "octet_length(token_hash)=32"
-      ],
       "indexes": [
-        [
-          [
+        {
+          "columns": [
             "family_id"
           ],
-          null
-        ],
-        [
-          [
-            "user_id"
-          ],
-          null
-        ]
-      ],
-      "service_rules": [
-        "소비 표시와 새 토큰 생성은 같은 트랜잭션. 소비된 토큰 재사용 시 해당 계열 폐기를 원자 처리하는 안.",
-        "회전·현재 계열 폐기는 회원→토큰 순서로 잠가 같은 회원의 동시 발급/폐기 경합을 직렬화한다. 폐기와 경합해 새로운 유효 토큰이 뒤늦게 남지 않는지 인증 구현에서 검증한다.",
-        "토큰 계열 기록은 재사용 탐지에 필요한 기간 동안 유지. 단순 parent_id·rotated_at·first_used_at 중복 대신 계열 ID와 소비 시각을 사용한다.",
-        "login_sessions와 JWT sid는 보류. 즉시 access JWT 폐기·동시 로그인 수·절대 만료는 인증 담당 계약 확정 전 이 스키마만으로 보장하지 않는다."
+          "primary_key": false,
+          "unique": false,
+          "name": "ix_refresh_token_family",
+          "meaning": null
+        }
       ]
     },
-    "user_consents": {
-      "name": "user_consents",
-      "purpose": "약관·선택적 AI 분석 동의 이벤트",
+    "push_installation": {
+      "name": "push_installation",
+      "purpose": "푸시 알림 기기",
       "columns": [
         {
-          "name": "consent_id",
+          "name": "id",
           "type": "bigint",
-          "meaning": "내부 식별자; 서버/DB 생성",
+          "meaning": "설치 번호",
           "nullable": false,
           "pk": true,
-          "reference": null,
-          "default": null,
-          "json_shape": null
-        },
-        {
-          "name": "user_id",
-          "type": "bigint",
-          "meaning": "동의 주체",
-          "nullable": false,
-          "pk": false,
-          "reference": "app_users.user_id",
-          "default": null,
-          "json_shape": null
-        },
-        {
-          "name": "consent_type",
-          "type": "text",
-          "meaning": "동의 종류; 필수 약관과 선택적 분석 동의 구분",
-          "nullable": false,
-          "pk": false,
-          "reference": null,
-          "default": null,
-          "json_shape": null
-        },
-        {
-          "name": "document_version",
-          "type": "text",
-          "meaning": "사용자가 확인한 정확한 문서 버전",
-          "nullable": false,
-          "pk": false,
-          "reference": null,
-          "default": null,
-          "json_shape": null
-        },
-        {
-          "name": "agreed",
-          "type": "boolean",
-          "meaning": "동의 true, 거절/철회 false",
-          "nullable": false,
-          "pk": false,
-          "reference": null,
-          "default": null,
-          "json_shape": null
-        },
-        {
-          "name": "recorded_at",
-          "type": "timestamptz",
-          "meaning": "서버 기록 시각",
-          "nullable": false,
-          "pk": false,
-          "reference": null,
-          "default": null,
-          "json_shape": null
-        },
-        {
-          "name": "locale",
-          "type": "text",
-          "meaning": "동의 당시 안내문 언어(예: ko-KR); 이전 행은 NULL",
-          "nullable": true,
-          "pk": false,
-          "reference": null,
-          "default": null,
-          "json_shape": null
-        },
-        {
-          "name": "consent_screen",
-          "type": "text",
-          "meaning": "동의를 받은 화면 코드(예: SIGNUP, PROFILE_PHOTO); 이전 행은 NULL",
-          "nullable": true,
-          "pk": false,
-          "reference": null,
-          "default": null,
-          "json_shape": null
-        }
-      ],
-      "unique": [],
-      "checks": [],
-      "indexes": [
-        [
-          [
-            "user_id",
-            "consent_type",
-            "recorded_at DESC",
-            "consent_id DESC"
-          ],
-          null
-        ]
-      ],
-      "service_rules": [
-        "이벤트를 덮어쓰지 않고 추가. 현재 동의는 종류별 최신 이벤트로 판정한다. 같은 시각이면 consent_id가 큰 행이 최신이다.",
-        "약관 본문·필수 여부·과거 버전은 버전 고정 설정/문서로 보존한다. 필수 약관 동의 시각만으로 실제 가입 완료를 간주하지 않는다."
-      ]
-    },
-    "signup_restrictions": {
-      "name": "signup_restrictions",
-      "purpose": "탈퇴 후 72시간 재가입 제한(회원 데이터와 분리)",
-      "columns": [
-        {
-          "name": "provider",
-          "type": "text",
-          "meaning": "소셜 제공자",
-          "nullable": false,
-          "pk": true,
-          "reference": null,
-          "default": null,
-          "json_shape": null
-        },
-        {
-          "name": "subject_hmac",
-          "type": "bytea",
-          "meaning": "서버 비밀키로 만든 제공자 계정 식별값 HMAC; 원문·가입 ID 미저장",
-          "nullable": false,
-          "pk": true,
-          "reference": null,
-          "default": null,
-          "json_shape": null
-        },
-        {
-          "name": "rejoin_allowed_at",
-          "type": "timestamptz",
-          "meaning": "재가입 가능 시각 = withdrawn_at+72시간; 지나면 삭제",
-          "nullable": false,
-          "pk": false,
-          "reference": null,
-          "default": null,
-          "json_shape": null
-        }
-      ],
-      "unique": [],
-      "checks": [],
-      "indexes": [],
-      "service_rules": [
-        "명세 기준 세 항목만 저장한다. 만료 시각이 지난 행은 제한에 쓰지 않으며 정기 삭제한다. 키 교체 방식은 DES01."
-      ]
-    },
-    "profiles": {
-      "name": "profiles",
-      "purpose": "회원 프로필과 사진 한 장",
-      "columns": [
-        {
-          "name": "user_id",
-          "type": "bigint",
-          "meaning": "회원; 공유 PK",
-          "nullable": false,
-          "pk": true,
-          "reference": "app_users.user_id",
-          "default": null,
-          "json_shape": null
-        },
-        {
-          "name": "nickname",
-          "type": "text",
-          "meaning": "표시 닉네임",
-          "nullable": true,
-          "pk": false,
-          "reference": null,
-          "default": null,
-          "json_shape": null
-        },
-        {
-          "name": "nickname_key",
-          "type": "text",
-          "meaning": "정규화한 중복 검사 키",
-          "nullable": true,
-          "pk": false,
-          "reference": null,
-          "default": null,
-          "json_shape": null
-        },
-        {
-          "name": "birth_date",
-          "type": "date",
-          "meaning": "실제 생년월일; 상대 응답 미공개",
-          "nullable": true,
-          "pk": false,
-          "reference": null,
-          "default": null,
-          "json_shape": null
-        },
-        {
-          "name": "gender",
-          "type": "text",
-          "meaning": "성별 코드",
-          "nullable": true,
-          "pk": false,
-          "reference": null,
-          "default": null,
-          "json_shape": null
-        },
-        {
-          "name": "smoking_status",
-          "type": "text",
-          "meaning": "흡연 코드",
-          "nullable": true,
-          "pk": false,
-          "reference": null,
-          "default": null,
-          "json_shape": null
-        },
-        {
-          "name": "drinking_frequency",
-          "type": "text",
-          "meaning": "음주 코드",
-          "nullable": true,
-          "pk": false,
-          "reference": null,
-          "default": null,
-          "json_shape": null
-        },
-        {
-          "name": "religion",
-          "type": "text",
-          "meaning": "종교 코드; 선택",
-          "nullable": true,
-          "pk": false,
-          "reference": null,
-          "default": null,
-          "json_shape": null
-        },
-        {
-          "name": "introduction",
-          "type": "text",
-          "meaning": "자기소개; 선택",
-          "nullable": true,
-          "pk": false,
-          "reference": null,
-          "default": null,
-          "json_shape": null
-        },
-        {
-          "name": "image_url",
-          "type": "text",
-          "meaning": "현재 사진의 저장소 참조 URL; 선택",
-          "nullable": true,
-          "pk": false,
-          "reference": null,
-          "default": null,
-          "json_shape": null
-        },
-        {
-          "name": "completed_at",
-          "type": "timestamptz",
-          "meaning": "명시적 프로필 등록 완료 시각. 임시 저장만으로 설정하지 않으며 재요청으로 변경하지 않음",
-          "nullable": true,
-          "pk": false,
-          "reference": null,
-          "default": null,
-          "json_shape": null
-        }
-      ],
-      "unique": [
-        [
-          "nickname_key"
-        ]
-      ],
-      "checks": [
-        "(nickname IS NULL)=(nickname_key IS NULL)"
-      ],
-      "indexes": [],
-      "service_rules": [
-        "필수값 임시 저장과 명시적 등록 완료를 구분한다. completed_at은 최초 등록 완료 때 기록하고 이후 생년월일·성별 직접 변경을 막는다."
-      ]
-    },
-    "matching_settings": {
-      "name": "matching_settings",
-      "purpose": "회원별 희망 조건·매칭 설정·키링 반영 버전",
-      "columns": [
-        {
-          "name": "user_id",
-          "type": "bigint",
-          "meaning": "회원; 공유 PK",
-          "nullable": false,
-          "pk": true,
-          "reference": "app_users.user_id",
-          "default": null,
-          "json_shape": null
-        },
-        {
-          "name": "desired_genders",
-          "type": "text[]",
-          "meaning": "희망 상대 성별; 아직 미입력인 초안이면 NULL",
-          "nullable": true,
-          "pk": false,
-          "reference": null,
-          "default": null,
-          "json_shape": null
-        },
-        {
-          "name": "age_min",
-          "type": "integer",
-          "meaning": "희망 최소 만 나이; 상관없음이면 age_max와 함께 NULL",
-          "nullable": true,
-          "pk": false,
-          "reference": null,
-          "default": null,
-          "json_shape": null
-        },
-        {
-          "name": "age_max",
-          "type": "integer",
-          "meaning": "희망 최대 만 나이; 범위의 상한 없음도 NULL",
-          "nullable": true,
-          "pk": false,
-          "reference": null,
-          "default": null,
-          "json_shape": null
-        },
-        {
-          "name": "matching_enabled",
-          "type": "boolean",
-          "meaning": "매칭 ON/OFF",
-          "nullable": false,
-          "pk": false,
-          "reference": null,
-          "default": "true",
-          "json_shape": null
-        },
-        {
-          "name": "require_partner_photo",
-          "type": "boolean",
-          "meaning": "상대 사진 필수",
-          "nullable": false,
-          "pk": false,
-          "reference": null,
-          "default": "false",
-          "json_shape": null
-        },
-        {
-          "name": "settings_version",
-          "type": "bigint",
-          "meaning": "프로필·성향·조건 변경과 키링 반영 비교용 실제 버전",
-          "nullable": false,
-          "pk": false,
-          "reference": null,
-          "default": "0",
-          "json_shape": null
-        }
-      ],
-      "unique": [],
-      "checks": [
-        "desired_genders IS NULL OR (cardinality(desired_genders) BETWEEN 1 AND 2 AND desired_genders <@ ARRAY['MALE','FEMALE']::text[])",
-        "(age_min IS NULL AND age_max IS NULL) OR (age_min IS NOT NULL AND age_min>=19 AND (age_max IS NULL OR age_max>=age_min))",
-        "settings_version>=0"
-      ],
-      "indexes": [],
-      "service_rules": [
-        "user_id가 PK. age_mode와 has_pending_changes는 저장하지 않고 조건값·반영 버전에서 계산한다.",
-        "희망 조건 저장은 한 번에 완료하는 API로 처리한다. desired_genders가 저장되고 다른 필수 조건이 검증됐을 때 완료로 판정한다. 성별 중복 선택은 서버가 제거/거절한다.",
-        "현재 서버 버전과 기기 저장 ACK 버전이 같아야 반영 완료. updated_at만으로 동기화 여부를 판정하지 않는다."
-      ]
-    },
-    "keyrings": {
-      "name": "keyrings",
-      "purpose": "실물 키링 식별·검증 정보; 37번 계약 확인",
-      "columns": [
-        {
-          "name": "device_id",
-          "type": "bigint",
-          "meaning": "내부 식별자; 서버/DB 생성",
-          "nullable": false,
-          "pk": true,
-          "reference": null,
-          "default": null,
-          "json_shape": null
-        },
-        {
-          "name": "public_device_id",
-          "type": "uuid",
-          "meaning": "API deviceId에 사용하는 불변 공개 UUID; 내부 숫자 ID와 분리",
-          "nullable": false,
-          "pk": false,
-          "reference": null,
-          "default": null,
-          "json_shape": null
-        },
-        {
-          "name": "serial_hash",
-          "type": "bytea",
-          "meaning": "기기 시리얼의 검증용 해시; 원문 미저장",
-          "nullable": false,
-          "pk": false,
-          "reference": null,
-          "default": null,
-          "json_shape": null
-        },
-        {
-          "name": "verification_key_ref",
-          "type": "text",
-          "meaning": "검증 키 참조; 비밀 키 원문 아님",
-          "nullable": false,
-          "pk": false,
-          "reference": null,
-          "default": null,
-          "json_shape": null
-        },
-        {
-          "name": "firmware_version",
-          "type": "text",
-          "meaning": "기기 펌웨어 버전",
-          "nullable": false,
-          "pk": false,
-          "reference": null,
-          "default": null,
-          "json_shape": null
-        },
-        {
-          "name": "blocked_at",
-          "type": "timestamptz",
-          "meaning": "영구 사용 불가 지정 시각; 계정 탈퇴·삭제와 무관하게 유지, 이후 어느 계정도 등록 불가",
-          "nullable": true,
-          "pk": false,
-          "reference": null,
-          "default": null,
-          "json_shape": null
-        },
-        {
-          "name": "block_reason",
-          "type": "text",
-          "meaning": "LOST(분실) / AGE_DEADLINE(연령 미달 탈퇴 기한까지 미초기화)",
-          "nullable": true,
-          "pk": false,
-          "reference": null,
-          "default": null,
-          "json_shape": null
-        }
-      ],
-      "unique": [
-        [
-          "serial_hash"
-        ],
-        [
-          "public_device_id"
-        ]
-      ],
-      "checks": [
-        "(blocked_at IS NULL)=(block_reason IS NULL)",
-        "block_reason IS NULL OR block_reason IN ('LOST','AGE_DEADLINE')"
-      ],
-      "indexes": [],
-      "service_rules": [
-        "서버가 신규 생성 시 공개 UUID를 발급하며 기존 행은 배포 전 일회성 보완한다. UUID는 소유 증명이 아니며 현재 활성 소유 연결을 검사한다."
-      ]
-    },
-    "keyring_bindings": {
-      "name": "keyring_bindings",
-      "purpose": "기기 소유 연결 이력",
-      "columns": [
-        {
-          "name": "binding_id",
-          "type": "bigint",
-          "meaning": "내부 식별자; 서버/DB 생성",
-          "nullable": false,
-          "pk": true,
-          "reference": null,
-          "default": null,
-          "json_shape": null
-        },
-        {
-          "name": "device_id",
-          "type": "bigint",
-          "meaning": "키링",
-          "nullable": false,
-          "pk": false,
-          "reference": "keyrings.device_id",
-          "default": null,
-          "json_shape": null
-        },
-        {
-          "name": "user_id",
-          "type": "bigint",
-          "meaning": "연결 회원",
-          "nullable": false,
-          "pk": false,
-          "reference": "app_users.user_id",
-          "default": null,
-          "json_shape": null
-        },
-        {
-          "name": "bound_at",
-          "type": "timestamptz",
-          "meaning": "소유 연결 시작",
-          "nullable": false,
-          "pk": false,
-          "reference": null,
-          "default": null,
-          "json_shape": null
-        },
-        {
-          "name": "unbound_at",
-          "type": "timestamptz",
-          "meaning": "연결 해제; 활성 상태면 NULL",
-          "nullable": true,
-          "pk": false,
-          "reference": null,
-          "default": null,
-          "json_shape": null
-        }
-      ],
-      "unique": [],
-      "checks": [],
-      "indexes": [
-        [
-          [
-            "device_id"
-          ],
-          "unbound_at IS NULL"
-        ],
-        [
-          [
-            "user_id"
-          ],
-          null
-        ]
-      ],
-      "service_rules": [
-        "device_id의 활성 연결은 UNIQUE 부분 인덱스로 한 개만 허용한다. 회원당 키링 개수 제한은 임의로 추가하지 않는다.",
-        "과거 만남 제출은 당시 binding으로 검증. 해제 후 과거 기록을 다른 회원에게 넘기지 않는다."
-      ]
-    },
-    "registration_challenges": {
-      "name": "registration_challenges",
-      "purpose": "일회성 키링 등록 검증; 37번 계약 확인",
-      "columns": [
-        {
-          "name": "challenge_id",
-          "type": "bigint",
-          "meaning": "내부 식별자; 서버/DB 생성",
-          "nullable": false,
-          "pk": true,
-          "reference": null,
-          "default": null,
-          "json_shape": null
-        },
-        {
-          "name": "user_id",
-          "type": "bigint",
-          "meaning": "등록을 요청한 회원",
-          "nullable": false,
-          "pk": false,
-          "reference": "app_users.user_id",
-          "default": null,
-          "json_shape": null
-        },
-        {
-          "name": "nonce_hash",
-          "type": "bytea",
-          "meaning": "검증용 일회성 값의 해시",
-          "nullable": false,
-          "pk": false,
-          "reference": null,
-          "default": null,
-          "json_shape": null
-        },
-        {
-          "name": "expires_at",
-          "type": "timestamptz",
-          "meaning": "검증 만료",
-          "nullable": false,
-          "pk": false,
-          "reference": null,
-          "default": null,
-          "json_shape": null
-        },
-        {
-          "name": "consumed_at",
-          "type": "timestamptz",
-          "meaning": "소비 완료",
-          "nullable": true,
-          "pk": false,
-          "reference": null,
-          "default": null,
-          "json_shape": null
-        }
-      ],
-      "unique": [
-        [
-          "nonce_hash"
-        ]
-      ],
-      "checks": [],
-      "indexes": [],
-      "service_rules": [
-        "현재 단계를 통과한 요청 회원에 귀속해 만료·소비를 원자 검사한다. 기기 등록 검증 계약이 다른 방식을 채택하면 해당 담당 모델에 맞춰 조정한다."
-      ]
-    },
-    "keyring_sync_runs": {
-      "name": "keyring_sync_runs",
-      "purpose": "설정 동기화 요청과 기기 저장 확인",
-      "columns": [
-        {
-          "name": "sync_run_id",
-          "type": "bigint",
-          "meaning": "내부 식별자; 서버/DB 생성",
-          "nullable": false,
-          "pk": true,
-          "reference": null,
-          "default": null,
-          "json_shape": null
-        },
-        {
-          "name": "binding_id",
-          "type": "bigint",
-          "meaning": "현재 소유 연결",
-          "nullable": false,
-          "pk": false,
-          "reference": "keyring_bindings.binding_id",
-          "default": null,
-          "json_shape": null
-        },
-        {
-          "name": "snapshot_id",
-          "type": "bigint",
-          "meaning": "반영할 불변 설정",
-          "nullable": false,
-          "pk": false,
-          "reference": "settings_snapshots.snapshot_id",
-          "default": null,
-          "json_shape": null
-        },
-        {
-          "name": "payload_hash",
-          "type": "bytea",
-          "meaning": "실제 전송할 payload와 ACK 대조용 해시",
-          "nullable": false,
-          "pk": false,
-          "reference": null,
-          "default": null,
-          "json_shape": null
-        },
-        {
-          "name": "status",
-          "type": "text",
-          "meaning": "PENDING / ACKNOWLEDGED / FAILED / SUPERSEDED",
-          "nullable": false,
-          "pk": false,
-          "reference": null,
-          "default": null,
-          "json_shape": null
-        },
-        {
-          "name": "acknowledged_at",
-          "type": "timestamptz",
-          "meaning": "기기 저장 완료 확인",
-          "nullable": true,
-          "pk": false,
-          "reference": null,
-          "default": null,
-          "json_shape": null
-        }
-      ],
-      "unique": [
-        [
-          "binding_id",
-          "snapshot_id"
-        ]
-      ],
-      "checks": [
-        "status IN ('PENDING','ACKNOWLEDGED','FAILED','SUPERSEDED')",
-        "(status='ACKNOWLEDGED')=(acknowledged_at IS NOT NULL)"
-      ],
-      "indexes": [],
-      "service_rules": [
-        "keyring_sync_runs는 UNIQUE(binding_id,snapshot_id). 실패 재시도도 같은 run을 재사용한다. 같은 run의 payload는 고정하고 변경이 필요하면 새 snapshot으로 구분한다. 클라이언트가 다른 snapshot으로 재시도한 것을 동일 요청으로 간주하지 않으며 FE·IoT 생성 계약을 맞춘다."
-      ]
-    },
-    "survey_responses": {
-      "name": "survey_responses",
-      "purpose": "설문 회차·문항별 응답·재개 상태",
-      "columns": [
-        {
-          "name": "response_id",
-          "type": "bigint",
-          "meaning": "내부 식별자; 서버/DB 생성",
-          "nullable": false,
-          "pk": true,
-          "reference": null,
-          "default": null,
-          "json_shape": null
-        },
-        {
-          "name": "public_id",
-          "type": "uuid",
-          "meaning": "외부 API sessionId; 내부 response_id와 별도인 공개 회차 UUID",
-          "nullable": false,
-          "pk": false,
-          "reference": null,
-          "default": "gen_random_uuid()",
-          "json_shape": null
-        },
-        {
-          "name": "user_id",
-          "type": "bigint",
-          "meaning": "응답 회원",
-          "nullable": false,
-          "pk": false,
-          "reference": "app_users.user_id",
-          "default": null,
-          "json_shape": null
-        },
-        {
-          "name": "version_code",
-          "type": "text",
-          "meaning": "불변 설문 정의 파일의 버전 코드; 이전 ID가 아니라 코드 문자열로 저장",
-          "nullable": false,
-          "pk": false,
-          "reference": null,
-          "default": null,
-          "json_shape": null
-        },
-        {
-          "name": "client_request_id",
-          "type": "uuid",
-          "meaning": "회차 생성 재시도 키",
-          "nullable": false,
-          "pk": false,
-          "reference": null,
-          "default": null,
-          "json_shape": null
-        },
-        {
-          "name": "response_json",
-          "type": "jsonb",
-          "meaning": "answers 객체와 필요한 metadata; 숫자·배열·코드 타입 보존",
-          "nullable": false,
-          "pk": false,
-          "reference": null,
-          "default": null,
-          "json_shape": "object"
-        },
-        {
-          "name": "revision",
-          "type": "bigint",
-          "meaning": "문항별 PATCH 경합·분석 입력 고정을 위한 실제 버전",
-          "nullable": false,
-          "pk": false,
-          "reference": null,
-          "default": "0",
-          "json_shape": null
-        },
-        {
-          "name": "completed_at",
-          "type": "timestamptz",
-          "meaning": "완료",
-          "nullable": true,
-          "pk": false,
-          "reference": null,
-          "default": null,
-          "json_shape": null
-        }
-      ],
-      "unique": [
-        [
-          "user_id",
-          "client_request_id"
-        ],
-        [
-          "public_id"
-        ]
-      ],
-      "checks": [
-        "revision>=0"
-      ],
-      "indexes": [
-        [
-          [
-            "user_id",
-            "version_code"
-          ],
-          "completed_at IS NULL"
-        ]
-      ],
-      "service_rules": [
-        "survey_responses는 completed_at IS NULL 조건으로 같은 사용자·version_code의 진행 중 회차를 하나만 허용한다. 문항 PATCH는 미완료+revision 조건부 갱신. 완료 후 원응답은 불변이며 새 응답은 새 response_id다.",
-        "CreateSession.surveyVersion을 version_code로 고정한다. sessionId=public_id로 조회하고 인증 회원의 user_id를 검사한다. 신규 UUID 코드 생성/제약 및 기존 행 backfill은 구현 확인 전이다."
-      ]
-    },
-    "analysis_results": {
-      "name": "analysis_results",
-      "purpose": "개인 성향 계산 결과·재계산 이력",
-      "columns": [
-        {
-          "name": "result_id",
-          "type": "bigint",
-          "meaning": "내부 식별자; 서버/DB 생성",
-          "nullable": false,
-          "pk": true,
-          "reference": null,
-          "default": null,
-          "json_shape": null
-        },
-        {
-          "name": "response_id",
-          "type": "bigint",
-          "meaning": "불변 완료 응답",
-          "nullable": false,
-          "pk": false,
-          "reference": "survey_responses.response_id",
-          "default": null,
-          "json_shape": null
-        },
-        {
-          "name": "version_code",
-          "type": "text",
-          "meaning": "불변 설문 정의 파일의 버전 코드; 이전 ID가 아니라 코드 문자열로 저장",
-          "nullable": false,
-          "pk": false,
-          "reference": null,
-          "default": null,
-          "json_shape": null
-        },
-        {
-          "name": "outcome",
-          "type": "text",
-          "meaning": "SUCCEEDED / INSUFFICIENT",
-          "nullable": false,
-          "pk": false,
-          "reference": null,
-          "default": null,
-          "json_shape": null
-        },
-        {
-          "name": "result_json",
-          "type": "jsonb",
-          "meaning": "점수·유형·문구·참고 유형 결과",
-          "nullable": false,
-          "pk": false,
-          "reference": null,
-          "default": null,
-          "json_shape": "object"
-        }
-      ],
-      "unique": [
-        [
-          "response_id",
-          "version_code"
-        ]
-      ],
-      "checks": [
-        "outcome IN ('SUCCEEDED','INSUFFICIENT')"
-      ],
-      "indexes": [],
-      "service_rules": [
-        "analysis_results는 UNIQUE(response_id,version_code). 분석은 완료된 불변 응답만 사용한다. 응답 수정을 허용하거나 미완료 분석을 도입한다면 response_revision을 유지해야 한다.",
-        "ai_results.job_id는 PK이자 생성 작업의 논리 참조다. AI 결과가 살아 있는 동안 작업 최소 메타데이터도 보존한다. kind→target 매핑: PERSONAL_ANALYSIS=analysis_results.result_id, MATCH_EXPLANATION=match_proposals.proposal_id, ICEBREAKERS=chat_rooms.chat_room_id, RISK_DETECTION=chat_messages.message_id. 존재·종류·소유·현재 공개 권한을 서비스가 검사한다."
-      ]
-    },
-    "settings_snapshots": {
-      "name": "settings_snapshots",
-      "purpose": "키링·오프라인 만남 당시의 설정 보존",
-      "columns": [
-        {
-          "name": "snapshot_id",
-          "type": "bigint",
-          "meaning": "내부 식별자; 서버/DB 생성",
-          "nullable": false,
-          "pk": true,
-          "reference": null,
-          "default": null,
-          "json_shape": null
-        },
-        {
-          "name": "user_id",
-          "type": "bigint",
-          "meaning": "회원",
-          "nullable": false,
-          "pk": false,
-          "reference": "app_users.user_id",
-          "default": null,
-          "json_shape": null
-        },
-        {
-          "name": "settings_version",
-          "type": "bigint",
-          "meaning": "당시 서버 설정 버전",
-          "nullable": false,
-          "pk": false,
-          "reference": null,
-          "default": null,
-          "json_shape": null
-        },
-        {
-          "name": "analysis_result_id",
-          "type": "bigint",
-          "meaning": "사용한 개인 계산 결과",
-          "nullable": false,
-          "pk": false,
-          "reference": "analysis_results.result_id",
-          "default": null,
-          "json_shape": null
-        },
-        {
-          "name": "snapshot_json",
-          "type": "jsonb",
-          "meaning": "매칭에 필요한 조건·특징값·규칙 버전·나이 기준일",
-          "nullable": false,
-          "pk": false,
-          "reference": null,
-          "default": null,
-          "json_shape": "object"
-        },
-        {
-          "name": "created_at",
-          "type": "timestamptz",
-          "meaning": "스냅샷 생성",
-          "nullable": false,
-          "pk": false,
-          "reference": null,
-          "default": null,
-          "json_shape": null
-        }
-      ],
-      "unique": [
-        [
-          "user_id",
-          "settings_version"
-        ]
-      ],
-      "checks": [
-        "settings_version>=0"
-      ],
-      "indexes": [],
-      "service_rules": [
-        "원본은 불변. 원응답 전체·토큰·원 생년월일·불필요한 개인정보를 기기 전송 문서에 포함하지 않는다.",
-        "서버 시간 기준 나이가 바뀌는 날은 재계산·설정 버전 증가·동기화 필요 여부를 판정한다. 새 규칙/분석 결과 채택도 버전을 증가시킨다."
-      ]
-    },
-    "user_pairs": {
-      "name": "user_pairs",
-      "purpose": "동일 회원 쌍·동시 처리 잠금·거절 제한",
-      "columns": [
-        {
-          "name": "pair_id",
-          "type": "bigint",
-          "meaning": "내부 식별자; 서버/DB 생성",
-          "nullable": false,
-          "pk": true,
-          "reference": null,
-          "default": null,
-          "json_shape": null
-        },
-        {
-          "name": "user_low",
-          "type": "bigint",
-          "meaning": "작은 회원 ID",
-          "nullable": false,
-          "pk": false,
-          "reference": "app_users.user_id",
-          "default": null,
-          "json_shape": null
-        },
-        {
-          "name": "user_high",
-          "type": "bigint",
-          "meaning": "큰 회원 ID",
-          "nullable": false,
-          "pk": false,
-          "reference": "app_users.user_id",
-          "default": null,
-          "json_shape": null
-        },
-        {
-          "name": "declined_until",
-          "type": "timestamptz",
-          "meaning": "명시적 거절 재제안 제한 종료",
-          "nullable": true,
-          "pk": false,
-          "reference": null,
-          "default": null,
-          "json_shape": null
-        },
-        {
-          "name": "declined_proposal_id",
-          "type": "bigint",
-          "meaning": "현재 거절 제한의 근거 제안",
-          "nullable": true,
-          "pk": false,
-          "reference": "match_proposals.proposal_id",
-          "default": null,
-          "json_shape": null
-        },
-        {
-          "name": "rematch_banned_at",
-          "type": "timestamptz",
-          "meaning": "영구 재매칭 금지 시작(나가기·7일 종료·AI 동의 철회); 방 본문이 삭제돼도 유지. 차단 종료는 여기 기록하지 않고 user_blocks로 판단(해제 시 재매칭 가능)",
-          "nullable": true,
-          "pk": false,
-          "reference": null,
-          "default": null,
-          "json_shape": null
-        }
-      ],
-      "unique": [
-        [
-          "user_low",
-          "user_high"
-        ]
-      ],
-      "checks": [
-        "user_low<user_high",
-        "(declined_until IS NULL)=(declined_proposal_id IS NULL)"
-      ],
-      "indexes": [],
-      "service_rules": [
-        "거절 제한은 최초 실제 거절 시각+30일. 같은 제안 재시도는 기간을 연장하지 않는다. 별도 방향성 차단은 user_blocks에서 판정한다.",
-        "쌍→제안→방 순서로 잠금. 퇴장 영구 제한·자동 재매칭 등 미정 정책은 이 컬럼으로 임의 도입하지 않는다."
-      ]
-    },
-    "encounters": {
-      "name": "encounters",
-      "purpose": "양쪽 제출을 묶는 만남·최종 판정",
-      "columns": [
-        {
-          "name": "encounter_id",
-          "type": "bigint",
-          "meaning": "내부 식별자; 서버/DB 생성",
-          "nullable": false,
-          "pk": true,
-          "reference": null,
-          "default": null,
-          "json_shape": null
-        },
-        {
-          "name": "pair_id",
-          "type": "bigint",
-          "meaning": "당사자 쌍",
-          "nullable": false,
-          "pk": false,
-          "reference": "user_pairs.pair_id",
-          "default": null,
-          "json_shape": null
-        },
-        {
-          "name": "event_key",
-          "type": "text",
-          "meaning": "양쪽 증명에서 동일 만남을 연결할 검증된 키; 37번 형식 확인",
-          "nullable": false,
-          "pk": false,
-          "reference": null,
-          "default": null,
-          "json_shape": null
-        },
-        {
-          "name": "occurred_at",
-          "type": "timestamptz",
-          "meaning": "검증된 만남 발생 시각",
-          "nullable": false,
-          "pk": false,
-          "reference": null,
-          "default": null,
-          "json_shape": null
-        },
-        {
-          "name": "opportunity_expires_at",
-          "type": "timestamptz",
-          "meaning": "만남 기회 만료",
-          "nullable": false,
-          "pk": false,
-          "reference": null,
-          "default": null,
-          "json_shape": null
-        },
-        {
-          "name": "counterpart_deadline_at",
-          "type": "timestamptz",
-          "meaning": "상대 제출 대기 기한",
-          "nullable": false,
-          "pk": false,
-          "reference": null,
-          "default": null,
-          "json_shape": null
-        },
-        {
-          "name": "status",
-          "type": "text",
-          "meaning": "WAITING_FOR_COUNTERPART / EVALUATED / PROPOSED / NOT_MATCHED / EXPIRED_UNPAIRED / REJECTED_INVALID",
-          "nullable": false,
-          "pk": false,
-          "reference": null,
-          "default": null,
-          "json_shape": null
-        },
-        {
-          "name": "evaluation_version_code",
-          "type": "text",
-          "meaning": "불변 설문 정의 파일의 버전 코드; 이전 ID가 아니라 코드 문자열로 저장",
-          "nullable": true,
-          "pk": false,
-          "reference": null,
-          "default": null,
-          "json_shape": null
-        },
-        {
-          "name": "evaluation_json",
-          "type": "jsonb",
-          "meaning": "최종 판정·각 방향 점수/coverage·제외/미해결 사유",
-          "nullable": true,
-          "pk": false,
-          "reference": null,
-          "default": null,
-          "json_shape": "object"
-        }
-      ],
-      "unique": [
-        [
-          "pair_id",
-          "event_key"
-        ]
-      ],
-      "checks": [
-        "counterpart_deadline_at<=opportunity_expires_at",
-        "(evaluation_json IS NULL)=(evaluation_version_code IS NULL)"
-      ],
-      "indexes": [],
-      "service_rules": []
-    },
-    "encounter_submissions": {
-      "name": "encounter_submissions",
-      "purpose": "각 기기의 제출·재전송·증명",
-      "columns": [
-        {
-          "name": "receipt_id",
-          "type": "bigint",
-          "meaning": "내부 식별자; 서버/DB 생성",
-          "nullable": false,
-          "pk": true,
-          "reference": null,
-          "default": null,
-          "json_shape": null
-        },
-        {
-          "name": "encounter_id",
-          "type": "bigint",
-          "meaning": "만남",
-          "nullable": false,
-          "pk": false,
-          "reference": "encounters.encounter_id",
-          "default": null,
-          "json_shape": null
-        },
-        {
-          "name": "binding_id",
-          "type": "bigint",
-          "meaning": "당시 소유 연결",
-          "nullable": false,
-          "pk": false,
-          "reference": "keyring_bindings.binding_id",
-          "default": null,
-          "json_shape": null
-        },
-        {
-          "name": "snapshot_id",
-          "type": "bigint",
-          "meaning": "당시 기기 반영 설정",
-          "nullable": false,
-          "pk": false,
-          "reference": "settings_snapshots.snapshot_id",
-          "default": null,
-          "json_shape": null
-        },
-        {
-          "name": "submission_id",
-          "type": "uuid",
-          "meaning": "기기 측 제출 재시도 키",
-          "nullable": false,
-          "pk": false,
-          "reference": null,
-          "default": null,
-          "json_shape": null
-        },
-        {
-          "name": "proof_json",
-          "type": "jsonb",
-          "meaning": "검증에 필요한 서명·증명 데이터만; 37번 형식 확인",
-          "nullable": false,
-          "pk": false,
-          "reference": null,
-          "default": null,
-          "json_shape": "object"
-        },
-        {
-          "name": "received_at",
-          "type": "timestamptz",
-          "meaning": "서버 접수 시각",
-          "nullable": false,
-          "pk": false,
-          "reference": null,
-          "default": null,
-          "json_shape": null
-        }
-      ],
-      "unique": [
-        [
-          "binding_id",
-          "submission_id"
-        ],
-        [
-          "encounter_id",
-          "binding_id"
-        ]
-      ],
-      "checks": [],
-      "indexes": [],
-      "service_rules": [
-        "encounter_submissions는 UNIQUE(binding_id,submission_id)와 UNIQUE(encounter_id,binding_id)를 유지한다. 요청의 수락하는 모든 필드는 기존 행/만남/스냅샷/proof_json에서 정규화 비교 가능해야 한다. 비교하지 못하는 필드가 있다면 request_hash를 유지한다. proof의 서명 검증은 그대로다."
-      ]
-    },
-    "match_proposals": {
-      "name": "match_proposals",
-      "purpose": "제안·고정 두 사람의 선택·방 연결",
-      "columns": [
-        {
-          "name": "proposal_id",
-          "type": "bigint",
-          "meaning": "내부 식별자; 서버/DB 생성",
-          "nullable": false,
-          "pk": true,
-          "reference": null,
-          "default": null,
-          "json_shape": null
-        },
-        {
-          "name": "pair_id",
-          "type": "bigint",
-          "meaning": "당사자 쌍",
-          "nullable": false,
-          "pk": false,
-          "reference": "user_pairs.pair_id",
-          "default": null,
-          "json_shape": null
-        },
-        {
-          "name": "encounter_id",
-          "type": "bigint",
-          "meaning": "제안이 생긴 만남",
-          "nullable": false,
-          "pk": false,
-          "reference": "encounters.encounter_id",
-          "default": null,
-          "json_shape": null
-        },
-        {
-          "name": "low_decision",
-          "type": "text",
-          "meaning": "user_low의 ACCEPT / DECLINE; 미선택 NULL",
-          "nullable": true,
-          "pk": false,
-          "reference": null,
-          "default": null,
-          "json_shape": null
-        },
-        {
-          "name": "high_decision",
-          "type": "text",
-          "meaning": "user_high의 ACCEPT / DECLINE; 미선택 NULL",
-          "nullable": true,
-          "pk": false,
-          "reference": null,
-          "default": null,
-          "json_shape": null
-        },
-        {
-          "name": "low_decided_at",
-          "type": "timestamptz",
-          "meaning": "user_low 최초 결정",
-          "nullable": true,
-          "pk": false,
-          "reference": null,
-          "default": null,
-          "json_shape": null
-        },
-        {
-          "name": "high_decided_at",
-          "type": "timestamptz",
-          "meaning": "user_high 최초 결정",
-          "nullable": true,
-          "pk": false,
-          "reference": null,
-          "default": null,
-          "json_shape": null
-        },
-        {
-          "name": "low_request_key",
-          "type": "uuid",
-          "meaning": "low 최초 실제 선택의 멱등 키; 제안 보관 동안 유지",
-          "nullable": true,
-          "pk": false,
-          "reference": null,
-          "default": null,
-          "json_shape": null
-        },
-        {
-          "name": "high_request_key",
-          "type": "uuid",
-          "meaning": "high 최초 실제 선택의 멱등 키; 제안 보관 동안 유지",
-          "nullable": true,
-          "pk": false,
-          "reference": null,
-          "default": null,
-          "json_shape": null
-        },
-        {
-          "name": "status",
-          "type": "text",
-          "meaning": "PENDING / WAITING_FOR_OTHER / ACCEPTED / REJECTED / EXPIRED",
-          "nullable": false,
-          "pk": false,
-          "reference": null,
-          "default": null,
-          "json_shape": null
-        },
-        {
-          "name": "created_at",
-          "type": "timestamptz",
-          "meaning": "제안 생성",
-          "nullable": false,
-          "pk": false,
-          "reference": null,
-          "default": null,
-          "json_shape": null
-        },
-        {
-          "name": "expires_at",
-          "type": "timestamptz",
-          "meaning": "생성+24시간",
-          "nullable": false,
-          "pk": false,
-          "reference": null,
-          "default": null,
-          "json_shape": null
-        },
-        {
-          "name": "chat_room_id",
-          "type": "bigint",
-          "meaning": "실제로 생성된 방; 생성 전 NULL",
-          "nullable": true,
-          "pk": false,
-          "reference": "chat_rooms.chat_room_id",
-          "default": null,
-          "json_shape": null
-        },
-        {
-          "name": "low_cancelled_at",
-          "type": "timestamptz",
-          "meaning": "낮은 회원번호 당사자의 최초 수락 취소 시각; 최초 수락 기록 보존",
-          "nullable": true,
-          "pk": false,
-          "reference": null,
-          "default": null,
-          "json_shape": null
-        },
-        {
-          "name": "high_cancelled_at",
-          "type": "timestamptz",
-          "meaning": "높은 회원번호 당사자의 최초 수락 취소 시각; 최초 수락 기록 보존",
-          "nullable": true,
-          "pk": false,
-          "reference": null,
-          "default": null,
-          "json_shape": null
-        },
-        {
-          "name": "low_cancel_request_key",
-          "type": "uuid",
-          "meaning": "낮은 회원번호 당사자의 최초 취소 멱등 키; 수락/거절 키와 별도",
-          "nullable": true,
-          "pk": false,
-          "reference": null,
-          "default": null,
-          "json_shape": null
-        },
-        {
-          "name": "high_cancel_request_key",
-          "type": "uuid",
-          "meaning": "높은 회원번호 당사자의 최초 취소 멱등 키; 수락/거절 키와 별도",
-          "nullable": true,
-          "pk": false,
-          "reference": null,
-          "default": null,
-          "json_shape": null
-        }
-      ],
-      "unique": [
-        [
-          "encounter_id"
-        ]
-      ],
-      "checks": [
-        "low_decision IS NULL OR low_decision IN ('ACCEPT','DECLINE')",
-        "high_decision IS NULL OR high_decision IN ('ACCEPT','DECLINE')",
-        "(low_decision IS NULL)=(low_decided_at IS NULL)",
-        "(high_decision IS NULL)=(high_decided_at IS NULL)",
-        "status IN ('PENDING','WAITING_FOR_OTHER','ACCEPTED','REJECTED','EXPIRED','CLOSED')",
-        "expires_at=created_at+interval '24 hours'",
-        "(low_decision IS NULL)=(low_request_key IS NULL)",
-        "(high_decision IS NULL)=(high_request_key IS NULL)"
-      ],
-      "indexes": [
-        [
-          [
-            "pair_id"
-          ],
-          "status IN ('PENDING','WAITING_FOR_OTHER')"
-        ],
-        [
-          [
-            "pair_id",
-            "created_at DESC",
-            "proposal_id DESC"
-          ],
-          null
-        ],
-        [
-          [
-            "low_request_key"
-          ],
-          null
-        ],
-        [
-          [
-            "high_request_key"
-          ],
-          null
-        ]
-      ],
-      "service_rules": [
-        "match_proposals.resolved_at 응답값은 계산 가능하다. REJECTED면 DECLINE인 시각 중 가장 이른 값, ACCEPTED면 양쪽 수락 시각 중 늦은 값, EXPIRED면 expires_at. user_pairs의 거절 제한은 첫 실제 거절+30일로 기록하며 재시도로 갱신하지 않는다.",
-        "ai_results.job_id는 PK이자 생성 작업의 논리 참조다. AI 결과가 살아 있는 동안 작업 최소 메타데이터도 보존한다. kind→target 매핑: PERSONAL_ANALYSIS=analysis_results.result_id, MATCH_EXPLANATION=match_proposals.proposal_id, ICEBREAKERS=chat_rooms.chat_room_id, RISK_DETECTION=chat_messages.message_id. 존재·종류·소유·현재 공개 권한을 서비스가 검사한다.",
-        "수락·거절의 Idempotency-Key는 UUID 필수다. 사용자별 최초 실제 선택의 키를 low_request_key/high_request_key에 선택·시각과 원자 저장하고 제안 보관 동안 유지한다. 같은 키를 다른 제안·다른 선택에 재사용하면 409 IDEMPOTENCY_CONFLICT다. 같은 선택의 재시도는 현재 상태를 반환하며 최초 시각·30일 제한을 연장하지 않는다. 이미 선택한 뒤 새 키로 같은 선택을 보내면 상태만 반환하고 새 키는 저장·소비하지 않는다. 사용자 행→쌍→제안 순서로 잠가 다른 제안 간 키 경합도 직렬화한다. 키는 사용자별이므로 다른 사용자와 같아도 된다. 과거 응답 바이트를 재생하는 방식은 아니다."
-      ]
-    },
-    "chat_rooms": {
-      "name": "chat_rooms",
-      "purpose": "7일 대화와 종료 후 30일 보관",
-      "columns": [
-        {
-          "name": "chat_room_id",
-          "type": "bigint",
-          "meaning": "내부 식별자; 서버/DB 생성",
-          "nullable": false,
-          "pk": true,
-          "reference": null,
-          "default": null,
-          "json_shape": null
-        },
-        {
-          "name": "pair_id",
-          "type": "bigint",
-          "meaning": "당사자 쌍",
-          "nullable": false,
-          "pk": false,
-          "reference": "user_pairs.pair_id",
-          "default": null,
-          "json_shape": null
-        },
-        {
-          "name": "created_at",
-          "type": "timestamptz",
-          "meaning": "최초 실제 방 생성",
-          "nullable": false,
-          "pk": false,
-          "reference": null,
-          "default": null,
-          "json_shape": null
-        },
-        {
-          "name": "expires_at",
-          "type": "timestamptz",
-          "meaning": "created_at+168시간",
-          "nullable": false,
-          "pk": false,
-          "reference": null,
-          "default": null,
-          "json_shape": null
-        },
-        {
-          "name": "closed_at",
-          "type": "timestamptz",
-          "meaning": "실제 종료 효력; 정상 자동 종료는 expires_at",
-          "nullable": true,
-          "pk": false,
-          "reference": null,
-          "default": null,
-          "json_shape": null
-        },
-        {
-          "name": "delete_at",
-          "type": "timestamptz",
-          "meaning": "closed_at+720시간",
-          "nullable": true,
-          "pk": false,
-          "reference": null,
-          "default": null,
-          "json_shape": null
-        },
-        {
-          "name": "last_sequence",
-          "type": "bigint",
-          "meaning": "방별 메시지 순번 발급",
-          "nullable": false,
-          "pk": false,
-          "reference": null,
-          "default": "0",
-          "json_shape": null
-        },
-        {
-          "name": "public_id",
-          "type": "uuid",
-          "meaning": "외부 chatRoomId; 내부 bigint와 별도, 서버 생성·불변",
-          "nullable": false,
-          "pk": false,
-          "reference": null,
-          "default": null,
-          "json_shape": null
-        },
-        {
-          "name": "source_proposal_id",
-          "type": "bigint",
-          "meaning": "최초 방 생성 제안; 업무 고유키",
-          "nullable": false,
-          "pk": false,
-          "reference": "match_proposals.proposal_id",
-          "default": null,
-          "json_shape": null
-        }
-      ],
-      "unique": [],
-      "checks": [
-        "expires_at=created_at+interval '168 hours'",
-        "last_sequence>=0",
-        "(closed_at IS NULL AND delete_at IS NULL) OR (closed_at IS NOT NULL AND delete_at>closed_at)"
-      ],
-      "indexes": [
-        [
-          [
-            "pair_id"
-          ],
-          "closed_at IS NULL"
-        ],
-        [
-          [
-            "expires_at"
-          ],
-          "closed_at IS NULL"
-        ],
-        [
-          [
-            "delete_at"
-          ],
-          "closed_at IS NOT NULL"
-        ]
-      ],
-      "service_rules": [
-        "chat_rooms의 상태는 closed_at IS NOT NULL 또는 now>=expires_at이면 CLOSED. 활성 방의 UNIQUE(pair_id) 부분 조건은 closed_at IS NULL로 바꾼다. 배치가 늦은 만료 행은 pair 잠금 아래 정확한 expires_at으로 닫은 뒤 후속 작업을 등록한다.",
-        "ai_results.job_id는 PK이자 생성 작업의 논리 참조다. AI 결과가 살아 있는 동안 작업 최소 메타데이터도 보존한다. kind→target 매핑: PERSONAL_ANALYSIS=analysis_results.result_id, MATCH_EXPLANATION=match_proposals.proposal_id, ICEBREAKERS=chat_rooms.chat_room_id, RISK_DETECTION=chat_messages.message_id. 존재·종류·소유·현재 공개 권한을 서비스가 검사한다."
-      ]
-    },
-    "chat_members": {
-      "name": "chat_members",
-      "purpose": "참여자별 입장·두 안내의 표시 확인",
-      "columns": [
-        {
-          "name": "chat_room_id",
-          "type": "bigint",
-          "meaning": "방; 복합 PK",
-          "nullable": false,
-          "pk": true,
-          "reference": "chat_rooms.chat_room_id",
-          "default": null,
-          "json_shape": null
-        },
-        {
-          "name": "user_id",
-          "type": "bigint",
-          "meaning": "참여 회원; 복합 PK",
-          "nullable": false,
-          "pk": true,
-          "reference": "app_users.user_id",
-          "default": null,
-          "json_shape": null
-        },
-        {
-          "name": "left_at",
-          "type": "timestamptz",
-          "meaning": "허용된 퇴장 시각; 정책 미정이면 기록하지 않음",
-          "nullable": true,
-          "pk": false,
-          "reference": null,
-          "default": null,
-          "json_shape": null
-        },
-        {
-          "name": "first_notice_acked_at",
-          "type": "timestamptz",
-          "meaning": "첫 입장 안내 표시 확인",
-          "nullable": true,
-          "pk": false,
-          "reference": null,
-          "default": null,
-          "json_shape": null
-        },
-        {
-          "name": "end_notice_acked_at",
-          "type": "timestamptz",
-          "meaning": "종료 1시간 전 안내 표시 확인",
-          "nullable": true,
-          "pk": false,
-          "reference": null,
-          "default": null,
-          "json_shape": null
-        }
-      ],
-      "unique": [],
-      "checks": [],
-      "indexes": [
-        [
-          [
-            "user_id",
-            "chat_room_id"
-          ],
-          null
-        ]
-      ],
-      "service_rules": [
-        "chat_members는 joined_at=방 생성 시각으로 취급한다. 최초 입장은 FIRST_ENTRY:{room}:{user} 고유 작업 생성으로 기억하고 그 작업은 방의 수명 동안 유지한다. 두 표시 ACK와 푸시 전달 성공을 구분한다. first_entered_at 표시/통계가 요구되면 별도 유지한다."
-      ]
-    },
-    "chat_messages": {
-      "name": "chat_messages",
-      "purpose": "메시지와 순서·재전송 키",
-      "columns": [
-        {
-          "name": "message_id",
-          "type": "bigint",
-          "meaning": "서버가 저장한 메시지의 고유 번호",
-          "nullable": false,
-          "pk": true,
-          "reference": null,
-          "default": null,
-          "json_shape": null
-        },
-        {
-          "name": "chat_room_id",
-          "type": "bigint",
-          "meaning": "방",
-          "nullable": false,
-          "pk": false,
-          "reference": "chat_rooms.chat_room_id",
-          "default": null,
-          "json_shape": null
-        },
-        {
-          "name": "sender_id",
-          "type": "bigint",
-          "meaning": "검증된 보낸 회원",
-          "nullable": false,
-          "pk": false,
-          "reference": "app_users.user_id",
-          "default": null,
-          "json_shape": null
-        },
-        {
-          "name": "client_message_id",
-          "type": "uuid",
-          "meaning": "앱이 보내기 전에 만드는 전송 구분 번호; 재전송 중복 저장 방지",
-          "nullable": false,
-          "pk": false,
-          "reference": null,
-          "default": null,
-          "json_shape": null
-        },
-        {
-          "name": "sequence",
-          "type": "bigint",
-          "meaning": "해당 채팅방 안에서의 메시지 순서 번호; 정렬·재접속 조회에 사용",
-          "nullable": false,
-          "pk": false,
-          "reference": null,
-          "default": null,
-          "json_shape": null
-        },
-        {
-          "name": "body",
-          "type": "text",
-          "meaning": "메시지 본문",
-          "nullable": false,
-          "pk": false,
-          "reference": null,
-          "default": null,
-          "json_shape": null
-        },
-        {
-          "name": "created_at",
-          "type": "timestamptz",
-          "meaning": "서버 저장",
-          "nullable": false,
-          "pk": false,
-          "reference": null,
-          "default": null,
-          "json_shape": null
-        },
-        {
-          "name": "public_id",
-          "type": "uuid",
-          "meaning": "외부 messageId; 서버 생성·불변",
-          "nullable": false,
-          "pk": false,
-          "reference": null,
-          "default": null,
-          "json_shape": null
-        },
-        {
-          "name": "request_key",
-          "type": "uuid",
-          "meaning": "발신자 단위 메시지 전송 Idempotency-Key",
-          "nullable": false,
-          "pk": false,
-          "reference": null,
-          "default": null,
-          "json_shape": null
-        },
-        {
-          "name": "request_hash",
-          "type": "text",
-          "meaning": "LF 정규화 원문의 SHA-256; 중복/충돌 검사 전용, 원문 본문 별도 저장 안 함",
-          "nullable": false,
-          "pk": false,
-          "reference": null,
-          "default": null,
-          "json_shape": null
-        }
-      ],
-      "unique": [
-        [
-          "chat_room_id",
-          "sender_id",
-          "client_message_id"
-        ],
-        [
-          "chat_room_id",
-          "sequence"
-        ]
-      ],
-      "checks": [
-        "sequence>0"
-      ],
-      "indexes": [],
-      "service_rules": [
-        "방 잠금 후 현재 참여·기한을 다시 검사하고 last_sequence 발급과 저장을 원자 처리한다.",
-        "동일 client_message_id와 같은 본문이면 기존 메시지 반환, 다른 본문은 409. 본문 길이·공백·개행 정책은 채팅 API 계약으로 검증한다."
-      ]
-    },
-    "user_blocks": {
-      "name": "user_blocks",
-      "purpose": "방향성 차단과 해제",
-      "columns": [
-        {
-          "name": "block_id",
-          "type": "bigint",
-          "meaning": "내부 식별자; 서버/DB 생성",
-          "nullable": false,
-          "pk": true,
-          "reference": null,
-          "default": null,
-          "json_shape": null
-        },
-        {
-          "name": "blocker_id",
-          "type": "bigint",
-          "meaning": "차단한 회원",
-          "nullable": false,
-          "pk": false,
-          "reference": "app_users.user_id",
-          "default": null,
-          "json_shape": null
-        },
-        {
-          "name": "blocked_id",
-          "type": "bigint",
-          "meaning": "차단된 회원",
-          "nullable": false,
-          "pk": false,
-          "reference": "app_users.user_id",
-          "default": null,
-          "json_shape": null
-        },
-        {
-          "name": "created_at",
-          "type": "timestamptz",
-          "meaning": "차단",
-          "nullable": false,
-          "pk": false,
-          "reference": null,
-          "default": null,
-          "json_shape": null
-        }
-      ],
-      "unique": [
-        [
-          "blocker_id",
-          "blocked_id"
-        ]
-      ],
-      "checks": [
-        "blocker_id<>blocked_id"
-      ],
-      "indexes": [],
-      "service_rules": [
-        "user_blocks는 UNIQUE(blocker_id,blocked_id). 해제 시 행을 실제로 지우는 향후 구현안이며 이번 작업에서 데이터를 삭제하지 않았다. 차단/해제 이력이 필요해지면 revoked_at을 유지해야 한다."
-      ]
-    },
-    "reports": {
-      "name": "reports",
-      "purpose": "신고 접수와 처리 상태",
-      "columns": [
-        {
-          "name": "report_id",
-          "type": "bigint",
-          "meaning": "내부 식별자; 서버/DB 생성",
-          "nullable": false,
-          "pk": true,
-          "reference": null,
-          "default": null,
-          "json_shape": null
-        },
-        {
-          "name": "reporter_id",
-          "type": "bigint",
-          "meaning": "신고자",
-          "nullable": false,
-          "pk": false,
-          "reference": "app_users.user_id",
-          "default": null,
-          "json_shape": null
-        },
-        {
-          "name": "target_type",
-          "type": "text",
-          "meaning": "PROPOSAL / CHAT_ROOM / MESSAGE",
-          "nullable": false,
-          "pk": false,
-          "reference": null,
-          "default": null,
-          "json_shape": null
-        },
-        {
-          "name": "target_id",
-          "type": "bigint",
-          "meaning": "target_type에 해당하는 내부 ID",
-          "nullable": false,
-          "pk": false,
-          "reference": null,
-          "default": null,
-          "json_shape": null
-        },
-        {
-          "name": "reason",
-          "type": "text",
-          "meaning": "신고 사유 코드",
-          "nullable": false,
-          "pk": false,
-          "reference": null,
-          "default": null,
-          "json_shape": null
-        },
-        {
-          "name": "detail",
-          "type": "text",
-          "meaning": "추가 설명; 선택",
-          "nullable": true,
-          "pk": false,
-          "reference": null,
-          "default": null,
-          "json_shape": null
-        },
-        {
-          "name": "status",
-          "type": "text",
-          "meaning": "RECEIVED / REVIEWING / RESOLVED",
-          "nullable": false,
-          "pk": false,
-          "reference": null,
-          "default": null,
-          "json_shape": null
-        },
-        {
-          "name": "created_at",
-          "type": "timestamptz",
-          "meaning": "접수",
-          "nullable": false,
-          "pk": false,
-          "reference": null,
-          "default": null,
-          "json_shape": null
-        },
-        {
-          "name": "resolved_at",
-          "type": "timestamptz",
-          "meaning": "조치 완료(RESOLVED) 또는 기각(DISMISSED) 시각; 기각 시 보관 단축 계산",
-          "nullable": true,
-          "pk": false,
-          "reference": null,
-          "default": null,
-          "json_shape": null
-        }
-      ],
-      "unique": [
-        [
-          "reporter_id",
-          "target_type",
-          "target_id",
-          "reason"
-        ]
-      ],
-      "checks": [
-        "target_type IN ('PROPOSAL','CHAT_ROOM','MESSAGE')",
-        "status IN ('RECEIVED','REVIEWING','RESOLVED','DISMISSED')",
-        "(status IN ('RESOLVED','DISMISSED'))=(resolved_at IS NOT NULL)"
-      ],
-      "indexes": [],
-      "service_rules": [
-        "다형 참조는 target_type별 존재·당사자 권한을 서비스가 확인한다. 대상 삭제 후 신고 본문/증거를 임의 보존하거나 같이 지우지 않고 신고 보관 정책을 먼저 정한다.",
-        "기본적으로 메시지 원문 사본을 신고 행에 넣지 않는다. 임의의 사용자 ID로 타인을 신고 대상 자원처럼 조회하지 않는다."
-      ]
-    },
-    "report_messages": {
-      "name": "report_messages",
-      "purpose": "신고에 첨부한 메시지(0~5개)",
-      "columns": [
-        {
-          "name": "report_id",
-          "type": "bigint",
-          "meaning": "신고",
-          "nullable": false,
-          "pk": true,
-          "reference": "reports.report_id",
-          "default": null,
-          "json_shape": null
-        },
-        {
-          "name": "message_id",
-          "type": "bigint",
-          "meaning": "선택한 메시지",
-          "nullable": false,
-          "pk": true,
-          "reference": "chat_messages.message_id",
-          "default": null,
-          "json_shape": null
-        }
-      ],
-      "unique": [],
-      "checks": [],
-      "indexes": [],
-      "service_rules": [
-        "신고 1건당 최대 5개는 서비스가 검사한다. 메시지 본문 사본을 두지 않는다."
-      ]
-    },
-    "ai_results": {
-      "name": "ai_results",
-      "purpose": "AI 생성 결과와 위험 분석 결과 한 곳",
-      "columns": [
-        {
-          "name": "job_id",
-          "type": "bigint",
-          "meaning": "생성 작업 ID이자 결과 PK; 별도 IDENTITY 값을 생성하지 않음",
-          "nullable": false,
-          "pk": true,
-          "reference": "background_jobs.job_id",
-          "default": null,
-          "json_shape": null
-        },
-        {
-          "name": "kind",
-          "type": "text",
-          "meaning": "PERSONAL_ANALYSIS / MATCH_EXPLANATION / ICEBREAKERS / RISK_DETECTION",
-          "nullable": false,
-          "pk": false,
-          "reference": null,
-          "default": null,
-          "json_shape": null
-        },
-        {
-          "name": "user_id",
-          "type": "bigint",
-          "meaning": "요청 또는 분석 적용 회원",
-          "nullable": false,
-          "pk": false,
-          "reference": "app_users.user_id",
-          "default": null,
-          "json_shape": null
-        },
-        {
-          "name": "target_id",
-          "type": "bigint",
-          "nullable": false,
-          "pk": false,
-          "reference": null,
-          "default": null,
-          "json_shape": null,
-          "meaning": "kind별 분석 결과/제안/방/메시지 ID; 다형 참조"
-        },
-        {
-          "name": "result_json",
-          "type": "jsonb",
-          "meaning": "생성 문구 또는 위험 분류·신뢰도",
-          "nullable": false,
-          "pk": false,
-          "reference": null,
-          "default": null,
-          "json_shape": "object"
-        },
-        {
-          "name": "model_version",
-          "type": "text",
-          "meaning": "실제 사용 모델 식별/버전",
-          "nullable": false,
-          "pk": false,
-          "reference": null,
-          "default": null,
-          "json_shape": null
-        },
-        {
-          "name": "prompt_version",
-          "type": "text",
-          "meaning": "실제 프롬프트 버전",
-          "nullable": false,
-          "pk": false,
-          "reference": null,
-          "default": null,
-          "json_shape": null
-        },
-        {
-          "name": "created_at",
-          "type": "timestamptz",
-          "meaning": "결과 생성",
-          "nullable": false,
-          "pk": false,
-          "reference": null,
-          "default": null,
-          "json_shape": null
-        }
-      ],
-      "unique": [],
-      "checks": [
-        "kind IN ('PERSONAL_ANALYSIS','MATCH_EXPLANATION','ICEBREAKERS','RISK_DETECTION')"
-      ],
-      "indexes": [
-        [
-          [
-            "kind",
-            "target_id"
-          ],
-          null
-        ]
-      ],
-      "service_rules": [
-        "ai_results.job_id는 PK이자 생성 작업의 논리 참조다. AI 결과가 살아 있는 동안 작업 최소 메타데이터도 보존한다. kind→target 매핑: PERSONAL_ANALYSIS=analysis_results.result_id, MATCH_EXPLANATION=match_proposals.proposal_id, ICEBREAKERS=chat_rooms.chat_room_id, RISK_DETECTION=chat_messages.message_id. 존재·종류·소유·현재 공개 권한을 서비스가 검사한다."
-      ]
-    },
-    "push_installations": {
-      "name": "push_installations",
-      "purpose": "앱 설치별 푸시 전달 주소",
-      "columns": [
-        {
-          "name": "installation_id",
-          "type": "bigint",
-          "meaning": "내부 식별자; 서버/DB 생성",
-          "nullable": false,
-          "pk": true,
+          "increment": true,
+          "unique": false,
           "reference": null,
           "default": null,
           "json_shape": null
@@ -2310,9 +332,11 @@
         {
           "name": "client_installation_id",
           "type": "uuid",
-          "meaning": "앱 설치 식별자; 인증 자격 아님",
+          "meaning": "앱 설치 ID — 앱이 발급, 재설치 전까지 유지",
           "nullable": false,
           "pk": false,
+          "increment": false,
+          "unique": true,
           "reference": null,
           "default": null,
           "json_shape": null
@@ -2320,19 +344,35 @@
         {
           "name": "user_id",
           "type": "bigint",
-          "meaning": "현재 연결 회원",
-          "nullable": false,
+          "meaning": "연결된 회원 ID — 로그아웃하면 비움",
+          "nullable": true,
           "pk": false,
-          "reference": "app_users.user_id",
+          "increment": false,
+          "unique": false,
+          "reference": "users.id",
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "login_family_id",
+          "type": "uuid",
+          "meaning": "연결된 로그인 기기 — refresh_token.family_id. 그 로그인이 끝나면 비움. 알림 기기 목록 기준",
+          "nullable": true,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
           "default": null,
           "json_shape": null
         },
         {
           "name": "platform",
-          "type": "text",
-          "meaning": "ANDROID / IOS",
+          "type": "device_platform",
+          "meaning": "기기 종류 — ANDROID / IOS",
           "nullable": false,
           "pk": false,
+          "increment": false,
+          "unique": false,
           "reference": null,
           "default": null,
           "json_shape": null
@@ -2340,9 +380,11 @@
         {
           "name": "token_ciphertext",
           "type": "text",
-          "meaning": "복호화해 전송에 사용하는 암호화 푸시 토큰",
+          "meaning": "푸시 토큰 — 암호화한 FCM 토큰",
           "nullable": false,
           "pk": false,
+          "increment": false,
+          "unique": false,
           "reference": null,
           "default": null,
           "json_shape": null
@@ -2350,316 +392,1540 @@
         {
           "name": "updated_at",
           "type": "timestamptz",
-          "meaning": "토큰/계정 연결 갱신",
+          "meaning": "마지막 갱신 시각",
           "nullable": false,
           "pk": false,
-          "reference": null,
-          "default": null,
-          "json_shape": null
-        },
-        {
-          "name": "login_family_id",
-          "type": "uuid",
-          "meaning": "등록 JWT sid의 refresh family; 로그아웃·계정 전환 발송 재검사",
-          "nullable": true,
-          "pk": false,
-          "reference": null,
-          "default": null,
-          "json_shape": null
-        },
-        {
-          "name": "binding_id",
-          "type": "uuid",
-          "meaning": "설치의 계정/로그인 연결 버전; 지연 알림 검증",
-          "nullable": true,
-          "pk": false,
-          "reference": null,
-          "default": null,
-          "json_shape": null
-        },
-        {
-          "name": "linked_at",
-          "type": "timestamptz",
-          "meaning": "현재 계정/세션 연결 시작; 재로그인 뒤 과거 알림 재발송 금지",
-          "nullable": true,
-          "pk": false,
+          "increment": false,
+          "unique": false,
           "reference": null,
           "default": null,
           "json_shape": null
         }
       ],
-      "unique": [
-        [
-          "client_installation_id"
-        ]
-      ],
-      "checks": [
-        "platform IN ('ANDROID','IOS')"
-      ],
-      "indexes": [
-        [
-          [
-            "user_id"
-          ],
-          null
-        ]
-      ],
-      "service_rules": [
-        "로그인·현재 설치 소유 관계를 검증해 등록하고 로그아웃/계정 전환에서 해제·재연결한다. 설치 UUID를 본인 인증 수단으로 사용하지 않는다.",
-        "푸시 토큰 원문은 로그·작업 payload에 남기지 않는다. 푸시 내용은 자원 조회를 위한 최소 식별 정보만 보낸다."
-      ]
+      "indexes": []
     },
-    "background_jobs": {
-      "name": "background_jobs",
-      "purpose": "안내·AI·삭제의 실제 예약·실패 재시도",
+    "operator_audit": {
+      "name": "operator_audit",
+      "purpose": "운영자 활동 기록 — 운영자가 회원 정보를 보거나 고치거나 권한을 바꾼 일을 남기는 기록",
       "columns": [
         {
-          "name": "job_id",
+          "name": "id",
           "type": "bigint",
-          "meaning": "내부 식별자; 서버/DB 생성",
+          "meaning": "기록 번호",
           "nullable": false,
           "pk": true,
+          "increment": true,
+          "unique": false,
           "reference": null,
           "default": null,
           "json_shape": null
         },
         {
-          "name": "job_type",
-          "type": "text",
-          "meaning": "현재 사용하는 CHAT_CREATE / FIRST_ENTRY / END_NOTICE / AI / CHAT_DELETE 등 허용 목록",
+          "name": "operator_id",
+          "type": "bigint",
+          "meaning": "운영자 ID — 행위 운영자 ID. 인증 실패 등 확정할 수 없는 경우 NULL",
+          "nullable": true,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": "users.id",
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "kind",
+          "type": "operator_audit_kind",
+          "meaning": "기록 종류 — ACCESS: 회원 정보 조회·처리(2년 보관) / PERMISSION: 운영자 권한 부여·회수(3년 보관)",
           "nullable": false,
           "pk": false,
+          "increment": false,
+          "unique": false,
           "reference": null,
           "default": null,
           "json_shape": null
         },
         {
-          "name": "business_key",
-          "type": "text",
-          "meaning": "같은 업무 재생성 방지 키",
+          "name": "action",
+          "type": "operator_action",
+          "meaning": "운영 작업 — ACCESS: MEMBER_VIEW(회원 정보 조회) / REPORT_CHAT_VIEW(신고된 채팅 열람) / REPORT_RESOLVE(신고 처리) / PROFILE_CORRECT(프로필 정정) / KEYRING_UNBIND(분실 기기 등록 해제) / MEMBER_WITHDRAW(강제 탈퇴) / CASE_HANDLE(지원 요청 처리) / LOGIN_FAIL(운영 화면 로그인 실패). PERMISSION: OPERATOR_GRANT(운영자 권한 부여) / OPERATOR_REVOKE(운영자 권한 회수). 작업에 따라 target_* 칸 중 해당하는 것만 채움",
           "nullable": false,
           "pk": false,
+          "increment": false,
+          "unique": false,
           "reference": null,
           "default": null,
           "json_shape": null
         },
         {
-          "name": "payload",
+          "name": "target_user_id",
+          "type": "bigint",
+          "meaning": "대상 회원 ID — 조회·정정·강제 탈퇴·권한 부여/회수한 회원(users.id). 대상이 회원이 아니면 NULL",
+          "nullable": true,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": "users.id",
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "target_service_case_id",
+          "type": "bigint",
+          "meaning": "대상 지원 요청 ID — CASE_HANDLE·PROFILE_CORRECT 등에서 처리한 요청(service_case.id)",
+          "nullable": true,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": "service_case.id",
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "target_keyring_id",
+          "type": "bigint",
+          "meaning": "대상 키링 ID — KEYRING_UNBIND에서 등록 해제한 키링(keyring.id)",
+          "nullable": true,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": "keyring.id",
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "target_chat_report_id",
+          "type": "bigint",
+          "meaning": "대상 신고 ID — REPORT_CHAT_VIEW·REPORT_RESOLVE에서 본·처리한 신고(chat_report.id)",
+          "nullable": true,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": "chat_report.id",
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "result_code",
+          "type": "operator_result",
+          "meaning": "처리 결과 — SUCCESS / DENIED(권한 없음) / FAILED",
+          "nullable": false,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "reason",
+          "type": "text",
+          "meaning": "작업 사유 — 운영자가 남긴 이유. 대화 내용·민감 프로필·비밀값은 쓰지 않음",
+          "nullable": true,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "occurred_at",
+          "type": "timestamptz",
+          "meaning": "운영 작업 시각 — 서버가 기록한 실제 사건 시각. ACCESS는 발생부터 2년, PERMISSION은 변경부터 3년 보관",
+          "nullable": false,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        }
+      ],
+      "indexes": [
+        {
+          "columns": [
+            "occurred_at"
+          ],
+          "primary_key": false,
+          "unique": false,
+          "name": "ix_operator_audit_time",
+          "meaning": null
+        },
+        {
+          "columns": [
+            "operator_id",
+            "occurred_at"
+          ],
+          "primary_key": false,
+          "unique": false,
+          "name": "ix_operator_audit_operator",
+          "meaning": null
+        },
+        {
+          "columns": [
+            "kind",
+            "occurred_at"
+          ],
+          "primary_key": false,
+          "unique": false,
+          "name": "ix_operator_audit_retention",
+          "meaning": null
+        }
+      ]
+    },
+    "matching": {
+      "name": "matching",
+      "purpose": "만남·제안·차단 관계 — 두 사람당 한 줄. 사람별 기록(만남 기록·수락/거절·차단)은 matching_participant에",
+      "columns": [
+        {
+          "name": "id",
+          "type": "bigint",
+          "meaning": "매칭 ID — 두 사람당 한 줄. 별도 제안 번호 칸은 없음. 앱이 제안을 조회·수락·거절할 때도 이 번호로 가리킴",
+          "nullable": false,
+          "pk": true,
+          "increment": true,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "user_low_id",
+          "type": "bigint",
+          "meaning": "작은 쪽 회원 ID — 두 회원 번호 중 작은 쪽. 탈퇴하면 이 행 삭제",
+          "nullable": false,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": "users.id",
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "user_high_id",
+          "type": "bigint",
+          "meaning": "큰 쪽 회원 ID — 두 회원 번호 중 큰 쪽. 탈퇴하면 이 행 삭제",
+          "nullable": false,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": "users.id",
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "met_at",
+          "type": "timestamptz",
+          "meaning": "만남 시각 — 기기 기록을 검증해 확정한 만남 시각",
+          "nullable": true,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "policy_version",
+          "type": "varchar(30)",
+          "meaning": "매칭 정책 버전 — 이 만남에 적용한 정책(대기 시간·응답 기한 등)의 버전 이름. 숫자 값은 서버 설정 파일(matching-policy/{버전}.json)에 있음",
+          "nullable": true,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "opportunity_expires_at",
+          "type": "timestamptz",
+          "meaning": "만남 기회 마감 — 만남의 기회 마감. 확정된 만남 시각과 당시 정책으로 고정",
+          "nullable": true,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "counterpart_deadline_at",
+          "type": "timestamptz",
+          "meaning": "상대 기록 대기 마감 — 상대 기록 대기 마감. 기회 마감과 첫 유효 접수+대기 기간 중 빠른 시각",
+          "nullable": true,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "evaluation",
           "type": "jsonb",
-          "meaning": "자원 ID·요청 키·필요 버전만; 메시지/토큰 원문 금지",
-          "nullable": false,
+          "meaning": "매칭 판정·이유 — 당시 입력의 최소 근거·판정·규칙 버전과 매칭 이유 설명. 비공개 원응답을 공개 설명에 넣지 않음. AI 설명 상태 {status, attempts, nextRetryAt} 포함(실패 시 주기 작업이 재시도)",
+          "nullable": true,
           "pk": false,
+          "increment": false,
+          "unique": false,
           "reference": null,
           "default": null,
-          "json_shape": "object"
+          "json_shape": null
         },
         {
           "name": "status",
-          "type": "text",
-          "meaning": "PENDING / RUNNING / SUCCEEDED / FAILED / CANCELLED",
+          "type": "matching_status",
+          "meaning": "매칭 상태 — WAITING(한쪽 기록 대기) / NOT_MATCHED / PENDING(제안 보냄) / ONE_ACCEPTED(한쪽만 수락) / ACCEPTED / REJECTED / EXPIRED / CLOSED. WAITING(한쪽 기록만)·NOT_MATCHED(대기 만료·검증 실패)는 다시 만나면 같은 줄을 WAITING으로 재사용. PENDING(제안) 이후는 영구 재매칭 금지. 같은 두 사람은 uq_matching_pair로 한 줄만",
           "nullable": false,
           "pk": false,
+          "increment": false,
+          "unique": false,
           "reference": null,
           "default": null,
           "json_shape": null
         },
         {
-          "name": "run_at",
+          "name": "proposed_at",
           "type": "timestamptz",
-          "meaning": "예약 또는 다음 재시도 가능 시각",
-          "nullable": false,
+          "meaning": "제안 시각 — 양쪽 만남 기록 검증 후 서버에서 제안 생성을 확정한 최초 시각. 푸시 발송·수신 시각이 아니다. 응답 기한 24시간의 기산점이며 재전송·알림 실패로 연장하지 않는다.",
+          "nullable": true,
           "pk": false,
+          "increment": false,
+          "unique": false,
           "reference": null,
           "default": null,
           "json_shape": null
         },
         {
-          "name": "attempts",
-          "type": "integer",
-          "meaning": "작업을 맡아 실행한 누적 횟수; 이전 실행자의 늦은 결과를 구분하며 초기화하지 않음",
+          "name": "raw_delete_at",
+          "type": "timestamptz",
+          "meaning": "만남 원본 삭제 기한 — 제안 생성·대기 만료·최종 검증 불가 기준 시각부터 14일. 행은 남기고 matching_participant.encounter_*만 비운다. 이전 삭제 작업은 같은 matching.id만 보고 새 기록을 삭제하면 안 된다. 선점한 만남 세대·삭제 기한이 현재와 같을 때만 삭제해야 하며 세대 저장 방식은 합의 전이다.",
+          "nullable": true,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        }
+      ],
+      "indexes": [
+        {
+          "columns": [
+            "user_low_id",
+            "user_high_id"
+          ],
+          "primary_key": false,
+          "unique": true,
+          "name": "uq_matching_pair",
+          "meaning": null
+        },
+        {
+          "columns": [
+            "user_low_id",
+            "status"
+          ],
+          "primary_key": false,
+          "unique": false,
+          "name": "ix_matching_low_status",
+          "meaning": null
+        },
+        {
+          "columns": [
+            "user_high_id",
+            "status"
+          ],
+          "primary_key": false,
+          "unique": false,
+          "name": "ix_matching_high_status",
+          "meaning": null
+        },
+        {
+          "columns": [
+            "status",
+            "proposed_at"
+          ],
+          "primary_key": false,
+          "unique": false,
+          "name": "ix_matching_proposal_expiration",
+          "meaning": null
+        },
+        {
+          "columns": [
+            "counterpart_deadline_at"
+          ],
+          "primary_key": false,
+          "unique": false,
+          "name": "ix_matching_counterpart_deadline",
+          "meaning": null
+        },
+        {
+          "columns": [
+            "raw_delete_at"
+          ],
+          "primary_key": false,
+          "unique": false,
+          "name": "ix_matching_raw_delete",
+          "meaning": null
+        }
+      ]
+    },
+    "keyring": {
+      "name": "keyring",
+      "purpose": "실물 키링",
+      "columns": [
+        {
+          "name": "id",
+          "type": "bigint",
+          "meaning": "기기 ID — 공개 기기 ID. API deviceId",
+          "nullable": false,
+          "pk": true,
+          "increment": true,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "serial_number",
+          "type": "varchar(64)",
+          "meaning": "기기 고유번호 — 기기 고유번호. 조회 식별값이며 고유번호만으로 소유 인증을 대신하지 않음 (중복 금지)",
           "nullable": false,
           "pk": false,
+          "increment": false,
+          "unique": true,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "firmware_version",
+          "type": "varchar(30)",
+          "meaning": "펌웨어 버전 — 현재 확인된 펌웨어 버전",
+          "nullable": false,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "owner_user_id",
+          "type": "bigint",
+          "meaning": "소유 회원 ID — 현재 소유 회원 ID. NULL이면 미귀속. 한 회원이 여러 개 등록 가능",
+          "nullable": true,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": "users.id",
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "state",
+          "type": "keyring_state",
+          "meaning": "기기 상태 — UNBOUND(미등록) / REGISTERED(등록됨). 기기 초기화·분실 차단은 MVP 기능 제외. 탈퇴·양도는 서버에서 소유자를 비우고 UNBOUND로(이후 그 기기 만남 기록은 무시), 기기 안 설정은 새 소유자가 등록할 때 덮어씀",
+          "nullable": false,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "synced_settings_version",
+          "type": "bigint",
+          "meaning": "적용된 매칭 성향 설정 버전 — 키링에 실제 저장됐다고 확인한 user_setting.settings_version. ACK 서명이 검증되고 ACK 번호가 그 순간 현재 settings_version과 같을 때만 갱신한다. 낮은 번호의 늦은 ACK는 무시하고 새 등록·해제 때 NULL로 둔다.",
+          "nullable": true,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "synced_at",
+          "type": "timestamptz",
+          "meaning": "설정 적용 시각 — 그 설정 버전의 실제 적용을 서버가 확인한 시각",
+          "nullable": true,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        }
+      ],
+      "indexes": []
+    },
+    "chat_message": {
+      "name": "chat_message",
+      "purpose": "채팅 메시지",
+      "columns": [
+        {
+          "name": "id",
+          "type": "bigint",
+          "meaning": "메시지 ID — 공개 메시지 ID. API messageId",
+          "nullable": false,
+          "pk": true,
+          "increment": true,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "chat_id",
+          "type": "bigint",
+          "meaning": "채팅방 ID — 메시지가 속한 채팅방 ID",
+          "nullable": false,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": "chat.id",
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "seq",
+          "type": "bigint",
+          "meaning": "방 안의 메시지 순번 — 방 안의 증가 순번. 조회·정렬·재접속 중복 제거에 사용",
+          "nullable": false,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "sender_participant_id",
+          "type": "bigint",
+          "meaning": "보낸 사람(채팅 참여자 번호) — chat_participant.id. 보낸 사람이 탈퇴해도 신고 보관 중인 방에서는 참여자 번호로 누가 보냈는지 구분",
+          "nullable": false,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": "chat_participant.id",
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "body",
+          "type": "text",
+          "meaning": "메시지 본문 — 입력 검증 및 웹 주소 치환을 마친 전체 본문. 치환 전 원문은 별도 저장하지 않음",
+          "nullable": false,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "client_message_id",
+          "type": "uuid",
+          "meaning": "클라이언트 메시지 ID — 클라이언트가 메시지 생성 시 발급하고 재전송에 재사용하는 UUID",
+          "nullable": false,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "request_key",
+          "type": "uuid",
+          "meaning": "중복 요청 방지 키 — 전송 요청의 Idempotency-Key. 기존 계약의 발신자 범위 중복 판정에 사용",
+          "nullable": false,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "request_hash",
+          "type": "bytea",
+          "meaning": "요청 내용 해시 — 정규화된 원문·요청 의미의 서버 계산 SHA-256. 원문 없이 다른 내용 재사용을 판정",
+          "nullable": false,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "created_at",
+          "type": "timestamptz",
+          "meaning": "메시지 저장 시각 — 최초 서버 저장 시각. 정상 재전송에 같은 값 반환",
+          "nullable": false,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        }
+      ],
+      "indexes": [
+        {
+          "columns": [
+            "chat_id",
+            "seq"
+          ],
+          "primary_key": false,
+          "unique": true,
+          "name": "uq_chat_message_seq",
+          "meaning": null
+        },
+        {
+          "columns": [
+            "sender_participant_id",
+            "client_message_id"
+          ],
+          "primary_key": false,
+          "unique": true,
+          "name": "uq_chat_message_client",
+          "meaning": null
+        },
+        {
+          "columns": [
+            "sender_participant_id",
+            "request_key"
+          ],
+          "primary_key": false,
+          "unique": true,
+          "name": "uq_chat_message_request",
+          "meaning": null
+        }
+      ]
+    },
+    "survey": {
+      "name": "survey",
+      "purpose": "설문 회차 — 설문 한 번 = 한 줄. 문항별 답은 survey_answer에",
+      "columns": [
+        {
+          "name": "id",
+          "type": "bigint",
+          "meaning": "설문 회차 ID — 공개 설문 회차 ID. API sessionId",
+          "nullable": false,
+          "pk": true,
+          "increment": true,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "user_id",
+          "type": "bigint",
+          "meaning": "회원 ID — 응답 소유 회원 ID",
+          "nullable": false,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": "users.id",
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "survey_version",
+          "type": "varchar(30)",
+          "meaning": "설문 버전 — 회차 시작 때 고정한 설문 버전 이름. 문항·보기 내용은 DB가 아니라 서버 설정 파일(survey/{버전}.json)에 있음",
+          "nullable": false,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "completed_at",
+          "type": "timestamptz",
+          "meaning": "설문 제출 시각 — 제출 완료 시각. NULL이면 진행 중이며 계산 성공과는 별개",
+          "nullable": true,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        }
+      ],
+      "indexes": [
+        {
+          "columns": [
+            "user_id",
+            "survey_version"
+          ],
+          "primary_key": false,
+          "unique": false,
+          "name": "ix_survey_user_version",
+          "meaning": null
+        }
+      ]
+    },
+    "chat": {
+      "name": "chat",
+      "purpose": "채팅방 — 매칭 한 건당 방 하나. 사람별 상태는 chat_participant에. 참여자 한 명이 탈퇴하면 방과 딸린 표 모두 삭제. 단 신고된 방은 retain_until까지 보관",
+      "columns": [
+        {
+          "name": "id",
+          "type": "bigint",
+          "meaning": "채팅방 ID — 공개 채팅방 ID. API chatRoomId",
+          "nullable": false,
+          "pk": true,
+          "increment": true,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "matching_id",
+          "type": "bigint",
+          "meaning": "관계 ID — 방을 생성한 두 사람 관계의 내부 번호 (중복 금지)",
+          "nullable": false,
+          "pk": false,
+          "increment": false,
+          "unique": true,
+          "reference": "matching.id",
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "created_at",
+          "type": "timestamptz",
+          "meaning": "채팅방 생성 시각 — 최초 방 생성 시각. 이용 만료는 이 시각+168시간",
+          "nullable": false,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "closed_at",
+          "type": "timestamptz",
+          "meaning": "채팅방 종료 시각 — 실제 종료 효력 시각. 정상 만료는 원래 만료 시각, 중복 처리로 변경하지 않음",
+          "nullable": true,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "close_reason",
+          "type": "chat_close_reason",
+          "meaning": "종료 사유 — 내부 종료 구분. 설계 코드: EXPIRED / LEFT / BLOCKED. 상대에게 구체 사유 공개 금지",
+          "nullable": true,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "last_message_seq",
+          "type": "bigint",
+          "meaning": "마지막 메시지 순번 — 방 안의 마지막 메시지 순번. 코드 초깃값 0",
+          "nullable": false,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "icebreakers",
+          "type": "jsonb",
+          "meaning": "AI 시작 질문 — AI 시작 질문 3개·버전과 상태 {status, attempts, nextRetryAt}. 실패 시 주기 작업이 재시도, 최종 실패면 서버 설정 파일의 기본 질문으로 대체. 질문 사용 없이 대화 가능",
+          "nullable": false,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "ai_state",
+          "type": "jsonb",
+          "meaning": "AI 위험 분석 상태 — 마지막 분석한 메시지 순번·상태 {status, attempts, nextRetryAt}. 실패 시 주기 작업이 재시도. 미분석/실패를 안전으로 표시하지 않음",
+          "nullable": false,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "retain_until",
+          "type": "timestamptz",
+          "meaning": "신고 보관 기한 — 최초 신고 + 90일. 이 기한 전에는 탈퇴해도 방·메시지를 지우지 않고, 기한이 지나면 삭제",
+          "nullable": true,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        }
+      ],
+      "indexes": [
+        {
+          "columns": [
+            "closed_at"
+          ],
+          "primary_key": false,
+          "unique": false,
+          "name": "ix_chat_closed",
+          "meaning": null
+        },
+        {
+          "columns": [
+            "retain_until"
+          ],
+          "primary_key": false,
+          "unique": false,
+          "name": "ix_chat_retain_until",
+          "meaning": null
+        }
+      ]
+    },
+    "profile": {
+      "name": "profile",
+      "purpose": "프로필",
+      "columns": [
+        {
+          "name": "user_id",
+          "type": "bigint",
+          "meaning": "회원 ID — 프로필 소유 회원 ID",
+          "nullable": false,
+          "pk": true,
+          "increment": false,
+          "unique": false,
+          "reference": "users.id",
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "nickname",
+          "type": "varchar(20)",
+          "meaning": "닉네임 — NFC·앞뒤 일반 공백 정리 후 2~20자. 중복 금지는 lower(nickname) unique 인덱스(대소문자 무시)",
+          "nullable": true,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "birth_date",
+          "type": "date",
+          "meaning": "생년월일 — 생년월일. 완료 전 정정 가능, 완료 후 사용자가 직접 변경할 수 없음",
+          "nullable": true,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "gender",
+          "type": "gender",
+          "meaning": "성별 — 본인 성별 MALE / FEMALE. 상대 성별은 반대로 계산",
+          "nullable": true,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "smoking_status",
+          "type": "smoking_status",
+          "meaning": "흡연 여부 — 필수 흡연 선택 코드. 프로필 코드와 설문 답변을 임의 변환하지 않음",
+          "nullable": true,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "drinking_frequency",
+          "type": "drinking_frequency",
+          "meaning": "음주 빈도 — 필수 음주 빈도 선택 코드",
+          "nullable": true,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "religion",
+          "type": "religion",
+          "meaning": "종교 — 별도 동의를 받은 선택 종교 정보. 비공개·미입력을 무교로 추정하지 않음",
+          "nullable": true,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "introduction",
+          "type": "text",
+          "meaning": "자기소개 — 선택 자기소개. 최대 200자·줄바꿈 최대 3개 등 명세 기준 적용",
+          "nullable": true,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "photo_url",
+          "type": "varchar(2048)",
+          "meaning": "프로필 사진 주소 — NULL이면 사진 없음(hasProfilePhoto = 이 칸이 비어 있지 않음). 저장 전 서버 검증: (1) https:// 로 시작 (2) 우리 사진 저장소 주소(서버 설정 파일의 허용 주소)로 시작 (3) 그 안에서도 이 회원 폴더(profile/{userId}/)만 허용해 남의 사진 주소 도용 차단 (4) ? 가 붙은 주소 거부 = 금방 만료되는 서명 URL 저장 금지 (5) 2048자 이하, 빈 문자열·공백 거부(삭제는 사진 삭제 API로). 위반이면 400 PHOTO_URL_INVALID, 기존 사진 유지. DB에도 같은 안전장치(CHECK 제약): NULL이거나, https:// 로 시작하고 ? 가 없어야 저장됨. 삭제하면 NULL로 바꾸고(반복 삭제도 204) 저장소 파일은 정리 작업이 따로 지움. 탈퇴 시 파일도 삭제. 상대 사진 조회에서 NULL이면 410. 이미지 용량: 앱이 올리기 전에 1080×1080 이하로 줄이고 WebP(품질 80)로 바꿔 보통 300KB 안팎, 업로드 주소 발급 때 최대 1MB로 제한(넘으면 저장소가 업로드 거부)",
+          "nullable": true,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "completed_at",
+          "type": "timestamptz",
+          "meaning": "프로필 완료 시각 — 프로필 최종 등록 성공 시각. 초안 저장 시에는 설정하지 않음",
+          "nullable": true,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "active_personality_id",
+          "type": "bigint",
+          "meaning": "적용 중인 분석 ID — 현재 새 매칭에 적용하는 유효 분석 결과 ID. 재검사 대기·실패 중에는 기존 값 유지",
+          "nullable": true,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": "personality.id",
+          "default": null,
+          "json_shape": null
+        }
+      ],
+      "indexes": [
+        {
+          "columns": [
+            "lower(nickname)"
+          ],
+          "primary_key": false,
+          "unique": true,
+          "name": "uq_profile_nickname_lower",
+          "meaning": "닉네임 중복 금지(Kim = kim)"
+        }
+      ]
+    },
+    "matching_preference": {
+      "name": "matching_preference",
+      "purpose": "매칭 조건 — 회원당 한 줄. 어떤 상대를 매칭할지 회원이 정한 조건. 바꾸면 user_setting.settings_version이 1 올라 키링에 다시 보냄",
+      "columns": [
+        {
+          "name": "user_id",
+          "type": "bigint",
+          "meaning": "회원 ID — 조건 주인(users.id)",
+          "nullable": false,
+          "pk": true,
+          "increment": false,
+          "unique": false,
+          "reference": "users.id",
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "matching_enabled",
+          "type": "boolean",
+          "meaning": "매칭 사용 여부 — 새 매칭 사용 여부. 가입 시 초깃값 true",
+          "nullable": false,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "age_preference_mode",
+          "type": "boolean",
+          "meaning": "희망 나이 지정 여부 — NULL: 아직 선택 안 함 / false: 상관없음 / true: min_age·max_age 범위 지정. 희망 조건 단계 완료에는 직접 선택 필요(NULL 불가)",
+          "nullable": true,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "min_age",
+          "type": "integer",
+          "meaning": "희망 최소 나이 — 만 나이, 최소 19. age_preference_mode가 false면 NULL",
+          "nullable": true,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "max_age",
+          "type": "integer",
+          "meaning": "희망 최대 나이 — 만 나이. NULL이면 상한 없음. age_preference_mode가 false면 NULL",
+          "nullable": true,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "photo_required",
+          "type": "boolean",
+          "meaning": "사진 필수 여부 — 사진 있는 상대만 새 매칭할지. 가입 시 초깃값 false",
+          "nullable": false,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        }
+      ],
+      "indexes": []
+    },
+    "user_setting": {
+      "name": "user_setting",
+      "purpose": "회원 설정 — 회원당 한 줄. 키링 진동·LED와 키링에 보낼 설정 버전",
+      "columns": [
+        {
+          "name": "user_id",
+          "type": "bigint",
+          "meaning": "회원 ID — 설정 소유 회원 ID",
+          "nullable": false,
+          "pk": true,
+          "increment": false,
+          "unique": false,
+          "reference": "users.id",
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "vibration_enabled",
+          "type": "boolean",
+          "meaning": "진동 사용 여부 — 키링 진동 사용 여부. 가입 시 초깃값 true",
+          "nullable": false,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "led_enabled",
+          "type": "boolean",
+          "meaning": "LED 사용 여부 — 키링 LED 사용 여부. 가입 시 초깃값 true",
+          "nullable": false,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "settings_version",
+          "type": "bigint",
+          "meaning": "매칭 성향 설정 버전 — 키링에 보낼 매칭 조건·진동/LED·적용 성향·제외 상대가 바뀌는 같은 트랜잭션에서 1 증가한다. 저장 성공일 뿐 기기 적용은 keyring.synced_settings_version으로 따로 확인한다.",
+          "nullable": false,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        }
+      ],
+      "indexes": []
+    },
+    "matching_participant": {
+      "name": "matching_participant",
+      "purpose": "매칭 참여자별 기록 — 매칭 한 건에 두 사람이니 두 줄. 각자 보낸 만남 기록, 수락/거절, 차단을 사람별로 저장",
+      "columns": [
+        {
+          "name": "matching_id",
+          "type": "bigint",
+          "meaning": "매칭 ID — 어느 매칭의 참여자인지(matching.id)",
+          "nullable": false,
+          "pk": true,
+          "increment": false,
+          "unique": false,
+          "reference": "matching.id",
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "user_id",
+          "type": "bigint",
+          "meaning": "회원 ID — 이 줄의 주인. 탈퇴하면 매칭째로 삭제",
+          "nullable": false,
+          "pk": true,
+          "increment": false,
+          "unique": false,
+          "reference": "users.id",
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "encounter_keyring_id",
+          "type": "bigint",
+          "meaning": "만남을 기록한 키링 ID — 이 사람이 만남 기록을 보낼 때 쓴 키링(keyring.id). 기록 전에는 NULL",
+          "nullable": true,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": "keyring.id",
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "encounter_signature",
+          "type": "bytea",
+          "meaning": "만남 기록 증명 서명 — 키링이 기기 키(마스터 키 + serial_number로 계산, DB 저장 안 함)로 만든 서명. 원본 삭제 기한이 지나면 비움",
+          "nullable": true,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "encounter_reported_at",
+          "type": "timestamptz",
+          "meaning": "만남 기록 접수 시각 — 이 사람의 만남 기록을 서버가 받은 시각. NULL이면 아직 기록 안 보냄",
+          "nullable": true,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "encounter_verified_at",
+          "type": "timestamptz",
+          "meaning": "만남 기록 검증 시각 — 서명 검증에 성공한 시각. 검증 실패면 NULL로 남고 매칭 상태가 NOT_MATCHED",
+          "nullable": true,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "response",
+          "type": "proposal_response",
+          "meaning": "제안 응답 — ACCEPTED(수락) / REJECTED(거절). NULL이면 아직 응답 안 함. 한 번 정하면 못 바꿈",
+          "nullable": true,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "responded_at",
+          "type": "timestamptz",
+          "meaning": "응답 시각 — 수락·거절을 누른 시각",
+          "nullable": true,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "blocked_at",
+          "type": "timestamptz",
+          "meaning": "차단 시각 — 이 사람이 상대를 차단한 시각. NULL이면 차단 안 함. 차단은 나가기와 구분",
+          "nullable": true,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        }
+      ],
+      "indexes": [
+        {
+          "columns": [
+            "matching_id",
+            "user_id"
+          ],
+          "primary_key": true,
+          "unique": false,
+          "name": null,
+          "meaning": null
+        },
+        {
+          "columns": [
+            "user_id"
+          ],
+          "primary_key": false,
+          "unique": false,
+          "name": "ix_matching_participant_user",
+          "meaning": null
+        }
+      ]
+    },
+    "chat_participant": {
+      "name": "chat_participant",
+      "purpose": "채팅방 참여자 — 채팅방 하나에 두 사람이니 두 줄. 각자 어디까지 읽었는지, 나갔는지 저장",
+      "columns": [
+        {
+          "name": "id",
+          "type": "bigint",
+          "meaning": "채팅 참여자 번호 — 메시지·신고·위험 안내가 이 번호로 사람을 가리킴",
+          "nullable": false,
+          "pk": true,
+          "increment": true,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "chat_id",
+          "type": "bigint",
+          "meaning": "채팅방 ID — 어느 방의 참여자인지(chat.id)",
+          "nullable": false,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": "chat.id",
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "user_id",
+          "type": "bigint",
+          "meaning": "회원 ID — 이 참여자 회원. 신고 보관 중인 방에서 이 회원이 탈퇴하면 NULL로 비움(줄은 남겨 발신자 구분 유지)",
+          "nullable": true,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": "users.id",
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "last_read_message_seq",
+          "type": "bigint",
+          "meaning": "마지막 실제 표시 순번 — 본인 화면에 정상 표시된 마지막 chat_message.seq. 새 수신 메시지는 이보다 큰 순번 중 발신 참여자가 본인이 아닌 메시지다. 상대에게 공개하지 않는다. 건너뛴 메시지를 잘못 확인하지 않도록 연속 표시 범위·ACK 계약은 별도 검증한다.",
+          "nullable": false,
+          "pk": false,
+          "increment": false,
+          "unique": false,
           "reference": null,
           "default": "0",
           "json_shape": null
         },
         {
-          "name": "lease_until",
+          "name": "left_at",
           "type": "timestamptz",
-          "meaning": "현재 실행자가 작업을 맡아 둘 수 있는 마지막 시각",
+          "meaning": "나간 시각 — 이 사람이 방을 나간 시각. NULL이면 아직 방에 있음",
           "nullable": true,
           "pk": false,
-          "reference": null,
-          "default": null,
-          "json_shape": null
-        },
-        {
-          "name": "last_error_code",
-          "type": "text",
-          "meaning": "최근 비민감 오류 코드; 성공 응답/원문 로그 아님",
-          "nullable": true,
-          "pk": false,
-          "reference": null,
-          "default": null,
-          "json_shape": null
-        },
-        {
-          "name": "result_json",
-          "type": "jsonb",
-          "meaning": "삭제 저장소 확인 결과 등 꼭 필요한 작업 결과; 일반 전송은 NULL",
-          "nullable": true,
-          "pk": false,
-          "reference": null,
-          "default": null,
-          "json_shape": "object"
-        },
-        {
-          "name": "finished_at",
-          "type": "timestamptz",
-          "meaning": "성공·최종 실패·취소 확정",
-          "nullable": true,
-          "pk": false,
-          "reference": null,
-          "default": null,
-          "json_shape": null
-        },
-        {
-          "name": "public_id",
-          "type": "uuid",
-          "meaning": "안내의 외부 noticeId; FIRST_ENTRY/END_NOTICE에서 서버 생성",
-          "nullable": true,
-          "pk": false,
+          "increment": false,
+          "unique": false,
           "reference": null,
           "default": null,
           "json_shape": null
         }
       ],
-      "unique": [
-        [
-          "business_key"
-        ]
-      ],
-      "checks": [
-        "job_type IN ('CHAT_CREATE','FIRST_ENTRY','END_NOTICE','AI','CHAT_DELETE','WITHDRAWAL','USER_DATA_DELETE')",
-        "status IN ('PENDING','RUNNING','SUCCEEDED','FAILED','CANCELLED')",
-        "attempts>=0",
-        "(status='RUNNING')=(lease_until IS NOT NULL)"
-      ],
       "indexes": [
-        [
-          [
-            "run_at",
-            "job_id"
+        {
+          "columns": [
+            "chat_id",
+            "user_id"
           ],
-          "status='PENDING'"
-        ],
-        [
-          [
-            "lease_until"
+          "primary_key": false,
+          "unique": true,
+          "name": "uq_chat_participant_member",
+          "meaning": null
+        },
+        {
+          "columns": [
+            "user_id"
           ],
-          "status='RUNNING'"
-        ]
-      ],
-      "service_rules": [
-        "background_jobs.attempts는 선점마다 원자 증가하며 운영 재시도에서도 초기화하지 않는다. 워커는 완료/실패 갱신에 job_id·RUNNING·자신의 attempt 값·유효 lease_until을 모두 비교한다. 오래된 워커 결과가 최신 상태를 덮어쓰지 못하게 한다. 재시도 예산을 별도로 초기화해야 한다면 lease_version을 유지한다."
+          "primary_key": false,
+          "unique": false,
+          "name": "ix_chat_participant_user",
+          "meaning": null
+        }
       ]
     },
-    "chat_message_reads": {
-      "name": "chat_message_reads",
-      "purpose": "실제 표시한 수신 메시지별 읽음 확인",
+    "chat_report": {
+      "name": "chat_report",
+      "purpose": "채팅 신고 — 신고 한 건당 한 줄. 첫 신고가 들어오면 chat.retain_until(+90일)이 정해짐",
       "columns": [
         {
-          "name": "receipt_id",
+          "name": "id",
           "type": "bigint",
-          "meaning": "내부 읽음 기록 식별자",
+          "meaning": "신고 번호",
           "nullable": false,
           "pk": true,
+          "increment": true,
+          "unique": false,
           "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "chat_id",
+          "type": "bigint",
+          "meaning": "신고된 채팅방 ID — chat.id",
+          "nullable": false,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": "chat.id",
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "reporter_participant_id",
+          "type": "bigint",
+          "meaning": "신고한 사람(채팅 참여자 번호) — chat_participant.id",
+          "nullable": false,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": "chat_participant.id",
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "reason",
+          "type": "chat_report_reason",
+          "meaning": "신고 사유 코드 — 예: ABUSE(욕설) / SEXUAL(성적 발언) / SPAM(광고) / ETC(기타)",
+          "nullable": false,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "detail",
+          "type": "text",
+          "meaning": "신고 상세 내용 — 신고한 사람이 직접 쓴 설명. 선택",
+          "nullable": true,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "status",
+          "type": "chat_report_status",
+          "meaning": "처리 상태 — RECEIVED(접수) / REVIEWING(검토 중) / RESOLVED(처리 완료) / DISMISSED(문제 없음)",
+          "nullable": false,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "created_at",
+          "type": "timestamptz",
+          "meaning": "신고 접수 시각",
+          "nullable": false,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "resolved_at",
+          "type": "timestamptz",
+          "meaning": "처리 완료 시각 — RESOLVED·DISMISSED가 된 시각",
+          "nullable": true,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        }
+      ],
+      "indexes": [
+        {
+          "columns": [
+            "status",
+            "created_at"
+          ],
+          "primary_key": false,
+          "unique": false,
+          "name": "ix_chat_report_worklist",
+          "meaning": null
+        },
+        {
+          "columns": [
+            "chat_id"
+          ],
+          "primary_key": false,
+          "unique": false,
+          "name": "ix_chat_report_chat",
+          "meaning": null
+        }
+      ]
+    },
+    "chat_report_message": {
+      "name": "chat_report_message",
+      "purpose": "신고에 첨부한 메시지 — 신고 한 건에 메시지 여러 개를 고를 수 있어 따로 둠. 신고 하나 × 메시지 하나 = 한 줄",
+      "columns": [
+        {
+          "name": "report_id",
+          "type": "bigint",
+          "meaning": "신고 번호 — chat_report.id",
+          "nullable": false,
+          "pk": true,
+          "increment": false,
+          "unique": false,
+          "reference": "chat_report.id",
           "default": null,
           "json_shape": null
         },
         {
           "name": "message_id",
           "type": "bigint",
-          "meaning": "화면에 표시한 메시지",
+          "meaning": "신고된 메시지 ID — chat_message.id",
           "nullable": false,
-          "pk": false,
-          "reference": "chat_messages.message_id",
-          "default": null,
-          "json_shape": null
-        },
-        {
-          "name": "user_id",
-          "type": "bigint",
-          "meaning": "실제 표시를 확인한 방 참여자",
-          "nullable": false,
-          "pk": false,
-          "reference": "app_users.user_id",
-          "default": null,
-          "json_shape": null
-        },
-        {
-          "name": "read_at",
-          "type": "timestamptz",
-          "meaning": "최초 표시 확인을 서버가 저장한 시각; 재시도 불변",
-          "nullable": false,
-          "pk": false,
-          "reference": null,
+          "pk": true,
+          "increment": false,
+          "unique": false,
+          "reference": "chat_message.id",
           "default": null,
           "json_shape": null
         }
+      ],
+      "indexes": [
+        {
+          "columns": [
+            "report_id",
+            "message_id"
+          ],
+          "primary_key": true,
+          "unique": false,
+          "name": null,
+          "meaning": null
+        }
       ]
     },
-    "chat_safety_notices": {
-      "name": "chat_safety_notices",
-      "purpose": "AI 위험 안내 배너의 사용자별 1회 표시",
+    "chat_safety_notice": {
+      "name": "chat_safety_notice",
+      "purpose": "AI 위험 안내 — AI가 위험한 대화를 감지했을 때 한 사람에게 보여 준 안내. 같은 사람·같은 유형은 방마다 한 번만",
       "columns": [
         {
-          "name": "notice_id",
+          "name": "id",
           "type": "bigint",
-          "meaning": "내부 식별자; 서버/DB 생성",
+          "meaning": "위험 안내 번호",
           "nullable": false,
           "pk": true,
+          "increment": true,
+          "unique": false,
           "reference": null,
           "default": null,
           "json_shape": null
         },
         {
-          "name": "chat_room_id",
+          "name": "chat_participant_id",
           "type": "bigint",
-          "meaning": "방",
+          "meaning": "안내를 받은 사람(채팅 참여자 번호) — chat_participant.id",
           "nullable": false,
           "pk": false,
-          "reference": "chat_rooms.chat_room_id",
-          "default": null,
-          "json_shape": null
-        },
-        {
-          "name": "user_id",
-          "type": "bigint",
-          "meaning": "안내 대상 회원",
-          "nullable": false,
-          "pk": false,
-          "reference": "app_users.user_id",
+          "increment": false,
+          "unique": false,
+          "reference": "chat_participant.id",
           "default": null,
           "json_shape": null
         },
         {
           "name": "notice_type",
-          "type": "text",
-          "meaning": "안내 유형(수신자 보호 / 공격적 표현 발신자 안내 등)",
+          "type": "safety_notice_type",
+          "meaning": "위험 유형 — 예: MONEY_REQUEST(금전 요구) / PERSONAL_INFO(개인정보 요구) / OFF_PLATFORM(외부 연락 유도) / HARASSMENT(괴롭힘)",
           "nullable": false,
           "pk": false,
+          "increment": false,
+          "unique": false,
           "reference": null,
           "default": null,
           "json_shape": null
         },
         {
-          "name": "sent_at",
+          "name": "created_at",
           "type": "timestamptz",
-          "meaning": "서버가 안내를 보낸 시각",
+          "meaning": "안내 생성 시각 — AI가 감지해 안내를 만든 시각",
           "nullable": false,
           "pk": false,
+          "increment": false,
+          "unique": false,
           "reference": null,
           "default": null,
           "json_shape": null
@@ -2667,40 +1933,1005 @@
         {
           "name": "displayed_at",
           "type": "timestamptz",
-          "meaning": "앱이 실제 화면에 표시했다고 확인한 시각",
+          "meaning": "안내 표시 시각 — 이 사람 화면에 실제로 보여 준 시각. NULL이면 아직 안 봄",
           "nullable": true,
           "pk": false,
+          "increment": false,
+          "unique": false,
           "reference": null,
           "default": null,
           "json_shape": null
         }
       ],
-      "unique": [
-        [
-          "chat_room_id",
-          "user_id",
-          "notice_type"
-        ]
+      "indexes": [
+        {
+          "columns": [
+            "chat_participant_id",
+            "notice_type"
+          ],
+          "primary_key": false,
+          "unique": true,
+          "name": "uq_chat_safety_notice_once",
+          "meaning": null
+        }
+      ]
+    },
+    "survey_answer": {
+      "name": "survey_answer",
+      "purpose": "설문 문항별 답 — 설문 한 번에 문항 수만큼 줄. 문항·보기 내용은 설문 파일(survey/{버전}.json)에 있고 여기엔 고른 값만",
+      "columns": [
+        {
+          "name": "survey_id",
+          "type": "bigint",
+          "meaning": "설문 회차 ID — survey.id",
+          "nullable": false,
+          "pk": true,
+          "increment": false,
+          "unique": false,
+          "reference": "survey.id",
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "question_id",
+          "type": "varchar(50)",
+          "meaning": "문항 ID — 설문 파일에 있는 문항 번호(예: Q07)",
+          "nullable": false,
+          "pk": true,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "answer_value",
+          "type": "varchar(100)",
+          "meaning": "고른 답 — 설문 파일의 보기 ID나 점수(예: 4). 설문 버전의 보기 목록으로 검증",
+          "nullable": false,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "answered_at",
+          "type": "timestamptz",
+          "meaning": "답한 시각 — 같은 문항을 다시 고르면 값과 시각을 덮어씀",
+          "nullable": false,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        }
       ],
-      "checks": [],
-      "indexes": [],
-      "service_rules": [
-        "같은 방·사용자·안내 유형은 1회만. 방 삭제 때 함께 삭제한다."
+      "indexes": [
+        {
+          "columns": [
+            "survey_id",
+            "question_id"
+          ],
+          "primary_key": true,
+          "unique": false,
+          "name": null,
+          "meaning": null
+        }
+      ]
+    },
+    "service_case_history": {
+      "name": "service_case_history",
+      "purpose": "지원 요청 처리 기록 — 추가 확인 요청·회원 답변·운영 작업 결과를 일어난 순서대로 한 줄씩",
+      "columns": [
+        {
+          "name": "id",
+          "type": "bigint",
+          "meaning": "처리 기록 번호",
+          "nullable": false,
+          "pk": true,
+          "increment": true,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "service_case_id",
+          "type": "bigint",
+          "meaning": "지원 요청 ID — service_case.id",
+          "nullable": false,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": "service_case.id",
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "event",
+          "type": "service_case_event",
+          "meaning": "무슨 일 — INFO_REQUESTED / USER_REPLIED / ACTION_DONE / ACTION_FAILED / STATUS_CHANGED",
+          "nullable": false,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "actor_user_id",
+          "type": "bigint",
+          "meaning": "한 사람 — 운영자나 요청 회원(users.id). 시스템 자동 처리면 NULL",
+          "nullable": true,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": "users.id",
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "message",
+          "type": "text",
+          "meaning": "내용 — 추가 확인 질문, 회원 답변, 실패 사유 등",
+          "nullable": true,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "created_at",
+          "type": "timestamptz",
+          "meaning": "기록 시각",
+          "nullable": false,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        }
+      ],
+      "indexes": [
+        {
+          "columns": [
+            "service_case_id",
+            "created_at"
+          ],
+          "primary_key": false,
+          "unique": false,
+          "name": "ix_service_case_history_case",
+          "meaning": null
+        }
+      ]
+    },
+    "service_case": {
+      "name": "service_case",
+      "purpose": "정정·분실 지원 요청 — 요청 한 건 = 한 줄. 처리하며 주고받은 기록은 service_case_history에",
+      "columns": [
+        {
+          "name": "id",
+          "type": "bigint",
+          "meaning": "지원 요청 ID — 요청 공개 ID. 접수 결과·추가 확인·처리 상태 조회에 사용",
+          "nullable": false,
+          "pk": true,
+          "increment": true,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "requester_user_id",
+          "type": "bigint",
+          "meaning": "요청 회원 ID — 서버 인증으로 확인한 요청 회원 ID",
+          "nullable": false,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": "users.id",
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "kind",
+          "type": "service_case_kind",
+          "meaning": "지원 요청 종류 — 요청 종류. 설계 코드: PROFILE_CORRECTION / LOST_WITHDRAWAL",
+          "nullable": false,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "reason",
+          "type": "text",
+          "meaning": "요청 사유 — 회원이 직접 쓴 설명. 증빙 사진·파일 사본은 저장 안 함",
+          "nullable": false,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "correction_field",
+          "type": "profile_correction_field",
+          "meaning": "정정할 항목 — PROFILE_CORRECTION일 때만. 분실 탈퇴 요청이면 NULL",
+          "nullable": true,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "correction_value",
+          "type": "varchar(100)",
+          "meaning": "바꿔 달라는 값 — PROFILE_CORRECTION일 때만. 예: 생년월일 1999-03-01",
+          "nullable": true,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "lost_keyring_id",
+          "type": "bigint",
+          "meaning": "분실한 키링 ID — LOST_WITHDRAWAL일 때만(keyring.id). 정정 요청이면 NULL",
+          "nullable": true,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": "keyring.id",
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "status",
+          "type": "service_case_status",
+          "meaning": "요청 처리 상태 — 설계 코드: RECEIVED / REVIEWING / NEEDS_INFO / COMPLETED / REJECTED / NO_RESPONSE",
+          "nullable": false,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "assigned_operator_id",
+          "type": "bigint",
+          "meaning": "담당 운영자 ID — 현재 담당 운영자 ID. 배정 전 NULL",
+          "nullable": true,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": "users.id",
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "created_at",
+          "type": "timestamptz",
+          "meaning": "요청 접수 시각 — 최초 접수 성공 시각",
+          "nullable": false,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "reply_due_at",
+          "type": "timestamptz",
+          "meaning": "추가 확인 응답 기한 — 유효한 추가 확인 전달 후 사용자 응답 마감. 14일 무응답 처리용이며 전달 실패로 시작하지 않음",
+          "nullable": true,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "closed_at",
+          "type": "timestamptz",
+          "meaning": "요청 종료 시각 — 완료·반려·응답 없음의 최초 종료 시각. 원칙적으로 이 시각+720시간에 업무 기록 삭제",
+          "nullable": true,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        }
+      ],
+      "indexes": [
+        {
+          "columns": [
+            "requester_user_id",
+            "created_at"
+          ],
+          "primary_key": false,
+          "unique": false,
+          "name": "ix_service_case_requester",
+          "meaning": null
+        },
+        {
+          "columns": [
+            "status",
+            "assigned_operator_id"
+          ],
+          "primary_key": false,
+          "unique": false,
+          "name": "ix_service_case_worklist",
+          "meaning": null
+        },
+        {
+          "columns": [
+            "reply_due_at"
+          ],
+          "primary_key": false,
+          "unique": false,
+          "name": "ix_service_case_reply_due",
+          "meaning": null
+        },
+        {
+          "columns": [
+            "closed_at"
+          ],
+          "primary_key": false,
+          "unique": false,
+          "name": "ix_service_case_closed",
+          "meaning": null
+        }
       ]
     }
   },
-  "implementation_conditions": [
-    "survey_versions 제외는 버전별 정의 파일과 과거 버전을 함께 배포하는 전제다. version_code는 파일 저장소에서 존재/호환성을 검사한다. 독립 관리자 게시·롤백 기능이 실제 요구되면 이 테이블은 유지해야 한다.",
-    "keyring_sync_runs는 UNIQUE(binding_id,snapshot_id). 실패 재시도도 같은 run을 재사용한다. 같은 run의 payload는 고정하고 변경이 필요하면 새 snapshot으로 구분한다. 클라이언트가 다른 snapshot으로 재시도한 것을 동일 요청으로 간주하지 않으며 FE·IoT 생성 계약을 맞춘다.",
-    "survey_responses는 completed_at IS NULL 조건으로 같은 사용자·version_code의 진행 중 회차를 하나만 허용한다. 문항 PATCH는 미완료+revision 조건부 갱신. 완료 후 원응답은 불변이며 새 응답은 새 response_id다.",
-    "analysis_results는 UNIQUE(response_id,version_code). 분석은 완료된 불변 응답만 사용한다. 응답 수정을 허용하거나 미완료 분석을 도입한다면 response_revision을 유지해야 한다.",
-    "encounter_submissions는 UNIQUE(binding_id,submission_id)와 UNIQUE(encounter_id,binding_id)를 유지한다. 요청의 수락하는 모든 필드는 기존 행/만남/스냅샷/proof_json에서 정규화 비교 가능해야 한다. 비교하지 못하는 필드가 있다면 request_hash를 유지한다. proof의 서명 검증은 그대로다.",
-    "match_proposals.resolved_at 응답값은 계산 가능하다. REJECTED면 DECLINE인 시각 중 가장 이른 값, ACCEPTED면 양쪽 수락 시각 중 늦은 값, EXPIRED면 expires_at. user_pairs의 거절 제한은 첫 실제 거절+30일로 기록하며 재시도로 갱신하지 않는다.",
-    "chat_rooms의 상태는 closed_at IS NOT NULL 또는 now>=expires_at이면 CLOSED. 활성 방의 UNIQUE(pair_id) 부분 조건은 closed_at IS NULL로 바꾼다. 배치가 늦은 만료 행은 pair 잠금 아래 정확한 expires_at으로 닫은 뒤 후속 작업을 등록한다.",
-    "chat_members는 joined_at=방 생성 시각으로 취급한다. 최초 입장은 FIRST_ENTRY:{room}:{user} 고유 작업 생성으로 기억하고 그 작업은 방의 수명 동안 유지한다. 두 표시 ACK와 푸시 전달 성공을 구분한다. first_entered_at 표시/통계가 요구되면 별도 유지한다.",
-    "user_blocks는 UNIQUE(blocker_id,blocked_id). 해제 시 행을 실제로 지우는 향후 구현안이며 이번 작업에서 데이터를 삭제하지 않았다. 차단/해제 이력이 필요해지면 revoked_at을 유지해야 한다.",
-    "ai_results.job_id는 PK이자 생성 작업의 논리 참조다. AI 결과가 살아 있는 동안 작업 최소 메타데이터도 보존한다. kind→target 매핑: PERSONAL_ANALYSIS=analysis_results.result_id, MATCH_EXPLANATION=match_proposals.proposal_id, ICEBREAKERS=chat_rooms.chat_room_id, RISK_DETECTION=chat_messages.message_id. 존재·종류·소유·현재 공개 권한을 서비스가 검사한다.",
-    "AI 위험 결과의 chat_room_id를 없애도 메시지→방 관계로 종료/삭제 대상을 찾는다. 메시지/방 삭제 전에 관련 AI 결과를 정리한다. target_id만 비교해 다른 kind의 동일 숫자 ID를 삭제하지 않는다.",
-    "background_jobs.attempts는 선점마다 원자 증가하며 운영 재시도에서도 초기화하지 않는다. 워커는 완료/실패 갱신에 job_id·RUNNING·자신의 attempt 값·유효 lease_until을 모두 비교한다. 오래된 워커 결과가 최신 상태를 덮어쓰지 못하게 한다. 재시도 예산을 별도로 초기화해야 한다면 lease_version을 유지한다."
+  "enums": {
+    "auth_provider": [
+      {
+        "value": "GOOGLE",
+        "meaning": "구글"
+      },
+      {
+        "value": "KAKAO",
+        "meaning": "카카오"
+      },
+      {
+        "value": "NAVER",
+        "meaning": "네이버"
+      }
+    ],
+    "device_platform": [
+      {
+        "value": "ANDROID",
+        "meaning": "안드로이드"
+      },
+      {
+        "value": "IOS",
+        "meaning": "아이폰"
+      }
+    ],
+    "gender": [
+      {
+        "value": "MALE",
+        "meaning": "남성"
+      },
+      {
+        "value": "FEMALE",
+        "meaning": "여성"
+      }
+    ],
+    "smoking_status": [
+      {
+        "value": "NON_SMOKER",
+        "meaning": "비흡연"
+      },
+      {
+        "value": "E_CIGARETTE",
+        "meaning": "전자담배"
+      },
+      {
+        "value": "ONLY_WHEN_DRINKING",
+        "meaning": "술 마실 때만"
+      },
+      {
+        "value": "SMOKER",
+        "meaning": "흡연"
+      }
+    ],
+    "drinking_frequency": [
+      {
+        "value": "NEVER",
+        "meaning": "안 마심"
+      },
+      {
+        "value": "SPECIAL_OCCASIONS_ONLY",
+        "meaning": "특별한 날만"
+      },
+      {
+        "value": "MONTHLY_AT_MOST_ONCE",
+        "meaning": "한 달에 1번 이하"
+      },
+      {
+        "value": "MONTHLY_TWO_TO_FOUR",
+        "meaning": "한 달에 2~4번"
+      },
+      {
+        "value": "WEEKLY_TWO_TO_THREE",
+        "meaning": "일주일에 2~3번"
+      },
+      {
+        "value": "WEEKLY_FOUR_OR_MORE",
+        "meaning": "일주일에 4번 이상"
+      }
+    ],
+    "religion": [
+      {
+        "value": "NONE",
+        "meaning": "무교"
+      },
+      {
+        "value": "PROTESTANT",
+        "meaning": "기독교"
+      },
+      {
+        "value": "CATHOLIC",
+        "meaning": "천주교"
+      },
+      {
+        "value": "BUDDHIST",
+        "meaning": "불교"
+      },
+      {
+        "value": "OTHER",
+        "meaning": "기타"
+      },
+      {
+        "value": "UNDISCLOSED",
+        "meaning": "밝히지 않음"
+      }
+    ],
+    "analysis_status": [
+      {
+        "value": "PENDING",
+        "meaning": "분석 중"
+      },
+      {
+        "value": "SUCCEEDED",
+        "meaning": "성공"
+      },
+      {
+        "value": "INSUFFICIENT",
+        "meaning": "응답 부족으로 재검사 필요"
+      },
+      {
+        "value": "FAILED",
+        "meaning": "실패"
+      }
+    ],
+    "keyring_state": [
+      {
+        "value": "UNBOUND",
+        "meaning": "미등록"
+      },
+      {
+        "value": "REGISTERED",
+        "meaning": "등록됨"
+      }
+    ],
+    "matching_status": [
+      {
+        "value": "WAITING",
+        "meaning": "한쪽 기록만 들어와 상대 기록 대기"
+      },
+      {
+        "value": "NOT_MATCHED",
+        "meaning": "대기 만료·검증 실패"
+      },
+      {
+        "value": "PENDING",
+        "meaning": "제안 보냄, 응답 대기"
+      },
+      {
+        "value": "ONE_ACCEPTED",
+        "meaning": "한쪽만 수락"
+      },
+      {
+        "value": "ACCEPTED",
+        "meaning": "둘 다 수락"
+      },
+      {
+        "value": "REJECTED",
+        "meaning": "거절"
+      },
+      {
+        "value": "EXPIRED",
+        "meaning": "응답 기한 지남"
+      },
+      {
+        "value": "CLOSED",
+        "meaning": "채팅까지 끝남"
+      }
+    ],
+    "proposal_response": [
+      {
+        "value": "ACCEPTED",
+        "meaning": "수락"
+      },
+      {
+        "value": "REJECTED",
+        "meaning": "거절"
+      }
+    ],
+    "chat_close_reason": [
+      {
+        "value": "EXPIRED",
+        "meaning": "7일 지나 자동 종료"
+      },
+      {
+        "value": "LEFT",
+        "meaning": "한쪽이 나감"
+      },
+      {
+        "value": "BLOCKED",
+        "meaning": "한쪽이 차단"
+      }
+    ],
+    "chat_report_reason": [
+      {
+        "value": "ABUSE",
+        "meaning": "욕설"
+      },
+      {
+        "value": "SEXUAL",
+        "meaning": "성적 발언"
+      },
+      {
+        "value": "SPAM",
+        "meaning": "광고"
+      },
+      {
+        "value": "ETC",
+        "meaning": "기타"
+      }
+    ],
+    "chat_report_status": [
+      {
+        "value": "RECEIVED",
+        "meaning": "접수"
+      },
+      {
+        "value": "REVIEWING",
+        "meaning": "검토 중"
+      },
+      {
+        "value": "RESOLVED",
+        "meaning": "처리 완료"
+      },
+      {
+        "value": "DISMISSED",
+        "meaning": "문제 없음"
+      }
+    ],
+    "safety_notice_type": [
+      {
+        "value": "MONEY_REQUEST",
+        "meaning": "금전 요구"
+      },
+      {
+        "value": "PERSONAL_INFO",
+        "meaning": "개인정보 요구"
+      },
+      {
+        "value": "OFF_PLATFORM",
+        "meaning": "외부 연락 유도"
+      },
+      {
+        "value": "HARASSMENT",
+        "meaning": "괴롭힘"
+      }
+    ],
+    "operator_audit_kind": [
+      {
+        "value": "ACCESS",
+        "meaning": "회원 정보 조회·처리, 2년 보관"
+      },
+      {
+        "value": "PERMISSION",
+        "meaning": "운영자 권한 부여·회수, 3년 보관"
+      }
+    ],
+    "operator_action": [
+      {
+        "value": "MEMBER_VIEW",
+        "meaning": "회원 정보 조회"
+      },
+      {
+        "value": "REPORT_CHAT_VIEW",
+        "meaning": "신고된 채팅 열람"
+      },
+      {
+        "value": "REPORT_RESOLVE",
+        "meaning": "신고 처리"
+      },
+      {
+        "value": "PROFILE_CORRECT",
+        "meaning": "프로필 정정"
+      },
+      {
+        "value": "KEYRING_UNBIND",
+        "meaning": "분실 기기 등록 해제"
+      },
+      {
+        "value": "MEMBER_WITHDRAW",
+        "meaning": "강제 탈퇴"
+      },
+      {
+        "value": "CASE_HANDLE",
+        "meaning": "지원 요청 처리"
+      },
+      {
+        "value": "LOGIN_FAIL",
+        "meaning": "운영 화면 로그인 실패"
+      },
+      {
+        "value": "OPERATOR_GRANT",
+        "meaning": "운영자 권한 부여"
+      },
+      {
+        "value": "OPERATOR_REVOKE",
+        "meaning": "운영자 권한 회수"
+      }
+    ],
+    "operator_result": [
+      {
+        "value": "SUCCESS",
+        "meaning": "성공"
+      },
+      {
+        "value": "DENIED",
+        "meaning": "권한 없음"
+      },
+      {
+        "value": "FAILED",
+        "meaning": "실패"
+      }
+    ],
+    "profile_correction_field": [
+      {
+        "value": "BIRTH_DATE",
+        "meaning": "생년월일"
+      },
+      {
+        "value": "GENDER",
+        "meaning": "성별"
+      },
+      {
+        "value": "NICKNAME",
+        "meaning": "닉네임"
+      }
+    ],
+    "service_case_event": [
+      {
+        "value": "INFO_REQUESTED",
+        "meaning": "운영자가 추가 확인 요청"
+      },
+      {
+        "value": "USER_REPLIED",
+        "meaning": "회원이 답변"
+      },
+      {
+        "value": "ACTION_DONE",
+        "meaning": "운영 작업 성공(정정·등록 해제·탈퇴)"
+      },
+      {
+        "value": "ACTION_FAILED",
+        "meaning": "운영 작업 실패"
+      },
+      {
+        "value": "STATUS_CHANGED",
+        "meaning": "처리 상태 변경"
+      }
+    ],
+    "service_case_kind": [
+      {
+        "value": "PROFILE_CORRECTION",
+        "meaning": "프로필 정정 요청"
+      },
+      {
+        "value": "LOST_WITHDRAWAL",
+        "meaning": "키링 분실로 인한 탈퇴 요청"
+      }
+    ],
+    "service_case_status": [
+      {
+        "value": "RECEIVED",
+        "meaning": "접수"
+      },
+      {
+        "value": "REVIEWING",
+        "meaning": "검토 중"
+      },
+      {
+        "value": "NEEDS_INFO",
+        "meaning": "추가 확인 필요"
+      },
+      {
+        "value": "COMPLETED",
+        "meaning": "완료"
+      },
+      {
+        "value": "REJECTED",
+        "meaning": "반려"
+      },
+      {
+        "value": "NO_RESPONSE",
+        "meaning": "추가 확인에 응답 없음"
+      }
+    ]
+  },
+  "relations": [
+    {
+      "from_table": "personality",
+      "from_column": "survey_id",
+      "relation": ">",
+      "to_table": "survey",
+      "to_column": "id"
+    },
+    {
+      "from_table": "refresh_token",
+      "from_column": "user_id",
+      "relation": ">",
+      "to_table": "users",
+      "to_column": "id"
+    },
+    {
+      "from_table": "push_installation",
+      "from_column": "user_id",
+      "relation": ">?",
+      "to_table": "users",
+      "to_column": "id"
+    },
+    {
+      "from_table": "operator_audit",
+      "from_column": "operator_id",
+      "relation": ">?",
+      "to_table": "users",
+      "to_column": "id"
+    },
+    {
+      "from_table": "matching",
+      "from_column": "user_low_id",
+      "relation": ">",
+      "to_table": "users",
+      "to_column": "id"
+    },
+    {
+      "from_table": "matching",
+      "from_column": "user_high_id",
+      "relation": ">",
+      "to_table": "users",
+      "to_column": "id"
+    },
+    {
+      "from_table": "keyring",
+      "from_column": "owner_user_id",
+      "relation": ">?",
+      "to_table": "users",
+      "to_column": "id"
+    },
+    {
+      "from_table": "chat_message",
+      "from_column": "chat_id",
+      "relation": ">",
+      "to_table": "chat",
+      "to_column": "id"
+    },
+    {
+      "from_table": "chat_message",
+      "from_column": "sender_participant_id",
+      "relation": ">",
+      "to_table": "chat_participant",
+      "to_column": "id"
+    },
+    {
+      "from_table": "survey",
+      "from_column": "user_id",
+      "relation": ">",
+      "to_table": "users",
+      "to_column": "id"
+    },
+    {
+      "from_table": "chat",
+      "from_column": "matching_id",
+      "relation": "-",
+      "to_table": "matching",
+      "to_column": "id"
+    },
+    {
+      "from_table": "profile",
+      "from_column": "user_id",
+      "relation": "-",
+      "to_table": "users",
+      "to_column": "id"
+    },
+    {
+      "from_table": "user_setting",
+      "from_column": "user_id",
+      "relation": "-",
+      "to_table": "users",
+      "to_column": "id"
+    },
+    {
+      "from_table": "matching_preference",
+      "from_column": "user_id",
+      "relation": "-",
+      "to_table": "users",
+      "to_column": "id"
+    },
+    {
+      "from_table": "profile",
+      "from_column": "active_personality_id",
+      "relation": ">?",
+      "to_table": "personality",
+      "to_column": "id"
+    },
+    {
+      "from_table": "service_case",
+      "from_column": "requester_user_id",
+      "relation": ">",
+      "to_table": "users",
+      "to_column": "id"
+    },
+    {
+      "from_table": "service_case",
+      "from_column": "assigned_operator_id",
+      "relation": ">?",
+      "to_table": "users",
+      "to_column": "id"
+    },
+    {
+      "from_table": "matching_participant",
+      "from_column": "matching_id",
+      "relation": ">",
+      "to_table": "matching",
+      "to_column": "id"
+    },
+    {
+      "from_table": "matching_participant",
+      "from_column": "user_id",
+      "relation": ">",
+      "to_table": "users",
+      "to_column": "id"
+    },
+    {
+      "from_table": "matching_participant",
+      "from_column": "encounter_keyring_id",
+      "relation": ">?",
+      "to_table": "keyring",
+      "to_column": "id"
+    },
+    {
+      "from_table": "chat_participant",
+      "from_column": "chat_id",
+      "relation": ">",
+      "to_table": "chat",
+      "to_column": "id"
+    },
+    {
+      "from_table": "chat_participant",
+      "from_column": "user_id",
+      "relation": ">?",
+      "to_table": "users",
+      "to_column": "id"
+    },
+    {
+      "from_table": "chat_report",
+      "from_column": "chat_id",
+      "relation": ">",
+      "to_table": "chat",
+      "to_column": "id"
+    },
+    {
+      "from_table": "chat_report",
+      "from_column": "reporter_participant_id",
+      "relation": ">",
+      "to_table": "chat_participant",
+      "to_column": "id"
+    },
+    {
+      "from_table": "chat_report_message",
+      "from_column": "report_id",
+      "relation": ">",
+      "to_table": "chat_report",
+      "to_column": "id"
+    },
+    {
+      "from_table": "chat_report_message",
+      "from_column": "message_id",
+      "relation": ">",
+      "to_table": "chat_message",
+      "to_column": "id"
+    },
+    {
+      "from_table": "chat_safety_notice",
+      "from_column": "chat_participant_id",
+      "relation": ">",
+      "to_table": "chat_participant",
+      "to_column": "id"
+    },
+    {
+      "from_table": "survey_answer",
+      "from_column": "survey_id",
+      "relation": ">",
+      "to_table": "survey",
+      "to_column": "id"
+    },
+    {
+      "from_table": "service_case",
+      "from_column": "lost_keyring_id",
+      "relation": ">?",
+      "to_table": "keyring",
+      "to_column": "id"
+    },
+    {
+      "from_table": "service_case_history",
+      "from_column": "service_case_id",
+      "relation": ">",
+      "to_table": "service_case",
+      "to_column": "id"
+    },
+    {
+      "from_table": "service_case_history",
+      "from_column": "actor_user_id",
+      "relation": ">?",
+      "to_table": "users",
+      "to_column": "id"
+    },
+    {
+      "from_table": "operator_audit",
+      "from_column": "target_user_id",
+      "relation": ">?",
+      "to_table": "users",
+      "to_column": "id"
+    },
+    {
+      "from_table": "operator_audit",
+      "from_column": "target_service_case_id",
+      "relation": ">?",
+      "to_table": "service_case",
+      "to_column": "id"
+    },
+    {
+      "from_table": "operator_audit",
+      "from_column": "target_keyring_id",
+      "relation": ">?",
+      "to_table": "keyring",
+      "to_column": "id"
+    },
+    {
+      "from_table": "operator_audit",
+      "from_column": "target_chat_report_id",
+      "relation": ">?",
+      "to_table": "chat_report",
+      "to_column": "id"
+    }
   ]
 }

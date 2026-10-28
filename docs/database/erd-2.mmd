@@ -1,43 +1,31 @@
+%% ERD21 design view; relationships are logical, not production FK proof.
 erDiagram
-    keyrings {
-        uuid public_device_id UK
-        bigint device_id PK
-        bytea serial_hash
-        text verification_key_ref
-        text firmware_version
-        timestamptz blocked_at
-        text block_reason
-    }
-    keyring_bindings {
-        bigint binding_id PK
-        bigint device_id
+    survey {
+        bigint id PK
         bigint user_id
-        timestamptz bound_at
-        timestamptz unbound_at
+        varchar survey_version
+        timestamptz completed_at
     }
-    registration_challenges {
-        bigint challenge_id PK
-        bigint user_id
-        bytea nonce_hash
-        timestamptz expires_at
-        timestamptz consumed_at
+    survey_answer {
+        bigint survey_id PK
+        varchar question_id PK
+        varchar answer_value
+        timestamptz answered_at
     }
-    keyring_sync_runs {
-        bigint sync_run_id PK
-        bigint binding_id
-        bigint snapshot_id
-        bytea payload_hash
-        text status
-        timestamptz acknowledged_at
+    personality {
+        bigint id PK
+        bigint survey_id
+        varchar analysis_version
+        analysis_status status
+        jsonb result
     }
-    settings_snapshots {
-        bigint snapshot_id PK
-        bigint user_id
-        bigint settings_version
-        bigint analysis_result_id
-        jsonb snapshot_json
-        timestamptz created_at
+    profile {
+        bigint user_id PK
     }
-    keyrings ||--o{ keyring_bindings : "device_id logical"
-    keyring_bindings ||--o{ keyring_sync_runs : "binding_id logical"
-    settings_snapshots ||--o{ keyring_sync_runs : "snapshot_id logical"
+    users {
+        bigint id PK
+    }
+    survey ||--o{ personality : "survey_id"
+    users ||--o{ survey : "user_id"
+    personality o|--o{ profile : "active_personality_id"
+    survey ||--o{ survey_answer : "survey_id"

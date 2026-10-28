@@ -65,7 +65,9 @@ pipeline {
           when { expression { 'ai' in changed } }
           steps {
             gitlabCommitStatus(name: 'ai') {
+              // ai 테스트는 JS 참조 구현과 결과를 비교하므로 Node.js 가 필요하다 (tests/conftest.py, 데비안 패키지 Node 20).
               inDocker('python:3.12-slim', 'ai-server', '-v tingle-ci-pip:/root/.cache/pip', '''
+apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends nodejs >/dev/null
 pip install -q --root-user-action=ignore -r requirements.txt
 python -m pytest -q
 ''')
@@ -117,7 +119,7 @@ sh gradlew check :androidApp:$APK_TASK --no-daemon -Dorg.gradle.jvmargs=-Xmx3g -
                 } else {
                   withEnv(['APK_TASK=assembleDebug']) { build() }
                 }
-                // 공개: develop → https://도메인/app/dev/latest.apk, master → /app/latest.apk (nginx /app/ → /srv/tingle/app). 앱이 바뀐 커밋에서만 갱신된다.
+                // 공개: develop → https://도메인/dev/app/latest.apk, master → /app/latest.apk (nginx /dev/app/ → /srv/tingle/app/dev, /app/ → /srv/tingle/app). 앱이 바뀐 커밋에서만 갱신된다.
                 def apk = release ? 'release/androidApp-release.apk' : 'debug/androidApp-debug.apk'
                 if (publish) {
                   sh """

@@ -1,0 +1,47 @@
+{
+  "date": "2026-10-28",
+  "channel": "internal browser only",
+  "notionScope": {
+    "remainingSurveyPagesRead": 7,
+    "pagesEditedAndReloaded": 2,
+    "savedLeafChanges": 3,
+    "excludedAlready": [
+      "setSurveyMetadata",
+      "getJob"
+    ],
+    "otherOwnerAdminPagesReadAndPreserved": 9
+  },
+  "patch": {
+    "activeOperations": 11,
+    "schemas": 14,
+    "excludedOperations": 2
+  },
+  "checks": {
+    "schemaAndMediaExamplesValidated": 70,
+    "localRefsResolved": 73,
+    "pathParameterConsistency": "PASS",
+    "formatErrors": 0,
+    "negativeRequestsRejected": [
+      "version over30",
+      "array answer",
+      "UUID session",
+      "missing resultId"
+    ],
+    "sharedManifestUnchanged": true
+  },
+  "notionReadback": {
+    "completeExcerptLabel": true,
+    "latestValidAnalysisPointerAndAtomicSettingVersion": true,
+    "retryUnknownsExplicit": true
+  },
+  "limitations": [
+    "Documentation and schema validation only",
+    "No server, shared DB, deployment, or team approval verification",
+    "Existing target-version draft answer-copy rule remains open",
+    "AI retry time basis, attempts accounting, execution fencing remain open"
+  ],
+  "evidence": [
+    "tmp/notion-survey-complete-rest-final.png",
+    "tmp/notion-survey-analysis-rest-final.png"
+  ]
+}

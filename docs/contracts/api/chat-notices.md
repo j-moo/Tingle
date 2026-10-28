@@ -1,5 +1,28 @@
 # 첫 입장·종료 안내와 설치별 알림
 
+2026-10-28 / 김영빈 담당 채팅 안내의 21개 테이블 대조. 채팅 기본 계약은 [chat.md](chat.md), 기계 판독 계약은 [OpenAPI](openapi.json), 최신 저장 정의는 [ERD](../../database/erd.md)를 따른다. 아래 현재 기준과 과거 구현 기록을 구분한다.
+
+## 현재 21개 테이블 기준
+
+| API | 식별자·역할 | 저장·합의 상태 |
+| --- | --- | --- |
+| POST /api/chat-rooms/{chatRoomId}/entries | chatRoomId는 chat.id의 숫자 int64. 기존 FIRST_ENTRY 안내 확보 계약 | 안내·최초 entry 키·표시 ACK 전용 저장 칸 없음. 기존 재진입/중복 방지 계약을 유지하되 영속 대안 합의 필요 |
+| GET /api/chat-rooms/{chatRoomId}/notices | 숫자 방 ID의 본인 미확인 입장·종료 안내 조회 | 예약·미확인/확인·기한 내 복구의 영속 대안 합의 필요 |
+| PUT /api/chat-rooms/{chatRoomId}/notices/{noticeId}/ack | 숫자 방 ID, 기존 noticeId UUID 계약은 저장 대안 합의 전 | 최초 표시 ACK 시각·소유권·멱등 키 저장 대안 합의 필요 |
+
+**chat_safety_notice는 AI 위험 안내 전용이다.** FIRST_ENTRY·ONE_HOUR_BEFORE_END의 저장소로 대신 쓰거나 noticeId를 그 테이블 bigint ID라고 확정하지 않는다. background_jobs도 최신 21개 테이블에는 없다. 기존 noticeId·예약·업무 키·표시 ACK·공급자 접수/재시작 복구를 정의하지 않은 채 작동한다고 표시하지 않는다. 안내 상태 저장 대안이 미확정이므로 해당 UUID는 현재 설계에서 지원이 확정된 공개 DB ID가 아니다.
+
+권한·종료·실제 표시 조건은 기존 기능 계약을 보존한다. 첫 입장 안내 확인 전 메시지 조회·전송·읽음을 403 CHAT_NOTICE_REQUIRED로 제한하는 계약도 저장 대안과 함께 검증해야 한다. 같은 방이라도 사용자별 안내/ACK는 분리하며 최초 ACK는 재시도·중복 요청으로 바꾸지 않는다. 다른 사용자/방의 안내는 404, 아직 시간이 오지 않은 종료 안내 ACK는 409 NOTICE_STATE_CONFLICT다. 종료 뒤 허용하는 기존 안내 ACK가 방·메시지 권한을 복구하지 않는다.
+
+방의 최초 created_at+168시간 및 최초 closed_at은 재시도·알림 실패·배치 지연으로 연장하지 않는다. 실제 종료시각과 남은 시간으로 안내하고 외부 접수·단말 수신·화면 표시/ACK를 하나의 성공으로 합치지 않는다. 중복/누락·앱 종료/백그라운드 표시 보장은 FE·실기기 검증 대상이다.
+
+설치 연결은 인증 담당의 push_installation(user_id·login_family_id·client_installation_id 등)을 참조한다. 설치 UUID와 refresh family UUID는 숫자 API ID 전환 대상이 아니다. 기존 bindingId·linkedAt은 최신 ERD에서 저장 칸이 없어 인증/푸시 담당과 지연 전송 차단 대안을 합의해야 한다. 다른 담당의 동의·키링·설치 정의를 이 문서에서 임의 변경하지 않는다.
+
+노션 entries의 빈 notices 예시는 첫 안내 확인 후 재입장한 경우다. 이때 활성 방의 expiresAt은 createdAt+168시간, closedAt/deleteAt은 null, 나머지 권한을 충족하면 canRead/canSend는 true다. 최초 미확인 입장 예시와 혼동하지 않는다.
+
+## 2026-10-22 구현 이력 — 구스키마 기록
+
+아래는 당시 구현·통합 근거를 보존한 기록이다. background_jobs·public_id·binding_id·linked_at 및 과거 UUID 방 식별자를 최신 21개 테이블에 존재하는 칸으로 인용하지 않는다. 현재 저장 구조 이관·팀 승인·서버/공용 DB/배포 완료를 뜻하지 않는다.
 v0.1.0-review / 2026-10-22. 담당 김영빈(BE), 연동 황순철(FE)·조가을(인증). 관련 S15P31E106-49·50 및 API/ERD 계약. 기존 기능 명세와 매칭 정책을 기준으로 구현하며 원문을 수정하지 않는다. 필드/예시는 [OpenAPI](openapi.json), 채팅 기본 권한은 [chat.md](chat.md), 저장은 [ERD](../../database/erd.md)와 schema.sql을 따른다.
 
 ## 입장과 표시 확인
@@ -10,7 +33,7 @@ v0.1.0-review / 2026-10-22. 담당 김영빈(BE), 연동 황순철(FE)·조가�
 | GET /chat-rooms/{chatRoomId}/notices | 현재 필요한 본인 미확인 안내 목록 |
 | PUT /chat-rooms/{chatRoomId}/notices/{noticeId}/ack | Idempotency-Key UUID 필수, 본문 없음. 실제 표시/확인한 안내의 최초 ACK 기록 |
 
-경로는 `/api/v1` 기준이며 Bearer 인증과 현재 방 권한을 검사한다. 같은 방이어도 참여자별로 안내 ID와 ACK를 분리한다. FIRST_ENTRY는 최초 실제 입장 때 한 번 생성하고 미확인 재입장은 동일 UUID를 반환한다. ACK 후에는 다시 표시하지 않는다. 최초 ACK 시각은 중복/동시 요청으로 바꾸지 않는다.
+위 채팅 안내 경로는 `/api` 기준이며 Bearer 인증과 현재 방 권한을 검사한다. 아래 설치 등록·해제의 기존 `/api/v1` 경로는 이번 변경 범위 밖이다. 같은 방이어도 참여자별로 안내 ID와 ACK를 분리한다. FIRST_ENTRY는 최초 실제 입장 때 한 번 생성하고 미확인 재입장은 동일 UUID를 반환한다. ACK 후에는 다시 표시하지 않는다. 최초 ACK 시각은 중복/동시 요청으로 바꾸지 않는다.
 
 최초 입장 안내를 확인하기 전에는 메시지 조회·전송·읽음 ACK를403 CHAT_NOTICE_REQUIRED로 막고 ChatRoom.canRead/canSend=false를 반환한다. 방 입장 자체와 안내 조회는 가능하며 확인 후 메시지 권한을 다시 계산한다. 다른 사용자/방 안내는404, 이른 END_NOTICE ACK는409 NOTICE_STATE_CONFLICT다. 최초 entry/ack 요청 키는 각각 업무에 귀속하며 다른 업무 재사용은409 IDEMPOTENCY_CONFLICT다. 같은 업무의 새로운 재시도 키는 결과만 재사용하며 최초 키를 덮어쓰지 않는다.
 

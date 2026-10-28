@@ -1,66 +1,76 @@
-# 채팅 저장·권한·메시지·읽음 API
+# 채팅 저장·권한·메시지·본인 표시 확인 API
 
-v0.1.0-review / 2026-10-22. 담당 김영빈(BE), 영향 FE 황순철·인증/동의 조가을. 관련 S15P31E106-38·43. 필드·필수/nullable·예시는 [OpenAPI](openapi.json), 저장 구조는 [ERD](../../database/erd.md)와 schema.sql을 따른다. 기능 명세와 매칭 정책은 읽기 기준으로 사용하며 이 문서에서 수정하지 않는다.
+2026-10-28 / 담당 김영빈(BE), 영향 FE·BE·AI. 최신 21개 테이블 설계 기준의 문서 계약이다. 경로·필드·예시는 [OpenAPI](openapi.json), 저장 정의는 [ERD](../../database/erd.md)를 따른다. 서버 코드·기존 데이터 이관·공용 DB·배포의 완료를 뜻하지 않는다. 기능·매칭 정책 원문은 보존한다.
 
-## 방 생성과 식별
+## 식별자와 저장 위치
 
-- 기존 제안의 양쪽 수락 확정 트랜잭션 안에서 방·두 참여자·제안 연결을 함께 저장한다. 한쪽 수락/거절/취소/만료에서는 생성하지 않는다. 생성 실패는 트랜잭션을 롤백하며 성공으로 응답하지 않는다.
-- 제안 서비스의 회원→쌍→제안 잠금 아래 최초 생성 업무 키 source_proposal_id를 검사한다. 같은 쌍의 기존 활성 방이 있으면 재사용하고 최초 시각을 유지한다. 중복 수락/응답 유실도 최초 방과 연결한다. 별도 생성 재시도 API나 비동기 준비 상태는 이번 구현에 없다.
-- 최초 저장한 createdAt에서168시간 후가 expiresAt이다. 첫 입장·첫 메시지·중복 수락·재접속은 기한을 연장하지 않는다. PostgreSQL에 저장하는 시각 정밀도는 마이크로초로 맞춰 최초/재시도 응답이 일치한다.
-- 외부 chatRoomId와 messageId는 각각 chat_rooms.public_id, chat_messages.public_id의 영속 UUID다. 내부 bigint를 공개 ID로 전환하지 않는다. sender는 ME/PARTNER이며 상대 회원번호를 반환하지 않는다.
-- 성사 제안은 제안 목록에서 제거하고 채팅 목록에서 관리한다. 제안 단건/결정 응답의 chatAvailable은 실제 방·현재 권한으로 계산하며 제안 ACCEPTED만으로 권한을 부여하지 않는다.
-
-## 접근 권한
-
-모든 방/메시지/읽음 요청에서 현재 인증·가입 완료·최신 비AI 필수 동의, 해당 방 참여자 여부, 양쪽 계정/차단·퇴장, 방 종료 시각과 현재 AI 위험 감지 동의를 검사한다. 마지막 키링 초기화나 설문/설정 재검사를 기존 채팅 제한 조건으로 사용하지 않는다.
-
-| 상황 | 응답 |
+| API 항목 | 21개 테이블 기준 |
 | --- | --- |
-| 없는 방 또는 비참여자 | 같은404 RESOURCE_NOT_FOUND |
-| 방 만료·명시적 종료·퇴장·차단/상대 비활성 | 메시지/읽음410 CHAT_CLOSED |
-| 현재 AI 동의 없음·이전 버전만 있음 | 403 AI_RISK_CONSENT_REQUIRED |
-| 방 생성 뒤 당사자의 AI 동의 철회 기록 존재 | 기존 방의 양쪽 내용 접근410. 재동의해도 기존 방 복원 안 함 |
-| 기존 방 종료 후 새 성사 건 | 방 생성과 제안 수락을 AI 철회로 막지 않음. 철회자 본인은 재동의 전 이용 불가, 상대는 자신의 현재 권한으로 이용 |
+| chatRoomId | `chat.id` 양의 integer(int64). 공개 UUID 칸 없음 |
+| messageId | `chat_message.id` 양의 integer(int64) |
+| clientMessageId | 앱 발급 UUID인 `chat_message.client_message_id`. 숫자 ID 전환 대상 아님 |
+| Idempotency-Key | UUID인 `chat_message.request_key`. 원문을 보관하지 않고 `request_hash`로 요청 의미 충돌 판정 |
+| sequence | `chat_message.seq`. 방 안의 증가 순번 |
+| sender | `sender_participant_id`를 현재 `chat_participant.id`와 비교해 ME/PARTNER로 반환. 내부 참여자·회원 번호 비공개 |
+| text | 입력 검증·웹 주소 치환을 마친 `chat_message.body`. 치환 전 원문 별도 저장·로그 금지 |
+| 본인 표시 순번 | `chat_participant.last_read_message_seq`, 초기 0. 상대 비공개 |
 
-기존 회원의 동의 전환 노출/유예·실제 적용 시점은 작성자 확인 항목으로 유지한다. 이번 구현으로 공용 서비스의 기존 회원 전환 정책을 임의 활성화하지 않는다. 철회/재동의 API·이벤트에 따른 종료 시각 영속화·AI 작업 취소는 후속 범위다. 현재 접근 검사는 저장된 동의 이력만으로 종료된 방의 내용을 즉시 차단하며 소멸 방을 복구하지 않는다.
+인증된 회원이 해당 방 참여자인지 매 요청 검사한다. 번호를 안다는 이유로 접근을 허용하지 않는다. 없는 방과 비참여자에게 같은 404 RESOURCE_NOT_FOUND를 반환한다.
 
-GET 방 메타데이터는 참여자의 종료 안내/복구를 위해200 CLOSED·canRead/canSend=false를 허용하며 내용을 포함하지 않는다. 목록에는 사용할 수 있는 활성 방만 남긴다. 정리 배치 지연과 관계없이 요청 시 기한을 검사한다. 성공 응답은 no-store다.
+## 방 생성·수명·종료
 
-## 경로
+상호 수락 확정, `chat(matching_id)`, 두 `chat_participant` 생성은 같은 트랜잭션에서 처리한다. `chat.matching_id`의 관계당 한 방 조건을 검사하고 중복 수락은 최초 방·생성 시각을 복구한다. 한쪽 수락·거절·만료는 방을 만들지 않는다. 실패하면 전체를 롤백한다.
 
-모든 경로는 `/api/v1` 기준이며 Bearer 액세스 토큰이 필요하다.
+`createdAt = chat.created_at`, `expiresAt = created_at + 168시간`이다. 첫 입장·메시지·재접속·재시도·배치 지연으로 기한을 연장하지 않는다. `closedAt = chat.closed_at`은 최초 실제 종료 효력 시각이며 정상 만료는 원래 expiresAt이다. API ACTIVE/CLOSED는 종료·만료로 계산하며 별도 status 열은 없다. close_reason은 EXPIRED/LEFT/BLOCKED 내부 구분이며 상대에게 구체 사유를 공개하지 않는다.
 
-| API | 요청 | 응답 |
+기존 API deleteAt은 별도 DB 칸이 없는 보관 정책 계산값이다. 기존 종료+720시간 정책, 첨부의 탈퇴 즉시 삭제·신고 최초+90일 retain_until은 정책·관계 삭제 순서 합의가 필요하다. retain_until이나 신고 여부를 상대 공개 DTO로 추정·노출하지 않는다. 원문·최소 관계 기록·신고 보관의 목적과 수명을 섞지 않는다.
+
+## 경로와 권한
+
+모든 경로는 `/api` 기준이며 Bearer 액세스 토큰을 요구한다.
+
+| 경로 | 요청 | 정상 응답 |
 | --- | --- | --- |
-| GET /chat-rooms | cursor 선택, limit 기본20/최대100 | 200 ChatPage(items,nextCursor,serverTime) |
-| GET /chat-rooms/{chatRoomId} | 방 UUID | 200 ChatRoom 또는 권한 오류 |
-| GET /chat-rooms/{chatRoomId}/messages | cursor 선택, limit 기본20/최대100 | 200 MessagePage |
-| POST /chat-rooms/{chatRoomId}/messages | UUID Idempotency-Key 헤더, `{clientMessageId,text}` | 201 Message. 동일 재전송도 같은 메시지로201 |
-| POST /chat-rooms/{chatRoomId}/reads | `{messageIds:[수신 메시지 UUID...]}` 1~100개 | 200 `{messageIds,serverTime}` |
+| GET /chat-rooms | 선택 cursor, limit 기본 20·최대 100 | 200 ChatPage |
+| GET /chat-rooms/{chatRoomId} | 숫자 방 ID | 200 ChatRoom |
+| GET /chat-rooms/{chatRoomId}/messages | 선택 cursor, limit 기본 20·최대 100 | 200 MessagePage |
+| POST /chat-rooms/{chatRoomId}/messages | UUID Idempotency-Key, `{clientMessageId: UUID, text}` | 최초·정상 재전송 모두 201 Message |
+| POST /chat-rooms/{chatRoomId}/reads | 실제 표시한 수신 messageId 숫자 1~100개 | 200 ReadMessagesResult; 아래 순번 저장 대안 합의 필요 |
+| POST /chat-rooms/{chatRoomId}/leave | 본문 없음 | 현재 POL-09 미합의로 422 POLICY_UNRESOLVED. 합의 후 정상 형식은 200 LeaveResult |
 
-방 목록은 최초 저장 순서 내림차순이며 커서는 사용자+방 UUID에 귀속된다. 메시지는 방 안 sequence 내림차순이며 다음 커서는 방 UUID+마지막 sequence에 귀속된다. 커서는 불투명 위치값으로 취급하고 FE가 생성/수정하지 않는다. 다른 방 메시지 커서와 잘못된 값은400이다. 재접속은 최신 페이지를 조회하고 UUID/sequence로 중복을 제거한다. 이번 전달 경로는 HTTP 조회이며 WebSocket·푸시 전달 완료를 뜻하지 않는다.
+현재 인증·가입 완료·필수 동의·참여/퇴장·양쪽 계정/차단·방 만료를 검사한다. 마지막 키링 해제나 설문/설정 재검사를 기존 방 접근 제한으로 임의 추가하지 않는다. 성공 응답은 no-store다. 메시지·읽음에서 이용 종료는 410 CHAT_CLOSED이며 메타데이터 조회는 참여자의 종료 안내를 위해 200 CLOSED·canRead/canSend=false를 허용하고 대화 내용은 포함하지 않는다.
 
-## 메시지 입력과 재시도
+AI 동의·철회에 따른 접근/외부 분석 차단은 기존 기능 계약을 유지한다. 다만 최신 users.agreed_at 한 칸에는 AI 철회 이력·버전별 선택 상태가 없어 영속 저장·종료 사건 연동 합의가 필요하다. 현재 문서 변경으로 철회 처리나 새 동의 모델 구현 완료를 주장하지 않는다.
+
+커서는 사용자·방 숫자 ID·정렬 위치에 귀속되는 불투명 값이다. 다른 방 커서와 잘못된 값은 400이다. 메시지는 sequence 내림차순이며 FE는 숫자 messageId와 sequence로 재접속 중복을 제거한다. 다운로드·방 목록 조회로 읽음 처리하지 않는다. 실시간 전송·푸시 전달 보장은 별도다.
+
+## 본문 검증과 재전송
 
 1. CRLF/CR을 LF로 통일한다. 공백·줄바꿈만인 입력, NUL 등 제어문자(탭/LF 제외), 잘못된 UTF-16 서로게이트를 거부한다.
-2. **치환 전 원문**을 Java21 확장 그래핌 기준1000자 이하로 검사한다. 확장 결합 문자 입력의 자원 한도를 위해 정규화 입력64KiB UTF-8 상한도 적용한다. 위반은400 INVALID_MESSAGE이며 입력을 자르지 않는다.
-3. HTTP/HTTPS·www·프로토콜 없는 도메인/경로·단축 URL·국제화 도메인·IP 웹 주소의 주소 부분을 `[웹 주소 차단]`으로 바꾼다. 경로/쿼리/프래그먼트도 함께 바꾸고 주변 문장·문장부호를 보존한다. 일부 TLD 고정 목록은 사용하지 않는다. 이메일·일반 숫자·카카오 ID·분할 표기는 합쳐 추정하지 않는다.
-4. 치환 결과 **전체**를 text 컬럼에 저장하고 같은 결과를 응답/조회한다. 치환 후1000자를 넘어도 재거부/절단하지 않는다. 원문 본문은 별도 저장하거나 로그하지 않는다. 중복 판정 전용 SHA-256만 request_hash에 보존한다. 이미지/파일/기타 미정의 필드는400이다.
+2. 치환 전 원문은 Java21 확장 그래핌 기준 1000자와 UTF-8 65536바이트 이하로 검사한다. 위반은 400 INVALID_MESSAGE이며 입력을 자르지 않는다.
+3. HTTP/HTTPS·www·프로토콜 없는 도메인/경로·단축 URL·국제화 도메인·IP 웹 주소의 주소 부분을 `[웹 주소 차단]`으로 치환하고 주변 문장은 보존한다. 이메일·일반 숫자·카카오 ID·분할 표기는 합쳐 추정하지 않는다.
+4. 치환한 전체 결과를 body에 저장·반환한다. 치환으로 늘어난 결과를 다시 거부하거나 자르지 않는다. 이미지·파일·미정의 필드는 400이다.
 
-같은 사용자 행과 방 행을 잠가 전송 키와 방 sequence를 직렬화한다. 요청 키는 발신자 단위, clientMessageId는 방+발신자 단위다. 키에 다른 방/클라이언트 메시지/정규화 원문을 보내거나 같은 clientMessageId의 원문을 바꾸면409 IDEMPOTENCY_CONFLICT다. 같은 원문 재전송은 최초 messageId/sequence/createdAt을 그대로 반환한다. 같은 clientMessageId에 새 요청 키를 사용한 정상 재시도는 기존 메시지를 반환하고 새 키는 소비하지 않는다. 다른 발신자는 같은 UUID를 독립적으로 사용할 수 있다. 재전송도 현재 권한·기한을 검사하므로 종료 뒤 메시지 내용을 복원하지 않는다.
+동일 재전송은 최초 messageId·sequence·createdAt을 그대로 반환한다. 다른 정규화 원문/업무로 Idempotency-Key 또는 clientMessageId를 재사용하면 409 IDEMPOTENCY_CONFLICT다. 같은 clientMessageId에 새 요청 키를 쓰는 정상 재시도는 기존 메시지를 반환하며 새 키를 소비하지 않는다. 재전송도 현재 권한·기한을 검사한다.
 
-## 실제 표시한 메시지 읽음
+기존 요청 키 계약은 발신 회원 범위, clientMessageId는 방+발신자 범위다. 최신 ERD의 참여자 범위 키/고유 조건만으로 동일 회원의 다른 방 키 재사용을 판정할 수 있는지 확인해야 한다. 회원·방 잠금과 유일성·충돌 검사를 함께 설계하며 이 차이를 해결한 것으로 표시하지 않는다.
 
-FE는 앱 활성 상태에서 **현재 방 화면에 실제 표시한 수신 메시지 UUID만** 보낸다. 수신·다운로드·알림 미리보기·방 목록 확인·화면 밖 메시지에는 ACK를 보내지 않는다. 서버가 단말 화면 표시를 직접 검증하는 것은 아니므로 FE가 이 조건을 지켜야 한다.
+## 본인 수신 메시지 표시 확인
 
-서버는 요청 전체의 방/수신 소유권을 검증한 뒤 chat_message_reads(message_id,user_id,read_at)에 원자 저장한다. 다른 방/없는 메시지가 섞이면404이며 일부만 읽음 처리하지 않는다. 본인 발신 메시지 ACK는400이다. 중복 UUID·재시도는 한 기록으로 처리하고 최초 readAt을 유지한다. 최신 메시지의 ACK만 받았다고 과거 메시지를 읽음 처리하지 않는다.
+FE는 앱 활성 상태의 현재 방 화면에 실제 표시한 수신 메시지 숫자 ID만 보낸다. 알림 미리보기·다운로드·방 목록·화면 밖 메시지는 ACK 대상이 아니다. 서버는 요청 전체의 방·수신 소유권을 검증하며 본인 발신은 400, 다른 방/없는 메시지는 404다. 일부만 성공시키지 않는다. 늦은 ACK로 종료 방을 복원하지 않는다.
 
-Message.readByPartner는 **본인 발신 메시지**에 상대의 읽음 기록이 있을 때만 true이며 수신 메시지는 false다. 발신자는 메시지 재조회로 최신 값을 동기화한다. 한 번 확인한 읽음은 지연/중복 ACK로 되돌아가지 않는다. 늦은 ACK도 현재 권한·기한을 검사하고 종료 방을 복원하지 않는다. 읽음 기록은 원본 메시지 보관/삭제 단위에 포함하며 별도 무기한 보관하지 않는다.
+최신 ERD에는 chat_message_reads나 개별 readAt이 없다. 본인 `last_read_message_seq`만 저장하며 상대에게 읽음 상태를 공개하지 않는다. **Message.readByPartner는 응답에서 제거한다.** 본인 새 수신 메시지는 `seq > last_read_message_seq`이면서 발신 참여자가 본인이 아닌 메시지다.
 
-## 적용과 남은 범위
+숫자 messageIds 배치 요청을 위 단일 순번에 반영할 때 누락 순번을 건너뛰지 않는 연속 표시 범위·재시도 규칙은 합의가 필요하다. 마지막 번호 하나를 받았다고 앞의 미표시 메시지를 읽었다고 추정하지 않는다. 기존 개별 읽음 행 저장 계약을 조용히 유지하거나 단순 max(seq)로 대체하지 않는다.
 
-FE는 Message.readByPartner, 개별 읽음 ACK, UUID 매핑, 메시지 원문 길이/바이트 검사와 전체 치환 결과 표시를 함께 대응해야 한다. 기존 maxLength2000 계약을 그대로 사용하면 안 된다. 저장 구조 추가는 자동 데이터 이관이나 공용 DB 적용을 뜻하지 않으며 기존 행의 UUID/source/key 채우기 기준은 실제 적용 전 별도 확인한다.
+## 나가기·AI 시작 질문
 
-첫 입장/종료 안내·표시 ACK와 설치별 종료 알림은 후속 [안내·알림 계약](chat-notices.md)으로 구현했다. 첫 입장 안내 확인 전에는 메시지 조회/전송/읽음이403 CHAT_NOTICE_REQUIRED이며 canRead/canSend=false다. 일반 메시지/방 생성 푸시·실시간 이벤트, 신고 보관/삭제·운영 조회, 철회 이벤트의 종료 저장·AI 작업 중단과 실제 앱/배포는 별도다. 노션·ERDCloud 웹 저장도 로컬 계약 검증과 구분한다.
+나가기는 본인 `chat_participant.left_at`과 최초 `chat.closed_at/close_reason=LEFT`를 원자 처리한다. 재시도는 최초 효력 시각을 유지하고 나가기를 차단과 동일시하지 않는다. 제안 이후 영구 재매칭 금지와 기존 제품의 재매칭 정책 충돌은 별도 합의 항목이다. 기존 POL-09 합의 전에는 422 POLICY_UNRESOLVED를 유지하며 문서 수정만으로 이 API를 활성화하지 않는다.
 
-2026-10-22 후속 웹 대조: 요청받은 채팅·설치·로그아웃8개와 키링2개 API의 노션 현재 계약·저장 검증을 완료했다. 이 기록은 다른 API 전체나 서버/공용 DB/단말 검증으로 확대하지 않는다. [현재 통합 검증](../../verification/mr29-unified-integration-20261022.md)과 [10개 API 증거](../../verification/notion-api-ten-20261022.json)를 따른다.
+AI 시작 질문의 상태·질문 3개·출처·버전·재시도 정보는 `chat.icebreakers` JSON에 저장한다. POST는 별도 jobId 없이 chatRoomId와 해당 방 GET 상태 URL을 반환한다. GET 상태는 PENDING/SUCCEEDED/FAILED이며 성공한 질문은 정확히 3개다. 대기·실패를 생성 성공으로 표시하지 않는다. 최종 생성 실패는 서버 설정 파일의 기본 질문 대체를 시도하며 대체 성공은 SUCCEEDED/GENERAL_FALLBACK이다. 질문 사용 없이도 대화할 수 있다.
+
+최초 시도 포함 여부·최대 횟수·5분 기산점·실행 선점/세대·늦은 결과 반영 차단은 [ERD 설명](../../database/erd.md)의 합의 항목을 따른다. 채팅 종료·동의 철회 뒤 외부 전송/늦은 결과 반영을 막아야 하며 메모리 큐만으로 재시작 복구를 주장하지 않는다.
+
+## 검증 경계와 구현 이력
+
+현재 문서의 숫자 ID·저장 구조는 21개 테이블 설계 기준이다. 과거 UUID·개별 읽음 행을 쓰던 구현과는 호환되지 않는 변경이므로 FE/BE 계약·기존 행 이관·현재 소유권 검증을 함께 적용해야 한다. 기존 구현 증거는 [2026-10-22 통합 기록](../../verification/mr29-unified-integration-20261022.md)과 [당시 웹 API 대조](../../verification/notion-api-ten-20261022.json)이며 현재 스키마/서버 동작 증거로 확대하지 않는다. 입장·종료 안내의 저장 부재는 [안내 계약](chat-notices.md)에 명시한다.

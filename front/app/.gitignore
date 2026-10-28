@@ -17,3 +17,5 @@ node_modules/
 !*.xcodeproj/project.xcworkspace/
 !*.xcworkspace/contents.xcworkspacedata
 **/xcshareddata/WorkspaceSettings.xcsettings
+# Android Studio 가 자동 생성하는 Gradle 데몬 JDK 고정 설정 (팀 JDK 기준은 README)
+gradle/gradle-daemon-jvm.properties
