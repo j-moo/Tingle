@@ -1,5 +1,7 @@
 # 매칭 이유 설명 계약
 
+아래 첫 표는 2026-10-27 원계약의 담당·작성 범위 이력이다. 현재 API·저장 계약의 변경 범위는 이어지는 2026-10-28 정합화 절을 따른다.
+
 | 항목 | 내용 |
 | --- | --- |
 | 버전·변경일 | v0.1.2-draft / 2026-10-27. PM 우선순위 결정 2026-10-26, 최초 작성 2026-10-22 |
@@ -8,6 +10,12 @@
 | 상태 | MVP 개발 모델 `gpt-6-luna`·주선자 페르소나 선택 확정, 가상 입력의 GMS 생성 실험 완료. MR 검토 준비용 계약 초안이며 정보 사용 정책·API 추가안 승인·최종 사람 평가·서비스 구현·배포·병합 완료는 아님 |
 | 수정 기준 | MR !62 최신 HEAD `74ca51b13dc57321d8cccf04054037798968b712`의 데이터 형식·GEN-01~03·지시문·EXPL-01~04·GMS 검증 기록을 보존하고 2026-10-26 PM 결정의 MAT-04 P0 필수 정책과 후속 Story 역할을 반영 |
 | 변경 범위 | 저장소 변경은 이 계약 문서만이며 MR !62 설명에 같은 정책·후속 Story를 반영. PM 기능 명세·-36·실험 원문·코드·DB·정책·OpenAPI·Jira는 수정하지 않으며 추가 GMS 호출 없음 |
+
+## 2026-10-28 ERD21 HTTP 계약 정합화
+
+현재 전송 계약은 [OpenAPI](openapi.json)의 `/api/match-proposals` 및 `/internal/ai` 경로를 따른다. 공개 proposalId와 내부 encounterId는 matching.id int64, 내부 AiInput은 attemptId UUID·contextId int64·Manifest11필드다. 설명 상태·결과는 matching.evaluation에 연결하며 별도 Job/jobId·공용 jobs API는 사용하지 않는다. 공개 생성202는 ExplanationTask7필드, 공개 조회200는 ExplanationStatus5필드로 분리한다. 저장 대안·실행 복구·공개 범위·파일 매핑은 미합의를 그대로 명시하고 서버 구현·정책 승인으로 확대하지 않는다.
+
+아래 고정 SHA 대조·실험·GMS 결과·모델/페르소나 선택은 당시 자료다. 실험 원문과 결과·판정 수식·모델 정책은 변경하지 않았다. 2026-10-28에는 현재 HTTP/저장 계약 부분만 정합화했다.
 
 ## 1. 목적과 확인한 기준
 
@@ -55,7 +63,7 @@ MAT-04 매칭 이유 설명은 **MVP P0 필수**다. 매칭 이유 제공을 MVP
 
 -36이 기록한 실제 목업 반환은 `{ab,ba,score,eligible}`이며, 각 방향에 `rows/domains`가 있다. `rows`에는 `id,feature,domain,fit,wish,actual,label`, `domains`에는 영역별 결과가 있다. `ab`는 A가 원하는 모습에 B가 맞는 정도(A→B), `ba`는 B가 원하는 모습에 A가 맞는 정도(B→A)다. 방향별 점수나 같은 유형만으로 실제 행동의 공통점을 증명할 수 없다.
 
-`Evaluation.reasonKeys`·`encounterId`·`manifest`·양쪽 snapshot ID는 최신 통합 OpenAPI에 이미 정의된 필수 필드다. 실제 목업 `pair` 반환 필드는 아니며, 내부 응답/개인 결과 참조와 원본 row 대응은 -36의 후속 협의다. `reasonKeys`는 `string[]` 사유 코드이므로 이 목록만으로 연락·계획·차이의 자연어 사실 전체가 충분하다고 가정하지 않는다. 같은 계산의 실제 근거에서 요약을 만들고 공개 허용 범위를 적용하는 처리 위치·책임은 BE·AI가 맞춘다. 전체 `rows`·원응답을 모델에 보내지 않는다. 이미 전달된 계산 코드가 있다는 -36의 기록을 유지하며 신규 매칭 엔진 구현을 선행조건으로 만들지 않는다.
+`Evaluation.reasonKeys`·`encounterId`·`manifest`·양쪽 snapshot ID는 통합 계약의 필수 필드다. ERD21의 encounterId는 matching.id 숫자이고 snapshot/release 영속 대응은 미합의다. 실제 목업 `pair` 반환 필드는 아니며, 내부 응답/개인 결과 참조와 원본 row 대응은 -36의 후속 협의다. `reasonKeys`는 `string[]` 사유 코드이므로 이 목록만으로 연락·계획·차이의 자연어 사실 전체가 충분하다고 가정하지 않는다. 같은 계산의 실제 근거에서 요약을 만들고 공개 허용 범위를 적용하는 처리 위치·책임은 BE·AI가 맞춘다. 전체 `rows`·원응답을 모델에 보내지 않는다. 이미 전달된 계산 코드가 있다는 -36의 기록을 유지하며 신규 매칭 엔진 구현을 선행조건으로 만들지 않는다.
 
 v8의 기존 규칙 설명은 당시 규칙·원본 비교·방향과 대응이 확인되는 범위에서 **근거 선정과 대체 문장의 재사용 후보**다. 문구만으로 새로운 사실을 증명하지 않으며, 원응답을 복원하거나 v8/80문항과 100문항을 같은 순번으로 연결하지 않는다. 정상 경로의 AI는 허용된 여러 근거를 종합·서술하고, 규칙 문장만 선택하는 방식으로 되돌리지 않는다. v8 또는 확인한 목업에서 흡연·음주 등의 계산 영향이 이미 제거됐다고 설명하지 않는다(-36 §1.3·POL-01).
 
@@ -84,21 +92,13 @@ v8의 기존 규칙 설명은 당시 규칙·원본 비교·방향과 대응이 
 
 ### 3.2 내부 입력·추적 정보
 
-HTTP 입력과 서버가 재조회할 논리적 문맥을 구분한다. 최신 `POST /internal/v1/ai/explanations`의 `AiInput`은 `jobId`, `contextId`(각 필수 UUID string), `manifest`(필수 `Manifest` 객체)만 허용하며 `additionalProperties=false`다. 앱이 임의 근거나 열람자를 추가해 보내는 API가 아니다. `contextId`가 제안·만남·열람자를 어떻게 참조하는지, UUID와 내부 ID 대응, 재조회 위치는 BE 확인 대상이다. GMS의 `viewer/evidence`를 이 HTTP 본문에 바로 추가하지 않는다.
+현재 `POST /internal/ai/explanations` AiInput은 필수 attemptId(UUID 실행 상관값), contextId(integer int64, matching.id), manifest(기존11필드 Manifest)만 허용한다. 앱이 임의 근거·열람자·원응답을 덧붙이는 API가 아니다. attemptId는 DB PK나 영속 작업 선점 증거가 아니다. 시작 질문·위험 분석의 같은 AiInput은 contextId=chat.id이며 서비스 권한으로 해당 문맥을 재조회한다.
 
-아래 필수 여부는 **재조회 후 필요한 논리적 문맥의 제안**이며 확정 API/DB 컬럼을 새로 선언하는 것이 아니다. 값은 서버가 조회·검증하며 클라이언트가 보낸 열람자/근거를 신뢰하지 않는다. 과거 판정을 최신 프로필·새 검사 결과로 보충하지 않는다.
+ERD21에는 별도 작업·릴리스·입력 사본 테이블이 없다. Manifest.releaseId·leftSnapshotId/rightSnapshotId UUID는 legacy 계약이며 서버 설정 파일·당시 입력과의 영속 대응이 미합의(REVIEW_REQUIRED)다. 현재 프로필·새 분석·새 설정으로 옛 판정의 입력을 추정 보충하지 않는다. EvaluationInput/Evaluation/내부 Explanation의 encounterId는 같은 matching.id 숫자다. 내부 응답은 공개 상태 DTO와 분리한다.
 
-| 필드·참조 | 타입·필수 여부 제안 | 출처·용도 |
-| --- | --- | --- |
-| `proposalId` | integer(int64), 필수 | 기존 제안 계약 필드 재사용. 1 이상의 숫자. 설명 대상 제안과 판정 이벤트를 연결 |
-| `encounterId`에 대응하는 내부 `encounterRef` | 외부 `encounterId`는 필수 UUID string으로 명세 정의. 내부 참조 형식·대응은 미정 | `EvaluationInput/Evaluation/Explanation`의 만남 참조를 같은 실제 판정에 연결. 내부 bigint·`contextId` 대응은 BE와 확인하며 별도 평가 자원·이벤트를 생성하지 않음 |
-| `viewerRef`, `participants` | 내부 사용자 참조와 A/B 대응 객체, 필수·새 이름 제안 | 인증 사용자로 `viewerRef`를 결정하고 같은 판정의 A/B를 고정. 외부 모델에는 A/B 별칭만 전달 |
-| A/B 각각의 `responseRef`, `personalResultRef`, `snapshotRef` | 불투명 참조, 필수 | -36 §3.4의 제안 이름 재사용. 완료 회차·revision·개인 결과·판정 당시 설정을 추적하며 외부 식별자 형식은 미정 |
-| `manifest`, `version_code`, `personalRuleVersion`, `pairRuleVersion`, A/B의 `settingsVersion`, `ageAsOf` | `Manifest`는 명세의 필수 객체. 그 밖의 내부 버전/기준일 참조는 적용 항목 필수라는 제안 | 설문 응답 `version_code=SIS-Q-1.1-100`과 `SurveyManifest.surveyVersion` 저장 대응은 정의됨. 전체 `Manifest`의 `releaseId`는 UUID string, `contentHash`는 64자리 소문자 SHA-256, `surveyVersion/wordingVersion/scoringVersion/typeModelVersion/analysisVersion/typeReferenceVersion/matchingVersion/productPolicyVersion/engineVersion`은 1~100자 string이며 모두 필수다. 설문·개인/쌍 계산·모델/프롬프트 버전은 별개. 내부 `personalRuleVersion` 등의 정확한 대응·개인 계산 버전 저장/재현은 -36 VERSION-01 및 -127/-115 협의이며 새 DB 컬럼을 가정하지 않음 |
-| `sourceRefs` | 임시 근거 ID별 원본 연결 객체, 필수·새 이름 제안 | `e1` 등 → 같은 이벤트·A/B·방향·실제 항목/`reasonKeys`·입력/버전 참조. 명세의 사유 키 정의와 실제 키/원본 조회 구현 완료를 구분. 키만으로 사실을 복원하거나 보관/조회 계약 없이 임의 키를 만들지 않음 |
-| `informationScopeVersion`, `modelVersion`, `promptVersion` | 내부 불변 버전 참조가 필요하다는 제안. `Explanation.promptVersion`은 별도로 명세 정의 | 모델 요청/반환 ID와 실제 프롬프트 해시는 §7.2에 확인. 공급자가 새 모델 ID를 반환하거나 프롬프트·공개 범위가 바뀌면 재검증하며 예전 결과와 섞지 않음. 개발 모델 선택을 정보 범위 버전·서비스 버전 등록 완료로 확대하지 않음 |
+재조회한 논리 문맥에는 인증 열람자·고정 A/B·판정 당시 완료 설문/개인 결과/입력 세대·계산/공개 범위/모델/프롬프트 버전·실제 근거 원본 연결이 필요하다. 이 요구는 새 DB 컬럼 선언이 아니며 BE·AI가 저장·재현 책임을 합의해야 한다. 내부 사용자/기기 식별자·전체 rows/원응답·비공개 선호는 모델에 통째로 보내지 않는다. 같은 판정·열람자·승인 범위와 현재 권한을 재확인한다.
 
-내부 연결 묶음을 모델 요청이나 FE 응답으로 통째로 직렬화하지 않는다. 생성물 재사용 시에도 제안·열람자·판정/정보 범위 버전이 같은지와 현재 접근 권한을 확인한다. 상세 캐시 키·보관/삭제 기간·추적 기록 위치는 기존 정책과 BE 계약에 맞추며 이 파일에서 임의 확정하지 않는다.
+matching.evaluation JSON에 설명 상태·결과·최소 재시도 메타데이터를 연결한다. PENDING 5분 복구의 기산점, attempts 최초 실행 포함 여부·최대 횟수, 영속 선점·실행 세대/입력 식별·중복 실행·늦은 결과 차단은 합의 전이다. attemptId 하나로 재시작·중복 실행 복구가 검증됐다고 보지 않는다.
 
 ### 3.3 모델 입력·출력
 
@@ -118,51 +118,35 @@ HTTP 입력과 서버가 재조회할 논리적 문맥을 구분한다. 최신 `
 
 `MUTUAL_PREFERENCE_FIT`은 양쪽 비교를 모두 확인해야 하며 `BOTH`와 연결한다. `ONE_WAY_PREFERENCE_FIT`은 해당 한 방향만 사용한다. `SHARED_REPORTED_BEHAVIOR`의 `BOTH`는 양쪽 자기 응답을 뜻하고 그 자체가 양방향 선호 충족 증거는 아니다. `DIFFERENCE`에는 실제 확인된 비교의 범위만 담는다. 모델에 제공하는 사실 문장은 실행 지시로 취급하지 않는다.
 
-### 3.4 화면용 응답·오류
+### 3.4 공개 생성·조회와 내부 응답
 
-최신 통합 OpenAPI에 다음 경로가 **명세 정의**돼 있다. 모두 `x-contract-status=REVIEW_REQUIRED`이며 서버 구현·팀 승인 완료라는 뜻은 아니다. 별도 새 경로를 제안하지 않는다.
+`POST /api/match-proposals/{proposalId}/explanations`는202 ExplanationTask를 반환한다. 필수7필드는 proposalId(int64), kind(MATCH_EXPLANATION), status(PENDING/SUCCEEDED/FAILED), statusUrl, errorCode(null|string), retryable(boolean), pollAfterSeconds(integer>=0)다. 상태 조회 주소는 같은 제안의 `/api/match-proposals/{proposalId}/explanation`이며 별도 Job/jobId를 만들지 않는다.
 
-| 경로 | 기존 명세의 입출력 |
+`GET /api/match-proposals/{proposalId}/explanation`은 항상200의 ExplanationStatus5필드다.
+
+| 필드 | 현재 타입·조건 |
 | --- | --- |
-| `POST /api/v1/match-proposals/{proposalId}/explanations` | 경로의 `proposalId`: 필수 integer(int64), 1 이상. 필수 UUID `Idempotency-Key` 헤더. 성공 `202 Job`이며 설명 본문 자체가 아님 |
-| `GET /api/v1/match-proposals/{proposalId}/explanation` | 같은 경로 ID. 성공 `200 Explanation` |
-| `POST /internal/v1/ai/explanations` | `AiInput` → `200 Explanation`. 서비스 권한으로 문맥을 재조회하며 외부 GMS 입력과 분리 |
+| status | PENDING / SUCCEEDED / FAILED |
+| source | GENERATED / RULE_FALLBACK 또는 null |
+| text | 검증된 실제 근거 설명 string 또는 null |
+| evidenceKeys | 사용자 공개 승인된 표시용 키 string[]만. 내부 reasonKeys/rows/e1 자동 공개 금지, 공개 매핑 미합의면 빈 배열 가능 |
+| promptVersion | 1~100자 string 또는 null |
 
-`Explanation`은 아래 5개 필드가 **모두 필수**이고 `additionalProperties=false`다. GMS의 `evidenceIds`는 서버의 원본 연결 검증용이며 FE의 `evidenceKeys`와 같은 식별자가 아니다.
-
-| 필드 | 명세의 타입·필수 여부 | 적용·검토 경계 |
-| --- | --- | --- |
-| `source` | 필수 string, `GENERATED` 또는 `RULE_FALLBACK` | 검증된 생성 설명/유효 근거의 규칙 문장 출처. 제안 `status`나 작업 `Job.status`와 별개 |
-| `text` | 필수 string, 길이 1 이상 | 화면 설명. null·빈 문장은 현 스키마에서 불가 |
-| `evidenceKeys` | 필수 `string[]` | 설명에 사용한 판정 근거 코드. 키 표준·외부 공개 범위·임시 ID 대응은 BE 협의. 내부 `reasonKeys/rows/e1`을 그대로 공개하지 않음 |
-| `promptVersion` | 필수 string(1~100자) 또는 null | 실제 프롬프트 버전 추적. 생략과 null을 구분하며 fallback일 때 값의 의미는 BE·AI 협의 |
-| `encounterId` | 필수 UUID string | 설명 근거의 만남 식별자. 내부 bigint 및 제안/판정 연결은 BE 확인 |
-
-다음은 §7.3 GEN-01의 실제 생성 문장을 담은 **가상 FE 응답 예시**다. GMS 출력 외의 envelope는 이번 문서에서 구성했으며 실제 서버 응답은 아니다. 문장의 사람 최종 승인도 아니다. `promptVersion` 해시 문자열은 예시 버전 참조이며 서비스 등록 규칙은 미확정이다. `evidenceKeys=[]`는 명세상 가능한 값으로, 공개용 키 매핑을 임의로 만들지 않기 위한 예시다. 근거 자체가 없다는 뜻은 아니며 내부의 사용 근거는 e1/e2/e3로 추적한다.
+PENDING·FAILED에서는 source/text/promptVersion=null, evidenceKeys=[]다. SUCCEEDED만 검증된 텍스트와 출처를 반환한다. 근거가 없거나 권한·무결성 검증에 실패하면 가짜 정형 설명을 만들지 않는다. 실제 유효 근거가 있을 때만 RULE_FALLBACK으로 대체하고 제안·기한·수락 상태를 유지한다. 공개 미승인 정보를 모델에 보내지 않는다.
 
 ```json
 {
-  "source": "GENERATED",
-  "text": "두 분 다 잦은 연락을 꼭 필요로 하진 않고, 약속은 미리 정해 두는 편이라 연락과 일정에서 편안한 공통점이 있어 보여요. 새로운 장소를 찾아보는 정도에는 차이가 있다니, 서로 어떤 스타일인지 이야기 나눠봐도 재미있겠어요.",
+  "status": "PENDING",
+  "source": null,
+  "text": null,
   "evidenceKeys": [],
-  "promptVersion": "189d23e8dc7783ccae25f149467e01961a528abff16c87f6741f4bb8309870ad",
-  "encounterId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+  "promptVersion": null
 }
 ```
 
-v0.1.0에서 제안했던 화면 상태와 부가 필드는 다음처럼 보존·정정한다.
+내부 `POST /internal/ai/explanations`의 Explanation은 기존 source/text/evidenceKeys/promptVersion과 숫자 encounterId(matching.id)5필드를 보존한다. 공개 GET은 경로에 이미 proposalId가 있으므로 중복 encounterId를 반환하지 않는다. 내부 가상 EXAMPLE_EVIDENCE는 형식 설명이며 실제 판정/생성 증거가 아니다. §7의 실제 GMS 출력과 이 HTTP envelope를 혼동하지 않는다.
 
-| 기존 검토안 | 최신 명세와의 관계 |
-| --- | --- |
-| `displayStatus=GENERATED` | 생성 의미는 현재 `source=GENERATED`로 표현. `displayStatus` 자체는 미채택 |
-| `displayStatus=FALLBACK` | 대체 의미는 현재 `source=RULE_FALLBACK`로 표현. `FALLBACK`을 현 API enum으로 보내지 않음 |
-| `displayStatus=UNAVAILABLE`, `text=null` | 사용 가능한 설명 없음이라는 내부/화면 논리 상태는 필요. 현 `Explanation`에는 없는 enum·null 형식이므로 승인된 `200` 응답으로 사용하지 않음. `Job.status`의 `INSUFFICIENT/FAILED` 및 결과 미준비·근거 없음의 조회 동작과의 대응은 BE·FE 협의 |
-| 응답 본문의 `proposalId` | 경로에는 이미 정의됨. `Explanation` 본문에는 없으므로 추가하지 않음 |
-| `publicEvidenceRefs` | 공개용 근거 연결이라는 검토 목적만 유지. 현 스키마에는 없으며 `evidenceKeys`의 공개 범위/매핑으로 충족할지 또는 변경할지 협의 |
-
-일반 생성 실패는 §6에 따라 대체 문장으로 처리한다. **권한 실패는 생성 실패 대체로 처리하지 않는다.** FE 조회의 최신 명세 오류는 `400 INVALID_REQUEST`, 기존 인증 `401`, `403 ONBOARDING_REQUIRED`, 타인/없는 제안 `404 RESOURCE_NOT_FOUND`, `410 PROPOSAL_EXPIRED`다. `Error`는 필수 `code/message`(비어 있지 않은 string), 선택 `requestId`(UUID string)·`fields`(`string[]`)·`retryable`(boolean)이며 추가 필드를 허용하지 않는다. 내부 AI 호출은 서비스 인증/권한의 `401/403 FORBIDDEN`과 `503 SERVICE_UNAVAILABLE`를 별도로 따른다. 권한 실패·근거 부족·데이터 무결성 실패·모델/출력 검증 실패는 내부적으로 구분하되 새 공개 오류코드를 만들지 않는다.
-
-종료 상태의 열람 범위는 PROP-01/MAT-04와 함께 확인한다. 상대 선행 거절·차단 여부를 설명 상태·세부 오류·누락 사유로 누설하지 않으며, 생성 전과 반환 전에 권한을 확인한다. 일반 생성 실패가 제안 조회·수락을 막거나 정상 매칭 결과를 취소해서는 안 된다.
+권한 실패를 생성 실패 대체로 처리하지 않는다. 기존 FE 조회의400·인증401·403 ONBOARDING_REQUIRED·타인/없는 제안404 RESOURCE_NOT_FOUND·본인 접근 종료410 PROPOSAL_EXPIRED와 내부 서비스 인증/권한401/403·503을 유지한다. Error 필수 code/message와 선택 requestId/fields/retryable 형식은 OpenAPI를 따른다. 상대 선행 거절·차단을 상태·세부 오류·누락 사유로 누설하지 않고 생성 전과 반환 전에 권한을 확인한다.
 
 ## 4. 정상 설명 목표 GEN-01~03
 
@@ -570,7 +554,9 @@ Luna의 요청은 `model=gpt-6-luna`, `stream=false`, `max_output_tokens=2048`, 
 | 최소 입출력·표시 | BE·FE·PM·AI: 현 `source=GENERATED/RULE_FALLBACK` 유지, 논리 상태 `UNAVAILABLE`와 작업/조회 대응, `evidenceIds→evidenceKeys`의 공개 허용 매핑, `publicEvidenceRefs` 추가 필요 여부, 길이·반복·인칭·설명 없음 안내/숨김. 미승인 필드·enum을 FE에 먼저 배포하지 않음 |
 | 검증·실패·모델 경계 | BE·AI·FE: 구조 검사와 의미 평가/출력 차단 책임, 유효 근거 대체 문장, 모델/프롬프트 추적·응답 재사용·보관/삭제 계약. 개발 모델·페르소나는 이번 선택을 사용하되 사람 최종 평가·제공업체 조건·서비스 품질/한도 검증은 별도 |
 
-### 8.1 최신 -36·통합 OpenAPI와의 호환성 대조
+### 8.1 2026-10-25 고정 SHA 호환성 대조 이력
+
+아래 표는 당시의 UUID/Job 계약 대조 기록이다. 현재 ERD21 전송 계약은 상단 정합화 절과 §3.2·3.4를 따른다.
 
 | 대조 항목 | 확인·조치 |
 | --- | --- |

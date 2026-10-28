@@ -1,0 +1,181 @@
+{
+  "date": "2026-10-28",
+  "status": "PASS",
+  "rootPages": [
+    {
+      "page": "offline",
+      "notionPage": "https://app.notion.com/p/3ffc91ccb6608070bddbf2799b6423ba",
+      "operationId": "syncEncounters",
+      "path": "/api/offline-encounters/sync",
+      "method": "POST",
+      "excluded": false,
+      "jsonExamples": 2,
+      "source": "internal browser reload readback"
+    },
+    {
+      "page": "profile",
+      "notionPage": "https://app.notion.com/p/3ffc91ccb6608042932ff3f4b6bcdc15",
+      "operationId": "getProposalProfile",
+      "path": "/api/match-proposals/{proposalId}/partner-profile",
+      "method": "GET",
+      "excluded": false,
+      "jsonExamples": 1,
+      "source": "internal browser reload readback"
+    },
+    {
+      "page": "cancel",
+      "notionPage": "https://app.notion.com/p/401c91ccb66080dea20ff98cbb249a7e",
+      "operationId": "cancelProposalAcceptance",
+      "path": "/api/match-proposals/{proposalId}/cancel",
+      "method": "POST",
+      "excluded": true,
+      "jsonExamples": 1,
+      "source": "internal browser reload readback"
+    },
+    {
+      "page": "ice",
+      "notionPage": "https://app.notion.com/p/AI-3ffc91ccb66080e4aa19df303c726c74",
+      "operationId": "generateIcebreakers",
+      "path": "/internal/ai/icebreakers",
+      "method": "POST",
+      "excluded": false,
+      "jsonExamples": 2,
+      "source": "internal browser reload readback"
+    },
+    {
+      "page": "internalRisk",
+      "notionPage": "https://app.notion.com/p/AI-3ffc91ccb660807b8a62d5f6d1c9c206",
+      "operationId": "detectRisk",
+      "path": "/internal/ai/risk-detections",
+      "method": "POST",
+      "excluded": false,
+      "jsonExamples": 2,
+      "source": "internal browser reload readback"
+    },
+    {
+      "page": "consentGet",
+      "notionPage": "https://app.notion.com/p/3ffc91ccb660805e8b9cfcc89cbec4d4",
+      "operationId": "getRiskConsent",
+      "path": "/api/users/{userId}/risk-analysis-consent",
+      "method": "GET",
+      "excluded": false,
+      "jsonExamples": 1,
+      "source": "internal browser reload readback"
+    },
+    {
+      "page": "consentPut",
+      "notionPage": "https://app.notion.com/p/3ffc91ccb66080c6a0aeddff439f8eb2",
+      "operationId": "setRiskConsent",
+      "path": "/api/users/{userId}/risk-analysis-consent",
+      "method": "PUT",
+      "excluded": false,
+      "jsonExamples": 2,
+      "source": "internal browser reload readback"
+    },
+    {
+      "page": "report",
+      "notionPage": "https://app.notion.com/p/3ffc91ccb6608022a4a6cc3db7ebd9a7",
+      "operationId": "createReport",
+      "path": "/api/reports",
+      "method": "POST",
+      "excluded": true,
+      "jsonExamples": 2,
+      "source": "internal browser reload readback"
+    },
+    {
+      "page": "proposal_decline",
+      "notionPage": "https://app.notion.com/p/3ffc91ccb66080b8858edf2e69633fdd",
+      "operationId": "declineProposal",
+      "path": "/api/match-proposals/{proposalId}/decline",
+      "method": "POST",
+      "excluded": false,
+      "jsonExamples": 1,
+      "source": "internal browser reload readback"
+    },
+    {
+      "page": "proposal_accept",
+      "notionPage": "https://app.notion.com/p/3ffc91ccb66080b0a112d291637f666e",
+      "operationId": "acceptProposal",
+      "path": "/api/match-proposals/{proposalId}/accept",
+      "method": "POST",
+      "excluded": false,
+      "jsonExamples": 2,
+      "source": "internal browser reload readback"
+    },
+    {
+      "page": "proposal_detail",
+      "notionPage": "https://app.notion.com/p/3ffc91ccb660808ca596d1942c642d3f",
+      "operationId": "getProposal",
+      "path": "/api/match-proposals/{proposalId}",
+      "method": "GET",
+      "excluded": false,
+      "jsonExamples": 1,
+      "source": "internal browser reload readback"
+    },
+    {
+      "page": "proposal_list",
+      "notionPage": "https://app.notion.com/p/3ffc91ccb66080cb8d98ebf26711302f",
+      "operationId": "listProposals",
+      "path": "/api/match-proposals",
+      "method": "GET",
+      "excluded": false,
+      "jsonExamples": 1,
+      "source": "internal browser reload readback"
+    },
+    {
+      "page": "internalExplanation",
+      "notionPage": "https://app.notion.com/p/AI-3ffc91ccb6608035947cd424e83048dc",
+      "operationId": "generateExplanation",
+      "path": "/internal/ai/explanations",
+      "method": "POST",
+      "excluded": false,
+      "jsonExamples": 2,
+      "source": "internal browser reload readback"
+    },
+    {
+      "page": "internalEvaluation",
+      "notionPage": "https://app.notion.com/p/3ffc91ccb660805caa0ed0616139459c",
+      "operationId": "evaluatePair",
+      "path": "/internal/matching/evaluations",
+      "method": "POST",
+      "excluded": false,
+      "jsonExamples": 2,
+      "source": "internal browser reload readback"
+    },
+    {
+      "page": "getExplanation",
+      "notionPage": "https://app.notion.com/p/3ffc91ccb66080909523e1d2bcdb4519",
+      "operationId": "getExplanation",
+      "path": "/api/match-proposals/{proposalId}/explanation",
+      "method": "GET",
+      "excluded": false,
+      "jsonExamples": 1,
+      "source": "internal browser reload readback"
+    },
+    {
+      "page": "requestExplanation",
+      "notionPage": "https://app.notion.com/p/3ffc91ccb660808d87fac1a24a76663a",
+      "operationId": "requestExplanation",
+      "path": "/api/match-proposals/{proposalId}/explanations",
+      "method": "POST",
+      "excluded": false,
+      "jsonExamples": 1,
+      "source": "internal browser reload readback"
+    }
+  ],
+  "rootJsonExamples": 24,
+  "errors": [],
+  "rawBrowserReadbackSha256": "c18978c81abca5f11e84a06e07756b12e4fed173dad31f555c1bd87ce20bb702",
+  "otherPageEvidence": {
+    "surveySix": "notion-survey-six-20261028.json",
+    "surveyRemainingSeven": "notion-survey-rest-20261028.json",
+    "chatEleven": "notion-chat-owned-20261028.json"
+  },
+  "totalOwnedPages": 40,
+  "apiIndexGuideReloaded": true,
+  "boundaries": [
+    "Documentation only",
+    "No server, DB, deployment, device or policy approval proof"
+  ],
+  "legacyV1OrMeInRootBodies": 0
+}

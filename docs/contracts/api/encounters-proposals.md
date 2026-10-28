@@ -1,365 +1,134 @@
 # Tingle(팅글) 만남 기록과 매칭 제안 API 명세
 
-| 항목 | 내용 |
-| --- | --- |
-| 버전·변경일 | v0.1.4-proposal-policy-review / 2026-10-22 |
-| 서비스명 | Tingle(팅글) |
-| 담당 | 김영빈(BE) |
-| 관련 Story | S15P31E106-38 |
-| 후속 구현 | S15P31E106-43 |
-| 영향 파트 | FE·IOT·BE, 매칭 근거 연결 시 AI |
-| 검토 | 가을(BE), 이재준 또는 황순철(FE), 김종무(IOT) |
-| 상태 | 로컬 계약 초안. 교차 검토·승인·병합 전 |
+v0.2.0-erd21-review / 2026-10-28 / 담당 김영빈 / S15P31E106-91·92
 
-## 1 기준과 범위
+사용자 제공 21개 테이블·151개 컬럼과 기존 노션 API의 경로·표·예시를 맞춘 검토 계약이다. 현재 전송 기준은 [OpenAPI](openapi.json), 전체 범위는 [API 안내](README.md), 데이터·미합의는 [ERD 설명](../../database/erd.md)을 따른다. 서버·기기·실DB·배포 실행 결과와 구분한다. 기획·기능·정책 원문은 수정하지 않는다.
 
-가상 만남 기록 접수부터 양쪽 검증·제안 조회·공개 프로필·수락·거절·만료의 계약이다. 서버 구현은 43번, Spring Boot 초기 구성은 가을 담당 44번과 연결한다. 실제 키링 암호·패킷 구현은 이 문서의 완료 범위가 아니다.
+## 1 경로·식별자·권한
 
-- GitLab·Jira 컨벤션은 develop의 docs/convention을 따른다.
-- 제품 기준은 34번 작업 브랜치의 docs/contracts/matching/profile-policy-v1.md v0.1.12-draft와 38번 Jira의 2026-10-20 정정 사항이다. 사진 옵션·사진 삭제·채팅 수명·기록 보관·종료 안내의 사용자 결정과 나머지 미정 계약을 구분한다. 34번은 아직 develop에 병합되지 않았다.
-- 인증 기준은 35번 작업 브랜치의 docs/contracts/api/auth.md v0.1.0이다. 이 역시 작업 중 계약이다.
-- Spring Boot·JPA 및 앱 인증 컨벤션 v0.2.1 수정안으로 작업하되, 미합의 토큰 필드·오류코드를 인증 계약에 임의 추가하지 않는다.
-- 기존 2026-10-16 기획의 수락 전 프로필 비공개 설명은 최신 제안 공개 정책으로 대체한다. 원본 기획서는 수정하지 않는다.
-- 기능 연결은 16번 작업 브랜치의 docs/specifications/functional-spec-v1.md v0.1.0-draft 중 PROP-01·02, CHAT-01·03~06을 참조한다. 전송 필드·필수값·HTTP 상태·오류 코드의 현재 기준은 [최신 통합 OpenAPI](https://lab.ssafy.com/s15-final/S15P31E106/-/blob/doc-docs/api-erd-complete-S15P31E106-38/docs/contracts/api/openapi.json)(MR !20)다. 이 문서는 상태·시간·동시성 흐름을 보완하며 기능 명세 예시를 확정된 전송 형식으로 간주하지 않는다. MR !20 병합 후에는 develop의 동일 파일을 참조한다.
-- 38번은 제안에서 채팅으로 연결되는 시간·권한·응답 계약을 정의한다. 안내 구현은 49번 BE·50번 FE이며 채팅 전체·기록 삭제 구현을 38·43번에 자동 포함하지 않는다.
+기존 담당 경로는 `/api` 기준이며 `/v1`이 없다. proposalId와 내부 encounterId는 같은 `matching.id` integer(int64)다. 만남 대기 WAITING/NOT_MATCHED 행을 공개 제안으로 노출하지 않는다. chatRoomId는 `chat.id` nullable int64, deviceId는 `keyring.id` int64다. submissionId/eventId와 Idempotency-Key는 각 역할의 UUID를 유지한다.
 
-검토 원문: [34번 정책 v0.1.12](https://lab.ssafy.com/s15-final/S15P31E106/-/blob/d68dbd335b65a7e043ce0110bb4d68ef497ea47c/docs/contracts/matching/profile-policy-v1.md), [16번 기능 명세](https://lab.ssafy.com/s15-final/S15P31E106/-/blob/c50d911dd43af1f5e8db5770720d62c8fe9faa9c/docs/specifications/functional-spec-v1.md), [38번 완료 조건](https://ssafy.atlassian.net/browse/S15P31E106-38). 작업 브랜치의 초안과 사용자 결정의 반영을 확인한 것이며 MR 승인·병합을 뜻하지 않는다.
+서버가 Bearer 주체·가입 단계·본인 소유 기기·제안 당사자·현재 접근권한을 검사한다. 타인의 제안·프로필은404 RESOURCE_NOT_FOUND로 숨기고, 본인의 접근 종료·마감은 해당 operation의410을 유지한다. 민감 응답은 no-store, 상대 내부 회원번호·생년월일·원응답·기기 비밀은 공개하지 않는다.
 
-## 2 공통 규칙
+## 2 만남 기록 접수
 
-Base path는 /api/v1이다. 인증 헤더는 Authorization: Bearer accessToken이며 서버의 인증 사용자만 신뢰한다. 요청의 userId로 본인을 지정하지 않는다. 가입 완료와 관련 기기·제안 소유권을 서버에서 검사한다.
+`POST /api/offline-encounters/sync`는 EncounterBatch의 숫자 deviceId와1~100 submissions 형식을 사용한다. 제출 기기는 현재 REGISTERED이며 토큰 회원 소유여야 한다. 기록 당시 소유 구간·설정/이벤트 세대·서명·시각을 별도로 검증한다. 현재 소유 확인만으로 이전 소유자의 기록을 승인하지 않는다.
 
-성공은 200과 본문 DTO, 오류는 code·message 형식이다. 필드명은 camelCase, 시각은 UTC ISO 8601이다. 서버 현재 시각은 주입한 Clock을 사용한다. 제안 proposalId는 1 이상의 integer(int64) 숫자이며 DB proposal_id와 동일하다. 별도 공개 UUID나 매핑 컬럼을 두지 않는다. UUID 형식인 Idempotency-Key·세션 family ID는 그대로 유지한다.
-
-401·403 및 토큰 갱신은 35번 계약을 따른다. 35번의 UNAUTHORIZED와 v0.2.1 컨벤션의 세분 오류·세션 폐기는 아직 차이가 있으므로 이번 계약에서 FE 갱신 동작을 새로 확정하지 않는다. 요청 추적 ID는 X-Request-Id 헤더로 전달하는 안이다.
-
-## 3 기한
-
-| 구분 | 기산점 | 현재 값 | 종료 |
-| --- | --- | --- | --- |
-| 만남 기회 | 검증된 만남 기준 시각 | 최대 7일 | 새 제안 생성 불가 |
-| 상대 기록 대기 | 첫 유효 기록 서버 접수 시각 | 최대 7일, 만남 기한 이내 | 제안 없이 종료 |
-| 제안 응답 | 서버 제안 생성 시각 | 24시간 | 상호 수락 전이면 만료 |
-| 명시적 거절 제한 | 서버 거절 처리 시각 | 30일 | 해당 쌍만 재매칭 금지 |
-| 채팅 퇴장 제한 | 미정 | 제한 유무·기간 미정(POL-09) | 합의 전 422 POLICY_UNRESOLVED. 자동 만료와 구분 |
-| 채팅 이용 | 최초 채팅방 생성 완료 시각 | 7일(168시간) | 양쪽 메시지 조회·전송 종료 |
-| 종료 사전 안내 | 채팅 종료 시각 | 1시간 전 | 사용자별 첫 입장 안내와 별도 |
-| 서버 채팅 기록 보관 | 채팅 종료 효력 시각 | 30일(720시간) | 대상 기록 삭제 기한 |
-
-```text
-opportunityExpiresAt = occurredAt + opportunityDuration
-counterpartDeadlineAt = min(opportunityExpiresAt, firstValidReceivedAt + counterpartWaitDuration)
-proposalExpiresAt = proposalCreatedAt + proposalDuration
-chatExpiresAt = chatCreatedAt + 168 hours
-chatClosedAt = chatExpiresAt  # 정상 자동 종료
-chatDeleteAt = chatClosedAt + 720 hours  # 일반 방. 신고된 방은 최초 신고+90일, 모두 기각되면 min(마지막 기각+30일, 최초 신고+90일)
-oneHourNoticeAt = chatExpiresAt - 1 hour
-```
-
-재업로드·서버 재시작으로 기한을 연장하지 않는다. 제안이 기한 내 생성되었다면 자신의 24시간은 만남 7일 마감을 넘어 유지된다. 기간과 적용 정책 버전을 이벤트에 보존한다.
-
-경계 초안은 판정 시각 < 마감일 때만 허용한다. 정각부터 만료다. 두 기록의 접수뿐 아니라 검증·제안 생성까지 만남 마감 전에 완료하는 안이다. 정책 소급 여부·시각 증명·허용 오차는 IOT·PM 검토 전 확정하지 않는다.
-
-## 4 상태와 전이
-
-| 자원 | 상태 | 조건·전이 |
+| 입력 | 형식 | 역할과 남은 합의 |
 | --- | --- | --- |
-| 만남 | WAITING_FOR_COUNTERPART | 한쪽 유효 기록만 접수. 제안·매칭 푸시 없음 |
-| 만남 | PROPOSED | 양쪽 동일 이벤트 검증·기한·관계 확인 후 제안 하나 생성 |
-| 만남 | EXPIRED_UNPAIRED | 기회 또는 상대 기록 대기 마감. 늦은 제출로 부활하지 않음 |
-| 만남 | REJECTED_INVALID | 증명·이벤트·관계 검증 실패. 내부 사유는 상대에게 공개하지 않음 |
-| 제안 | PENDING | 아직 상호 수락 전 |
-| 제안 | WAITING_FOR_OTHER | 한쪽만 수락. 채팅 권한 없음 |
-| 제안 | ACCEPTED | 기한 내 양쪽 수락. 후속 채팅 활성화와 연결 |
-| 제안 | REJECTED | 명시적 거절. 해당 쌍 30일 제한 |
-| 제안 | EXPIRED | 24시간 내 상호 수락 미완료. 거절 제한 없음 |
+| deviceId | integer(int64) 필수 | keyring.id, 현재 소유·등록 검증 |
+| submissionId / eventId | UUID 필수 | 클라이언트 제출/이벤트 상관값. 공개 DB PK가 아님 |
+| occurredAt | UTC date-time 필수 | 증명과 함께 검증할 만남 시각 |
+| policyVersion / matchingRuleVersion | 기존 버전 string 필수 | 기록 당시 정책·계산 파일 대응, 소급/시각 오차는 IoT·제품 합의 |
+| settingsSnapshotId | UUID 필수 legacy 계약 | ERD21 저장 정보 없음. 당시 입력·소유 세대의 지속 증거 대안 미합의 |
+| peerCredential / evidence | 기존 불투명 값·객체 | 임의 payload를 유효 증명으로 인정하지 않음. 원문·기기 비밀 외부 전송 금지 |
 
-같은 상대 쌍의 처리 중 이벤트·제안·활성 채팅 중복은 막고 다른 상대와의 제안·채팅은 독립 처리한다. A–B와 B–A는 같은 정렬된 pairKey다.
+검증 기록은 matching 및 matching_participant.encounter_keyring_id/encounter_signature/encounter_reported_at/encounter_verified_at에 연결한다. 한 앱이 상대의 독립 서명을 대신 만들 수 없다. 서명 실패·대기 만료·정책 부족을 성공 제안으로 표시하지 않는다.
 
-응답 myDecision은 NONE·ACCEPT·DECLINE이다. WAITING_FOR_OTHER는 본인이 수락한 경우에 표시하고 상대만 먼저 수락한 경우 본인에게 PENDING으로 투영하는 안이다. 상대 선택을 어디까지 표시할지는 FE·PM 검토 대상으로 남긴다.
-
-## 5 기록 업로드
-
-POST /offline-encounters/sync
-
-본인 소유 제출 기기의 기록만 받는다. 한 앱이 상대 기기의 독립 증명을 대신 작성할 수 없다. 배치 1~100건·전체 1MiB 이내는 초안 제한이다.
-
-| 요청 필드 | 형식·필수 | 의미 |
-| --- | --- | --- |
-| deviceId | string / 필수 | 로그인 사용자의 소유 기기 |
-| submissions | array / 필수 | 독립 접수 대상 |
-| submissionId | string / 필수 | 제출 기기 내 고유 ID |
-| eventId | string / 필수 | 양쪽이 합의한 이벤트 |
-| occurredAt | timestamp / 필수 | 증명과 함께 검증할 만남 시각 |
-| policyVersion | string / 필수 | 기한·관계 적용 정책 |
-| matchingRuleVersion | string / 필수 | 생성 당시 매칭 계산 규칙 |
-| settingsSnapshotId | string / 필수 | 생성 당시 조건·사진 옵션 등 판단 기준 |
-| peerCredential | string / 필수 | 서버에서 대조 가능한 불투명 상대 자격 |
-| evidence | object / 필수 | IOT 계약에 따른 서명·합의 증빙 |
-
-submissionId 이하 필드는 submissions 원소다. evidence의 바이트 형식·크기·시각 검증은 37번과 합의해야 한다. 앱이 보낸 시각·점수·매칭 성공 값을 검증 없이 사실로 채택하지 않는다. 생성 당시 양쪽 설정과 판단 버전을 확인할 수 있어야 한다.
+ERD에는 독립 receiptId 저장 칸과 원본 삭제 후 재전송 판정 증거가 없다. 지속 저장·내용 충돌 판정·기존 결과 재현을 검증하기 전 `canDeleteLocalRecord=true`를 보장하지 않는다. 다음은 안전한 **형식 초안**이며 모든 운영 요청의 고정 결과가 아니다.
 
 ```json
 {
-  "deviceId": "10000000-0000-4000-8000-000000000001",
-  "submissions": [
-    {
-      "submissionId": "20000000-0000-4000-8000-000000000001",
-      "eventId": "30000000-0000-4000-8000-000000000001",
-      "occurredAt": "2026-10-20T01:00:00Z",
-      "policyVersion": "policy-draft-01",
-      "matchingRuleVersion": "matching-draft-01",
-      "settingsSnapshotId": "40000000-0000-4000-8000-000000000001",
-      "peerCredential": "opaque-peer-credential",
-      "evidence": {"protocolVersion": "mock-01", "payload": "fictional-fixture"}
-    }
-  ]
+  "results": [{
+    "submissionId": "20000000-0000-4000-8000-000000000001",
+    "eventId": "30000000-0000-4000-8000-000000000001",
+    "receiptStatus": "NOT_STORED",
+    "receiptId": null,
+    "canDeleteLocalRecord": false,
+    "encounterStatus": null,
+    "counterpartDeadlineAt": null,
+    "retryable": false,
+    "errorCode": "POLICY_UNRESOLVED"
+  }]
 }
 ```
 
-mock-01은 FE·IOT가 모양을 검토할 가상 샘플이다. 실제 서버에서 임의 payload를 유효한 기기 증명으로 통과시키는 규칙이 아니다.
+같은 이벤트 재전송은 기한·검증·제안 생성을 새 만남으로 초기화하지 않는다. WAITING/NOT_MATCHED 행 재사용에는 실제 새 이벤트·소유/설정 세대의 증명이 필요하다. 초기화 대상과 세대별 삭제 조건은 ERD 설명을 따른다. blocked_at은 지우지 않는다. 과거 삭제 예약·늦은 검증/AI 응답이 새 행 세대에 적용되지 않아야 하며, 마감시각 하나를 세대 증거로 대신하지 않는다.
 
-```json
-{
-  "results": [
-    {
-      "submissionId": "20000000-0000-4000-8000-000000000001",
-      "eventId": "30000000-0000-4000-8000-000000000001",
-      "receiptStatus": "STORED",
-      "receiptId": "50000000-0000-4000-8000-000000000001",
-      "canDeleteLocalRecord": true,
-      "encounterStatus": "WAITING_FOR_COUNTERPART",
-      "counterpartDeadlineAt": "2026-10-27T01:00:00Z",
-      "retryable": false,
-      "errorCode": null
-    }
-  ]
-}
-```
+## 3 서버 시각과 관계 상태
 
-receiptStatus는 STORED·ALREADY_STORED·NOT_STORED다. 내구성 있게 저장된 항목만 receiptId와 canDeleteLocalRecord=true를 받는다. 미접수는 receiptId·encounterStatus·counterpartDeadlineAt=null, canDeleteLocalRecord=false다. 일반 요청 오류는 배치 전체 실패, 접수 가능한 배치의 항목별 실패는 results로 구분한다.
-
-접수된 원본을 정리해도 같은 상대의 미처리 억제 상태를 함께 삭제하지 않는다. 로컬 억제 상태의 갱신·해제·기기 저장 ACK는 37번 계약을 따른다.
-
-중복 기준은 (eventId, 제출 기기)와 제출 기기 내 submissionId다. 같은 키·같은 증빙은 기존 접수 결과를 반환하고, 다른 증빙은 원본을 덮어쓰지 않고 항목별 SUBMISSION_CONFLICT로 거절한다. 둘 다 접수한 뒤 생긴 제안을 재업로드로 다시 만들지 않는다.
-
-## 6 제안 조회와 공개 프로필
-
-| API | 응답 |
+| 값 | 기준 |
 | --- | --- |
-| GET /match-proposals?cursor=...&limit=20 | items와 nextCursor. 본인 제안만 조회 |
-| GET /match-proposals/{proposalId} | 제안 상태·기한·본인 선택 |
-| GET /match-proposals/{proposalId}/partner-profile | 현재 허용된 상대 공개 프로필 |
+| met_at·policy_version·기회/상대 대기 마감 | 검증된 만남과 당시 서버 정책 파일로 고정. 기간·시각 오차·정책 소급은 IoT·제품 합의 항목 |
+| Proposal.createdAt | matching.proposed_at: 양쪽 검증 후 서버가 제안 생성을 최초 확정한 시각. 푸시 발송·수신·첫 조회 시각 아님 |
+| Proposal.expiresAt | proposed_at+24시간. 정각부터 새 수락·거절 불가. 재시도·재시작·알림 실패로 연장하지 않음 |
+| chat.created_at·만료 | 상호 수락과 방·참여자 원자 생성의 최초 시각, 이용기한은 그+168시간 |
+| raw_delete_at | 제안 생성·대기 만료·최종 검증 불가 기준+14일. matching 행이 아닌 encounter_* 원본 칸 정리. 탈퇴 전 관계 제한은 유지 |
 
-limit은 기본 20·최대 100을 제안한다. 정렬은 createdAt 내림차순과 proposalId 보조키로 고정하고 불투명 cursor를 사용한다. 만료 스케줄러가 지연되어도 조회·응답 시각에 유효성을 검사한다.
+API status는 기존 PENDING/WAITING_FOR_OTHER/ACCEPTED/REJECTED/EXPIRED를 본인 기준으로 투영한다. myDecision NONE/ACCEPT/DECLINE은 본인 response NULL/ACCEPTED/REJECTED에 대응한다. 상대 선행 응답·차단·ONE_ACCEPTED 내부값을 미응답자에게 그대로 공개하지 않는다. responded_at은 최초 서버 응답 확정 시각이다.
+
+## 4 제안 조회·공개 프로필
+
+| API | 내용 |
+| --- | --- |
+| GET /api/match-proposals | 본인 목록, createdAt 내림차순·proposalId 보조키, 불투명 cursor |
+| GET /api/match-proposals/{proposalId} | 본인 상태·선택·고정 기한·방 준비 여부 |
+| GET /api/match-proposals/{proposalId}/partner-profile | 승인된 현재 공개 프로필, 종료된 본인 접근은410 |
 
 ```json
 {
   "proposalId": 1001,
   "status": "PENDING",
   "myDecision": "NONE",
-  "createdAt": "2026-10-20T02:00:00Z",
-  "expiresAt": "2026-10-21T02:00:00Z",
+  "createdAt": "2026-10-20T05:00:00Z",
+  "expiresAt": "2026-10-21T05:00:00Z",
   "chatAvailable": false,
   "chatRoomId": null
 }
 ```
 
-유효한 제안 당사자는 수락 전 공개 프로필을 볼 수 있다. nickname·현재 만 나이·gender·자기소개·공개 생활 정보·현재 사진을 허용 목록으로 반환한다. 생년월일·소셜 ID·내부 회원번호·상대 조건·설문 원응답·정밀 만남 시각·위치·기기 자격은 반환하지 않는다.
+PublicProfile DTO 모양은 유지하고 profile의 허용 필드와 photo_url을 imageUrl로 투영한다. profileVersion은 공개 표시 필드의 서버 계산 비교 해시이며 별도 저장 컬럼을 가정하지 않는다. 상대 비공개 선호·설문 원응답·생년월일·소셜ID·내부회원번호·정밀 만남/기기 정보를 공개하지 않는다. 종교 비공개·미입력을 무교로 추정하지 않는다. 현재 나이는 한국 날짜 기준이다.
 
-```json
-{
-  "nickname": "산책친구",
-  "age": 25,
-  "gender": "FEMALE",
-  "introduction": "산책과 전시를 좋아해요.",
-  "smokingStatus": "NON_SMOKER",
-  "drinkingFrequency": "NEVER",
-  "religionDisplay": "종교 정보 비공개",
-  "imageUrl": null,
-  "hasProfilePhoto": false,
-  "profileVersion": "0000000000000000000000000000000000000000000000000000000000000000"
-}
-```
+사진 삭제 후 imageUrl=null·hasProfilePhoto=false를 반환하고 앱은 기존 사진 캐시를 정리한다. 사진·현재 나이·공개 프로필 변경이나 사진 옵션 변경으로 기존 제안을 자동 종료하지 않는다. 미수락자는 변경된 공개 정보 재확인 후 다시 수락하며 이미 확정한 수락은 유지한다. 타 담당 상대 사진 경로·본인 프로필/사진 API는 이번 수정에서 덮어쓰지 않는다.
 
-생활 코드명은 샘플 초안이며 35번 프로필 저장 코드와 맞춘다. 현재 한국 날짜 기준으로 만 나이를 계산한다. 종교 미입력·비공개는 구체적 종교를 추측해 반환하지 않는다.
+## 5 수락·거절과 원자 방 생성
 
-### 사진과 캐시
+`POST /api/match-proposals/{proposalId}/accept`는 기존 profileVersion 요청을 유지한다. `POST .../decline`은 본문이 없다. 기존 UUID Idempotency-Key 헤더 계약을 보존하지만 선택 키 전용 저장 칸이 없는 ERD21에서 영속 중복 판정·다른 명령 재사용 검출·응답 재현을 보장한 것으로 기술하지 않는다. 해당 저장 대안은 합의 전이다.
 
-상대가 사진을 삭제한 뒤 재조회하면 imageUrl=null, hasProfilePhoto=false를 반환한다. FE는 기존 사진 캐시·화면 표시를 제거하고 기본 이미지를 보여준다. 재조회 실패 시 이전 사진을 최신 정보처럼 표시하지 않고 실패·재시도를 안내한다.
+matching 단위 잠금 안에서 당사자·현재 상태·기한·차단·공개 필드 해시를 재검사하고 최초 response·responded_at을 확정한다. 응답은 한 번 확정한 뒤 되돌리지 않는다. 동시 두 번째 수락·거절·만료는 일관된 한 결과로 직렬화한다. 상호 수락, chat 생성, 두 chat_participant 생성은 같은 트랜잭션에서 완료한다. 중복 수락은 같은 방·최초 시각을 사용하며 방이 실제 준비되기 전 chatAvailable=true를 보내지 않는다.
 
-프로필 응답은 Cache-Control: no-store를 제안한다. 사진은 검증된 URL 한 장을 profiles.image_url에 저장하고 PublicProfile.imageUrl로 전달한다. 별도 사진 ID·사진 테이블은 추가하지 않는다. 공개 응답에 profileVersion을 추가하고 최초 수락 시 비교한다. URL 업로드·소유 검증·전달 권한과 실제 파일 삭제는 담당자와 합의할 사항이며 임의의 외부 URL을 신뢰하지 않는다. 이미 내려받은 사진을 서버가 완전히 회수할 수 있다고 보장하지 않는다.
-
-본인 거절·취소·수락 후 비성사·만료 시 제안 경로의 상대 프로필·사진 조회를 종료하고 FE는 해당 제안에 연결한 민감 캐시를 정리한다. 상호 수락 이후에는 활성 채팅 권한으로 접근한다. 채팅이 아직 준비되지 않았다면 제안 API만으로 계속 공개하지 않고 별도 계약을 맞춘다.
-
-### 사진 옵션 변경
-
-생성 당시 조건·사진 옵션·판정 버전을 보존한다. OFF 상태에서 받은 제안은 이후 옵션을 ON으로 바꿔도 PENDING·WAITING_FOR_OTHER·기존 수락·원래 기한을 유지한다. 새 옵션은 저장 성공 후 새 매칭부터 적용한다.
-
-수락 때 현재 소유권·제안 상태·마감·안전 제한은 확인하지만 새 사진 옵션으로 기존 제안을 거절하거나 INVALIDATED로 바꾸지 않는다. 공개 프로필은 생성 당시 사본이 아니라 최신 표시 정보다. 사진 삭제를 제안 자동 종료로 확대하지 않는다.
-
-사진·생일의 현재 나이·공개 프로필 변경은 기존 제안을 취소하거나 재매칭 조건으로 심사하지 않는다. 미수락자는 최신 정보 재확인 후 다시 수락하며 이미 성공한 수락은 유지한다. 매칭 계산 및 이미 열린 채팅 후속 구현은 이번 작업 범위 밖이다.
-
-## 7 수락과 거절
-
-| API | 요청 | 처리 |
-| --- | --- | --- |
-| POST /match-proposals/{proposalId}/accept | `{ "profileVersion": "64자리 소문자 16진 비교값" }`, Idempotency-Key 헤더 | 동일 공개 프로필 확인 후 결정. 변경 시409 PROFILE_CHANGED |
-| POST /match-proposals/{proposalId}/decline | 본문 없음, Idempotency-Key 헤더 | REJECTED와 해당 쌍 30일 제한 |
-| POST /match-proposals/{proposalId}/cancel | 본문 없음, 별도 Idempotency-Key 헤더 | 내 수락·상대 미응답·기한 내에서만 취소. 거절 효과 |
-
-수락·거절의 Idempotency-Key는 UUID 필수다. 사용자별 최초 실제 선택의 키를 low_request_key/high_request_key에 선택·시각과 원자 저장하고 제안 보관 동안 유지한다. 같은 키를 다른 제안·다른 선택에 재사용하면 409 IDEMPOTENCY_CONFLICT다. 같은 선택의 재시도는 현재 상태를 반환하며 최초 시각·30일 제한을 연장하지 않는다. 이미 선택한 뒤 새 키로 같은 선택을 보내면 상태만 반환하고 새 키는 저장·소비하지 않는다. 사용자 행→쌍→제안 순서로 잠가 다른 제안 간 키 경합도 직렬화한다. 키는 사용자별이므로 다른 사용자와 같아도 된다. 과거 응답 바이트를 재생하는 방식은 아니다.
+거절 응답의 형식 예시:
 
 ```json
 {
   "proposalId": 1001,
-  "status": "WAITING_FOR_OTHER",
-  "myDecision": "ACCEPT",
-  "createdAt": "2026-10-20T02:00:00Z",
-  "expiresAt": "2026-10-21T02:00:00Z",
+  "status": "REJECTED",
+  "myDecision": "DECLINE",
+  "createdAt": "2026-10-20T05:00:00Z",
+  "expiresAt": "2026-10-21T05:00:00Z",
   "chatAvailable": false,
   "chatRoomId": null
 }
 ```
 
-양쪽 수락은 ACCEPTED로 바뀌지만 채팅방이 실제 준비되기 전 chatAvailable=true로 표시하지 않는다. 방 준비 전에는 false·chatRoomId=null로 응답하며 앱은 채팅 입장 성공으로 취급하지 않는다. 방 준비 후 chatRoomId로 연결하고 유효한 이용 권한·현재 종료 시각을 기준으로 chatAvailable을 계산한다. 방이 종료되면 제안 상태 ACCEPTED는 유지하면서 chatAvailable=false로 응답한다. 동일 상대 활성 방은 하나이며 다른 상대의 방은 별개다. 생성·중복 재시도·종료·안내 계약은 §8을 따른다.
+기존 제품의 거절30일 제한·자동 만료 재매칭과 ERD의 PENDING 이후 영구 재매칭 금지는 충돌한다. 정책 원문을 바꾸거나 영구 제한으로 임의 확정하지 않고 제품·BE 합의 항목으로 남긴다. 조기 퇴장·보관·외부 사본 삭제 범위 POL-09도 그대로 미합의다. 일반 종료 후30일 보관/삭제와 신고용90일 후속 설계를 혼동하지 않는다.
 
-최초 수락·거절과 그 키/시각은 보존한다. 수락 취소는 별도 cancel 업무이며 low/high_cancelled_at과 low/high_cancel_request_key에 최초 취소를 저장한다. myDecision은 취소 뒤 DECLINE이지만 최초 수락 기록은 덮어쓰지 않는다. 취소 뒤 새 수락은409 PROPOSAL_STATE_CONFLICT이며 최초 성공 수락 키의 재전송은 현재 REJECTED 결과만 복구한다. 수락 키를 취소에, 취소 키를 수락/거절 또는 다른 제안에 재사용하면409 IDEMPOTENCY_CONFLICT다. 취소 재전송은 최초 시각·30일 제한을 연장하지 않는다.
+## 6 설명 생성·조회와 내부 계산
 
-제안·pairKey를 정해진 순서로 잠그고 기한·소유권·상태를 재검사한다. 동시 두 번째 수락·거절·만료는 하나의 일관된 결과만 커밋한다. 마감 전에 상호 수락과 ACCEPTED 전이가 커밋되면 후속 만료가 이를 되돌리지 않는다. 거절이 먼저 반영되면 이후 수락으로 채팅을 만들지 않는다.
+`POST .../{proposalId}/explanations`는202 ExplanationTask7필드(proposalId/kind/status/statusUrl/errorCode/retryable/pollAfterSeconds)를 반환한다. 별도 Job/jobId·공용 jobs 조회는 없다. `GET .../{proposalId}/explanation`은200 ExplanationStatus5필드(status/source/text/evidenceKeys/promptVersion)다. PENDING·FAILED면 source/text/promptVersion=null·evidenceKeys=[]이며 성공한 실제 근거 설명만 텍스트로 반환한다.
 
-최초 명시적 거절 또는 수락 취소가30일 제한을 만들고 자동 만료는 만들지 않는다. 상대의 후속 거절도 동일 제안의 최초 제한을 연장하지 않는다. 이미 거절된 요청을 반복해 제한을 다시 30일 연장하지 않는다.
+상태·결과는 matching.evaluation JSON에 연결한다. 내부 reasonKeys·원응답을 그대로 공개하지 않고 공개 승인된 표시용 evidenceKeys만 반환한다. 공개 매핑 미합의면 빈 배열이 가능하다. 실제 근거가 없으면 가짜 고정 문구를 만들지 않으며 같은 유효 근거의 검증된 RULE_FALLBACK만 사용한다. 설명 실패는 제안·기한·수락 상태를 바꾸지 않는다. [AI 설명 계약](ai-match-explanation.md)의 정보 공개·모델 전송 경계를 유지한다.
 
-## 8 상호 수락과 채팅 연결 계약
+내부 `/internal/matching/evaluations`의 encounterId는 matching.id 숫자다. leftSnapshotId/rightSnapshotId/releaseId UUID는 legacy 입력 계약이며 ERD21에 대응 테이블이 없어 당시 입력 증거·서버 파일 매핑 합의 전 REVIEW_REQUIRED/구현 차단이다. 현재 설정으로 과거 입력을 추정하지 않는다. 판정 수식·모델 정책은 바꾸지 않는다.
 
-### 8.1 최초 방 생성과 중복 요청
+내부 AI의 attemptId는 실행 상관 UUID, contextId는 설명 matching.id·채팅 AI chat.id다. Manifest11필드는 유지한다. 5분 기산점·최초시도 포함·최대횟수·영속 선점·실행/입력 세대·중복/늦은 결과는 합의가 필요하며 임의 컬럼을 추가하지 않는다.
 
-상호 수락과 채팅방 생성은 별도 상태다. 제안 ACCEPTED만으로 채팅 권한을 부여하지 않는다. 생성의 내부 호출·동기/비동기 방식·실패 재시도 전송 형식은 후속 채팅 계약에서 확정하며 이 문서는 생성 시 반드시 보존할 사실과 응답 의미를 정한다.
+## 7 현재 MVP 제외와 검증 경계
 
-생성 작업의 업무 키는 proposalId다. 동일 제안의 중복 수락·생성 재시도는 최초 생성 결과를 재사용한다. pairKey 기준의 기존 활성 방도 확인해 동일 상대 활성 방을 중복 생성하지 않는다. 방 생성 결과와 제안 연결의 영속화를 확인하기 전 앱에 사용 가능하다고 응답하지 않는다. 응답 유실 시 재조회·재시도로 같은 방과 최초 createdAt을 찾아야 한다. 원자적 처리 또는 내구성 있는 재시도 방식은 BE 검토 항목이다.
+CM12(2026-10-26)에 따라 수락 취소는 현재 MVP 제외·후속이다. 활성 cancel 경로를 제공하지 않고 x-excluded-operations에 이력을 보존한다. response 불변·취소 저장 칸 부재를 숨기거나 미래 성공을 현재 성공으로 표시하지 않는다. 수락 이후 상대 응답·원래24시간 만료 대기, 차단·탈퇴, 방 생성 뒤 나가기는 유지한다.
 
-제안 마감 전에 ACCEPTED가 확정되었다면 방 생성이 뒤늦게 완료돼도 제안을 EXPIRED로 되돌리지 않는다. 최초 실제 방 생성 완료 시각부터 168시간을 계산한다. 기존 활성 방을 재사용하면 그 방의 최초 시각을 유지한다. 생성 실패·중복 수락·첫 입장·첫 메시지·재접속으로 시계를 다시 시작하지 않는다. 종료된 방의 재개·같은 상대 재매칭은 미정이며 자동으로 새 방을 만들지 않는다.
+CM09로 신고 전체도 후속이다. 기존 신고 자료가 있으면 별도 전환 검토 없이 삭제·기한 단축하지 않는다. 일반 방 이용·나가기·기록 정리는 [채팅](chat.md) 계약을 함께 검토한다.
 
-### 8.2 방 수명 필드와 권한
+문서 정적 검증은 [검증 기록](../../verification/owned-api-erd-20261028.md)을 따른다. 소유·기한·동시성·재전송·실제 기기 서명·서버·배포·외부 AI 실행 검증은 이번 문서 반영으로 완료되지 않는다.
 
-다음은 후속 채팅 응답·저장 모델에서 맞출 필드 초안이다. 제안의 expiresAt은 24시간 응답 기한이며 채팅의 expiresAt과 혼동하지 않는다. 현재 제안 DTO에 모든 필드가 구현돼 있다는 뜻은 아니다.
+## 이전 계약·구현 이력
 
-| 필드 | 의미·규칙 | 공개 범위 |
-| --- | --- | --- |
-| chatRoomId | 최초 생성 또는 재사용한 방 ID | 방 당사자 |
-| sourceProposalId | 중복 생성을 막는 제안 연결 키 | 서버 내부. 외부 필드 여부는 후속 합의 |
-| createdAt | 최초 방 생성 완료 서버 시각. 불변 | 방 당사자 |
-| expiresAt | createdAt + 168시간 | 방 당사자 |
-| closedAt | 종료 효력 시각. 정상 자동 종료는 expiresAt | 종료 상태 응답과 연결 |
-| deleteAt | closedAt + 720시간. 서버 기록 삭제 기한 | 서버 내부 관리. 사용자 복구 기한 아님 |
-| chatStatus | ACTIVE / CLOSED 초안 | 방 당사자 |
-
-```json
-{
-  "chatRoomId": "70000000-0000-4000-8000-000000000001",
-  "chatStatus": "ACTIVE",
-  "createdAt": "2026-10-20T06:00:00Z",
-  "expiresAt": "2026-10-27T06:00:00Z",
-  "closedAt": null
-}
-```
-
-위 JSON은 후속 채팅 계약에 전달할 정상 방 요약 예시이며 새 HTTP 엔드포인트 확정이 아니다. 한국 화면에는 Asia/Seoul로 변환해 10월 27일 15시 종료로 표시한다. 이 예시의 정상 종료 효력은 2026-10-27T06:00:00Z, 삭제 기한은 2026-11-26T06:00:00Z다.
-
-현재 시각 < expiresAt이고 다른 권한 조건도 충족할 때만 활성 채팅을 허용한다. 정각부터 양쪽 메시지 조회·전송과 해당 방 AI 시작 질문 이용을 막는다. 열린 화면·이전 푸시·재접속·기존 소켓에도 같은 기준을 적용한다. 종료 배치가 늦어져도 요청 처리 시 마감을 검사한다. 메시지 저장·전달 경계의 경합 처리와 열린 소켓 종료 방법은 채팅 계약에서 검증한다.
-
-자동 종료는 제안의 REJECTED·EXPIRED로 되돌리는 사건이 아니다. 제안 경로로 상대 프로필·사진 권한을 우회 복원하지 않으며 상호 수락 후 접근은 활성 채팅 권한을 사용한다. FE는 종료 이후 대화·사진 등 해당 방에 연결된 표시와 민감 캐시를 정리하고 종료 안내를 표시한다. 종료 안내 목록의 유지 기간은 PM·FE 검토 대상으로 남긴다.
-
-### 8.3 종료 후 기록 보관과 삭제
-
-정상 자동 종료의 closedAt은 실제 종료 배치 실행 시각이 아니라 expiresAt이다. 지연 처리·재시도 때문에 deleteAt을 뒤로 미루지 않는다. 이용 종료부터 720시간만 서버 채팅 기록을 보관한 뒤 삭제하며 정상 수명은 생성 후 총 37일이다. 보관 중 일반 사용자 조회·복구는 허용하지 않는다.
-
-보관 목적·접근 권한·삭제 책임은 후속 BE·AI 계약에서 명시한다. 메시지 원본, 첨부파일을 도입할 경우 해당 객체, 방 메타데이터, AI 입력·처리 사본, 로그·백업을 각각 삭제 범위에 포함할지와 방법·보존 예외·삭제 확인 방법을 정한다. 원본만 삭제하거나 소프트 삭제·화면 숨김만 한 상태를 전체 삭제 완료로 기록하지 않는다. 삭제 작업의 재시도·실패 복구·잔존 확인도 후속 완료 조건이다. 회원 프로필·동의 이력을 포함한 모든 서비스 데이터를 일괄 삭제하는 규칙으로 확대하지 않는다.
-
-자발적 퇴장·차단·탈퇴에 따른 조기 종료 시각과 상대방 이용 범위는 별도 결정한다. 자동 만료를 자발적 퇴장으로 간주해 영구 재매칭 금지를 추가하지 않는다. 기존 방이 있다면 최초 생성·종료 이력에 기반해 적용 방식을 검토하고 배포 시각으로 기한을 다시 시작하지 않는다.
-
-### 8.4 사용자별 안내와 49·50번 연결
-
-안내는 각 사용자에게 방 첫 입장 때 1회, expiresAt 1시간 전에 1회 제공한다. BE 49번은 사용자별 안내 상태·종료 시각·예약·중복 방지·전달 처리, FE 50번은 화면 표시·수신·재진입 흐름을 맡는다. 38번은 필요한 정보를 연결하며 안내 전송 구현 완료를 뜻하지 않는다.
-
-| 구분 | 기준 | 중복·예외 |
-| --- | --- | --- |
-| FIRST_ENTRY | 사용자가 해당 활성 방에 처음 진입할 때 | A/B 각각 관리. 재입장·다른 기기로 재진입해도 최초 안내를 새로 만들지 않음 |
-| ONE_HOUR_BEFORE | expiresAt - 1시간 | 사용자별 별도 안내. 예약·재시도·전달 실패로 방 기한 연장 없음 |
-
-noticeType 코드명과 (chatRoomId, userId, noticeType) 업무 키는 계약 초안이다. FIRST_ENTRY 표시 확인, 예약, 전송, 실제 수신·표시 확인을 같은 상태로 기록하지 않는다. 네트워크 재전송이 있을 수 있으므로 논리 안내 중복 방지와 FE 표시 확인의 처리·보관 기간을 49·50번에서 합의한다. 요청·응답과 ACK 엔드포인트는 그 계약에서 확정한다.
-
-최초 안내에는 실제 expiresAt을 보내고 FE가 한국 날짜·시각으로 표시한다. 1시간 전 안내에는 현재 남은 시간을 반영한다. 문구 초안은 “이 채팅방은 생성 후 7일 동안 이용할 수 있어요. {종료 날짜·시각}에 대화가 종료돼요.”와 “이 채팅방은 1시간 뒤 종료돼요. 대화를 이어가고 싶다면 서로 동의한 연락 방법을 나눠보세요.”다. 외부 채널 이동은 자율이며 연락처를 자동 공유하거나 이동을 강제하지 않는다.
-
-예약 실행·재전송 때 방과 수신자의 현재 권한·종료 시각을 다시 확인한다. 지연된 안내를 고정 문구로 발송하지 않고, 이미 종료된 방에는 “1시간 뒤 종료” 안내를 보내지 않는다. 종료 후 첫 접근에는 활성 방 첫 입장 안내 대신 종료 상태를 제공한다. 안내에 대화 내용·연락처를 포함하지 않는다.
-
-현재 구현 선택은 첫 입장/기한 내 안내의 HTTP 조회와 별도 표시 ACK, 사용자별 종료 알림 예약·설치 로그인 확인·FCM 데이터 전송이다. 늦은 최초 입장은 두 안내를 별도로 제공하며 조기 권한 종료 대상은 발송하지 않는다. 예약/공급자 접수와 단말 수신/표시는 구분한다. 구체적인 오류·재시도·앱 종료/지연 수신 검증 경계는 [안내·알림 계약](chat-notices.md)을 따른다. 실제 FE/기기 적용 완료를 뜻하지 않는다.
-
-## 9 오류와 공개 범위
-
-| HTTP | code | 의미 |
-| --- | --- | --- |
-| 400 | INVALID_REQUEST | 입력 형식·범위 오류 |
-| 401 / 403 | 인증 계약 기준 | 인증·가입 완료 제한 |
-| 404 | RESOURCE_NOT_FOUND | 제안 없음 또는 타인 접근 |
-| 409 | PROPOSAL_STATE_CONFLICT | 다른 결정·종료 상태와 충돌 |
-| 410 | PROPOSAL_EXPIRED | 수락·거절 마감 또는 종료된 본인 제안의 프로필 접근. 정각부터 새 선택 불가 |
-| 409 | IDEMPOTENCY_CONFLICT | 같은 키의 다른 명령 내용 |
-| 422 | POLICY_UNRESOLVED | POL-09 등 미정 정책 합의 전 처리 거부 |
-| 429 | RATE_LIMITED | 요청 제한 |
-| 503 | SERVICE_UNAVAILABLE | 일시 장애. 완료로 표시하지 않음 |
-
-기존 404 PROPOSAL_NOT_FOUND → 404 RESOURCE_NOT_FOUND, 409 PROPOSAL_EXPIRED → 410 PROPOSAL_EXPIRED, 409 PROFILE_ACCESS_ENDED → 410 PROPOSAL_EXPIRED, 503 TEMPORARILY_UNAVAILABLE → 503 SERVICE_UNAVAILABLE로 변경한다. 경로별 지원 오류는 최신 OpenAPI를 확인한다. 소유권 확인을 기한·상태 판정보다 먼저 적용하고 타인 접근에는 존재 여부를 숨긴다. 서버·앱을 함께 변경하기 전 구형 오류 분기와 새 계약을 혼용하지 않는다.
-
-상대의 거절·차단 등 내부 세부 이유를 오류에 넣지 않는다. 만남 검증 탈락은 “이번 만남은 매칭 제안으로 이어지지 않았어요”로 안내하고 대기 중 상태에는 이 문구를 쓰지 않는다. 새 제안 생성 전에는 매칭 푸시를 보내지 않는다.
-
-권한 검사 없이 ID 존재 여부만 검사하거나 엔티티 전체를 직렬화하지 않는다. JPA 엔티티와 공개 DTO를 분리한다. 프로필 반환 허용이 채팅 입장·메시지 권한으로 이어지지 않게 한다.
-
-## 10 검토와 검증 사례
-
-| 사례 | 기대 |
-| --- | --- |
-| 한쪽 접수 | 저장 receipt, 상대 기록 대기, 제안·푸시 없음 |
-| 만남 6일 뒤 첫 접수 | 남은 약 1일만 대기 |
-| 만남 마감 직전 제안 생성 | 생성 후 별도 24시간 |
-| 업로드·수락·거절 중복 | 기록·제안·거절 제한·방 중복 생성 없음 |
-| 타인 제안·프로필 조회 | 동일한 404, 식별자·원응답 비노출 |
-| 한쪽 수락 | WAITING_FOR_OTHER, 채팅 권한 없음 |
-| 동시 양쪽 수락 | ACCEPTED 한 번, 활성 방 하나와 연결 |
-| 수락·거절 경합 | 한 최종 상태, 거절 확정 뒤 채팅 생성 없음 |
-| 정각 요청 | 만료, 거절 30일 제재 없음 |
-| OFF 때 제안 수신 후 ON | 기존 제안·수락 유지, 새 매칭만 사진 검사 |
-| 제안 후 상대 사진 삭제 | 최신 사진 없음·기본 이미지, 과거 사진 캐시 제거 |
-| 프로필 조회 장애 | 과거 사진을 최신 정보로 표시하지 않음 |
-| 서버 접수 응답 유실 | 같은 업무 키 재시도, 원본 기록 보존·중복 없음 |
-| 상호 수락 후 방 생성 실패·응답 유실 | ACCEPTED 유지, 준비 전 chatAvailable=false, 재시도는 동일 업무 키 |
-| 중복 생성·중복 수락·6일째 메시지·재접속 | 방·최초 createdAt·expiresAt 유지 |
-| 채팅 종료 직전·정각·직후 요청 | 직전은 다른 권한 충족 시 허용, 정각부터 조회·전송·AI 시작 질문 불가 |
-| 종료 직전 전송과 종료 경합·열린 소켓 | 종료 경계 이후 이용이 연장되지 않는지 후속 채팅 계약에서 검증 |
-| 종료 작업 지연·이전 알림으로 재입장 | 서버 현재 시각 판정으로 차단, 제안 ACCEPTED는 유지 |
-| 정상 종료 후 720시간 정각·삭제 재시도 | 최초 종료 효력 기준 삭제, 대상 저장소별 잔존 확인 |
-| A/B의 서로 다른 첫 입장·재입장 | 사용자별 안내 1회, 동일 종료 시각, 재입장 안내 반복 없음 |
-| 종료 1시간 전 경계·예약 중복 실행 | 업무 키 중복 방지, 예약·전송·수신 상태 분리 |
-| 지연 안내·종료 뒤 첫 접근 | 남은 시간 반영, 종료된 방에 1시간 전 문구 발송 금지 |
-| 종료 1시간 이내 첫 입장·알림 거절·앱 종료 | 미정 안내 병합·전달 방식을 49·50번에서 합의 후 검증 |
-
-## 11 승인 전 남은 항목
-
-- 37번: 양쪽 이벤트 합의·증명·시각·기기 제출 스키마, 로컬 반복 억제 해제 계약.
-- 34·35번: 공개 생활 코드·사진 URL 업로드/전달 계약·인증 상태와 ID 전략.
-- FE: 공개 프로필 비교값 전달, PROFILE_CHANGED 후 같은 화면 재확인, 수락 취소 확인/실패 복구 및 사용자별 목록 제거. 위 정책은 기능 명세의 확정 기준을 따르며 정책 재결정 요청이 아니다.
-- 채팅 담당: §8의 생성 업무 키·기존 활성 방 재사용·영속화·실패 재시도와 profile 조회 경로, 메시지/소켓 종료 및 조기 종료·자동 종료 후 재매칭을 합의한다. 전체 채팅 API와 삭제 작업은 Epic 32의 후속 범위다.
-- 49·50번: 첫 입장 상태/ACK·안내 채널·예약/전달/수신 상태·중복 방지·늦은 입장/종료 안내 계약을 합의한다. 안내 구현 담당 배정과 계약·통합 검증 완료는 별개다.
-- BE·AI·PM: 종료 후 30일 보관 목적·권한·메시지/파일/AI 사본/로그/백업별 삭제 범위·검증을 합의한다.
-- BE: 기간 정책 소급과 실제 채팅 연결 검토. 제안 선택 키 보관·잠금·기한 경계는 본 문서와 로컬 구현에서 검증.
-- 기본 BE와 FE·IOT 각각의 교차 검토. AI 근거 응답 형식을 추가하면 AI 영향 검토도 포함.
-- Jira contract Watcher 등록은 확인 필요. 이 로컬 초안 작성으로 실제 구독·승인이 완료된 것은 아니다.
-
-이번 브랜치는 38번 계약 작성 범위다. 서버 코드·DB·실물 키링 검증과 43번 구현 완료를 의미하지 않는다. 검토 전 미정 항목을 확정 요구로 적용하지 않는다.
+아래는 작성 당시의 계약·로컬 구현 기록이다. 과거 테이블·컬럼·UUID·취소·재매칭·보관 규칙을 ERD21 현재 규범으로 적용하지 않는다.
 
 ### 현재 구현과의 차이
 
 43번 로컬 구현은 제안 ACCEPTED까지이며 실제 채팅방이 없어 chatAvailable=false·chatRoomId=null을 반환한다. §8의 채팅 수명·안내·삭제 계약은 후속 구현 요구이며 실행 검증 결과가 아니다. MR16 형식의 sid/refresh_tokens 가족 세션을 검사한다. 실제 소셜 로그인·MR16 전체 병합, 37번 기기 증명 수신·배포는 검증 범위 밖이다.
+
 
 ## 12 변경 이력
 

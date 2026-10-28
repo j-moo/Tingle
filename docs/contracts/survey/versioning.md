@@ -1,34 +1,44 @@
 # 설문·계산·분석 버전 파일 계약
 
-1.2.0-survey-review / 수정 2026-10-22. 독립 관리자 게시 DB/API를 전제로 한 기존안을 파일 기반 운영으로 수정했다. 문항100개와 계산 원문은 이번 작업에서 변경하지 않는다.
+2026-10-28 / 21개 테이블 기준 문서 정합화. 문항 100개와 계산·기획·정책 원문은 변경하지 않는다. 이 문서는 파일 선택과 저장 위치를 설명하며 모든 규칙 파일의 구현·배포 완료를 뜻하지 않는다.
 
-[최신 문항 catalogue](questionnaire-SIS-Q-1.1-100.json) / [설문 원문](../../survey-analysis/personality-survey-v1.md) / [계산 원문](../../survey-analysis/personality-scoring-v1.md) / [API](../api/README.md) / [ERD](../../database/erd.md)
+[문항 catalogue](questionnaire-SIS-Q-1.1-100.json) / [설문 원문](../../survey-analysis/personality-survey-v1.md) / [계산 원문](../../survey-analysis/personality-scoring-v1.md) / [설문 API 계약](../api/survey-sessions.md) / [OpenAPI](../api/openapi.json) / [ERD](../../database/erd.md)
 
-## 현재 수정안
+## 불변 파일과 저장 위치
 
-1. 문항·선택지·표현·채점·유형·분석·참고 추천·매칭·제품 정책·선택 이관 규칙을 함께 실행 가능한 불변 파일 묶음으로 배포한다. SIS-Q-1.1-100 등 기존 원문 버전 코드를 유지한다. 수정은 새 version_code로 구분한다.
-2. 서버 배포에 현재 파일과 기존 회차/결과/스냅샷의 재현에 필요한 과거 파일을 함께 포함한다. 기존 파일을 덮어쓰거나 최신 문항을 과거 응답에 적용하지 않는다.
-3. 설문 회차는 survey_responses(response_id,public_id,user_id,version_code,response_json,revision,completed_at)로 저장한다. 같은 사용자/버전의 진행 중 회차는 하나이며 완료 후 원응답은 불변이다.
-4. 개인 분석은 완료 원응답+version_code로 식별하고 analysis_results에 outcome/result_json을 저장한다. 실제 쌍 매칭은 encounters의 판정/버전과 당시 settings_snapshots로 재현한다.
-5. CreateSession은 releaseId 대신 surveyVersion 문자열(예: SIS-Q-1.1-100)을 받는다. version_code로 불변 설문 파일을 고정하고 DB release 행을 요구하지 않는다. 외부 sessionId는 public_id UUID(NOT NULL·UNIQUE·DEFAULT gen_random_uuid())이며 내부 response_id는 유지한다. 설문용 SurveyManifest는 surveyVersion·wordingVersion·contentHash만 제공한다. 분석용 전체 Manifest의 필수값은 유지하며 규칙 파일이 생긴 뒤 후속 계약을 합의한다.
-6. 문항별 저장은 미완료+revision 조건부 갱신으로 경합을 막는다. 분석 요청의 sessionRevision은 연결된 불변 완료 회차와 비교하고 결과 행에 중복 저장하지 않는다.
-7. 새 버전 이관은 명시적 호환 규칙·사용자 확인→새 응답 회차 생성이다. 원본·결과·키링 사본은 보존한다. legacy80→100 임의 자동 매핑을 하지 않으며 미지원 규칙은 MIGRATION_UNSUPPORTED로 처리한다.
+1. 같은 버전의 문항·보기·표현·계산 규칙·이관 규칙을 덮어쓰지 않는다. 변경은 새 파일 버전으로 구분한다. 현재 파일과 기존 회차/결과 재현에 필요한 과거 파일을 배포·보존해야 한다.
+2. 설문 정의는 `survey/{버전}.json`, 분석 규칙은 `analysis/{버전}.json`에 있다. 현재 문항 catalogue 하나만으로 모든 계산·분석·정책 파일이 완성됐다고 보지 않는다. 파일의 실제 패키징·레지스트리·배포 위치는 구현 검증 대상이다.
+3. 회차는 `survey(id, user_id, survey_version, completed_at)`에 저장하고 답은 `survey_answer(survey_id, question_id, answer_value, answered_at)`로 문항별 분리한다. `sessionId`는 `survey.id` 숫자다. 문항·보기 정의와 metadata/revision을 DB의 JSON 사본으로 저장하는 계약을 사용하지 않는다.
+4. `surveyVersion`은 1~30자로 회차 시작 때 고정한다. 같은 회원·버전의 미완료 회차는 재사용하는 현재 문서 설계를 따르며 완료 후 원응답은 불변이다. 다른 게시 버전을 과거 회차에 자동 적용하지 않는다.
+5. 개인 분석은 완료 회차와 `analysis_version`(1~30자)으로 식별하고 `personality(survey_id, analysis_version, status, result)`에 저장한다. `resultId`는 `personality.id` 숫자다. 점수·유형·원응답 해석·자기성향/선호 차이·참고 추천을 결과 안에서도 구분한다.
+6. 실제 두 사람 매칭은 개인16유형의 참고 추천과 별개이며 `matching`의 판정·정책 버전과 당시 최소 근거를 따른다. 과거 `settings_snapshots` 테이블이 현재 존재한다고 가정하지 않는다. 만남 세대와 당시 입력 근거 보존은 담당 매칭 계약의 합의 항목이다.
 
-## 파일 검증·변경 검토
+## 공개 버전 DTO
 
-문항ID·선택 타입/범위·중복·unknown/any·참조·대표값·결측·동점·점수/coverage 경계·유형/참고 추천 분리·입출력 사례를 검증한다. 코드/SQL eval이나 임의 파일·네트워크 접근은 허용하지 않는다. 파일 운영도 MR 검토와 재현 가능한 회귀 사례가 필요하다.
+| DTO | 필드 | 저장·선택 |
+| --- | --- | --- |
+| SurveyManifest | `surveyVersion`, `wordingVersion`, `contentHash` | 첫 필드는 `survey.survey_version`, 나머지는 설문 파일에서 읽거나 계산 |
+| AnalysisManifest | `surveyVersion`, `analysisVersion` | `survey.survey_version`, `personality.analysis_version` |
+| 공유 Manifest | 기존 전체 정의 유지 | 다른 내부/도메인 호출자의 별도 계약. 위 설문 DTO로 축소하지 않음 |
 
-다음은 서로 구분한다: 개인 점수, 개인16유형, 원응답 기반 해석, 선호와 자기 성향의 차이, 참고 추천 유형, 실제 두 사람의 양방향 매칭. 개인 유형 정의만으로 두 사람 궁합을 확정하지 않는다. 생활조건·Q97 충돌 등 미정 제품 정책은 그대로 확인한다.
+`wordingVersion`은 1~100자, `contentHash`는 파일 내용의 SHA-256 소문자 16진수 64자리다. 문서에서 0으로 채운 해시는 형식 예시이므로 실제 파일 검증값으로 복사하지 않는다. 문항 ID는 1~50자이고 저장할 답을 문자열로 표현했을 때 최대 100자다. 허용 값·척도·unknown/any는 고정된 문항 파일로 검사한다.
 
-## 기존안과 현재 범위에서 제외한 항목
+## 이관과 분석 상태
 
-기존안은 rule_artifacts/rule_releases/release_artifacts 및 관리자 초안·검증·승인·게시·current 전환/롤백이었다. 현재는 해당 테이블과 관리자9개 endpoint를 구현 대상으로 요구하지 않는다. 필요가 확인되면 권한·버전 영속성·승인 계약과 함께 별도 설계한다. [API 변경 이력](../api/changes-20261021.md)에 기존 경로와 영향이 남아 있다.
+새 버전 이관은 명시적 파일 규칙과 사용자 확인을 거쳐 보존 가능한 문항만 새 `survey`·`survey_answer`로 복사한다. 원본 회차·분석은 유지한다. `targetSurveyVersion`과 파일 내용으로 계산한 `policyHash`를 미리보기·실제 이관에서 함께 검사하며 임의 자동 문항 매핑을 하지 않는다. 같은 버전 또는 미지원 규칙은 `MIGRATION_UNSUPPORTED`, 해시 변경은 `MIGRATION_POLICY_CHANGED`다. 기존 동일 버전 미완료 회차 재사용 시 답 복사 여부는 아직 합의 전이다.
 
-## 확인할 사항
+분석 접수는 공용 `jobId` 대신 `resultId`와 현재 상태를 반환한다. 상태는 `personality.status`의 PENDING/SUCCEEDED/INSUFFICIENT/FAILED이며 내부 재시도 정보는 `personality.result`에 둔다. 이전 유효 분석은 재검사 대기·실패·정보 부족 중 유지한다. 최신 유효 SUCCEEDED 결과 확인 후 결과 저장·프로필 적용 포인터·설정 버전 갱신을 원자 처리해야 한다.
 
-- 불변 파일 묶음 형식·배포 위치·호환 releaseId 매핑은 아직 최종 구현 계약이 아니다. 현재 catalogue 하나만으로 모든 계산/정책 파일이 완성됐다고 보지 않는다.
-- 서버 구현·실제 파일 배포·과거 입력 재계산·기기 동기화 시험은 별도다. 이번 작업은 문서·schema 정리와 정적 확인이다.
+5분 정체의 기산점, 최초 실행을 포함한 attempts 의미·최대 횟수, 입력/실행 세대·중복 선점·늦은 결과 차단은 AI·BE 합의가 필요하다. 존재하지 않는 background_job나 새 DB 칸을 이미 있는 저장소로 쓰지 않는다.
 
-## 2026-10-22 확인 범위
+## 파일 검증과 검토
 
-1~3번은 사용자 전달 요청으로 반영했다. 최초 작성 때는61번 구현이 없었으나, 후속 통합에서 MR !57의 `629ed04a5cd6ef70f62f79b2050e60bf8d5b6a2d`를 읽어 surveyVersion·세 필드 Manifest·공개 UUID 생성/제약 선언을 확인했다. 설문 코드를 이 브랜치에 합치거나 런타임·기존 행 이관을 검증한 것은 아니다. 분석 releaseId·이관 targetReleaseId, 작업 상태 저장 위치와100자 상한 검증 차이는 [설문 회차 계약과 합의 항목](../api/survey-sessions.md)을 따른다.
+문항 ID·선택 타입/범위·중복·unknown/any·참조·대표값·결측·동점·점수/coverage 경계·유형/참고 추천 분리·입출력 사례를 버전별로 검증한다. 파일 내용으로 임의 코드·SQL을 실행하거나 임의 파일·네트워크 접근을 허용하지 않는다. 파일 운영도 코드 검토와 재현 가능한 회귀 사례가 필요하다.
+
+개인 점수, 개인16유형, 원응답 해석, 선호/자기성향 차이, 참고 추천 유형, 실제 양방향 매칭을 구분한다. 생활조건·Q97 등 제품 정책의 미정 항목을 이 문서에서 임의 확정하지 않는다.
+
+## 이전 설계 이력과 제외 범위
+
+이전 공개 UUID·revision/ETag 설계와 MR !57의 정적 확인은 당시 구현 이력이다. 현재 숫자 ID·문항별 답 저장·상태 조회로 코드나 기존 데이터 이관이 완료됐다는 증거가 아니다. 자세한 과거 확인 커밋은 [설문 API 계약](../api/survey-sessions.md)의 구현 증거 절을 따른다.
+
+이전 rule_artifacts/rule_releases/release_artifacts 및 관리자 초안·검증·승인·게시·current 전환/롤백 9개 API는 현재 구현 대상으로 요구하지 않는다. 기존 노션의 타담당·제외 페이지와 이력은 보존한다. 관리자 실시간 편집이 필요해지면 권한·버전 영속성·승인 계약과 저장 구조를 별도 설계한다.

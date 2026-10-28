@@ -1,175 +1,147 @@
 # Tingle(팅글) API 명세서
 
-1.3.0-mr26-alignment-review / 정합화 기록 2026-10-22
+1.4.0-erd21-owned-review / 2026-10-28
 
-최신 develop과 설문·채팅 작업을 합친 계약 작업본이다. ERD는 기능 명세 v2 반영 후 **28개 테이블·204개 컬럼**([변경 기록](../database/changes-20261022.md) 0절·9절). 웹 동기화 상태는 통합 검증 기록을 따른다. 현재 구현 대상으로 정리한 API는 **71개**, 범위에서 제외·폐기한 기존안은 **11개**다. 문서 정리와 팀 합의·실제 구현·DB 적용·배포 완료를 구분한다.
+영빈 담당 **40개 operation**의 기존 계약을 사용자 제공 **21개 테이블·151개 컬럼·35개 논리 관계** 설계에 맞춘 검토 작업본이다. 담당 활성 **36개**, 후속·제외 **4개**이며, 다른 담당 31개를 합한 전체 활성 API는 **67개**다. 기존 제외 11개와 이번 4개를 합한 제외 이력은 **15개**다. 문서 반영과 팀 승인·서버 구현·실DB 적용·배포 완료를 구분한다.
 
-- [사용자 승인 정합화 기준](alignment-20261021.md) / [검증 이력·다음 변경 대조 절차](../../verification/spec-alignment-20261022.md)
-- [OpenAPI: 요청/응답 타입·필수값·예시](openapi.json)
-- [기존안·수정안과 API별 변경 이력](changes-20261021.md)
-- [ERD·컬럼 설명](../../database/erd.md) / [SQL](../../database/schema.sql)
-- [설문 버전 파일 계약](../survey/versioning.md) / [인증 확인 사항](auth-recheck.md) / [기능 대응표](../../specifications/coverage.md)
-- [노션 API 명세서](https://app.notion.com/p/API-4a2c91ccb660820793de81b259578314)
+- [OpenAPI: 타입·필수값·예시](openapi.json), [현재 정합화 검증](../../verification/owned-api-erd-20261028.md)
+- [ERD·컬럼 설명](../../database/erd.md), [로컬 설계 SQL](../../database/schema.sql), [21개 구조 검증](../../verification/erd21-alignment-20261028.md)
+- [설문](survey-sessions.md), [설문 파일 버전](../survey/versioning.md), [만남·제안](encounters-proposals.md), [채팅](chat.md), [안내](chat-notices.md), [AI 설명](ai-match-explanation.md)
+- [기존 노션 API 명세서](https://app.notion.com/p/API-4a2c91ccb660820793de81b259578314), [인증 확인 사항](auth-recheck.md)
 
-## 공통 계약
+## 2026-10-28 ERD21 담당 정합화
 
-- Spring Boot·JPA·PostgreSQL 기준이다. Flyway·H2는 사용하지 않는다. local은 update, test는 create-drop이며 dev/prod 스키마 운영과 Docker·인프라는 준비 후 정한다.
-- 앱은 제공자 증명을 서버에 전달해 자체 access/refresh를 발급받고 OS 보호 저장소에 보관한다. 서버는 JWT 주체와 현재 권한을 검증한다. 앱이 보낸 회원번호를 인증 근거로 사용하지 않는다.
-- 소셜·refresh 요청과 현재 토큰 응답6개(accessToken/refreshToken/tokenType/accessTokenExpiresAt/refreshTokenExpiresAt/onboardingStatus)를 유지한다. 사용자 승인 기준에서 구형 accessTokenExpiresIn/signupCompleted를 추가하지 않기로 정리했다. 기준 develop의 앱·웹 소스에서 구형 필드 사용 연결을 찾지 못했으며 실제 앱 호환은 별도 검증한다. sid/로그아웃/회전 범위는 [현재 인증 상태](auth-recheck.md)를 따른다.
-- 제안 proposalId는 1 이상의 integer(int64) 숫자이며 DB proposal_id와 동일하다. 별도 공개 UUID나 매핑 컬럼을 두지 않는다. UUID 형식인 Idempotency-Key·세션 family ID는 그대로 유지한다. 나머지 공개 UUID 계약은 내부 bigint 변경으로 자동 교체하지 않는다. 자원별 매핑·형식은 FE/AI/IoT와 확인할 사항이다. 상대의 내부 회원번호·생년월일·소셜ID·원응답·기기 자격은 공개 DTO에서 제외한다.
-- 가입 단계는 AGREEMENT_REQUIRED → KEYRING_REQUIRED → PROFILE_REQUIRED → SURVEY_REQUIRED → PREFERENCES_REQUIRED → SYNC_PENDING → READY다. nextStep과 onboardingStatus는 같은 서비스에서 계산한다. POST /users/me/agreements + PATCH /users/me/profile로 분리하며 기존 POST /auth/signup은 폐기했다. 현재 가입 게이트는 실제 DB로 검사한다. 단계 상세의 설문·설정 필드 임시값은 후속 연결 대상으로 구분한다.
-- 서버가 단계별 호출·소유권을 검사한다. 키링 등록/조회 등 가입 진행 API는 해당 단계에 허용하되 모든 후속 API를 일괄 허용하지 않는다.
-- 성공 응답은 감싸지 않는다. 목록은 items 객체를 사용한다. 오류의 필수값은 code,message이며 추적 정보는 선택 확장이다. 상태 코드는 endpoint별 OpenAPI 계약을 따른다.
-- UTC ISO8601 시각을 주고받으며 나이는 Asia/Seoul 날짜로 계산한다. 만19세 이상, 윤일생은 평년3월1일에 나이가 바뀐다. 현재시각이 기한과 같아지면 만료다.
-- 닉네임은 NFC·앞뒤 ASCII공백 제거 후2~20자, 완성형 한글·영문·숫자·공백이다. 독립 자모는 혼합 입력도 금지한다. 소개는 보이는 글자200개·LF3개 이하이며 text로 저장한다. FE/BE 분할 규칙을 동일하게 확인한다.
-- 조건 헤더는 설문 revision 등 실제 조건부 갱신을 하는 경로에 적용한다. 프로필 profileVersion/ETag/If-Match 필수 구조는 제외한다. JSON 미정의 필드는 거절하고 문항 응답은 해당 버전 파일 schema로 추가 검사한다.
-- 기존 Idempotency-Key 요청 계약은 유지하지만 별도 idempotency_records 테이블을 요구하지 않는다. 자원별 업무 키·유일 제약과 원자 저장으로 같은 입력 재시도를 판정한다. 안전한 응답 재현을 보장하지 못하는 경로의 헤더 제거/대체는 호출자와 합의한다.
-- 민감 응답은 Cache-Control:no-store. 토큰·생년월일·원응답·메시지·기기 자격을 로그에 기록하지 않는다. 401 만료 시 공유 갱신과 명시적 위조/폐기/403의 처리 구분은 필요하다. 현재 서버의 ACCESS_TOKEN_EXPIRED만 갱신1회, ACCESS_TOKEN_INVALID/SESSION_REVOKED는 재로그인으로 처리한다. 실제 앱 연동은 별도 검증한다.
+관련 S15P31E106-91·92. 기존 승인 작업 위치와 브랜치를 유지한다. 영빈 담당 경로에서 `/v1`을 제거하고 `/api` 또는 `/internal`을 유지했다. 본인 위험 분석 동의는 `/api/users/{userId}/risk-analysis-consent`다. 가을 전달 기준에 맞춰 희망 조건·설정 4개 경로도 `/api/users/{userId}/preferences`·`/api/users/{userId}/settings`로 바로잡고 필수 int64 userId와 토큰 주체 불일치 `403 FORBIDDEN`을 명시했다. 경로 ID를 인증 근거로 신뢰하지 않는다.
 
-## 기능별 저장·시간 기준
+다른 담당 31개 operation은 이 4개의 경로·userId·403 보완 외에 기존 동작과 스키마를 보존한다. 따라서 인증·프로필·키링·사진·푸시·차단 등의 기존 `/v1`·`/me`와 이전 저장 설명이 남을 수 있다. 상대 사진 등 타 담당 경로도 임의 변경하지 않았다. 아래 API 목록과 각 operation의 담당 범위를 확인한다.
 
-| 기능 | 현재 기준 |
+현재 계약의 숫자 ID는 `sessionId=survey.id`, `resultId=personality.id`, `proposalId/encounterId=matching.id`, `chatRoomId=chat.id`, `messageId=chat_message.id`, `deviceId=keyring.id`다. 모두 integer(int64)다. 앱 발급 installationId·sid/refresh family·Idempotency-Key·clientMessageId·만남 submissionId/eventId·AI attemptId는 역할이 다른 UUID다. 내부 AI의 legacy releaseId와 snapshot UUID는 저장/파일 매핑 미합의 상태로 보존한다.
+
+## 현재 저장·시간·권한 기준
+
+| 범위 | ERD21 계약과 제한 |
 | --- | --- |
-| 사진 | 검증된 URL 한 장을 profiles.image_url에 저장. JSON imageUrl POST→200. 실패 시 기존 URL 유지, 삭제는 NULL. 별도 사진 행·crop·PROCESSING/READY 조회 제외. 업로드·소유권·전달 URL·실제 파일 삭제는 별도 계약 확인 |
-| 희망 조건/설정 | matching_settings 한 행. 변경 필드만 갱신하고 settings_version을 원자 증가시켜 snapshot 생성. 나이 ANY는 양 경계NULL, RANGE는 하한19 이상·상한NULL 또는 하한 이상 |
-| 설문 | survey_responses의 response_json·revision·completed_at. 진행 중 회차 하나, 조건부 저장, 완료 후 불변. sessionId 외부 이름은 유지하고 내부 response_id와 대응 |
-| 개인 분석 | analysis_results에 완료 원응답+version_code별 결과. inputHash/결과 생성시각 필수 응답 제외. 완료시각을 생성시각으로 대신 쓰지 않음 |
-| 동기화 | 같은 binding+snapshot의 실행을 재사용, 새 생성201/재사용200. 전송만으로 READY가 아니며 ACK·버전·증명을 검증. payloadHash/status 일부는 원본에서 계산, 정확한 IoT37 계약 필요 |
-| 만남/평가 | encounters+encounter_submissions. 판정과 버전은 evaluation_json/evaluation_version_code, 별도 evaluationId 대신 encounterId. 기회7일·상대 대기·제안24시간은 각각 검사 |
-| 제안 | match_proposals의 두 선택·최초 결정시각. 거절/수락 시각으로 resolvedAt 계산. 최초 거절+30일 제한을 재시도로 연장하지 않음. 사진 옵션 변경 전 제안은 유지하고 현재 프로필을 표시 |
-| 채팅 | 최초 방 생성+168시간에 종료. 요청마다 시간/참여 검사. 정상 closed_at=expires_at, delete_at=closed_at+720시간(신고된 방은 최초 신고+90일, 모두 기각되면 min(마지막 기각+30일, 최초 신고+90일)). 배치 지연·재접속으로 기한 연장 없음 |
-| 안내 | chat_members의 두 표시 ACK와 background_jobs의 사용자별 최초 입장/종료1시간 전 업무 키. noticeId는 작업을 가리키는 호환 식별자이며 소유·종류·방을 재검사 |
-| 메시지 | 서버 message_id, 앱 재전송 client_message_id, 방 안 sequence 모두 유지. 같은 키·다른 본문 충돌. 원문 큐/로그 복제 금지 |
-| 후속 처리 | background_jobs로 예약·실패 재시도 통합. business_key 유일, 선점마다 attempts 증가, 완료 시 자신의 attempt·RUNNING·lease 유효성 검사. 별도 outbox/삭제/AI 작업 테이블 없음 |
-| AI | ai_results.job_id가 결과PK. kind+target을 함께 확인. 개인 분석과 두 사람 비교·참고 추천은 별개. 동의·허용 문맥·최소 입력·종료 후 접근 차단 유지 |
+| 설문·답변 | `survey`·`survey_answer` 문항별 저장. 설문 버전 최대30자·문항ID 최대50자·저장 답값 최대100자. scalar 답만 현재 형식에 포함. revision·If-Match/ETag·별도 metadata 없음. 완료와 분석 성공은 별개 |
+| 분석 | `personality` 상태·결과와 `profile.active_personality_id`. 유효한 최신 SUCCEEDED만 결과·포인터·설정 버전을 원자 전환. 대기·부족·실패 중 기존 적용 값 유지. AnalysisManifest는2필드, 설문 SurveyManifest는3필드이며 공유 Manifest11필드는 보존 |
+| 만남·제안 | `matching`·`matching_participant`. 제안 createdAt은 서버 생성 최초 확정 `proposed_at`, expiresAt은 그+24시간. 푸시 시각으로 바꾸거나 재전송으로 연장하지 않음. 상대 선행 응답·차단 이유를 본인 DTO에 누설하지 않음 |
+| 수락·거절·방 생성 | matching 잠금·기한/권한 재검사. 응답 최초 확정 뒤 변경 불가. 상호 수락과 `chat`·두 참여자 생성은 원자 처리. 키 저장 대안·기존30일 대 ERD영구 재매칭 제한 충돌은 미합의 |
+| 채팅·메시지 | `chat`·`chat_participant`·`chat_message`. numeric ID·seq·발신자 ME/PARTNER. request_key/client_message_id·request_hash 재전송 구분. 상대 읽음 공개 제거, 본인 실제 표시 순번 기준. reads 배치의 연속 범위·안내 UUID 저장 대안은 상세 명세의 미합의 유지 |
+| AI 설명 | `matching.evaluation` 상태/결과. POST는7필드 ExplanationTask, GET은5필드 ExplanationStatus(PENDING/SUCCEEDED/FAILED). 공용 jobId 없음. 승인된 실제 근거만 생성·공개하고 유효 근거 대체 문장만 RULE_FALLBACK으로 구분 |
+| AI 시작 질문·위험 분석 | `chat.icebreakers`·`chat.ai_state`와 `chat_safety_notice`. 내부 실행은 attemptId 상관 UUID+숫자 contextId. 실행 복구·늦은 결과·입력 세대 대안 미합의. 질문 실패 시 기본 질문·질문 없이 대화 가능, 미분석/실패를 안전으로 표시하지 않음 |
+| 위험 분석 동의 | `users.agreed_at` 하나로 선택 동의·철회·버전·이력을 보존할 수 없음. enabled/noticeVersion/grantedAt DTO는 합의 전 초안이며 독립 저장·검증 및 POL-07 승인 전 REVIEW_REQUIRED/구현 차단. 일괄 동의에서 enabled=true 추정 금지 |
+| 신고·수락 취소 | CM09·CM12로 현재 MVP 제외. 신고는 후속 숫자 chatRoomId/messageIds/reportId 형식과 ERD코드만 보존. 기존 신고 자료의 삭제·기한 단축 금지. 수락 취소 성공을 표시하거나 응답을 되돌리지 않음 |
 
-## 미정 계약과 적용 순서
+Spring Boot·JPA·PostgreSQL 운영 기준과 인증·프로필·키링 담당 계약은 해당 문서를 따른다. 이 문서 변경에서 서버/JPA/실SQL을 실행하지 않는다. 공유 Manifest11필드와 다른 담당 operation의 재귀 참조 스키마는 보존했으며, 필요한 분리는 별도 ERD21 스키마로 한정했다.
 
-기존 POL-01~10 중 생활조건/계산 충돌, IoT 증명·시간·오프라인 처리, 사진 전달/삭제, 종료 안내 채널, 위험분석 동의/외부전송, 메시지 부가기능, 조기 종료·차단/해제·재매칭, 보관 목적·백업/외부 사본 삭제는 해당 상세 명세의 확인 사항으로 유지한다. 윤일 계산은 평년3월1일로 확정됐으며 이를 미정으로 되돌리지 않는다.
+## 공통 전송과 미합의 경계
 
-확정 계약 검토 → 저장소 명세 교차 검토 → 관련 구현과 로컬 검증 → 가상 키링 통합 → 실제 외부/실물/배포 검증 순으로 진행한다. 현재 단계는 문서 반영이다. DB DDL 실행·원격 게시·MR 병합은 하지 않았다. 실제 개발 이력은 다른 BE 팀원의 docs 위치·양식을 확인한 후 맞춘다.
-
-## 인증 담당 연락 반영·확정 상태
-
-약관 동의 API 추가·통합 signup 폐기·새 토큰 응답을 반영했다. 현재 구현과 기존 앱의 호환을 구분한다.
-
-| ID | 합의할 내용 | 현재 처리 |
-| --- | --- | --- |
-| AUTH-OPEN-01 | 확정: 토큰 응답6필드 | accessToken·refreshToken·tokenType·두 expiresAt·onboardingStatus. 구형 필드 병행 없음. 실앱 검증은 별도 |
-| AUTH-OPEN-02 | 확정: 명시적 프로필 등록 완료 뒤 잠금 | PROFILE_FIELD_LOCKED 422. 임시 저장 중 수정 가능, 완료 후 같은 값은 허용. 서비스팀 정정은 별도 |
-| AUTH-OPEN-03 | 확정: sid=refresh family | 로그아웃 해당 family·탈취 전체 family 폐기, 회전 응답 유실30초 재시도 |
-| AUTH-OPEN-04 | 확정: 액세스 인증401 코드4개 | AUTH_REQUIRED·ACCESS_TOKEN_EXPIRED·ACCESS_TOKEN_INVALID·SESSION_REVOKED. 만료만 갱신1회. 소셜/refresh 전용 오류 유지 |
-| AUTH-OPEN-05 | 확정: 이메일 선택 연락처·물리FK 없음 | PRIVACY 동의 후 로그인에서 최신 제공값 동기화. nullable text·계정 식별에 사용하지 않음. 생활정보 전송 코드 정렬 |
-| AUTH-OPEN-06 | 미구현 가입 게이트·단계 조회 추가 필드·프로필 필수 nullable/미정의 필드 검증 | 코드의 부분 구현과 목표 계약을 구분. 프로필 완료만으로 READY 처리하지 않는 정책 유지 |
-
-상세 요청·응답/구현 차이와 인계 순서는 [인증 확인 사항](auth-recheck.md)을 따른다. 노션·ERDCloud 반영 상태와 검증 결과는 MR26 정합화 기록에서 별도로 확인한다.
-
-## 기존 38번 계약과의 적용 기준
-
-전송 필드·필수값·HTTP 상태·오류 코드는 이 디렉터리의 OpenAPI를 기준으로 한다. 기존 38번 `encounters-proposals.md`는 상태·시간·동시성 흐름을 보완한다. 두 문서를 함께 검토한 뒤 서버와 앱의 오류 분기를 같은 배포 단위로 맞춘다. 문서 변경만으로 기존 구현의 호환성이 보장되지는 않는다.
-
-| 기존안 | 수정안 | 적용 대상 |
-| --- | --- | --- |
-| 404 PROPOSAL_NOT_FOUND | 404 RESOURCE_NOT_FOUND | 제안 없음·타인 접근 |
-| 409 PROPOSAL_EXPIRED | 410 PROPOSAL_EXPIRED | 수락·거절 마감 |
-| 409 PROFILE_ACCESS_ENDED | 410 PROPOSAL_EXPIRED | 종료된 본인 제안의 상대 프로필 접근 |
-| 503 TEMPORARILY_UNAVAILABLE | 503 SERVICE_UNAVAILABLE | 일시 장애 |
-| profileImageId·profileVersion·proposalId가 있는 공개 프로필 | imageUrl·hasProfilePhoto, 그 외 PublicProfile 허용 필드 | 사진 없으면 imageUrl=null |
-| 자발적 퇴장 후 영구 재매칭 제한 | 제한 유무·기간 미정(POL-09), 합의 전 422 | 자동 만료와 구분 |
-
-404는 존재 여부 노출을 막기 위해 소유권부터 확인하고, 본인 자원인 경우에만 기한·상태를 판정한다. 409는 상태·멱등 충돌에 사용한다. 공통 오류 전체와 경로별 지원 여부는 OpenAPI를 따른다. 공개 프로필 버전/ETag를 새 필수값으로 추가하지 않는다.
+- 성공은 감싸지 않는 DTO, 목록은 items/nextCursor이며, 오류 필수값은 code/message다. 오류의 fields는 현재 문맥에 맞는 배열이고 정책·권한 오류를 무관한 revision 충돌로 표시하지 않는다.
+- UTC ISO8601, 서버 Clock, 기한 정각부터 만료를 유지한다. 만남 시각·정밀 위치·내부 회원번호·비공개 원응답·기기 비밀은 공개 DTO/로그/모델 전송에 자동 포함하지 않는다.
+- 인증·가입 단계·본인 소유/현재 참여 권한을 먼저 검사하고 타인 자원은404로 숨긴다. 본인 자원의 기한·상태 오류는 경로별 OpenAPI를 따른다. 민감 응답 no-store, 기존 인증401/토큰 갱신 및 공개 API 예외 범위를 보존한다.
+- Idempotency-Key는 해당 operation에 있는 기존 요청 계약을 보존한다. 전용 저장 정보가 없는 곳의 영속 판정·응답 재현을 문서만으로 보장하지 않는다. 설문에서 제거한 헤더를 다른 도메인에 일괄 적용하지 않는다.
+- 만남 WAITING/NOT_MATCHED 재사용은 새 이벤트·소유/설정 세대 증거가 필요하다. blocked_at은 지우지 않으며, 이전 삭제 예약·늦은 검증/AI 결과가 새 기록을 덮거나 삭제하지 않도록 세대를 확인해야 한다.
+- AI 재시도의 5분 기산점·최초 실행 포함 여부·최대 횟수·영속 선점·실행 세대/입력 식별·늦은 결과 차단은 미합의다. 없는 컬럼·작업 테이블·릴리스 테이블을 구현된 저장소로 기술하지 않는다.
+- 기획·기능·정책·UX 원문과 타 담당 구현은 보존한다. 계약 검토 → FE/BE/AI/IoT 합의 → 구현·통합 → 실제 기기/외부 서비스/배포 검증 순으로 진행한다.
 
 ## 현재 API 목록
 
-| Method | Path | 기능 | 요청 → 성공 응답 | operationId |
-| --- | --- | --- | --- | --- |
-| POST | `/api/v1/auth/{provider}` | 소셜 로그인 (수정 2026-10-21 14:16) | TokenRequest → 200 TokenPair | `socialLogin` |
-| POST | `/api/v1/auth/token/refresh` | 토큰 재발급 (수정 2026-10-21 14:16) | RefreshRequest → 200 TokenPair | `refreshTokens` |
-| POST | `/api/v1/auth/logout` | 현재 로그인 로그아웃 (수정 2026-10-21 14:16) | RefreshRequest → 204 본문 없음 | `logout` |
-| GET | `/api/v1/agreements` | 약관 조회 | 없음 → 200 Agreements | `listAgreements` |
-| POST | `/api/v1/users/me/agreements` | 약관 동의 저장 (수정 2026-10-21 14:16) | AgreementConsentInput → 200 AgreementConsentResult | `submitAgreements` |
-| GET | `/api/v1/users/me/onboarding` | 다음 미완료 단계 조회 (수정 2026-10-21 14:16) | 없음 → 200 Onboarding | `getOnboarding` |
-| GET | `/api/v1/users/nickname-availability` | 닉네임 중복 확인 | 없음 → 200 NicknameAvailability | `checkNickname` |
-| GET | `/api/v1/keyrings/purchase-info` | 구매 안내 | 없음 → 200 PurchaseInfo | `purchaseInfo` |
-| POST | `/api/v1/keyrings/registration-challenges` | 등록 증명 challenge 발급 | 없음 → 201 Challenge | `createRegistrationChallenge` |
-| POST | `/api/v1/keyrings` | 키링 소유 증명 후 등록 | RegisterKeyring → 201 Keyring | `registerKeyring` |
-| GET | `/api/v1/keyrings` | 본인 키링 조회 | 없음 → 200 Keyrings | `listKeyrings` |
-| GET | `/api/v1/users/me/profile` | 본인 프로필 조회 (수정 2026-10-21 14:16) | 없음 → 200 Profile | `getMyProfile` |
-| PATCH | `/api/v1/users/me/profile` | 프로필 초안·수정 저장 (수정 2026-10-21 14:16) | ProfileDraft → 200 Profile | `saveProfileDraft` |
-| POST | `/api/v1/users/me/profile/photos` | 사진 업로드·처리 시작 (수정 2026-10-21 11:12) | ImageUrlInput → 200 CurrentPhoto | `uploadPhoto` |
-| DELETE | `/api/v1/users/me/profile/photo` | 현재 사진 삭제 (수정 2026-10-21 11:24) | 없음 → 204 본문 없음 | `deletePhoto` |
-| PUT | `/api/v1/users/me/preferences` | 양방향 기본 희망 조건 저장 (수정 2026-10-21 11:12) | Preferences → 200 Preferences | `setPreferences` |
-| GET | `/api/v1/users/me/preferences` | 희망 조건 조회 (수정 2026-10-21 11:12) | 없음 → 200 Preferences | `getPreferences` |
-| PUT | `/api/v1/users/me/settings` | 사진 옵션·매칭 설정 저장 (수정 2026-10-21 11:13) | SettingsInput → 200 Settings | `setSettings` |
-| GET | `/api/v1/users/me/settings` | 설정 조회 (수정 2026-10-21 11:13) | 없음 → 200 Settings | `getSettings` |
-| POST | `/api/v1/keyrings/{deviceId}/sync-runs` | 최신 설정 동기화 생성 (수정 2026-10-21 11:24) | 없음 → 201 SyncRun / 200 SyncRun | `createSync` |
-| GET | `/api/v1/keyrings/{deviceId}/sync-runs/{syncRunId}` | 동기화 상태 조회 (수정 2026-10-21 11:24) | 없음 → 200 SyncRun | `getSync` |
-| POST | `/api/v1/keyrings/{deviceId}/sync-runs/{syncRunId}/ack` | 기기 저장 ACK 검증 (수정 2026-10-21 11:24) | SyncAck → 200 SyncRun | `ackSync` |
-| GET | `/api/v1/surveys/current` | 현재 게시 설문 정의 (수정 2026-10-21 11:21) | 없음 → 200 Questionnaire | `getQuestionnaire` |
-| POST | `/api/v1/survey-sessions` | 버전 고정 설문 시작 (수정 2026-10-21 11:21) | CreateSession → 201 SurveySession | `createSurveySession` |
-| GET | `/api/v1/survey-sessions/{sessionId}` | 응답 복원·진행 조회 (수정 2026-10-21 11:22) | 없음 → 200 SurveySession | `getSurveySession` |
-| GET | `/api/v1/survey-sessions/{sessionId}/questionnaire` | 세션에 고정된 문항 정의 (수정 2026-10-21 11:22) | 없음 → 200 Questionnaire | `getSessionQuestionnaire` |
-| PUT | `/api/v1/survey-sessions/{sessionId}/answers/{questionId}` | 문항별 임시 저장 (수정 2026-10-21 11:23) | AnswerInput → 200 SurveySession | `saveSurveyAnswer` |
-| DELETE | `/api/v1/survey-sessions/{sessionId}/answers/{questionId}` | 초안 응답 제거 (수정 2026-10-21 11:23) | 없음 → 200 SurveySession | `deleteSurveyAnswer` |
-| PUT | `/api/v1/survey-sessions/{sessionId}/metadata` | 선택 나이 메타데이터 저장 (수정 2026-10-21 11:23) | SurveyMetadata → 200 SurveySession | `setSurveyMetadata` |
-| POST | `/api/v1/survey-sessions/{sessionId}/complete` | 응답 완료 확정 (수정 2026-10-21 11:23) | 없음 → 200 SurveySession | `completeSurvey` |
-| GET | `/api/v1/survey-sessions/{sessionId}/migration-plan` | 새 버전 이관 미리보기 (수정 2026-10-21 11:23) | 없음 → 200 MigrationPlan | `getMigrationPlan` |
-| POST | `/api/v1/survey-sessions/{sessionId}/migrations` | 원본 보존 후 새 버전 세션 생성 (수정 2026-10-21 11:23) | MigrateSession → 201 SurveySession | `migrateSurvey` |
-| POST | `/api/v1/survey-sessions/{sessionId}/analyses` | 개인 성향·유형·분석 요청 (수정 2026-10-21 11:23) | AnalysisRequest → 202 Job | `requestAnalysis` |
-| GET | `/api/v1/analysis-results/{resultId}` | 개인 결과 조회 (수정 2026-10-21 11:23) | 없음 → 200 AnalysisResult | `getAnalysis` |
-| GET | `/api/v1/jobs/{jobId}` | 본인 비동기 작업 조회 (수정 2026-10-21 11:23) | 없음 → 200 Job | `getJob` |
-| POST | `/api/v1/offline-encounters/sync` | 만남 기록 내구성 접수 (수정 2026-10-21 11:13) | EncounterBatch → 200 Receipts | `syncEncounters` |
-| GET | `/api/v1/match-proposals` | 본인 제안 목록 (수정 2026-10-21 11:20) | 없음 → 200 ProposalPage | `listProposals` |
-| GET | `/api/v1/match-proposals/{proposalId}` | 제안 상태 조회 (수정 2026-10-21 11:21) | 없음 → 200 Proposal | `getProposal` |
-| GET | `/api/v1/match-proposals/{proposalId}/partner-profile` | 수락 전 최신 공개 프로필 (수정 2026-10-21 11:21) | 없음 → 200 PublicProfile | `getProposalProfile` |
-| POST | `/api/v1/match-proposals/{proposalId}/accept` | 제안 수락 (수정 2026-10-21 11:22) | 없음 → 200 Proposal | `acceptProposal` |
-| POST | `/api/v1/match-proposals/{proposalId}/decline` | 제안 거절 (수정 2026-10-21 11:22) | 없음 → 200 Proposal | `declineProposal` |
-| POST | `/api/v1/match-proposals/{proposalId}/explanations` | 실제 매칭 근거 설명 (수정 2026-10-21 11:13) | 없음 → 202 Job | `requestExplanation` |
-| GET | `/api/v1/match-proposals/{proposalId}/explanation` | 생성·대체 설명 조회 (수정 2026-10-21 11:16) | 없음 → 200 Explanation | `getExplanation` |
-| GET | `/api/v1/chat-rooms` | 참여 채팅 목록 (수정 2026-10-21 11:21) | 없음 → 200 ChatPage | `listChats` |
-| GET | `/api/v1/chat-rooms/{chatRoomId}` | 채팅 수명·권한 조회 (수정 2026-10-21 11:21) | 없음 → 200 ChatRoom | `getChat` |
-| GET | `/api/v1/chat-rooms/{chatRoomId}/partner-profile` | 활성 채팅 상대 프로필 (수정 2026-10-21 11:24) | 없음 → 200 PublicProfile | `getChatProfile` |
-| GET | `/api/v1/chat-rooms/{chatRoomId}/partner-photo` | 권한 검사 후 현재 사진 바이트 (수정 2026-10-21 11:24) | 없음 → 200 string | `getPartnerPhoto` |
-| GET | `/api/v1/match-proposals/{proposalId}/partner-photo` | 유효 제안의 사진 바이트 (수정 2026-10-21 11:24) | 없음 → 200 string | `getProposalPhoto` |
-| POST | `/api/v1/chat-rooms/{chatRoomId}/entries` | 사용자별 첫 입장 안내 확보 (수정 2026-10-21 11:24) | 없음 → 200 Entry | `enterChat` |
-| GET | `/api/v1/chat-rooms/{chatRoomId}/notices` | 본인 종료 안내 조회 (수정 2026-10-21 11:24) | 없음 → 200 Notices | `listNotices` |
-| PUT | `/api/v1/chat-rooms/{chatRoomId}/notices/{noticeId}/ack` | 안내 표시 확인 (수정 2026-10-21 11:24) | 없음 → 200 Ack | `ackNotice` |
-| GET | `/api/v1/chat-rooms/{chatRoomId}/messages` | 활성방 메시지 조회 | 없음 → 200 MessagePage | `listMessages` |
-| POST | `/api/v1/chat-rooms/{chatRoomId}/messages` | 텍스트 메시지 저장 | SendMessage → 201 Message | `sendMessage` |
-| POST | `/api/v1/chat-rooms/{chatRoomId}/reads` | [표시한 수신 메시지 읽음 확인](chat.md#실제-표시한-메시지-읽음) | ReadMessagesRequest → 200 ReadMessagesResult | `acknowledgeDisplayedMessages` |
-| POST | `/api/v1/chat-rooms/{chatRoomId}/icebreakers` | 질문 3개 생성 (수정 2026-10-21 11:12) | 없음 → 202 Job | `requestIcebreakers` |
-| GET | `/api/v1/chat-rooms/{chatRoomId}/icebreakers` | 생성·대체 질문 조회 (수정 2026-10-21 11:12) | 없음 → 200 Icebreakers | `getIcebreakers` |
-| GET | `/api/v1/users/me/risk-analysis-consent` | 분석 안내·동의 조회 (수정 2026-10-21 11:12) | 없음 → 200 RiskConsent | `getRiskConsent` |
-| PUT | `/api/v1/users/me/risk-analysis-consent` | 위험 대화 분석 설정 (수정 2026-10-21 11:12) | RiskConsentInput → 200 RiskConsent | `setRiskConsent` |
-| POST | `/api/v1/reports` | 신고 접수 | ReportInput → 201 Report | `createReport` |
-| GET | `/api/v1/blocks` | 본인 차단 목록 (수정 2026-10-21 11:21) | 없음 → 200 Blocks | `listBlocks` |
-| POST | `/api/v1/blocks` | 문맥 상대 차단 (수정 2026-10-21 11:24) | BlockInput → 201 Block | `createBlock` |
-| DELETE | `/api/v1/blocks/{blockId}` | 본인 차단 해제 (수정 2026-10-21 11:24) | 없음 → 204 본문 없음 | `removeBlock` |
-| POST | `/api/v1/chat-rooms/{chatRoomId}/leave` | 자발적 채팅 퇴장 | 없음 → 200 LeaveResult | `leaveChat` |
-| PUT | `/api/v1/push-installations` | [본인 푸시 단말 등록·교체](push-installations.md) | PushToken → 200 PushRegistration(serverTime, bindingId) | `registerPush` |
-| DELETE | `/api/v1/push-installations/{installationId}` | 본인 단말 푸시 해제 | 없음 → 204 본문 없음 | `removePush` |
-| POST | `/internal/v1/matching/evaluations` | 스냅샷 기반 실제 쌍 비교 (수정 2026-10-21 11:20) | EvaluationInput → 200 Evaluation | `evaluatePair` |
-| POST | `/internal/v1/ai/explanations` | AI 근거 설명 (수정 2026-10-21 11:20) | AiInput → 200 Explanation | `generateExplanation` |
-| POST | `/internal/v1/ai/icebreakers` | AI 시작 질문 (수정 2026-10-21 11:12) | AiInput → 200 Icebreakers | `generateIcebreakers` |
-| POST | `/internal/v1/ai/risk-detections` | AI 위험 판정 (수정 2026-10-21 11:12) | AiInput → 200 RiskResult | `detectRisk` |
+담당의 REVIEW_REQUIRED는 현재 검토 계약이며 구현 제공·개발 완료 표시가 아니다. 다른 담당은 기존 계약 보존 범위다.
 
-## 현재 구현 범위에서 제외한 기존안
-
-새 서버의 활성 endpoint로 취급하지 않는다. 원래 경로와 DTO는 OpenAPI의 x-excluded-operations에 보존한다.
-
-| Method | Path | 기능 | 사유 |
+| Method | Path | operationId | 범위 |
 | --- | --- | --- | --- |
-| GET | `/api/v1/users/me/profile/photos/{photoId}` | 사진 처리 상태 (수정 2026-10-21 11:24) | 사진별 비동기 처리 모델 제외 |
-| POST | `/admin/v1/rule-artifacts` | 규칙 초안 생성 (수정 2026-10-21 11:23) | 불변 버전 파일 운영으로 단순화. 관리자 실시간 게시/롤백 보류 |
-| GET | `/admin/v1/rule-artifacts/{artifactId}` | 규칙·스키마 조회 (수정 2026-10-21 11:23) | 불변 버전 파일 운영으로 단순화. 관리자 실시간 게시/롤백 보류 |
-| PUT | `/admin/v1/rule-artifacts/{artifactId}` | 초안 수정 (수정 (수정 2026-10-21 11:23) | 불변 버전 파일 운영으로 단순화. 관리자 실시간 게시/롤백 보류 |
-| POST | `/admin/v1/releases` | 호환 버전 조합 생성 (수정 2026-10-21 11:23) | 불변 버전 파일 운영으로 단순화. 관리자 실시간 게시/롤백 보류 |
-| GET | `/admin/v1/releases/{releaseId}` | 배포 manifest 조회 (수정 2026-10-21 11:23) | 불변 버전 파일 운영으로 단순화. 관리자 실시간 게시/롤백 보류 |
-| POST | `/admin/v1/releases/{releaseId}/validate` | 스키마·참조·회귀 검증 (수정 2026-10-21 11:23) | 불변 버전 파일 운영으로 단순화. 관리자 실시간 게시/롤백 보류 |
-| POST | `/admin/v1/releases/{releaseId}/publish` | 검증된 버전 불변 게시 (수정 2026-10-21 11:23) | 불변 버전 파일 운영으로 단순화. 관리자 실시간 게시/롤백 보류 |
-| POST | `/admin/v1/releases/{releaseId}/approvals` | 작성자 외 검토 승인 (수정 2026-10-21 11:23) | 불변 버전 파일 운영으로 단순화. 관리자 실시간 게시/롤백 보류 |
-| PUT | `/admin/v1/release-channels/current` | 신규 세션 기본 버전 전환·롤백 (수정 2026-10-21 11:23) | 불변 버전 파일 운영으로 단순화. 관리자 실시간 게시/롤백 보류 |
-| POST | `/api/v1/auth/signup` | 통합 가입 (폐기 2026-10-21 14:16) | 약관 동의와 프로필 PATCH로 대체 |
+| POST | `/api/v1/auth/{provider}` | socialLogin | 다른 담당 기존 계약 |
+| POST | `/api/v1/auth/token/refresh` | refreshTokens | 다른 담당 기존 계약 |
+| POST | `/api/v1/auth/logout` | logout | 다른 담당 기존 계약 |
+| GET | `/api/v1/agreements` | listAgreements | 다른 담당 기존 계약 |
+| POST | `/api/v1/users/me/agreements` | submitAgreements | 다른 담당 기존 계약 |
+| GET | `/api/v1/users/me/onboarding` | getOnboarding | 다른 담당 기존 계약 |
+| GET | `/api/v1/users/nickname-availability` | checkNickname | 다른 담당 기존 계약 |
+| GET | `/api/v1/keyrings/purchase-info` | purchaseInfo | 다른 담당 기존 계약 |
+| POST | `/api/v1/keyrings/registration-challenges` | createRegistrationChallenge | 다른 담당 기존 계약 |
+| POST | `/api/v1/keyrings` | registerKeyring | 다른 담당 기존 계약 |
+| GET | `/api/v1/keyrings` | listKeyrings | 다른 담당 기존 계약 |
+| GET | `/api/v1/users/me/profile` | getMyProfile | 다른 담당 기존 계약 |
+| PATCH | `/api/v1/users/me/profile` | saveProfileDraft | 다른 담당 기존 계약 |
+| POST | `/api/v1/users/me/profile/photos` | uploadPhoto | 다른 담당 기존 계약 |
+| DELETE | `/api/v1/users/me/profile/photo` | deletePhoto | 다른 담당 기존 계약 |
+| POST | `/api/v1/keyrings/{deviceId}/sync-runs` | createSync | 다른 담당 기존 계약 |
+| GET | `/api/v1/keyrings/{deviceId}/sync-runs/{syncRunId}` | getSync | 다른 담당 기존 계약 |
+| POST | `/api/v1/keyrings/{deviceId}/sync-runs/{syncRunId}/ack` | ackSync | 다른 담당 기존 계약 |
+| PUT | `/api/survey-sessions/{sessionId}/answers/{questionId}` | saveSurveyAnswer | 영빈 ERD21 검토 |
+| DELETE | `/api/survey-sessions/{sessionId}/answers/{questionId}` | deleteSurveyAnswer | 영빈 ERD21 검토 |
+| GET | `/api/v1/chat-rooms/{chatRoomId}/partner-profile` | getChatProfile | 다른 담당 기존 계약 |
+| GET | `/api/v1/chat-rooms/{chatRoomId}/partner-photo` | getPartnerPhoto | 다른 담당 기존 계약 |
+| GET | `/api/v1/match-proposals/{proposalId}/partner-photo` | getProposalPhoto | 다른 담당 기존 계약 |
+| GET | `/api/chat-rooms/{chatRoomId}/messages` | listMessages | 영빈 ERD21 검토 |
+| POST | `/api/chat-rooms/{chatRoomId}/messages` | sendMessage | 영빈 ERD21 검토 |
+| POST | `/api/chat-rooms/{chatRoomId}/icebreakers` | requestIcebreakers | 영빈 ERD21 검토 |
+| GET | `/api/chat-rooms/{chatRoomId}/icebreakers` | getIcebreakers | 영빈 ERD21 검토 |
+| GET | `/api/v1/blocks` | listBlocks | 다른 담당 기존 계약 |
+| POST | `/api/v1/blocks` | createBlock | 다른 담당 기존 계약 |
+| DELETE | `/api/v1/blocks/{blockId}` | removeBlock | 다른 담당 기존 계약 |
+| PUT | `/api/v1/push-installations` | registerPush | 다른 담당 기존 계약 |
+| DELETE | `/api/v1/push-installations/{installationId}` | removePush | 다른 담당 기존 계약 |
+| POST | `/api/v1/users/me/profile/complete` | completeProfile | 다른 담당 기존 계약 |
+| GET | `/api/surveys/current` | getQuestionnaire | 영빈 ERD21 검토 |
+| POST | `/api/survey-sessions` | createSurveySession | 영빈 ERD21 검토 |
+| GET | `/api/survey-sessions/{sessionId}` | getSurveySession | 영빈 ERD21 검토 |
+| GET | `/api/survey-sessions/{sessionId}/questionnaire` | getSessionQuestionnaire | 영빈 ERD21 검토 |
+| POST | `/api/survey-sessions/{sessionId}/complete` | completeSurvey | 영빈 ERD21 검토 |
+| GET | `/api/survey-sessions/{sessionId}/migration-plan` | getMigrationPlan | 영빈 ERD21 검토 |
+| POST | `/api/survey-sessions/{sessionId}/migrations` | migrateSurvey | 영빈 ERD21 검토 |
+| POST | `/api/survey-sessions/{sessionId}/analyses` | requestAnalysis | 영빈 ERD21 검토 |
+| GET | `/api/analysis-results/{resultId}` | getAnalysis | 영빈 ERD21 검토 |
+| GET | `/api/chat-rooms` | listChats | 영빈 ERD21 검토 |
+| GET | `/api/chat-rooms/{chatRoomId}` | getChat | 영빈 ERD21 검토 |
+| POST | `/api/chat-rooms/{chatRoomId}/entries` | enterChat | 영빈 ERD21 검토 |
+| GET | `/api/chat-rooms/{chatRoomId}/notices` | listNotices | 영빈 ERD21 검토 |
+| PUT | `/api/chat-rooms/{chatRoomId}/notices/{noticeId}/ack` | ackNotice | 영빈 ERD21 검토 |
+| POST | `/api/chat-rooms/{chatRoomId}/leave` | leaveChat | 영빈 ERD21 검토 |
+| POST | `/api/chat-rooms/{chatRoomId}/reads` | acknowledgeDisplayedMessages | 영빈 ERD21 검토 |
+| GET | `/api/users/{userId}/risk-analysis-consent` | getRiskConsent | 영빈 ERD21 검토 |
+| PUT | `/api/users/{userId}/risk-analysis-consent` | setRiskConsent | 영빈 ERD21 검토 |
+| POST | `/api/offline-encounters/sync` | syncEncounters | 영빈 ERD21 검토 |
+| GET | `/api/match-proposals` | listProposals | 영빈 ERD21 검토 |
+| GET | `/api/match-proposals/{proposalId}` | getProposal | 영빈 ERD21 검토 |
+| GET | `/api/match-proposals/{proposalId}/partner-profile` | getProposalProfile | 영빈 ERD21 검토 |
+| POST | `/api/match-proposals/{proposalId}/accept` | acceptProposal | 영빈 ERD21 검토 |
+| POST | `/api/match-proposals/{proposalId}/decline` | declineProposal | 영빈 ERD21 검토 |
+| POST | `/api/match-proposals/{proposalId}/explanations` | requestExplanation | 영빈 ERD21 검토 |
+| GET | `/api/match-proposals/{proposalId}/explanation` | getExplanation | 영빈 ERD21 검토 |
+| POST | `/internal/matching/evaluations` | evaluatePair | 영빈 ERD21 검토 |
+| POST | `/internal/ai/explanations` | generateExplanation | 영빈 ERD21 검토 |
+| POST | `/internal/ai/icebreakers` | generateIcebreakers | 영빈 ERD21 검토 |
+| POST | `/internal/ai/risk-detections` | detectRisk | 영빈 ERD21 검토 |
+| PUT | `/api/users/{userId}/preferences` | setPreferences | 다른 담당 기존 계약 |
+| GET | `/api/users/{userId}/preferences` | getPreferences | 다른 담당 기존 계약 |
+| PUT | `/api/users/{userId}/settings` | setSettings | 다른 담당 기존 계약 |
+| GET | `/api/users/{userId}/settings` | getSettings | 다른 담당 기존 계약 |
+
+## 현재 MVP 제외·과거 계약 보존
+
+제외 operation은 활성 paths에서 제거하고 x-excluded-operations에 원문 이력과 후속 형식을 보존한다. 제외 경로는 호출 가능한 API 목록이 아니다.
+
+| Method | 보존 경로 | operationId | 구분 |
+| --- | --- | --- | --- |
+| GET | `/api/v1/users/me/profile/photos/{photoId}` | getPhotoStatus | 기존 제외 이력 유지 |
+| POST | `/admin/v1/rule-artifacts` | createArtifact | 기존 제외 이력 유지 |
+| GET | `/admin/v1/rule-artifacts/{artifactId}` | getArtifact | 기존 제외 이력 유지 |
+| PUT | `/admin/v1/rule-artifacts/{artifactId}` | updateArtifact | 기존 제외 이력 유지 |
+| POST | `/admin/v1/releases` | createRelease | 기존 제외 이력 유지 |
+| GET | `/admin/v1/releases/{releaseId}` | getRelease | 기존 제외 이력 유지 |
+| POST | `/admin/v1/releases/{releaseId}/validate` | validateRelease | 기존 제외 이력 유지 |
+| POST | `/admin/v1/releases/{releaseId}/publish` | publishRelease | 기존 제외 이력 유지 |
+| POST | `/admin/v1/releases/{releaseId}/approvals` | approveRelease | 기존 제외 이력 유지 |
+| PUT | `/admin/v1/release-channels/current` | activateRelease | 기존 제외 이력 유지 |
+| POST | `/api/v1/auth/signup` | completeProfile | 기존 제외 이력 유지 |
+| PUT | `/api/survey-sessions/{sessionId}/metadata` | setSurveyMetadata | 이번 담당 제외·후속 |
+| GET | `/api/jobs/{jobId}` | getJob | 이번 담당 제외·후속 |
+| POST | `/api/reports` | createReport | 이번 담당 제외·후속 |
+| POST | `/api/match-proposals/{proposalId}/cancel` | cancelProposalAcceptance | 이번 담당 제외·후속 |
+
+## 이전 구현·정합화 이력
+
+아래는 해당 날짜의 구현·검증 기록이다. 당시 테이블 수·DTO·경로·수치를 ERD21 현재 계약이나 실행 검증으로 인용하지 않는다.
 
 ## 2026-10-22 MR26 정합화
 
