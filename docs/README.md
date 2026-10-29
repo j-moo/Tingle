@@ -6,6 +6,7 @@
 
 - [정합화 기준·검증 이력·다음 변경 대조 절차](verification/spec-alignment-20261022.md) / [사용자 승인 기준](contracts/api/alignment-20261021.md)
 - [API 명세](contracts/api/README.md) / [OpenAPI](contracts/api/openapi.json) / [API 기존안·수정안](contracts/api/changes-20261021.md)
+- [키링 통신·데이터·화면 설계 통합 문서](../iot/KEYRING-SPEC.md): 기존 `docs/contracts/iot/`의 MD 3개를 `iot/`로 통합·이동했다.
 - [ERD·컬럼 설명](database/erd.md) / [SQL](database/schema.sql) / [ERDCloud 가져오기](database/erdcloud-import.sql) / [ERD 변경 비교](database/changes-20261021.md)
 - [설문·계산 버전 파일 계약](contracts/survey/versioning.md) / [100문항 catalogue](contracts/survey/questionnaire-SIS-Q-1.1-100.json)
 - [앱 인증 확인 사항](contracts/api/auth-recheck.md) / [24기능 대응표](specifications/coverage.md)
