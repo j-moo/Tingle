@@ -153,17 +153,29 @@ class AuthIntegrationTest extends IntegrationTestSupport {
 	// ---------- 로그인 세션과 로그아웃 ----------
 
 	@Test
-	@DisplayName("로그아웃하면 그 세션의 액세스·리프레시 토큰이 바로 막히고 다른 기기 세션은 유지된다")
-	void logoutRevokesOnlyThatSession() throws Exception {
-		String socialId = newSocialId();
-		JsonNode phone = login("kakao", socialId);
-		JsonNode tablet = login("kakao", socialId);
+	@DisplayName("로그아웃하면 그 세션의 액세스·리프레시 토큰이 바로 막힌다")
+	void logoutRevokesSession() throws Exception {
+		JsonNode phone = login("kakao", newSocialId());
 
 		logout(phone.path("refreshToken").asString()).andExpect(status().isNoContent());
 
 		perform(get(me(phone, "/onboarding")), phone, null).andExpect(status().isUnauthorized())
 			.andExpect(jsonPath("$.code").value("SESSION_REVOKED"));
 		refresh(phone.path("refreshToken").asString()).andExpect(status().isUnauthorized());
+	}
+
+	@Test
+	@DisplayName("로그인 기기는 하나라서 새 기기로 로그인하면 이전 기기 세션은 바로 끝난다")
+	void newLoginEndsPreviousSession() throws Exception {
+		String socialId = newSocialId();
+		JsonNode phone = login("kakao", socialId);
+		JsonNode tablet = login("kakao", socialId);
+
+		perform(get(me(phone, "/onboarding")), phone, null).andExpect(status().isUnauthorized())
+			.andExpect(jsonPath("$.code").value("SESSION_REVOKED"));
+		refresh(phone.path("refreshToken").asString()).andExpect(status().isUnauthorized())
+			.andExpect(jsonPath("$.code").value("INVALID_REFRESH_TOKEN"));
+		// 끝난 이전 세션의 토큰은 탈취로 보지 않아서 지금 기기 세션은 유지된다.
 		perform(get(me(tablet, "/onboarding")), tablet, null).andExpect(status().isOk());
 		refresh(tablet.path("refreshToken").asString()).andExpect(status().isOk());
 	}
@@ -190,20 +202,6 @@ class AuthIntegrationTest extends IntegrationTestSupport {
 				.contentType(MediaType.APPLICATION_JSON)
 				.content("{\"refreshToken\":\"" + tokens.path("refreshToken").asString() + "\"}"))
 			.andExpect(status().isNoContent());
-	}
-
-	@Test
-	@DisplayName("로그아웃한 세션의 리프레시 토큰을 다시 써도 다른 기기 세션까지 폐기하지 않는다")
-	void refreshWithLoggedOutSessionDoesNotRevokeOtherSessions() throws Exception {
-		String socialId = newSocialId();
-		JsonNode phone = login("kakao", socialId);
-		JsonNode tablet = login("kakao", socialId);
-		logout(phone.path("refreshToken").asString()).andExpect(status().isNoContent());
-
-		refresh(phone.path("refreshToken").asString()).andExpect(status().isUnauthorized())
-			.andExpect(jsonPath("$.code").value("INVALID_REFRESH_TOKEN"));
-
-		refresh(tablet.path("refreshToken").asString()).andExpect(status().isOk());
 	}
 
 	@Test
@@ -264,15 +262,17 @@ class AuthIntegrationTest extends IntegrationTestSupport {
 		JsonNode tokens = login("kakao", socialId);
 		String bearer = "Bearer " + tokens.path("accessToken").asString();
 
-		mockMvc.perform(post("/api/auth/kakao")
+		String relogin = mockMvc.perform(post("/api/auth/kakao")
 				.header("Authorization", bearer)
 				.contentType(MediaType.APPLICATION_JSON)
 				.content("{\"token\":\"social-" + socialId + "\"}"))
-			.andExpect(status().isOk());
+			.andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+		// 새 로그인이 이전 세션을 끝내므로 새로 받은 리프레시 토큰으로 재발급한다.
 		mockMvc.perform(post("/api/auth/token/refresh")
 				.header("Authorization", bearer)
 				.contentType(MediaType.APPLICATION_JSON)
-				.content("{\"refreshToken\":\"" + tokens.path("refreshToken").asString() + "\"}"))
+				.content("{\"refreshToken\":\"" + jsonMapper.readTree(relogin).path("refreshToken").asString()
+					+ "\"}"))
 			.andExpect(status().isOk());
 	}
 

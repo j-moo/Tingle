@@ -58,7 +58,8 @@ public class OnboardingService {
 		boolean ready = status == OnboardingStatus.READY;
 		SurveyService.Progress survey = surveyService.progress(userId);
 		MemberAccessRepository.SettingsVersions versions = members.settingsVersions(userId);
-		return new OnboardingDetailResponse(status, signupCompleted(userId), ready, ready,
+		return new OnboardingDetailResponse(status, signupCompleted(userId), ready,
+			ready && members.matchingEnabled(userId),
 			survey.sessionId(), survey.answeredCount(), survey.questionCount(), survey.nextQuestionId(),
 			versions.required(), versions.acknowledged(), clock.instant());
 	}

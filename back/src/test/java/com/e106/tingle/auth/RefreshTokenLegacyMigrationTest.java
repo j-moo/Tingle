@@ -44,7 +44,7 @@ class RefreshTokenLegacyMigrationTest {
 		assertThat(after).containsEntry("id", before.get("token_id")).containsEntry("user_id", 41L)
 			.containsEntry("family_id", family).containsEntry("expires_at", before.get("expires_at"))
 			.containsEntry("used_at", before.get("used_at")).containsEntry("revoked_at", before.get("revoked_at"))
-			.containsEntry("device_name", null).containsEntry("last_used_at", null);
+			.doesNotContainKeys("device_name", "last_used_at");
 		assertThat((byte[])after.get("token_hash")).containsExactly(hash);
 		hash[0] = 42;
 		assertThat(jdbc.queryForObject("insert into refresh_token(user_id,family_id,token_hash,expires_at) "

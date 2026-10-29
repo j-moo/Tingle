@@ -50,23 +50,11 @@ public class RefreshToken {
 
 	private Instant revokedAt;
 
-	@Column(length = 100)
-	private String deviceName;
-
-	private Instant lastUsedAt;
-
 	public RefreshToken(Long userId, UUID familyId, byte[] tokenHash, Instant expiresAt) {
-		this(userId, familyId, tokenHash, expiresAt, null, null);
-	}
-
-	public RefreshToken(Long userId, UUID familyId, byte[] tokenHash, Instant expiresAt,
-		String deviceName, Instant lastUsedAt) {
 		this.userId = userId;
 		this.familyId = familyId;
 		this.tokenHash = tokenHash;
 		this.expiresAt = expiresAt;
-		this.deviceName = deviceName;
-		this.lastUsedAt = lastUsedAt;
 	}
 
 	public boolean isUsable(Instant now) {
@@ -81,7 +69,6 @@ public class RefreshToken {
 	public void markUsed(Instant now) {
 		if (usedAt == null) {
 			usedAt = now;
-			lastUsedAt = now;
 		}
 	}
 
