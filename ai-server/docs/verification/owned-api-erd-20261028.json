@@ -1,0 +1,48 @@
+{
+  "date": "2026-10-28",
+  "baselineCommit": "80d3ede7a0ef0fe01efebadb6d13c4c67d93f361",
+  "openapiVersion": "3.1.0",
+  "openapiSchemaValidation": "PASS",
+  "localRefsResolved": 593,
+  "schemaAndMediaExamplesValidated": 605,
+  "negativeExamplesRejected": 5,
+  "pathParameterOccurrences": 45,
+  "duplicateActiveOperationIds": 0,
+  "normalizedPathCollisions": 0,
+  "activeOperations": 67,
+  "ownedOperations": 40,
+  "activeOwnedOperations": 36,
+  "newExcludedOperations": [
+    "cancelProposalAcceptance",
+    "createReport",
+    "getJob",
+    "setSurveyMetadata"
+  ],
+  "totalExcludedOperations": 15,
+  "otherOwnerOperationsPreserved": 27,
+  "otherOwnerAuthorizedPathCorrections": [
+    "getPreferences",
+    "getSettings",
+    "setPreferences",
+    "setSettings"
+  ],
+  "protectedSharedSchemaDefinitionsUnchanged": 46,
+  "manifest11FieldsUnchanged": true,
+  "originalExcludedSnapshotsUnchanged": 11,
+  "ownedAuthenticationPermissionDeadlineStatusesPreserved": true,
+  "ownedChangeHistoryPreserved": true,
+  "aiExperimentalSections4to7Unchanged": true,
+  "localMarkdownLinksChecked": 50,
+  "markdownTableRowsChecked": 317,
+  "erdDesign": {
+    "tables": 21,
+    "columns": 151,
+    "logicalRelations": 35
+  },
+  "openapiSha256": "0530564d1b67681264465554f0cbc7e819aadead96abcbb684b19ee50e9841bf",
+  "notionSaveReadback": "Separate browser evidence; this script does not verify remote storage",
+  "serverBuildTests": "NOT_RUN_DOCUMENTATION_ONLY",
+  "ci": "NOT_RUN",
+  "databaseExecution": false,
+  "deployment": false
+}

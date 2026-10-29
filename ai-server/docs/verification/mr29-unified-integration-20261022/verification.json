@@ -1,0 +1,219 @@
+{
+  "source_before_integration": "17e6b4467af786b1319ea5629b5213aefb0a1732",
+  "develop": "e59cbfb12bc6ef780b038d44ec42dadc856c7f09",
+  "build": "PASS",
+  "tests": {
+    "tests": 238,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "suites": [
+    {
+      "name": "com.e106.tingle.agreement.AgreementServiceTest",
+      "tests": 12,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.e106.tingle.auth.AuthIntegrationTest",
+      "tests": 27,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.e106.tingle.auth.SocialVerifierTest",
+      "tests": 8,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.e106.tingle.BackendApplicationTests",
+      "tests": 2,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.e106.tingle.chat.ChatIntegrationTest",
+      "tests": 11,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.e106.tingle.chat.ChatNoticeIntegrationTest",
+      "tests": 18,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.e106.tingle.chat.ChatTextTest",
+      "tests": 23,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.e106.tingle.global.error.ErrorMessagesTest",
+      "tests": 1,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.e106.tingle.global.error.GlobalExceptionHandlerTest",
+      "tests": 8,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.e106.tingle.global.HealthIntegrationTest",
+      "tests": 1,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.e106.tingle.keyring.KeyringListIntegrationTest",
+      "tests": 9,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.e106.tingle.keyring.KeyringPropertiesTest",
+      "tests": 3,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.e106.tingle.keyring.KeyringPurchaseIntegrationTest",
+      "tests": 5,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.e106.tingle.proposal.ProposalIntegrationTest",
+      "tests": 41,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.e106.tingle.proposal.ProposalResponseTest",
+      "tests": 9,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.e106.tingle.push.FirebasePushGatewayTest",
+      "tests": 2,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.e106.tingle.push.PushInstallationIntegrationTest",
+      "tests": 10,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.e106.tingle.push.PushSessionIntegrationTest",
+      "tests": 12,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.e106.tingle.push.PushTokenCipherTest",
+      "tests": 6,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.e106.tingle.push.PushTokenEncryptionTest",
+      "tests": 3,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.e106.tingle.RuntimeConfigurationTest",
+      "tests": 3,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.e106.tingle.user.OnboardingIntegrationTest",
+      "tests": 18,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.e106.tingle.user.ProfileRulesTest",
+      "tests": 6,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    }
+  ],
+  "checkstyle": {
+    "main": 0,
+    "test": 0
+  },
+  "postgresql": "17 disposable Testcontainers; canonical 185-column DDL plus JPA validate in erd profile",
+  "runtime_survey_mr57_integrated": false,
+  "contracts": {
+    "openapi": "PASS",
+    "examples_validated": 870,
+    "internal_refs_checked": 872,
+    "request_negative_cases": 7,
+    "catalogue_questions": 100,
+    "sql_parse": "PASS",
+    "tables": 25,
+    "columns": 185,
+    "sql_import_metadata_types_nullability": "PASS",
+    "public_uuid_constraints": "PASS",
+    "mermaid_column_parity": "PASS",
+    "logical_references": "PASS",
+    "local_links_checked": 64,
+    "analysis_results_ddl_unchanged": true,
+    "shared_manifest_required_unchanged": true,
+    "integrated_api_operations_validated": true,
+    "changed_api_paths": 59,
+    "server_implementation": "MR57_DTO_ENTITY_PARTIAL_READBACK_RUNTIME_NOT_INTEGRATED",
+    "database_execution": "NOT_RUN"
+  },
+  "build_input_digest": "4d50a884cb4f0765bd903590abda7e076664667c435be21f5019b589803a7082",
+  "other_chat_files_unchanged": 48,
+  "protected_documents_unchanged": [
+    "docs/specifications/functional-spec-v1.md",
+    "docs/contracts/matching/profile-policy-v1.md",
+    "docs/contracts/survey/questionnaire-SIS-Q-1.1-100.json"
+  ],
+  "conflict_resolutions": [
+    "back/.env.example",
+    "back/src/main/resources/application.yml",
+    "docs/database/erd.md",
+    "docs/database/tables.json"
+  ],
+  "config_duplicate_push_removed": true,
+  "survey_max_length_dto_gap": "MR57 author confirmation required",
+  "committed": false,
+  "pushed": false,
+  "remote_merged": false
+}

@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import crypto from 'node:crypto';
-import {typeRecommendations} from '../../../docs/handoffs/survey-20261021/mockup/dist/type-recommendations100.mjs';
-import {demoAnswers,pair,classifyAnswers,profileFromAnswers,readings} from '../../../docs/handoffs/survey-20261021/mockup/dist/engine100.mjs';
+import {typeRecommendations} from '../../reference/survey-20261021/mockup/dist/type-recommendations100.mjs';
+import {demoAnswers,pair,classifyAnswers,profileFromAnswers,readings} from '../../reference/survey-20261021/mockup/dist/engine100.mjs';
 const a=demoAnswers(),before=structuredClone(a),base=typeRecommendations(a),rank=r=>r.all.map(p=>[p.type,p.score]);
 assert.equal(base.selected.length,3);
 for(const flags of [['age'],['smoking','religion'],['children','tattoo']]){
@@ -17,6 +17,6 @@ assert.equal(typeRecommendations(strict).selected.length,3);assert.equal(pair(st
 const unknownPair=pair({...a,97:['age']},b);assert.deepEqual(unknownPair.ab.unresolved,['age']);assert.equal(unknownPair.eligible,false);
 assert.deepEqual(a,before);
 const manifest=JSON.parse(fs.readFileSync(new URL('../fixtures/v14-source-manifest.json',import.meta.url)));
-for(const name of ['data100.mjs','engine100.mjs','initial-profiles.mjs','age100.mjs','record100.mjs','wording100.mjs'])assert.equal(crypto.createHash('sha256').update(fs.readFileSync(new URL('../../../docs/handoffs/survey-20261021/mockup/dist/'+name,import.meta.url))).digest('hex'),manifest.files.find(f=>f.file===name).sha256,name+' changed');
+for(const name of ['data100.mjs','engine100.mjs','initial-profiles.mjs','age100.mjs','record100.mjs','wording100.mjs'])assert.equal(crypto.createHash('sha256').update(fs.readFileSync(new URL('../../reference/survey-20261021/mockup/dist/'+name,import.meta.url))).digest('hex'),manifest.files.find(f=>f.file===name).sha256,name+' changed');
 assert.deepEqual(profileFromAnswers(a),profileFromAnswers(before));assert.deepEqual(readings(a),readings(before));
 console.log('Type references independent of all real-person exclusions and neutral lifestyle inputs; labeled ANY fallback; missing-data behavior; unchanged actual-pair exclusions and six core source hashes; no answer mutation passed.');

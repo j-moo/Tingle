@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import {questions,questionnaireVersion} from '../../../docs/handoffs/survey-20261021/mockup/dist/data100.mjs';
-import {profileFromAnswers,classifyAnswers,pair,readings,model} from '../../../docs/handoffs/survey-20261021/mockup/dist/engine100.mjs';
-import {ageDecision} from '../../../docs/handoffs/survey-20261021/mockup/dist/age100.mjs';
+import {questions,questionnaireVersion} from '../../reference/survey-20261021/mockup/dist/data100.mjs';
+import {profileFromAnswers,classifyAnswers,pair,readings,model} from '../../reference/survey-20261021/mockup/dist/engine100.mjs';
+import {ageDecision} from '../../reference/survey-20261021/mockup/dist/age100.mjs';
 const old=JSON.parse(fs.readFileSync(new URL('../fixtures/wording-baseline.json',import.meta.url)));
 assert.equal(questionnaireVersion,'SIS-Q-1.1-100');assert.equal(questions.length,100);
 for(const q of questions){const prior=old.questions.find(p=>p.id===q.id);assert.equal(q.kind,prior.kind);assert.equal(q.max,prior.max);assert.deepEqual(q.options.map(o=>o.value).filter(v=>v!=='age'),prior.options.map(o=>o.value));}

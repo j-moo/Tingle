@@ -94,10 +94,10 @@ def test_generated_success_uses_exact_contract_fields_and_internal_ids_only():
     assert len(model.requests) == len(model.verifications) == 1
 
 
-def test_internal_response_matches_current_openapi_field_and_identifier_contract():
-    schemas = json.loads((Path(__file__).resolve().parents[2]
-                          / "docs/contracts/api/openapi.json").read_text(encoding="utf-8"))
-    contract = schemas["components"]["schemas"]["Explanation"]
+def test_internal_response_matches_pinned_field_and_identifier_contract():
+    fixture = json.loads((Path(__file__).resolve().parent
+                          / "fixtures/explanation-contract.json").read_text(encoding="utf-8"))
+    contract = fixture["Explanation"]
     context, scope = setup_context(make_evidence())
     payload = explain(context, scope).explanation.model_dump(mode="json")
     assert set(payload) == set(contract["required"]) == set(contract["properties"])
