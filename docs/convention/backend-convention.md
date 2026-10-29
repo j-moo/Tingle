@@ -2,9 +2,9 @@
 
 v0.2.1-review, 2026.10.21 (BE 두 명이 합의하며 채운다)
 
-Spring Boot 서버(`back/`)를 함께 개발하는 **공통 규칙**이다. 인증·토큰·푸시·채팅·키링처럼 기능별 흐름은 여기 적지 않고 기능 명세(`docs/contracts/`)에 두고 링크한다. 각 규칙에는 `[rule-id]` 를 붙여서 MR 리뷰에서 링크로 가리킬 수 있게 한다. 저장소·커밋·MR 규칙은 [GitLab 컨벤션](gitlab-convention.md), 코드 스타일은 [네이버 Java 컨벤션](naver-java-convention.md)을 따른다.
+Spring Boot 서버(`back/`)를 함께 개발하는 **공통 규칙**이다. 인증·토큰·푸시·채팅·키링처럼 기능별 흐름은 여기 적지 않고 기능 명세(`docs/specifications/`)와 팀 공유 외부 API 계약에 두고 링크한다. 각 규칙에는 `[rule-id]` 를 붙여서 MR 리뷰에서 링크로 가리킬 수 있게 한다. 저장소·커밋·MR 규칙은 [GitLab 컨벤션](gitlab-convention.md), 코드 스타일은 [네이버 Java 컨벤션](naver-java-convention.md)을 따른다.
 
-전송 필드·필수값·nullable·HTTP 상태·오류 코드의 기준은 `docs/contracts/api/openapi.json`과 API README다(MR !20). 해당 문서가 아직 병합되지 않았다면 MR !20의 최신 소스 브랜치를 참조한다. 이 컨벤션은 공통 구현 원칙을 설명하며 상세 계약의 미정 항목을 확정하지 않는다.
+전송 필드·필수값·nullable·HTTP 상태·오류 코드의 기준은 BE 담당자가 확정한 팀 공유 외부 API 계약이다. 관련 Jira 이슈에서 원본 위치·버전을 확인한다. 2026-10-29 문서 관리 결정으로 `docs/contracts/` 사본은 유지하지 않는다. 이 컨벤션은 공통 구현 원칙을 설명하며 상세 계약의 미정 항목을 확정하지 않는다.
 
 ## 상태 표시
 
@@ -160,7 +160,7 @@ _[api-validation]_ **[제안]**
 ### 오류 코드 관리
 _[api-error-code]_ **[합의 필요]**
 
-`global/error/ErrorCode` 한 파일에 도메인별로 모은다. 실제 충돌이 잦아지면 분리를 검토한다. 오류 코드 이름을 바꾸면 `docs/contracts` 명세도 함께 고친다.
+`global/error/ErrorCode` 한 파일에 도메인별로 모은다. 실제 충돌이 잦아지면 분리를 검토한다. 오류 코드 이름을 바꾸면 팀 공유 외부 API 계약도 함께 고친다.
 
 ### 날짜·시간
 _[api-time]_ **[제안]**
@@ -182,7 +182,7 @@ _[api-public-id]_ **[합의 필요]**
 ### API 문서화
 _[api-docs]_ **[합의 필요]**
 
-파트 간 계약의 공식 문서는 `docs/contracts/api/` 이다(GitLab 컨벤션 `[shared-contracts]`). Swagger(springdoc)를 추가로 쓸지, 쓴다면 계약 문서와 어떻게 맞출지 정한다.
+파트 간 API 계약은 팀 공유 외부 원본과 관련 Jira 이슈의 버전을 따른다(GitLab 컨벤션 `[shared-contracts]`). Swagger(springdoc)를 추가로 쓸지, 쓴다면 계약 문서와 어떻게 맞출지 정한다. 문서용 사본을 저장소에 다시 추가하지 않는다.
 
 ## 4. 인증 연동
 
@@ -219,7 +219,7 @@ _[auth-test-user]_ **[제안]**
 ### 키링·채팅의 인증
 _[auth-device-ws]_ **[합의 필요]**
 
-키링(기기)이 보내는 요청의 인증 방식과 WebSocket(채팅) 연결 시 토큰 전달 방식은 이 문서가 아니라 각 기능 명세에서 정한다(채팅: 채팅 API 명세, 키링: IoT 담당과 `docs/contracts/keyring/`). 푸시 토큰도 해당 기능을 만들 때 기능 명세에서 정한다. 로그인 세션·로그아웃의 미확정 범위는 인증 명세와 `auth-recheck.md`에서 확인한다.
+키링(기기)이 보내는 요청의 인증 방식과 WebSocket(채팅) 연결 시 토큰 전달 방식은 이 문서가 아니라 관련 기능 명세와 팀 공유 외부 계약에서 정한다(채팅: BE 공개 API 계약, 키링: IoT 담당과 합의한 메시지 계약). 푸시 토큰도 해당 기능을 만들 때 계약에서 정한다. 로그인 세션·로그아웃의 미확정 범위는 관련 Jira 이슈에 연결한 인증 계약에서 확인한다.
 
 ## 5. DB와 실행 설정
 

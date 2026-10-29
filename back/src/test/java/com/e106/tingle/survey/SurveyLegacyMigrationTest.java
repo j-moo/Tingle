@@ -137,7 +137,7 @@ class SurveyLegacyMigrationTest {
 			+ "values (99,'unrelated-shadow-version',?,'{\"answers\":{}}')", UUID.randomUUID());
 		try (Connection connection = source.getConnection(); Statement statement = connection.createStatement()) {
 			statement.execute("set search_path to shadow,public");
-			statement.execute(Files.readString(Path.of("../docs/database/survey-175-migration.sql")));
+			statement.execute(Files.readString(Path.of("database/survey-175-migration.sql")));
 		}
 		assertThat(jdbc.queryForObject("select count(*) from public.survey", Integer.class)).isEqualTo(1);
 		assertThat(jdbc.queryForObject("select version_code from shadow.survey_responses", String.class))
@@ -158,7 +158,7 @@ class SurveyLegacyMigrationTest {
 				temporary.setObject(1, UUID.randomUUID());
 				temporary.executeUpdate();
 			}
-			statement.execute(Files.readString(Path.of("../docs/database/survey-175-migration.sql")));
+			statement.execute(Files.readString(Path.of("database/survey-175-migration.sql")));
 			try (var rows = statement.executeQuery("select version_code from pg_temp.survey_responses")) {
 				assertThat(rows.next()).isTrue();
 				assertThat(rows.getString(1)).isEqualTo("unrelated-temp-version");
@@ -179,7 +179,7 @@ class SurveyLegacyMigrationTest {
 	}
 
 	private void migrate() throws Exception {
-		String sql = Files.readString(Path.of("../docs/database/survey-175-migration.sql"));
+		String sql = Files.readString(Path.of("database/survey-175-migration.sql"));
 		try (Connection connection = source.getConnection(); Statement statement = connection.createStatement()) {
 			statement.execute(sql);
 		}

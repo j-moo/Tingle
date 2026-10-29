@@ -182,7 +182,7 @@ class CommonLegacyMigrationTest {
 	}
 
 	private void migrate(DriverManagerDataSource source, String photoBase) throws Exception {
-		String sql = Files.readString(Path.of("../docs/database/users-profile-151-migration.sql"),
+		String sql = Files.readString(Path.of("database/users-profile-151-migration.sql"),
 			StandardCharsets.UTF_8);
 		try (var connection = source.getConnection(); var statement = connection.createStatement()) {
 			if (photoBase != null) {

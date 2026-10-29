@@ -8,7 +8,7 @@ import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 
 /**
- * 앱에 내려가는 오류 코드. 앱은 이름(code)으로 분기하므로 이름을 바꾸면 docs/contracts 명세도 함께 바꾼다.
+ * 앱에 내려가는 오류 코드. 앱은 이름(code)으로 분기하므로 이름을 바꾸면 팀 공유 API 계약도 함께 바꾼다.
  * 코드를 추가하면 resources/messages.properties 에 error.{코드} 문구도 추가한다(ErrorMessagesTest 가 확인).
  */
 @Getter

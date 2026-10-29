@@ -62,7 +62,7 @@ import com.nimbusds.jose.jwk.source.ImmutableSecret;
 	"spring.main.web-application-type=none", "spring.profiles.active=test",
 	"spring.jpa.hibernate.ddl-auto=validate", "spring.docker.compose.enabled=false",
 	"spring.sql.init.mode=always",
-	"spring.sql.init.schema-locations=file:../docs/database/schema.sql"
+	"spring.sql.init.schema-locations=file:database/schema.sql"
 })
 class PushLogoutPersistenceTest {
 

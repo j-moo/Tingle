@@ -133,7 +133,7 @@ class PushLegacyMigrationTest {
 	}
 
 	private void migrate(DriverManagerDataSource source) throws Exception {
-		String sql = Files.readString(Path.of("../docs/database/push-installation-176-migration.sql"),
+		String sql = Files.readString(Path.of("database/push-installation-176-migration.sql"),
 			StandardCharsets.UTF_8);
 		try (Connection connection = source.getConnection(); Statement statement = connection.createStatement()) {
 			statement.execute(sql);

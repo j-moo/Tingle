@@ -32,7 +32,7 @@ class JpaWholeStorageIntegrationTest {
 	@Test
 	@DisplayName("실제 전체 앱의 JPA 생성은 설계와 같은 22표·176칼럼만 만들고 구 테이블을 추가하지 않는다")
 	void generatesExactlyCanonicalTablesAndColumnsWithoutBootstrapSql() throws Exception {
-		JsonNode design = mapper.readTree(Files.readString(Path.of("../docs/database/tables.json")));
+		JsonNode design = mapper.readTree(Files.readString(Path.of("database/tables.json")));
 		List<String> expected = new ArrayList<>();
 		for (JsonNode table : design.path("tables")) {
 			for (JsonNode column : table.path("columns")) {

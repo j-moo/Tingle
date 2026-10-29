@@ -8,6 +8,11 @@ AGENTS.md
 CLAUDE.md
 .claude/
 
+# 문서: 공통/분야별 컨벤션과 기능 명세만 저장소에서 관리
+/docs/*
+!/docs/convention/
+!/docs/specifications/
+
 # 개발 도구 설정·캐시
 .idea/
 *.iml
