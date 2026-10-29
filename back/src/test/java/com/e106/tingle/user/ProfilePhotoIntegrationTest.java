@@ -131,6 +131,9 @@ class ProfilePhotoIntegrationTest extends IntegrationTestSupport {
 	void rejectsInvalidUploadsAndKeepsPhoto() throws Exception {
 		upload(me, image("jpg", 400, 400, BufferedImage.TYPE_INT_RGB)).andExpect(status().isOk());
 		String kept = photoKey(me);
+		long version = settingsVersion(me);
+		int snapshots = snapshotCount(me);
+		Map<String, Object> evidence = snapshotRecord(me, version);
 		Path folder = photoDir.resolve(kept).getParent();
 		List<Path> before;
 		try (var files = Files.list(folder)) {
@@ -145,10 +148,119 @@ class ProfilePhotoIntegrationTest extends IntegrationTestSupport {
 		}
 		assertThat(photoKey(me)).isEqualTo(kept);
 		assertThat(photoDir.resolve(kept)).exists();
+		assertThat(settingsVersion(me)).isEqualTo(version);
+		assertThat(snapshotCount(me)).isEqualTo(snapshots);
+		assertThat(snapshotRecord(me, version)).isEqualTo(evidence);
 		// 거절한 업로드는 파일을 남기지 않는다(테스트 DB는 매번 새로 만들어져 같은 회원 번호 폴더에 이전 실행 파일이 있을 수 있다).
 		try (var files = Files.list(folder)) {
 			assertThat(files).containsExactlyInAnyOrderElementsOf(before);
 		}
+	}
+
+	@Test
+	@DisplayName("사진 업로드·교체·실제 삭제는 설정 세대를 한 번씩 올려 당시 입력을 보존하고 반복 삭제는 바꾸지 않는다")
+	void photoChangesAdvanceOnceAndKeepHistoricalInputImmutable() throws Exception {
+		long initialVersion = settingsVersion(me);
+		int initialSnapshots = snapshotCount(me);
+		Map<String, Object> initialEvidence = snapshotRecord(me, initialVersion);
+
+		upload(me, image("jpg", 100, 100, BufferedImage.TYPE_INT_RGB)).andExpect(status().isOk());
+		assertThat(settingsVersion(me)).isEqualTo(initialVersion + 1);
+		assertThat(snapshotCount(me)).isEqualTo(initialSnapshots + 1);
+		assertSnapshotPhoto(me, initialVersion + 1, true);
+		Map<String, Object> uploadedEvidence = snapshotRecord(me, initialVersion + 1);
+		String first = photoKey(me);
+
+		upload(me, image("png", 200, 150, BufferedImage.TYPE_INT_ARGB)).andExpect(status().isOk());
+		assertThat(settingsVersion(me)).isEqualTo(initialVersion + 2);
+		assertThat(snapshotCount(me)).isEqualTo(initialSnapshots + 2);
+		assertSnapshotPhoto(me, initialVersion + 2, true);
+		assertThat(photoKey(me)).isNotEqualTo(first);
+		assertThat(photoDir.resolve(first)).doesNotExist();
+		Map<String, Object> replacedEvidence = snapshotRecord(me, initialVersion + 2);
+		String replacement = photoKey(me);
+
+		perform(delete(me(me, "/profile/photo")), me, null).andExpect(status().isNoContent());
+		assertThat(settingsVersion(me)).isEqualTo(initialVersion + 3);
+		assertThat(snapshotCount(me)).isEqualTo(initialSnapshots + 3);
+		assertSnapshotPhoto(me, initialVersion + 3, false);
+		assertThat(photoKey(me)).isNull();
+		assertThat(photoDir.resolve(replacement)).doesNotExist();
+		Map<String, Object> deletedEvidence = snapshotRecord(me, initialVersion + 3);
+
+		perform(delete(me(me, "/profile/photo")), me, null).andExpect(status().isNoContent());
+		assertThat(settingsVersion(me)).isEqualTo(initialVersion + 3);
+		assertThat(snapshotCount(me)).isEqualTo(initialSnapshots + 3);
+		assertThat(snapshotRecord(me, initialVersion)).isEqualTo(initialEvidence);
+		assertThat(snapshotRecord(me, initialVersion + 1)).isEqualTo(uploadedEvidence);
+		assertThat(snapshotRecord(me, initialVersion + 2)).isEqualTo(replacedEvidence);
+		assertThat(snapshotRecord(me, initialVersion + 3)).isEqualTo(deletedEvidence);
+	}
+
+	@Test
+	@DisplayName("당시 입력 검증이 실패하면 사진 교체·삭제의 파일·DB·설정 세대·사본을 함께 롤백한다")
+	void failedInputCaptureRollsBackPhotoFilesVersionAndSnapshot() throws Exception {
+		upload(me, image("jpg", 100, 100, BufferedImage.TYPE_INT_RGB)).andExpect(status().isOk());
+		String kept = photoKey(me);
+		byte[] keptBytes = Files.readAllBytes(photoDir.resolve(kept));
+		long version = settingsVersion(me);
+		int snapshots = snapshotCount(me);
+		Map<String, Object> evidence = snapshotRecord(me, version);
+		List<Path> filesBefore;
+		try (var files = Files.list(photoDir.resolve(kept).getParent())) {
+			filesBefore = files.toList();
+		}
+		// 실제 증거 수집 경로에서 활성 분석의 유효성 검증이 실패하도록 만든다.
+		long analysis = jdbc.queryForObject("select active_personality_id from profile where user_id=?",
+			Long.class, userIdOf(me));
+		jdbc.update("update personality set status='FAILED' where id=?", analysis);
+		try {
+			upload(me, image("png", 150, 100, BufferedImage.TYPE_INT_ARGB))
+				.andExpect(status().isServiceUnavailable())
+				.andExpect(jsonPath("$.code").value("SERVICE_UNAVAILABLE"));
+			assertThat(photoKey(me)).isEqualTo(kept);
+			assertThat(Files.readAllBytes(photoDir.resolve(kept))).isEqualTo(keptBytes);
+			assertThat(settingsVersion(me)).isEqualTo(version);
+			assertThat(snapshotCount(me)).isEqualTo(snapshots);
+			assertThat(snapshotRecord(me, version)).isEqualTo(evidence);
+			try (var files = Files.list(photoDir.resolve(kept).getParent())) {
+				assertThat(files).containsExactlyInAnyOrderElementsOf(filesBefore);
+			}
+
+			perform(delete(me(me, "/profile/photo")), me, null).andExpect(status().isServiceUnavailable())
+				.andExpect(jsonPath("$.code").value("SERVICE_UNAVAILABLE"));
+			assertThat(photoKey(me)).isEqualTo(kept);
+			assertThat(Files.readAllBytes(photoDir.resolve(kept))).isEqualTo(keptBytes);
+			assertThat(settingsVersion(me)).isEqualTo(version);
+			assertThat(snapshotCount(me)).isEqualTo(snapshots);
+			assertThat(snapshotRecord(me, version)).isEqualTo(evidence);
+		} finally {
+			jdbc.update("update personality set status='SUCCEEDED' where id=?", analysis);
+		}
+	}
+
+	@Test
+	@DisplayName("가입 초기에 설정 행이 없어도 사진 저장·삭제는 허용하고 설정 세대나 사본을 임의 생성하지 않는다")
+	void earlySignupWithoutSettingsDoesNotInventVersionOrSnapshot() throws Exception {
+		JsonNode early = login("google", newSocialId());
+		agree(early).andExpect(status().isOk());
+		long userId = userIdOf(early);
+		jdbc.update("delete from user_setting where user_id=?", userId);
+		assertThat(snapshotCount(early)).isZero();
+
+		upload(early, image("jpg", 100, 100, BufferedImage.TYPE_INT_RGB)).andExpect(status().isOk());
+		String key = photoKey(early);
+		assertThat(photoDir.resolve(key)).exists();
+		assertThat(jdbc.queryForObject("select count(*) from user_setting where user_id=?",
+			Integer.class, userId)).isZero();
+		assertThat(snapshotCount(early)).isZero();
+
+		perform(delete(me(early, "/profile/photo")), early, null).andExpect(status().isNoContent());
+		assertThat(photoKey(early)).isNull();
+		assertThat(photoDir.resolve(key)).doesNotExist();
+		assertThat(jdbc.queryForObject("select count(*) from user_setting where user_id=?",
+			Integer.class, userId)).isZero();
+		assertThat(snapshotCount(early)).isZero();
 	}
 
 	@Test
@@ -241,6 +353,27 @@ class ProfilePhotoIntegrationTest extends IntegrationTestSupport {
 
 	private String photoKey(JsonNode tokens) throws Exception {
 		return jdbc.queryForObject("select photo_url from profile where user_id=?", String.class, userIdOf(tokens));
+	}
+
+	private long settingsVersion(JsonNode tokens) throws Exception {
+		return jdbc.queryForObject("select settings_version from user_setting where user_id=?",
+			Long.class, userIdOf(tokens));
+	}
+
+	private int snapshotCount(JsonNode tokens) throws Exception {
+		return jdbc.queryForObject("select count(*) from settings_snapshot where user_id=?",
+			Integer.class, userIdOf(tokens));
+	}
+
+	private Map<String, Object> snapshotRecord(JsonNode tokens, long version) throws Exception {
+		return jdbc.queryForMap("select input_json,input_hash,captured_at from settings_snapshot "
+			+ "where user_id=? and settings_version=?", userIdOf(tokens), version);
+	}
+
+	private void assertSnapshotPhoto(JsonNode tokens, long version, boolean expected) throws Exception {
+		JsonNode evidence = jsonMapper.readTree((String)snapshotRecord(tokens, version).get("input_json"));
+		assertThat(evidence.path("profile").path("photoPresent").asBoolean()).isEqualTo(expected);
+		assertThat(evidence.path("evidenceState").asString()).isIn("INCOMPLETE", "REVIEW_REQUIRED");
 	}
 
 	private static void assertSquareJpegWithoutExif(byte[] jpeg, int side) throws Exception {

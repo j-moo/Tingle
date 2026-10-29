@@ -18,6 +18,7 @@ import org.springframework.web.multipart.MultipartFile;
 
 import com.e106.tingle.global.error.BusinessException;
 import com.e106.tingle.global.error.ErrorCode;
+import com.e106.tingle.settings.snapshot.SettingsChangeCoordinator;
 import com.e106.tingle.user.dto.ProfileResponse;
 
 import lombok.extern.slf4j.Slf4j;
@@ -38,13 +39,15 @@ public class ProfilePhotoService {
 
 	private final ProfileRepository profileRepository;
 	private final UserRepository userRepository;
+	private final SettingsChangeCoordinator changes;
 	private final TransactionTemplate transaction;
 	private final Path root;
 
 	public ProfilePhotoService(ProfileRepository profileRepository, UserRepository userRepository,
-		TransactionTemplate transaction, @Value("${tingle.photo.dir}") Path root) {
+		SettingsChangeCoordinator changes, TransactionTemplate transaction, @Value("${tingle.photo.dir}") Path root) {
 		this.profileRepository = profileRepository;
 		this.userRepository = userRepository;
+		this.changes = changes;
 		this.transaction = transaction;
 		this.root = root.toAbsolutePath().normalize();
 	}
@@ -59,12 +62,14 @@ public class ProfilePhotoService {
 			// 같은 회원의 업로드·삭제가 동시에 와도 이전 파일 정리가 꼬이지 않게 회원 행을 잠근다.
 			userRepository.findByIdForUpdate(userId)
 				.orElseThrow(() -> new BusinessException(ErrorCode.AUTH_REQUIRED));
+			changes.lockIfPresent(userId);
 			Profile profile = profileRepository.findById(userId).orElseGet(() -> Profile.empty(userId));
 			String previous = profile.getImageUrl();
 			String key = write(userId, jpeg);
 			deleteAfterCompletion(previous, key);
 			profile.changeImageUrl(key);
 			profileRepository.saveAndFlush(profile);
+			changes.advanceAndCapture(userId);
 			return ProfileResponse.from(profile);
 		});
 	}
@@ -74,9 +79,11 @@ public class ProfilePhotoService {
 		transaction.executeWithoutResult(status -> {
 			userRepository.findByIdForUpdate(userId)
 				.orElseThrow(() -> new BusinessException(ErrorCode.AUTH_REQUIRED));
+			changes.lockIfPresent(userId);
 			profileRepository.findById(userId).filter(profile -> profile.getImageUrl() != null).ifPresent(profile -> {
 				deleteAfterCompletion(profile.getImageUrl(), null);
 				profile.changeImageUrl(null);
+				changes.advanceAndCapture(userId);
 			});
 		});
 	}
