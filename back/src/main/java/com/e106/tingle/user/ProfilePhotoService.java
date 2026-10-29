@@ -81,6 +81,13 @@ public class ProfilePhotoService {
 		});
 	}
 
+	// 프로필 행을 다른 곳에서 지울 때(만 19세 미만 탈퇴) 쓴다. 지금 트랜잭션이 커밋되면 사진 파일을 지운다.
+	void deleteFileAfterCommit(String key) {
+		if (key != null) {
+			deleteAfterCompletion(key, null);
+		}
+	}
+
 	/**
 	 * 회원의 현재 사진(JPEG 바이트). 권한 확인은 호출하는 쪽이 먼저 한다. 사진이 없으면 410 PHOTO_REMOVED.
 	 */
