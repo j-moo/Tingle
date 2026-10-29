@@ -150,25 +150,15 @@ sh gradlew check :androidApp:$APK_TASK --no-daemon -Dorg.gradle.jvmargs=-Xmx3g -
       }
     }
     stage('app-env') {
-      // 배포 브랜치 push 때만: Jenkins Credentials 의 앱 비밀값을 서버 /srv/tingle/app.env 로 쓴다 (compose 가 --env-file 로 읽는다).
-      // 비밀값을 추가하면 Credentials 에 넣고 여기 withCredentials 와 echo 줄을 늘린다. 값에 $ 가 있으면 compose 가 변수로 읽으니 $$ 로 넣는다.
+      // 배포 브랜치 push 때만: Jenkins Credentials tingle-app-env(Secret file, app.env 전체)를 서버 /srv/tingle/app.env 로 쓴다 (compose 가 --env-file 로 읽는다).
+      // 값을 바꾸거나 더할 때는 파일을 고쳐 Credentials 에 다시 올린다 (공유 사본: 자율 프로젝트/infra/app.env). 값에 $ 가 있으면 compose 가 변수로 읽으니 $$ 로 넣는다.
       when { expression { env.gitlabActionType == 'PUSH' && DEPLOY[env.gitlabSourceBranch] } }
       steps {
-        withCredentials([
-          usernamePassword(credentialsId: 'tingle-db', usernameVariable: 'POSTGRES_USER', passwordVariable: 'POSTGRES_PASSWORD'),
-          string(credentialsId: 'tingle-jwt-secret', variable: 'JWT_SECRET'),
-          string(credentialsId: 'tingle-push-key', variable: 'PUSH_TOKEN_ENCRYPTION_KEY'),
-        ]) {
+        withCredentials([file(credentialsId: 'tingle-app-env', variable: 'APP_ENV')]) {
           sh '''
             set +x
             umask 077
-            {
-              echo "# Jenkins 가 관리 — 직접 수정 금지. develop · master 배포마다 Jenkins Credentials 로 다시 쓴다 (Jenkinsfile app-env 단계)"
-              echo "POSTGRES_USER=$POSTGRES_USER"
-              echo "POSTGRES_PASSWORD=$POSTGRES_PASSWORD"
-              echo "JWT_SECRET=$JWT_SECRET"
-              echo "PUSH_TOKEN_ENCRYPTION_KEY=$PUSH_TOKEN_ENCRYPTION_KEY"
-            } > /srv/tingle/app.env.tmp
+            { cat "$APP_ENV"; echo; } | tr -d '\\r' > /srv/tingle/app.env.tmp # 끝 줄바꿈 보장(FCM 값을 뒤에 덧붙인다) · 윈도우 줄끝 제거
             mv /srv/tingle/app.env.tmp /srv/tingle/app.env
             mkdir -p /srv/tingle/secrets # back 이 읽기 전용으로 마운트한다. 없으면 docker 가 root 소유로 만들어 Jenkins 가 못 쓴다
             echo "app.env 갱신: $(grep -c = /srv/tingle/app.env)개 값"
