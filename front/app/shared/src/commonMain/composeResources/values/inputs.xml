@@ -1,0 +1,4 @@
+<resources>
+    <string name="field_required_label">%1$s · 필수</string>
+    <string name="field_read_only">읽기 전용</string>
+</resources>
