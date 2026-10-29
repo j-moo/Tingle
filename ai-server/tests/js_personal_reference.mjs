@@ -5,7 +5,7 @@ import {questions, validAnswer, featureLabels, domainDefs} from '../../docs/hand
 import {model, demoAnswers, profileFromAnswers, classifyAnswers, classifyProfile, readings, preferenceGaps, wishFit} from '../../docs/handoffs/survey-20261021/mockup/dist/engine100.mjs';
 import {typeRecommendations} from '../../docs/handoffs/survey-20261021/mockup/dist/type-recommendations100.mjs';
 
-const baseline = JSON.parse(fs.readFileSync(new URL('../../docs/handoffs/survey-20261021/mockup/fixtures/wording-baseline.json', import.meta.url)));
+const baseline = JSON.parse(fs.readFileSync(new URL('./fixtures/wording-baseline.json', import.meta.url)));
 const base = baseline.fixtures[9];
 const copy = value => structuredClone(value);
 const cases = baseline.fixtures.map((answers, i) => ({name: `prototype-${model.prototypes[i].type}`, answers}));

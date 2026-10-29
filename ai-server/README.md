@@ -111,8 +111,12 @@ Jira `S15P31E106-138`의 내부 포트 8000·`/health` 요구와 기존 앱의 P
 
 ## 테스트
 
-가상환경을 활성화한 상태에서 실행합니다.
+가상환경을 활성화하고 Node.js를 설치한 상태에서 실행합니다. 기존 Python 의존성과 Node 내장 테스트 실행기만 사용하며 npm 패키지는 필요하지 않습니다.
 
 ```bash
-python -m pytest
+python scripts/run_tests.py
 ```
+
+이 명령은 `ai-server/`를 실행 위치로 고정하여 pytest 전체, `tests/node/*.test.mjs` 전체, Python/JS parity를 순서대로 실행합니다. 실패하면 종료 코드가 0이 아니며 Node가 없을 때도 실패합니다. Jenkins AI 단계도 같은 명령을 사용합니다.
+
+저장소 루트에서는 `python ai-server/scripts/run_tests.py`로 실행할 수 있습니다. 다른 위치에서는 스크립트의 절대 경로를 지정합니다. 개별 실행 명령, 이관 목록, 검증 결과와 경로·fixture 학습 내용은 [테스트 안내](tests/README.md)를 참고합니다. 원본 JS 참조 엔진은 `docs/handoffs/survey-20261021/mockup/dist/`에 있으므로 CI에는 `ai-server/`만이 아닌 저장소 전체 checkout이 필요합니다.
