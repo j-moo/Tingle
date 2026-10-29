@@ -59,7 +59,7 @@ class ChatLegacyMigrationTest {
 	}
 
 	@Test
-	@DisplayName("22표로 이관해도 번호·수명·안내 UUID·선점·전달 영수증·불연속 읽음 증거를 보존한다")
+	@DisplayName("23표로 이관해도 번호·수명·안내 UUID·선점·전달 영수증·불연속 읽음 증거를 보존한다")
 	void preservesDurableChatAndNoticeEvidenceWithoutFillingReadGaps() throws Exception {
 		Legacy legacy = seedLegacyChat();
 		jdbc.queryForObject("select setval(pg_get_serial_sequence('chat_rooms','chat_room_id'),4000,true)", Long.class);
@@ -67,7 +67,7 @@ class ChatLegacyMigrationTest {
 			Long.class);
 		migrate();
 		assertThat(jdbc.queryForObject("select count(*) from information_schema.tables where table_schema='public' "
-			+ "and table_type='BASE TABLE'", Integer.class)).isEqualTo(22);
+			+ "and table_type='BASE TABLE'", Integer.class)).isEqualTo(23);
 		assertThat(jdbc.queryForMap("select legacy_public_id,matching_id,created_at,expires_at,retain_until "
 			+ "from chat where id=?", legacy.roomId()))
 			.containsEntry("legacy_public_id", legacy.roomUuid()).containsEntry("matching_id", 20L)

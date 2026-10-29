@@ -50,6 +50,7 @@ import com.e106.tingle.global.error.BusinessException;
 import com.e106.tingle.global.error.ErrorCode;
 import com.e106.tingle.global.error.GlobalExceptionHandler;
 import com.e106.tingle.settings.UserSetting;
+import com.e106.tingle.settings.snapshot.SettingsChangeCoordinator;
 import com.e106.tingle.user.OnboardingService;
 import com.e106.tingle.user.OnboardingStatus;
 import com.e106.tingle.user.User;
@@ -62,6 +63,9 @@ import com.e106.tingle.user.User;
 	"spring.profile.active=test", "spring.jpa.open-in-view=false"
 })
 class PreferenceLoginConnectionTest {
+
+	@MockitoBean
+	private SettingsChangeCoordinator settingsChanges;
 
 	private static final Instant NOW = Instant.parse("2026-10-28T03:00:00Z");
 

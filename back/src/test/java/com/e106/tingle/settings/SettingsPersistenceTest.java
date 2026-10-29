@@ -38,6 +38,7 @@ import com.e106.tingle.preference.PreferenceMemberAccess;
 import com.e106.tingle.preference.PreferencesService;
 import com.e106.tingle.preference.dto.PreferencesRequest;
 import com.e106.tingle.settings.dto.SettingsRequest;
+import com.e106.tingle.settings.snapshot.SettingsChangeCoordinator;
 import com.e106.tingle.user.Gender;
 import com.e106.tingle.user.OnboardingService;
 import com.e106.tingle.user.OnboardingStatus;
@@ -48,6 +49,9 @@ import com.e106.tingle.user.OnboardingStatus;
 	"spring.profiles.active=test", "spring.jpa.open-in-view=false"
 })
 class SettingsPersistenceTest {
+
+	@MockitoBean
+	private SettingsChangeCoordinator settingsChanges;
 
 	@Configuration(proxyBeanMethods = false)
 	@EnableAutoConfiguration

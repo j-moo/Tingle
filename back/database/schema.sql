@@ -1,3 +1,4 @@
+-- Current branch design:23 tables/181 columns/37 logical references after approved72 addition.
 -- ERD21 source + approved preservation amendments / 2026-10-28 / 22 tables, 174 columns
 -- Design DDL, not an automatic migration. Not applied to shared/production DBs.
 -- Verified only with disposable PostgreSQL test databases.
@@ -589,3 +590,15 @@ CREATE UNIQUE INDEX "uq_chat_legacy_public_id" ON "chat" ("legacy_public_id");
 CREATE UNIQUE INDEX "uq_chat_message_legacy_public_id" ON "chat_message" ("legacy_public_id");
 CREATE UNIQUE INDEX "uq_matching_participant_user_request" ON "matching_participant" ("user_id", "decision_request_key");
 COMMENT ON COLUMN "survey_answer"."answered_at" IS '답한 시각 — 같은 문항을 다시 고르면 값과 시각을 덮어씀；구 JSON에 문항별 시각이 없으면 NULL. 현재·완료 시각 추정 금지';
+
+--72: dedicated frozen input evidence; design DDL, not automatic migration.
+CREATE TABLE "settings_snapshot" (
+    "id" BIGSERIAL PRIMARY KEY,
+    "user_id" BIGINT NOT NULL,
+    "settings_version" BIGINT NOT NULL,
+    "input_format" VARCHAR(64) NOT NULL,
+    "input_json" TEXT NOT NULL,
+    "input_hash" VARCHAR(64) NOT NULL,
+    "captured_at" TIMESTAMPTZ NOT NULL,
+    CONSTRAINT "uq_settings_snapshot_user_version" UNIQUE ("user_id", "settings_version")
+);

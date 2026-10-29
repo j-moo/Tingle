@@ -79,7 +79,7 @@ class SurveyStoragePersistenceTest {
 	private JsonMapper mapper;
 
 	@Test
-	@DisplayName("22개 실제 설계에서 숫자 회차만 만들고 옛 칸(문항 사본·metadata·요청 키)은 쓰지 않는다")
+	@DisplayName("23개 실제 설계에서 숫자 회차만 만들고 옛 칸(문항 사본·metadata·요청 키)은 쓰지 않는다")
 	void createsCanonicalSessionAndFreezesItsDefinition() {
 		long userId = registeredMember();
 		SurveySessionResponse session = service.start(userId, VERSION);
@@ -87,7 +87,7 @@ class SurveyStoragePersistenceTest {
 		assertThat(session.answers()).isEmpty();
 		assertThat(session.questionCount()).isEqualTo(100);
 		assertThat(jdbc.queryForObject("select count(*) from information_schema.tables where table_schema='public' "
-			+ "and table_type='BASE TABLE'", Integer.class)).isEqualTo(22);
+			+ "and table_type='BASE TABLE'", Integer.class)).isEqualTo(23);
 		assertThat(jdbc.queryForObject("select to_regclass('public.survey_responses')::text", String.class))
 			.isNull();
 		assertThat(jdbc.queryForMap("select legacy_public_id,client_request_id,response_context,definition_snapshot,"

@@ -36,6 +36,7 @@ class SettingsOnboardingIntegrationTest extends IntegrationTestSupport {
 		JsonNode tokens = login("kakao", newSocialId());
 		completeOnboarding(tokens);
 		long userId = userIdOf(tokens);
+		long beforeVersion = settingsVersion(userId);
 		JsonNode other = login("kakao", newSocialId());
 		long otherId = userIdOf(other);
 		long matchingId = jdbc.queryForObject("insert into matching "
@@ -52,18 +53,18 @@ class SettingsOnboardingIntegrationTest extends IntegrationTestSupport {
 		Map<String, Object> deviceBefore = jdbc.queryForMap("select synced_settings_version,synced_at "
 			+ "from keyring where owner_user_id=?", userId);
 		perform(get(me(tokens, "/settings")), tokens, null).andExpect(status().isOk())
-			.andExpect(header().string("ETag", "\"1\""))
+			.andExpect(header().string("ETag", etag(beforeVersion)))
 			.andExpect(header().string("Cache-Control", "no-store"))
 			.andExpect(jsonPath("$.matchingEnabled").value(true))
 			.andExpect(jsonPath("$.requirePartnerPhoto").value(false));
-		perform(put(me(tokens, "/settings")).header("If-Match", "\"1\""), tokens, OPTIONS)
-			.andExpect(status().isOk()).andExpect(header().string("ETag", "\"2\""))
-			.andExpect(jsonPath("$.settingsVersion").value(2));
+		perform(put(me(tokens, "/settings")).header("If-Match", etag(beforeVersion)), tokens, OPTIONS)
+			.andExpect(status().isOk()).andExpect(header().string("ETag", etag(beforeVersion + 1)))
+			.andExpect(jsonPath("$.settingsVersion").value(beforeVersion + 1));
 		perform(get(me(tokens, "/onboarding")), tokens, null).andExpect(status().isOk())
 			.andExpect(jsonPath("$.nextStep").value("SYNC_PENDING"))
 			.andExpect(jsonPath("$.matchingReady").value(false))
-			.andExpect(jsonPath("$.requiredSettingsVersion").value(2))
-			.andExpect(jsonPath("$.acknowledgedSettingsVersion").value(1))
+			.andExpect(jsonPath("$.requiredSettingsVersion").value(beforeVersion + 1))
+			.andExpect(jsonPath("$.acknowledgedSettingsVersion").value(beforeVersion))
 			.andExpect(jsonPath("$.signupCompleted").value(true));
 		assertThat(jdbc.queryForMap("select * from matching where id=?", matchingId)).isEqualTo(proposalBefore);
 		assertThat(jdbc.queryForMap("select * from matching_participant where matching_id=? and user_id=?",
@@ -72,13 +73,13 @@ class SettingsOnboardingIntegrationTest extends IntegrationTestSupport {
 			+ "where user_id=?", userId)).isEqualTo(ageBefore);
 		assertThat(jdbc.queryForMap("select synced_settings_version,synced_at from keyring where owner_user_id=?",
 			userId)).isEqualTo(deviceBefore);
-		perform(put(me(tokens, "/preferences")).header("If-Match", "\"1\""), tokens, ANY)
+		perform(put(me(tokens, "/preferences")).header("If-Match", etag(beforeVersion)), tokens, ANY)
 			.andExpect(status().isPreconditionFailed());
-		perform(put(me(tokens, "/preferences")).header("If-Match", "\"2\""), tokens, ANY)
-			.andExpect(status().isOk()).andExpect(header().string("ETag", "\"3\""));
+		perform(put(me(tokens, "/preferences")).header("If-Match", etag(beforeVersion + 1)), tokens, ANY)
+			.andExpect(status().isOk()).andExpect(header().string("ETag", etag(beforeVersion + 2)));
 		perform(get(me(tokens, "/settings")), tokens, null).andExpect(status().isOk())
 			.andExpect(jsonPath("$.requirePartnerPhoto").value(true))
-			.andExpect(jsonPath("$.settingsVersion").value(3));
+			.andExpect(jsonPath("$.settingsVersion").value(beforeVersion + 2));
 	}
 
 	@Test
@@ -91,14 +92,23 @@ class SettingsOnboardingIntegrationTest extends IntegrationTestSupport {
 		perform(get(me(tokens, "/settings")), tokens, null).andExpect(status().isForbidden())
 			.andExpect(jsonPath("$.code").value("ONBOARDING_REQUIRED"));
 		completeOnboarding(tokens);
+		long beforeVersion = settingsVersion(userId);
 		perform(put(me(tokens, "/settings")), tokens, OPTIONS).andExpect(status().isPreconditionRequired())
 			.andExpect(jsonPath("$.code").value("PRECONDITION_REQUIRED"));
-		perform(put(me(tokens, "/settings")).header("If-Match", "\"0\""), tokens, OPTIONS)
+		perform(put(me(tokens, "/settings")).header("If-Match", etag(beforeVersion - 1)), tokens, OPTIONS)
 			.andExpect(status().isPreconditionFailed()).andExpect(jsonPath("$.code").value("PRECONDITION_FAILED"));
 		assertThat(jdbc.queryForObject("select settings_version from user_setting where user_id=?",
-			Long.class, userId)).isEqualTo(1);
+			Long.class, userId)).isEqualTo(beforeVersion);
 		logout(tokens.path("refreshToken").asString()).andExpect(status().isNoContent());
 		perform(get(me(tokens, "/settings")), tokens, null).andExpect(status().isUnauthorized())
 			.andExpect(jsonPath("$.code").value("SESSION_REVOKED"));
+	}
+
+	private long settingsVersion(long userId) {
+		return jdbc.queryForObject("select settings_version from user_setting where user_id=?", Long.class, userId);
+	}
+
+	private static String etag(long version) {
+		return "\"" + version + "\"";
 	}
 }
