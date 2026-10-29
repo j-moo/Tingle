@@ -23,8 +23,75 @@ FORBIDDEN = re.compile(
 )
 INTERNAL_TERMS = re.compile(r"[a-zA-Z]|허용\s*범위|충족|판정|양방향|한\s*방향")
 MUTUAL_CLAIM = re.compile(r"두\s*(?:분|사람)|서로|모두|양쪽|공통|닮|같은")
-NEGATED_FIT = re.compile(r"들어가지\s*않|맞지\s*않|충족하지\s*않|포함되지\s*않")
-NEGATED_SHARED = re.compile(r"공통점[이가은는]*\s*없|같지\s*않|서로\s*다르")
+
+# 자유형식 fact의 일부 단어만 보고 kind를 신뢰하면 부정·주입 문구도
+# 긍정적 fallback으로 바뀐다. 해석 가능한 요약 문장 전체만 허용한다.
+# 이 문법은 원본 인증이 아니며, 신뢰된 서버의 실제 비교 결과가 전제다.
+FACT_SUBJECTS = {
+    "contact": r"(?:실제 )?연락 (?:빈도|방식)",
+    "planning": r"(?:실제 )?(?:약속 )?준비 방식",
+    "activity": r"(?:실제 )?(?:즐기는 )?활동",
+    "experience": r"(?:새로운 )?경험을 (?:찾는|선택하는) 방식",
+}
+SHARED_ACTIONS = {
+    "contact": r"(?:짧게 자주|여유 있게) 연락하는 편(?:이다|이라고 응답했다)",
+    "planning": r"약속을 (?:미리|그때그때) 정하는 편(?:이다|이라고 응답했다)",
+    "activity": r"(?:(?:공원 )?산책|독서|운동)(?:을|를) (?:선호한다고 응답했다|즐긴다고 응답했다)",
+    "experience": r"(?:익숙한|새로운) 활동을 찾는 편(?:이다|이라고 응답했다)",
+}
+
+
+def supported_fact(item: Evidence) -> bool:
+    """종류·주제·방향과 일치하는 보수적인 요약 문법. 미지원은 추측하지 않는다."""
+    subject = FACT_SUBJECTS[item.topic]
+    if item.kind == "ONE_WAY_PREFERENCE_FIT":
+        if item.direction not in {"A_TO_B", "B_TO_A"}:
+            return False
+        owner, other = ("A", "B") if item.direction == "A_TO_B" else ("B", "A")
+        patterns = (
+            rf"{other}의 {subject}(?:이|가) {owner}의 (?:선호|허용 범위)에 (?:맞는다|들어간다)",
+            rf"{owner}가\s*선호하는 {subject}(?:에| 범위에) {other}의 {subject}(?:이|가) (?:맞는다|들어간다)",
+        )
+    elif item.direction != "BOTH":
+        return False
+    elif item.kind == "MUTUAL_PREFERENCE_FIT":
+        patterns = (rf"두 사람의 {subject}(?:이|가) 서로의 선호와 맞는다",)
+        if item.topic == "contact":
+            patterns += (
+                r"두 사람 모두 (?:짧게 자주|여유 있게) 연락하는 방식을 선호하고 "
+                r"각자의 실제 연락 방식도 상대의 선호와 맞는다",
+            )
+    elif item.kind == "SHARED_REPORTED_BEHAVIOR":
+        patterns = (
+            rf"두 사람의 {subject}에 공통점이 있다",
+            rf"(?:두 사람|A와 B) 모두 {SHARED_ACTIONS[item.topic]}",
+        )
+    else:
+        patterns = (rf"{subject}(?:에는|에) 차이가 있다",)
+        if item.topic == "planning":
+            patterns += (r"약속을 준비하는 시점에는 차이가 있다",)
+        elif item.topic == "experience":
+            patterns += (
+                r"A는 익숙한 활동을 주로 찾고 B는 새로운 활동을 찾는 편이어서 "
+                r"경험을 선택하는 방식에 차이가 있다",
+            )
+    return any(re.fullmatch(rf"(?:{pattern})\.", item.fact) for pattern in patterns)
+
+
+# 단어 자체(공원·저녁·공통점)를 금지하지 않고 점수 단정, 시각/장소와
+# 만남 행위의 결합, 인물 호칭을 이용한 신원 단정 등 주장 형태를 검사한다.
+# 임의의 자연어 사실성·개인정보 검증을 대체하지 않는다.
+UNSUPPORTED_CLAIMS = re.compile(
+    r"(?:만\s*점|(?:백|[일이삼사오육칠팔구]?십[일이삼사오육칠팔구]?)\s*점)"
+    r"(?=이|입|은|는|을|에|[.!?]|$)|"
+    r"(?:궁합|상성|적합도|조화)(?:은|는|이|가)?\s*[영공일이삼사오육칠팔구십백]+\s*점|"
+    r"(?:오늘|내일|모레|이번\s*주|다음\s*주)[^.!?]{0,30}(?:만[나날납났]|뵈|모여|봐요)|"
+    r"(?:한|두|세|네|다섯|여섯|일곱|여덟|아홉|열|열한|열두)\s*시\s*"
+    r"(?:반\s*)?(?:에|부터)[^.!?]{0,20}(?:만[나날납났]|뵈|모여|봐요)|"
+    r"[가-힣]{2,20}(?:공원|카페|식당|도서관|광장|정류장|건물)"
+    r"(?:\s*(?:입구|출구|앞|옆|안))?(?:에서|으로|에)\s*(?:만[나날납났]|모여|뵈|봐요|오세요|와요)|"
+    r"(?:상대(?:방)?|당신|그분)(?:는|은|가)\s*[가-힣]{2,12}(?:님|씨)(?:이에요|이세요|입니다|예요|이라고)"
+)
 
 
 def safe_text(text: str, *, output: bool = False) -> bool:
@@ -72,18 +139,7 @@ def select_evidence(
             continue
         if item.id not in scope.display_evidence_ids:
             continue
-        if item.topic not in TOPICS or not safe_text(item.fact):
-            continue
-        if item.kind in {"MUTUAL_PREFERENCE_FIT", "ONE_WAY_PREFERENCE_FIT"}:
-            if NEGATED_FIT.search(item.fact):
-                continue
-        if item.kind == "SHARED_REPORTED_BEHAVIOR" and NEGATED_SHARED.search(item.fact):
-            continue
-        if item.kind == "ONE_WAY_PREFERENCE_FIT":
-            if item.direction == "BOTH":
-                continue
-        elif item.direction != "BOTH":
-            # 차이도 방향을 새로 추론하지 않는 BOTH 요약만 우선 지원한다.
+        if item.topic not in TOPICS or not safe_text(item.fact) or not supported_fact(item):
             continue
         display.append(item)
         seen_sources.add(source_key)
@@ -119,6 +175,8 @@ def parse_output(raw: str, request: ModelInput) -> ModelOutput:
     if len(ids) != len(set(ids)) or not set(ids) <= evidence.keys():
         raise ValueError("INVALID_OUTPUT")
     if not safe_text(output.text, output=True):
+        raise ValueError("INVALID_OUTPUT")
+    if UNSUPPORTED_CLAIMS.search(output.text):
         raise ValueError("INVALID_OUTPUT")
     cited = [evidence[key] for key in ids]
     if all(item.kind == "ONE_WAY_PREFERENCE_FIT" for item in cited):

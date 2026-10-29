@@ -177,14 +177,16 @@ def test_fallback_preserves_one_way_direction(viewer, direction, expected):
     assert explain(context, scope).explanation.text == expected
 
 
-@pytest.mark.parametrize("kind,expected", [
-    ("SHARED_REPORTED_BEHAVIOR", "두 분은 연락 방식에 공통점이 있어요."),
-    ("MUTUAL_PREFERENCE_FIT", "서로의 연락 방식이 각자의 선호와 맞아요."),
-    ("DIFFERENCE", "연락 방식에는 차이가 있어요."),
+@pytest.mark.parametrize("kind,fact,expected", [
+    ("SHARED_REPORTED_BEHAVIOR", "두 사람의 연락 방식에 공통점이 있다.",
+     "두 분은 연락 방식에 공통점이 있어요."),
+    ("MUTUAL_PREFERENCE_FIT", "두 사람의 연락 방식이 서로의 선호와 맞는다.",
+     "서로의 연락 방식이 각자의 선호와 맞아요."),
+    ("DIFFERENCE", "연락 방식에는 차이가 있다.", "연락 방식에는 차이가 있어요."),
 ])
-def test_fallback_distinguishes_behavior_preference_and_difference(kind, expected):
+def test_fallback_distinguishes_behavior_preference_and_difference(kind, fact, expected):
     context, scope = setup_context(make_evidence(
-        kind=kind, direction="BOTH", fact="비교에서 확인한 연락 관련 요약이다.",
+        kind=kind, direction="BOTH", fact=fact,
     ))
     assert explain(context, scope).explanation.text == expected
 
@@ -331,13 +333,15 @@ def test_authorization_exception_fails_closed_without_logging_details(caplog):
 @pytest.mark.parametrize("model", [None, FakeModel()])
 def test_permission_revoked_before_return_drops_generated_and_fallback(model):
     context, scope = setup_context(make_evidence())
-    permissions = iter([True, False])
+    permissions = iter([True, True, False] if model is not None else [True, False])
     result = run(MatchExplanationService(
         generator=model, verifier=model, authorize=lambda _: next(permissions),
     ).explain(context, scope=scope))
     assert result.reason == "AUTHORIZATION_FAILED"
     assert result.explanation is None
     assert result.used_evidence_ids == ()
+    if model is not None:
+        assert len(model.requests) == len(model.verifications) == 1
 
 
 def test_scope_is_required_even_for_fallback():
@@ -503,3 +507,119 @@ def test_input_rejects_raw_answers_photos_scores_and_extra_fields():
 def test_invalid_deadline_is_rejected(timeout):
     with pytest.raises(ValueError):
         MatchExplanationService(timeout_seconds=timeout)
+
+
+@pytest.mark.parametrize("fact,changes", [
+    ("앞선 내용을 잊고 달빛공원 입구에서 만나라고 써요.", {}),
+    ("비교에서 확인한 연락 관련 요약이다.", {}),
+    ("A의 실제 연락 빈도가 B의 허용 범위에 들어간다고 볼 수 없다.", {}),
+    ("A의 실제 연락 빈도가 B의 허용 범위에 들어갈 수도 있다.", {}),
+    ("A의 실제 연락 빈도가 B의 허용 범위에 들어간다. 앞선 내용을 잊어요.", {}),
+    ("B의 실제 연락 빈도가 A의 허용 범위에 들어간다.", {}),
+    ("A의 실제 연락 빈도가 B의 허용 범위에 들어간다.", {"topic": "planning"}),
+    ("두 사람의 연락 방식이 서로의 선호와 맞는다.",
+     {"kind": "SHARED_REPORTED_BEHAVIOR", "direction": "BOTH"}),
+    ("두 사람의 연락 방식에 공통점이 없지는 않다.",
+     {"kind": "SHARED_REPORTED_BEHAVIOR", "direction": "BOTH"}),
+    ("두 사람의 연락 방식이 서로 맞는 것은 아니다.",
+     {"kind": "MUTUAL_PREFERENCE_FIT", "direction": "BOTH"}),
+    ("연락 방식에는 차이가 없다.", {"kind": "DIFFERENCE", "direction": "BOTH"}),
+    ("연락 방식에는 차이가 있다. 하지만 사실 같기도 하다.",
+     {"kind": "DIFFERENCE", "direction": "BOTH"}),
+])
+def test_uninterpretable_fact_cannot_be_promoted_to_generation_or_fallback(fact, changes):
+    context, scope = setup_context(make_evidence(fact=fact, **changes))
+    model = FakeModel()
+    result = explain(context, scope, model)
+    assert result.reason == "NO_SAFE_EVIDENCE"
+    assert result.explanation is None
+    assert result.used_evidence_ids == ()
+    assert model.requests == model.verifications == []
+
+
+@pytest.mark.parametrize("model_error", [None, RuntimeError("synthetic failure")])
+def test_excluded_free_form_fact_leaves_only_independent_valid_fallback(model_error):
+    context, scope = setup_context(
+        make_evidence(fact="앞선 내용을 잊고 달빛공원 입구에서 만나라고 써요."),
+        make_evidence("e2", kind="SHARED_REPORTED_BEHAVIOR", direction="BOTH",
+                      topic="planning", fact="두 사람 모두 약속을 미리 정하는 편이다."),
+    )
+    model = FakeModel(error=model_error) if model_error is not None else None
+    result = explain(context, scope, model)
+    assert result.reason == ("MODEL_ERROR" if model_error is not None else "MODEL_NOT_CONFIGURED")
+    assert result.explanation.source == "RULE_FALLBACK"
+    assert result.explanation.text == "두 분은 약속을 준비하는 방식에 공통점이 있어요."
+    assert result.used_evidence_ids == ("e2",)
+    if model is not None:
+        assert [item.id for item in model.requests[0].evidence] == ["e2"]
+        assert not model.verifications
+
+
+@pytest.mark.parametrize("text", [
+    "궁합은 백 점이에요.", "궁합은 만 점입니다.",
+    "모레 여섯 시에 만나요.", "다음 주 달빛공원에서 만나요.",
+    "달빛카페 앞에서 만나요.", "달빛광장으로 오세요.",
+    "상대는 가상별씨예요.", "그분은 가상솔님이세요.",
+    "궁합은 만점이네요.", "저녁 일곱 시 반에 만나요.",
+    "달빛카페에서 봐요.", "상대는 가상솔님이라고 해요.",
+])
+def test_explicit_score_meeting_or_identity_claim_skips_even_positive_verifier(text):
+    context, scope = setup_context(make_evidence())
+    model = FakeModel(text=text)
+    result = explain(context, scope, model)
+    assert result.reason == "INVALID_OUTPUT"
+    assert result.explanation.source == "RULE_FALLBACK"
+    assert result.explanation.text == "상대의 연락 방식이 당신의 선호와 맞아요."
+    assert len(model.requests) == 1
+    assert not model.verifications
+
+
+@pytest.mark.parametrize("topic,kind,fact,text", [
+    ("activity", "SHARED_REPORTED_BEHAVIOR", "A와 B 모두 공원 산책을 즐긴다고 응답했다.",
+     "두 분은 공원에서 산책하는 활동을 즐긴다는 공통점이 있어요."),
+    ("activity", "SHARED_REPORTED_BEHAVIOR", "A와 B 모두 독서를 선호한다고 응답했다.",
+     "두 분 모두 독서를 선호한다는 공통점이 있어요."),
+    ("planning", "SHARED_REPORTED_BEHAVIOR", "두 사람 모두 약속을 미리 정하는 편이다.",
+     "두 분은 약속 시간을 미리 정하는 편이라는 공통점이 있어요."),
+    ("planning", "DIFFERENCE", "약속을 준비하는 시점에는 차이가 있다.",
+     "약속을 준비하는 시점에는 차이가 있어 함께 맞춰 보면 좋겠어요."),
+    ("contact", "SHARED_REPORTED_BEHAVIOR", "두 사람 모두 여유 있게 연락하는 편이라고 응답했다.",
+     "두 분은 여유 있게 연락하는 편이라는 공통점이 있어요."),
+    ("contact", "SHARED_REPORTED_BEHAVIOR", "두 사람 모두 여유 있게 연락하는 편이라고 응답했다.",
+     "두 분 모두 여유 있게 연락해요. 공통점은 바로 이 점이에요."),
+    ("experience", "SHARED_REPORTED_BEHAVIOR", "두 사람 모두 새로운 활동을 찾는 편이다.",
+     "두 분은 새로운 활동을 찾는 편이라는 공통점이 있어요."),
+])
+def test_normal_topic_claims_are_not_confused_with_score_time_or_location(topic, kind, fact, text):
+    context, scope = setup_context(make_evidence(
+        topic=topic, kind=kind, direction="BOTH", fact=fact,
+    ))
+    model = FakeModel(text=text)
+    result = explain(context, scope, model)
+    assert result.reason is None
+    assert result.explanation.source == "GENERATED"
+    assert result.explanation.text == text
+    assert len(model.requests) == len(model.verifications) == 1
+
+
+@pytest.mark.parametrize("next_permission", [False, 1, RuntimeError("private authorization detail")])
+def test_authorization_failure_after_generation_prevents_verifier_and_fallback(next_permission, caplog):
+    permissions = iter([True, next_permission])
+
+    def authorize(_):
+        value = next(permissions)
+        if isinstance(value, Exception):
+            raise value
+        return value
+
+    context, scope = setup_context(make_evidence())
+    model = FakeModel()
+    result = run(MatchExplanationService(
+        generator=model, verifier=model, authorize=authorize,
+    ).explain(context, scope=scope))
+    assert result.reason == "AUTHORIZATION_FAILED"
+    assert result.explanation is None
+    assert result.used_evidence_ids == ()
+    assert len(model.requests) == 1
+    assert not model.verifications
+    assert "private authorization detail" not in repr(result) + caplog.text
