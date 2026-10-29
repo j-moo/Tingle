@@ -86,7 +86,7 @@ class RefreshTokenLegacyMigrationTest {
 	}
 
 	private void migrate(DriverManagerDataSource source) throws Exception {
-		String sql = Files.readString(Path.of("../docs/database/refresh-token-151-migration.sql"),
+		String sql = Files.readString(Path.of("database/refresh-token-151-migration.sql"),
 			StandardCharsets.UTF_8);
 		try (var connection = source.getConnection(); var statement = connection.createStatement()) {
 			statement.execute(sql);

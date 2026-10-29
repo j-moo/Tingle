@@ -25,7 +25,7 @@ import lombok.NoArgsConstructor;
  *   <li>이 클래스: 필드(@Column)와 change 메서드, 필수 항목이면 hasRequiredFields()</li>
  *   <li>ProfileService: FIELDS 에 이름 추가, patch 에 그 필드를 읽는 한 줄(필요하면 ProfileRules 에 검증 규칙)</li>
  *   <li>ProfileResponse: 응답 필드</li>
- *   <li>docs/contracts/api/auth.md 프로필 표, 팀 ERD</li>
+ *   <li>팀 공유 인증 API 계약 프로필 표, 팀 ERD</li>
  * </ol>
  * 컬럼 추가는 JPA가 자동으로 하지만, 컬럼 삭제·이름 변경은 공유 DB에서 직접 확인하고 팀원에게 공유한다(컨벤션 [db-schema]).
  */

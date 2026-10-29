@@ -18,7 +18,7 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 
 /**
- * 약관 조회와 동의. 경로는 docs/contracts/api/auth.md 를 따른다.
+ * 약관 조회와 동의. 경로는 팀 공유 인증 API 계약 를 따른다.
  */
 @RestController
 @RequiredArgsConstructor

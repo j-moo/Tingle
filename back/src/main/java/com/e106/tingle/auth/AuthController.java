@@ -17,7 +17,7 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 
 /**
- * 인증 API. 요청·응답 형식은 docs/contracts/api/auth.md 를 따른다.
+ * 인증 API. 요청·응답 형식은 팀 공유 인증 API 계약 를 따른다.
  */
 @RestController
 @RequestMapping("/api/auth")

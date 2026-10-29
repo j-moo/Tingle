@@ -3,8 +3,8 @@
 // MR 은 검사로 끝나고 결과가 GitLab MR 에 파트별로 표시된다. develop · master 에 push(머지)되면 검사 뒤 각 환경에 배포한다 (인프라 계획 6절).
 
 def PARTS = [back: 'back/', ai: 'ai-server/', web: 'front/web/', app: 'front/app/', iot: 'iot/']
-// AI 테스트가 읽는 docs 원본이 바뀌어도 회귀 검사를 실행한다.
-def AI_TEST_INPUTS = ['docs/handoffs/survey-20261021/mockup/dist/', 'docs/contracts/survey/questionnaire-SIS-Q-1.1-100.json']
+// AI 테스트가 읽는 참조 원본이 바뀌어도 회귀 검사를 실행한다.
+def AI_TEST_INPUTS = ['ai-server/reference/survey-20261021/mockup/dist/', 'ai-server/reference/survey-20261021/questionnaire-SIS-Q-1.1-100.json']
 // 브랜치별 배포: 코드를 dir 에 풀고 services(infra/docker-compose.yml 서비스 이름 → 응답 확인 주소)만 다시 띄운다.
 // bluegreen 은 infra/deploy-bluegreen.sh 로 무중단 전환한다 (운영 back · ai). ai 를 먼저 바꾼다 — 새 ai 가 옛 back 요청도 받아야 한다 (인프라 계획 7절).
 // back 확인은 Actuator — DB 연결까지 정상이면 200, 아니면 503. ai 는 /health.

@@ -40,7 +40,7 @@ class MemberAccessReadinessPersistenceTest {
 	static void createDisposableCanonicalSchema() {
 		DriverManagerDataSource source = new DriverManagerDataSource(POSTGRES.getJdbcUrl(),
 			POSTGRES.getUsername(), POSTGRES.getPassword());
-		new ResourceDatabasePopulator(new FileSystemResource("../docs/database/schema.sql")).execute(source);
+		new ResourceDatabasePopulator(new FileSystemResource("database/schema.sql")).execute(source);
 		jdbc = new JdbcTemplate(source);
 		MockEnvironment environment = new MockEnvironment();
 		for (int index = 0; index < REQUIRED.size(); index++) {

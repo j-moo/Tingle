@@ -18,7 +18,7 @@ import lombok.RequiredArgsConstructor;
 import tools.jackson.databind.JsonNode;
 
 /**
- * 가입 단계 조회, 본인 프로필, 닉네임 확인. 경로는 docs/contracts/api/auth.md 를 따른다.
+ * 가입 단계 조회, 본인 프로필, 닉네임 확인. 경로는 팀 공유 인증 API 계약 를 따른다.
  * 경로의 {userId}가 로그인한 회원인지는 UserPathInterceptor 가 먼저 확인하므로 여기서는 토큰의 회원번호를 쓴다.
  */
 @RestController

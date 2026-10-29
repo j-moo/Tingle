@@ -50,7 +50,7 @@ management:
       show-details: never
 
 app:
-  # 인증 (docs/contracts/api/auth.md)
+  # 인증 (팀 공유 인증 API 계약)
   auth:
     jwt-secret: ${JWT_SECRET:}
     access-token-ttl: 30m

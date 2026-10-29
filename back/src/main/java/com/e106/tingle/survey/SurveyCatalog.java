@@ -22,7 +22,7 @@ import tools.jackson.databind.json.JsonMapper;
 /**
  * 버전별 설문 정의 파일(resources/survey/questionnaires/*.json)을 읽어 둔다.
  * 시작한 회차는 버전 문자열(version_code)로 정의를 고정하므로, 현재 버전을 바꿔도 과거 파일은 지우지 않는다.
- * 원본은 docs/contracts/survey/ 이고 같은 내용이어야 한다(SurveyCatalogTest 가 확인).
+ * 원본은 ai-server/reference/survey-20261021/ 이고 같은 내용이어야 한다(SurveyCatalogTest 가 확인).
  */
 @Component
 public class SurveyCatalog {

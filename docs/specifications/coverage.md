@@ -2,7 +2,7 @@
 
 수정 2026-10-22. 기존24개 기능의 API 대응을 최신화했으며 현재25테이블185컬럼이다. 최신 기능 명세 전체에 대한 설계 완료를 뜻하지 않는다. 구현·통합·출시 완료 표시가 아니다. 관리자9개·사진 처리 조회1개 및 통합 signup은 제외/폐기. 인증 연락 동기화 2026-10-21 14:16 KST.
 
-[API](../contracts/api/README.md) / [ERD](../database/erd.md)
+[API](https://lab.ssafy.com/s15-final/S15P31E106/-/blob/934732229f83885faf0f0379d0e092c8a7605dbb/docs/contracts/api/README.md) / [ERD](https://lab.ssafy.com/s15-final/S15P31E106/-/blob/934732229f83885faf0f0379d0e092c8a7605dbb/docs/database/erd.md)
 
 | 기능 ID | 현재 operationId | 저장 테이블 |
 | --- | --- | --- |

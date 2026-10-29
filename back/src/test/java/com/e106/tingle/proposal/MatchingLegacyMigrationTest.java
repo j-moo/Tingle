@@ -166,7 +166,7 @@ class MatchingLegacyMigrationTest {
 	@Test
 	void preservesTemporarySourcesInTheSamePhysicalConnection() throws Exception {
 		seed(1, 2);
-		String sql = Files.readString(Path.of("../docs/database/matching-175-migration.sql"));
+		String sql = Files.readString(Path.of("database/matching-175-migration.sql"));
 		try (Connection connection = source.getConnection()) {
 			JdbcTemplate session = new JdbcTemplate(new SingleConnectionDataSource(connection, true));
 			for (String name : List.of("user_pairs", "encounters", "encounter_submissions", "match_proposals",
@@ -209,7 +209,7 @@ class MatchingLegacyMigrationTest {
 	}
 
 	private void migrate(boolean shadowFirst) throws Exception {
-		String sql = Files.readString(Path.of("../docs/database/matching-175-migration.sql"));
+		String sql = Files.readString(Path.of("database/matching-175-migration.sql"));
 		try (Connection connection = source.getConnection(); Statement statement = connection.createStatement()) {
 			if (shadowFirst) {
 				statement.execute("set search_path to shadow,public");

@@ -51,7 +51,7 @@ class ChatLegacyMigrationTest {
 		// This database exists only inside the test container above.
 		jdbc.execute("drop schema public cascade");
 		jdbc.execute("create schema public");
-		new ResourceDatabasePopulator(new FileSystemResource("../docs/database/schema.sql")).execute(source);
+		new ResourceDatabasePopulator(new FileSystemResource("database/schema.sql")).execute(source);
 		jdbc.execute("drop table chat_message");
 		jdbc.execute("drop table chat_participant");
 		jdbc.execute("drop table chat");
@@ -181,7 +181,7 @@ class ChatLegacyMigrationTest {
 			Timestamp.from(CREATED.plusSeconds(168 * 3600)));
 		try (Connection connection = source.getConnection(); Statement statement = connection.createStatement()) {
 			statement.execute("set search_path to shadow,public");
-			statement.execute(Files.readString(Path.of("../docs/database/chat-175-migration.sql")));
+			statement.execute(Files.readString(Path.of("database/chat-175-migration.sql")));
 		}
 		assertThat(jdbc.queryForObject("select count(*) from public.chat", Integer.class)).isEqualTo(1);
 		assertThat(jdbc.queryForObject("select public_id from shadow.chat_rooms", UUID.class)).isEqualTo(shadowUuid);
@@ -203,7 +203,7 @@ class ChatLegacyMigrationTest {
 				temporary.setTimestamp(3, Timestamp.from(CREATED.plusSeconds(168 * 3600)));
 				temporary.executeUpdate();
 			}
-			statement.execute(Files.readString(Path.of("../docs/database/chat-175-migration.sql")));
+			statement.execute(Files.readString(Path.of("database/chat-175-migration.sql")));
 			try (var rows = statement.executeQuery("select public_id from pg_temp.chat_rooms")) {
 				assertThat(rows.next()).isTrue();
 				assertThat(rows.getObject(1, UUID.class)).isEqualTo(temporaryUuid);
@@ -254,7 +254,7 @@ class ChatLegacyMigrationTest {
 
 	private void migrate() throws Exception {
 		try (Connection connection = source.getConnection(); Statement statement = connection.createStatement()) {
-			statement.execute(Files.readString(Path.of("../docs/database/chat-175-migration.sql")));
+			statement.execute(Files.readString(Path.of("database/chat-175-migration.sql")));
 		}
 	}
 
