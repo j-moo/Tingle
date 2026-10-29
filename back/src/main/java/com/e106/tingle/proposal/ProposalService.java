@@ -57,6 +57,9 @@ public class ProposalService {
 	@Transactional(readOnly = true)
 	public ProposalView get(long id, long userId) {
 		Owned owned = findOwned(id, userId);
+		if (restricted(owned.pair())) {
+			throw new BusinessException(ErrorCode.PROPOSAL_EXPIRED);
+		}
 		return view(owned.proposal(), owned.pair(), userId);
 	}
 
