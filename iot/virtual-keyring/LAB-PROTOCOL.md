@@ -4,7 +4,7 @@
 
 ## 계약과 최신 요청의 관계
 
-기능 명세 `docs/specifications/functional-spec-v1.md`, 통신 계약 `docs/contracts/iot/protocol-contract-v1.md`, 데이터 구조 `docs/contracts/iot/keyring-data-structures-v1.md`의 입력 필드·설정·저장 원본을 참고한다. 하지만 최신 사용자 요청은 **데이터 송수신 외 모든 처리는 각 기기가 독립 수행하고 매칭 후 근접 재확인을 제거**하는 것이다.
+작성 당시 기능 명세 `docs/specifications/functional-spec-v1.md`와 현재 [키링 통합 문서의 통신 명세](../KEYRING-SPEC.md#protocol)·[데이터 구조](../KEYRING-SPEC.md#data-structures)의 입력 필드·설정·저장 원본을 참고한다. 하지만 최신 사용자 요청은 **데이터 송수신 외 모든 처리는 각 기기가 독립 수행하고 매칭 후 근접 재확인을 제거**하는 것이다.
 
 따라서 0.13은 원래 공통 이벤트·양쪽 저장 확인의 계약을 충족한다고 표시하지 않는다. 팀 문서는 변경하지 않는다. 새 이벤트는 내 관측 기록이며 `peerStorageVerified=false`, `productionUploadAllowed=false`다. 동일 이벤트를 양쪽에서 합의하는 서비스 연동이 필요해지면 별도 계약 검토가 필요하다. 수신 한 번으로 상대 판정·상대 저장까지 완료됐다고 추정하지 않는다.
 
