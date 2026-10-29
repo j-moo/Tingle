@@ -38,6 +38,12 @@ public class MatchingPreference {
 	@Column(name = "photo_required", nullable = false)
 	private Boolean photoRequired;
 
+	/** 공용 user_setting 행을 잠근 트랜잭션에서 사진·매칭 옵션만 바꾼다. */
+	public void changeMatchingOptions(boolean matchingEnabled, boolean photoRequired) {
+		this.matchingEnabled = matchingEnabled;
+		this.photoRequired = photoRequired;
+	}
+
 	void changeAge(PreferencesRequest request) {
 		agePreferenceMode = request.desiredAgeMode() == AgePreferenceMode.RANGE;
 		minAge = request.desiredAgeMin();

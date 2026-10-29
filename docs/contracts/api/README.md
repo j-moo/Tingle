@@ -1,6 +1,6 @@
 # Tingle(팅글) API 명세서
 
-1.4.2-common-storage-preservation-review / 2026-10-28
+1.4.3-settings-71-review / 2026-10-29
 
 151 사용자 결정: 회원 상태 `users.status`·생성 시각 `created_at`과 기존 `user_consents`의 항목별 동의·철회·버전 이력을 보존한다. 175 사용자 결정에 따라 업무별 영속 증거를 전용 컬럼에 보완한 현재 설계는 **22개 테이블·176개 컬럼·36개 논리 관계**이며, 과거 이력으로 `users.agreed_at`을 추정하지 않는다. 아래 원본 21개·151컬럼과 푸시 보완 21개·153컬럼 기록은 각 당시 기준이다. 공유 DB 적용은 별도다.
 
@@ -16,6 +16,16 @@
 - [ERD·컬럼 설명](../../database/erd.md), [로컬 설계 SQL](../../database/schema.sql), [21개 구조 검증](../../verification/erd21-alignment-20261028.md)
 - [설문](survey-sessions.md), [설문 파일 버전](../survey/versioning.md), [만남·제안](encounters-proposals.md), [채팅](chat.md), [안내](chat-notices.md), [AI 설명](ai-match-explanation.md)
 - [기존 노션 API 명세서](https://app.notion.com/p/API-4a2c91ccb660820793de81b259578314), [인증 확인 사항](auth-recheck.md)
+
+## 본인 매칭 설정
+
+`GET/PUT /api/users/{userId}/settings`는 본인의 매칭 사용 여부와 상대 사진 필수 옵션을 조회·저장한다. 필드·타입·정상/오류 예시는 [OpenAPI](openapi.json)를 따른다. `matchingEnabled`와 `requirePartnerPhoto`는 `matching_preference.matching_enabled`와 `photo_required`, 공용 `settingsVersion`은 `user_setting.settings_version`에 대응한다.
+
+JWT 회원과 경로 userId가 다르면 403 FORBIDDEN이다. 접근 단계는 `OnboardingService.canAccess(PREFERENCES_REQUIRED)`를 재사용하며 가입 완료 회원 예외를 포함한다. PUT은 두 boolean 키를 모두 요구하고 생략·null·문자열·숫자·추가 키는 400 INVALID_REQUEST로 거부한다. 없는 설정 행이나 잘못된 버전을 기본값으로 복구하지 않고 503 SERVICE_UNAVAILABLE로 처리한다.
+
+조회는 희망 조건 API와 같은 설정 행을 읽기 잠금으로, 저장은 쓰기 잠금으로 보호한다. ETag는 공용 버전의 따옴표 포함 10진수이며, PUT의 If-Match 누락은 428, 현재 버전과 불일치는 412다. 성공한 PUT은 동일한 옵션으로 저장해도 공유 버전을 1 증가한다. 응답은 `Cache-Control: no-store`를 사용한다.
+
+기존 기기 ACK·진동/LED·희망 나이·제안 상태와 기한을 보존한다. 설정 저장은 기기 반영 완료가 아니며, 현재 설정 버전과 실제 ACK의 차이로 재동기화 대기를 판단한다. 실제 매칭 계산과 기기 등록·동기화·서명 ACK의 규격은 각 해당 계약을 따른다.
 
 ## 2026-10-28 ERD21 담당 정합화
 
