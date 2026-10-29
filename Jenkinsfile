@@ -3,6 +3,8 @@
 // MR 은 검사로 끝나고 결과가 GitLab MR 에 파트별로 표시된다. develop · master 에 push(머지)되면 검사 뒤 각 환경에 배포한다 (인프라 계획 6절).
 
 def PARTS = [back: 'back/', ai: 'ai-server/', web: 'front/web/', app: 'front/app/', iot: 'iot/']
+// AI 테스트가 읽는 docs 원본이 바뀌어도 회귀 검사를 실행한다.
+def AI_TEST_INPUTS = ['docs/handoffs/survey-20261021/mockup/dist/', 'docs/contracts/survey/questionnaire-SIS-Q-1.1-100.json']
 // 브랜치별 배포: 코드를 dir 에 풀고 services(infra/docker-compose.yml 서비스 이름 → 응답 확인 주소)만 다시 띄운다.
 // bluegreen 은 infra/deploy-bluegreen.sh 로 무중단 전환한다 (운영 back · ai). ai 를 먼저 바꾼다 — 새 ai 가 옛 back 요청도 받아야 한다 (인프라 계획 7절).
 // back 확인은 Actuator — DB 연결까지 정상이면 200, 아니면 503. ai 는 /health.
@@ -45,6 +47,9 @@ pipeline {
           ''').trim().readLines()
           // Jenkinsfile 이 바뀌면 검사 방법이 바뀐 것이므로 전부 돌린다.
           changed = files.contains('Jenkinsfile') ? PARTS.keySet() as List : PARTS.findAll { k, dir -> files.any { it.startsWith(dir) } }.keySet() as List
+          if (!('ai' in changed) && files.any { file -> AI_TEST_INPUTS.any { path -> path.endsWith('/') ? file.startsWith(path) : file == path } }) {
+            changed.add('ai')
+          }
           echo "검사할 파트: ${changed ?: '없음'}"
         }
       }
@@ -65,11 +70,11 @@ pipeline {
           when { expression { 'ai' in changed } }
           steps {
             gitlabCommitStatus(name: 'ai') {
-              // ai 테스트는 JS 참조 구현과 결과를 비교하므로 Node.js 가 필요하다 (tests/conftest.py, 데비안 패키지 Node 20).
+              // pytest, tests/node 회귀, JS/Python parity를 공통 실행기로 검사한다. 기존 Node 설치를 유지한다.
               inDocker('python:3.12-slim', 'ai-server', '-v tingle-ci-pip:/root/.cache/pip', '''
 apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends nodejs >/dev/null
 pip install -q --root-user-action=ignore -r requirements.txt
-python -m pytest -q
+python scripts/run_tests.py
 ''')
             }
           }
