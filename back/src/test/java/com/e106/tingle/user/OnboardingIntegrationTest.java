@@ -247,7 +247,7 @@ class OnboardingIntegrationTest extends IntegrationTestSupport {
 		perform(get(me(tokens, "/profile")), tokens, null).andExpect(status().isOk())
 			.andExpect(jsonPath("$.completed").value(false))
 			.andExpect(jsonPath("$.hasProfilePhoto").value(false))
-			.andExpect(jsonPath("$.imageUrl").value(nullValue()))
+			.andExpect(jsonPath("$.imageUrl").doesNotExist())
 			.andExpect(jsonPath("$.nickname").value(nullValue()));
 	}
 

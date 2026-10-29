@@ -324,7 +324,7 @@ CREATE TABLE "profile" (
     "completed_at" timestamptz,
     "active_personality_id" bigint,
     CONSTRAINT "pk_profile" PRIMARY KEY ("user_id"),
-    CONSTRAINT ck_profile_photo_url CHECK (photo_url IS NULL OR (photo_url LIKE 'https://%' AND position('?' in photo_url)=0))
+    CONSTRAINT ck_profile_photo_url CHECK (photo_url IS NULL OR photo_url ~ '^profile/[0-9]+/[0-9a-f-]{36}\.jpg$')
 );
 COMMENT ON TABLE "profile" IS '프로필';
 COMMENT ON COLUMN "profile"."user_id" IS '회원 ID — 프로필 소유 회원 ID';
@@ -335,7 +335,7 @@ COMMENT ON COLUMN "profile"."smoking_status" IS '흡연 여부 — 필수 흡연
 COMMENT ON COLUMN "profile"."drinking_frequency" IS '음주 빈도 — 필수 음주 빈도 선택 코드';
 COMMENT ON COLUMN "profile"."religion" IS '종교 — 별도 동의를 받은 선택 종교 정보. 비공개·미입력을 무교로 추정하지 않음';
 COMMENT ON COLUMN "profile"."introduction" IS '자기소개 — 선택 자기소개. 최대 200자·줄바꿈 최대 3개 등 명세 기준 적용';
-COMMENT ON COLUMN "profile"."photo_url" IS '프로필 사진 주소 — NULL이면 사진 없음(hasProfilePhoto = 이 칸이 비어 있지 않음). 저장 전 서버 검증: (1) https:// 로 시작 (2) 우리 사진 저장소 주소(서버 설정 파일의 허용 주소)로 시작 (3) 그 안에서도 이 회원 폴더(profile/{userId}/)만 허용해 남의 사진 주소 도용 차단 (4) ? 가 붙은 주소 거부 = 금방 만료되는 서명 URL 저장 금지 (5) 2048자 이하, 빈 문자열·공백 거부(삭제는 사진 삭제 API로). 위반이면 400 PHOTO_URL_INVALID, 기존 사진 유지. DB에도 같은 안전장치(CHECK 제약): NULL이거나, https:// 로 시작하고 ? 가 없어야 저장됨. 삭제하면 NULL로 바꾸고(반복 삭제도 204) 저장소 파일은 정리 작업이 따로 지움. 탈퇴 시 파일도 삭제. 상대 사진 조회에서 NULL이면 410. 이미지 용량: 앱이 올리기 전에 1080×1080 이하로 줄이고 WebP(품질 80)로 바꿔 보통 300KB 안팎, 업로드 주소 발급 때 최대 1MB로 제한(넘으면 저장소가 업로드 거부)';
+COMMENT ON COLUMN "profile"."photo_url" IS '프로필 사진 파일 키 — NULL이면 사진 없음(hasProfilePhoto = 이 칸이 비어 있지 않음). 서버 디스크 사진 폴더(설정 tingle.photo.dir) 기준 키 profile/{userId}/{uuid}.jpg 만 저장(절대 경로·URL 아님, CHECK 제약으로 형식 강제). 서버가 받은 JPEG/PNG/WebP(최대 10MB)를 EXIF 방향 적용·가운데 정사각형·최대 1080px·JPEG(품질 85)로 바꿔 메타데이터 없이 저장. 새로 올리면 새 파일을 쓰고 이 칸을 바꾼 뒤 이전 파일 삭제, 삭제 API는 NULL로 바꾸고 파일도 삭제(반복 삭제도 204). 키는 응답에 내보내지 않고, 사진은 본인 사진 조회·상대 사진 조회(partner-photo) API가 권한 확인 뒤 바이트로만 전달. 상대 사진 조회에서 NULL이면 410 PHOTO_REMOVED';
 COMMENT ON COLUMN "profile"."completed_at" IS '프로필 완료 시각 — 프로필 최종 등록 성공 시각. 초안 저장 시에는 설정하지 않음';
 COMMENT ON COLUMN "profile"."active_personality_id" IS '적용 중인 분석 ID — 현재 새 매칭에 적용하는 유효 분석 결과 ID. 재검사 대기·실패 중에는 기존 값 유지';
 CREATE UNIQUE INDEX "uq_profile_nickname_lower" ON "profile" (lower(nickname));

@@ -132,7 +132,7 @@ class CommonUserProfilePersistenceTest {
 	void readsOneCanonicalProfileThroughBothMappings() {
 		long id = user();
 		String nickname = "Original" + id;
-		String photo = "https://photos.example/profile/" + id + "/photo.webp";
+		String photo = "profile/" + id + "/" + java.util.UUID.randomUUID() + ".jpg";
 		jdbc.update("insert into profile(user_id,nickname,gender,smoking_status,drinking_frequency,religion,"
 			+ "photo_url,active_personality_id) values (?,?,'MALE','NON_SMOKER','NEVER','UNDISCLOSED',?,91)",
 			id, nickname, photo);

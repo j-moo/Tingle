@@ -68,7 +68,7 @@ public class Profile {
 	@Column(columnDefinition = "text")
 	private String introduction;
 
-	// 현재 프로필 사진의 저장소 주소. 사진 API가 생기면 채운다.
+	// 현재 프로필 사진의 서버 파일 키(profile/{userId}/{uuid}.jpg). 주소가 아니며 응답에 그대로 내보내지 않는다.
 	@Column(name = "photo_url", length = 2048)
 	private String imageUrl;
 
@@ -122,5 +122,9 @@ public class Profile {
 
 	void changeIntroduction(String introduction) {
 		this.introduction = introduction;
+	}
+
+	void changeImageUrl(String imageUrl) {
+		this.imageUrl = imageUrl;
 	}
 }
