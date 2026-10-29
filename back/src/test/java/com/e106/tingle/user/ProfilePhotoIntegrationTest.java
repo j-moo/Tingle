@@ -16,8 +16,11 @@ import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.Base64;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 import javax.imageio.ImageIO;
@@ -210,6 +213,23 @@ class ProfilePhotoIntegrationTest extends IntegrationTestSupport {
 		jdbc.update("update chat_participant set left_at=now() where chat_id=? and user_id=?", roomId, myId);
 		perform(get(roomPhoto), me, null).andExpect(status().isGone())
 			.andExpect(jsonPath("$.code").value("CHAT_CLOSED"));
+	}
+
+	@Test
+	@DisplayName("만 19세 미만으로 즉시 탈퇴하면 올려 둔 사진 파일도 지운다")
+	void underAgeWithdrawalDeletesPhotoFile() throws Exception {
+		JsonNode minor = login("google", newSocialId());
+		agree(minor).andExpect(status().isOk());
+		upload(minor, image("jpg", 100, 100, BufferedImage.TYPE_INT_RGB)).andExpect(status().isOk());
+		String key = photoKey(minor);
+		assertThat(photoDir.resolve(key)).exists();
+
+		String eighteen = LocalDate.now(ZoneId.of("Asia/Seoul")).minusYears(19).plusDays(1).toString();
+		patchProfile(minor, Map.of("birthDate", eighteen)).andExpect(status().isForbidden())
+			.andExpect(jsonPath("$.code").value("UNDER_AGE"));
+		assertThat(photoDir.resolve(key)).doesNotExist();
+		assertThat(jdbc.queryForObject("select count(*) from profile where user_id=?", Integer.class,
+			userIdOf(minor))).isZero();
 	}
 
 	private ResultActions upload(JsonNode tokens, byte[] bytes) throws Exception {
