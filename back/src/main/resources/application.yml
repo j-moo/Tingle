@@ -17,6 +17,11 @@ spring:
     url: ${SPRING_DATASOURCE_URL:}
     username: ${SPRING_DATASOURCE_USERNAME:}
     password: ${SPRING_DATASOURCE_PASSWORD:}
+  servlet:
+    multipart:
+      # 프로필 사진 원본 최대 10MB. 넘으면 400 PHOTO_INVALID (서비스도 같은 한도를 다시 확인한다).
+      max-file-size: 10MB
+      max-request-size: 11MB
   web:
     resources:
       # 앱 전용 JSON API 서버라 정적 파일(HTML·이미지)을 내보내지 않는다. 없는 경로는 JSON 404로 응답한다.
@@ -102,3 +107,9 @@ app:
   chat-notices:
     scheduling-enabled: true
     poll-ms: 15000
+
+tingle:
+  photo:
+    # 프로필 사진 파일을 두는 서버 폴더. DB(profile.photo_url)에는 이 폴더 기준 키(profile/{userId}/{uuid}.jpg)만 저장한다.
+    # 운영은 blue·green 컨테이너가 함께 쓰는 영구 볼륨을 지정하고 백업한다. 미설정이면 임시 폴더(로컬·테스트용).
+    dir: ${PHOTO_STORAGE_DIR:${java.io.tmpdir}/tingle-photos}

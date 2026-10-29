@@ -103,6 +103,14 @@ public class ChatService {
 		}
 	}
 
+	// 이용 가능한 채팅방의 참여자인지 확인하고 상대 회원 번호를 돌려준다(상대 사진). 나간·끝난 방은 CHAT_CLOSED.
+	@Transactional(readOnly = true)
+	public long partnerOf(long id, long userId) {
+		Owned owned = owned(rooms.findByPublicId(id).orElseThrow(this::notFound), userId);
+		requireAccess(owned);
+		return owned.pair().partnerOf(userId);
+	}
+
 	@Transactional(readOnly = true)
 	public ChatPage list(long userId, String cursor, int limit) {
 		requireAccount(userId);

@@ -97,6 +97,13 @@ public class ProposalService {
 
 	@Transactional(readOnly = true)
 	public PartnerProfileView profile(long id, long userId) {
+		PublicProfile profile = profiles.findById(partnerOf(id, userId)).orElseThrow(this::notFound);
+		return publicView(profile);
+	}
+
+	// 유효 제안의 당사자인지 확인하고 상대 회원 번호를 돌려준다(상대 프로필·상대 사진 공통 권한 확인).
+	@Transactional(readOnly = true)
+	public long partnerOf(long id, long userId) {
 		Owned owned = findOwned(id, userId);
 		MatchProposal proposal = owned.proposal();
 		MatchProposal.Status status = proposal.visibleStatus(participant(id, userId).decision(), clock.instant());
@@ -104,8 +111,7 @@ public class ProposalService {
 			|| restricted(owned.pair())) {
 			throw new BusinessException(ErrorCode.PROPOSAL_EXPIRED);
 		}
-		PublicProfile profile = profiles.findById(owned.pair().partnerOf(userId)).orElseThrow(this::notFound);
-		return publicView(profile);
+		return owned.pair().partnerOf(userId);
 	}
 
 	private PartnerProfileView publicView(PublicProfile profile) {
@@ -129,9 +135,10 @@ public class ProposalService {
 		} catch (NoSuchAlgorithmException exception) {
 			throw new IllegalStateException(exception);
 		}
+		// 사진 파일 키는 버전 계산에만 쓰고(사진을 바꾸면 버전이 바뀜) 응답에는 사진 유무만 넣는다.
 		return new PartnerProfileView(profile.getNickname(), age, profile.getGender(), profile.getIntroduction(),
-			profile.getSmokingStatus(), profile.getDrinkingFrequency(), religion, profile.getImageUrl(),
-			profile.getImageUrl() != null, version);
+			profile.getSmokingStatus(), profile.getDrinkingFrequency(), religion, profile.getImageUrl() != null,
+			version);
 	}
 
 	@Transactional(noRollbackFor = ExpiredProposalException.class)

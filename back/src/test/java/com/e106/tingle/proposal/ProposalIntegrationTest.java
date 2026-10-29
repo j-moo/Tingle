@@ -104,7 +104,8 @@ class ProposalIntegrationTest {
 		jdbc.update("insert into profile(user_id,nickname,birth_date,gender,smoking_status, "
 			+ "drinking_frequency,photo_url,completed_at,active_personality_id) "
 			+ "values (?,?,'2001-10-21','FEMALE','NON_SMOKER','NEVER',?,?,?)",
-			user, "산책친구" + user, "https://images.example.test/current.jpg", java.sql.Timestamp.from(NOW), user);
+			user, "산책친구" + user, "profile/" + user + "/" + UUID.randomUUID() + ".jpg",
+			java.sql.Timestamp.from(NOW), user);
 		Map<String, String> consents = Map.of("TERMS", "2026-10-19", "PRIVACY", "2026-10-19",
 			"AI_RISK_DETECTION", "2026-10-22", "ADULT", "2026-10-19");
 		consents.forEach((type, version) -> jdbc.update("insert into user_consents(user_id,consent_type,"
@@ -204,7 +205,7 @@ class ProposalIntegrationTest {
 	void readsLatestPhotoWithoutInvalidatingProposal() throws Exception {
 		jdbc.update("update profile set photo_url=null where user_id=2");
 		mvc.perform(get(path() + "/partner-profile").header("Authorization", bearer(1)))
-			.andExpect(status().isOk()).andExpect(jsonPath("$.imageUrl").isEmpty())
+			.andExpect(status().isOk()).andExpect(jsonPath("$.imageUrl").doesNotExist())
 			.andExpect(jsonPath("$.hasProfilePhoto").value(false));
 		decide(proposal.getId(), 1, "accept", UUID.randomUUID()).andExpect(status().isOk());
 	}

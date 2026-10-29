@@ -19,6 +19,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MaxUploadSizeExceededException;
 
 import com.e106.tingle.user.OnboardingService;
 
@@ -107,8 +108,21 @@ class GlobalExceptionHandlerTest {
 			.andExpect(jsonPath("$.code").value("NOT_FOUND"));
 	}
 
+	@Test
+	@DisplayName("업로드 한도 초과는 413 대신 400 PHOTO_INVALID로 응답한다")
+	void uploadLimitRespondsWithPhotoInvalid() throws Exception {
+		mockMvc.perform(get("/test/too-large"))
+			.andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.code").value("PHOTO_INVALID"));
+	}
+
 	@RestController
 	static class FailingController {
+
+		@GetMapping("/test/too-large")
+		void tooLarge() {
+			throw new MaxUploadSizeExceededException(10L * 1024 * 1024);
+		}
 
 		@GetMapping("/test/business")
 		void business() {

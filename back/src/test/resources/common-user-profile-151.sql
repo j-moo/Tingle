@@ -27,6 +27,6 @@ CREATE TABLE profile (
     photo_url varchar(2048),
     completed_at timestamptz,
     active_personality_id bigint,
-    CONSTRAINT ck_profile_photo_url CHECK (photo_url IS NULL OR (photo_url LIKE 'https://%' AND position('?' in photo_url)=0))
+    CONSTRAINT ck_profile_photo_url CHECK (photo_url IS NULL OR photo_url ~ '^profile/[0-9]+/[0-9a-f-]{36}\.jpg$')
 );
 CREATE UNIQUE INDEX uq_profile_nickname_lower ON profile(lower(nickname));

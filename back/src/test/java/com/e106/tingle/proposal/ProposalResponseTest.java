@@ -67,19 +67,18 @@ class ProposalResponseTest {
 	}
 
 	@Test
-	void returnsCurrentPhotoUrlWithoutLegacyOrInternalFields() throws Exception {
+	void returnsPhotoPresenceWithoutFileKeyOrInternalFields() throws Exception {
 		PublicProfile profile = profile();
-		when(profile.getImageUrl()).thenReturn("https://images.example.test/current.jpg");
+		when(profile.getImageUrl()).thenReturn("profile/2/7f3a9c2e-0000-4000-8000-000000000000.jpg");
 		var result = mvc.perform(get(profilePath()))
 			.andExpect(status().isOk())
 			.andExpect(header().string("Cache-Control", "no-store"))
-			.andExpect(jsonPath("$.imageUrl").value("https://images.example.test/current.jpg"))
 			.andExpect(jsonPath("$.hasProfilePhoto").value(true))
 			.andExpect(jsonPath("$.age").value(24))
 			.andReturn();
 		var body = mapper.readTree(result.getResponse().getContentAsString());
-		assertThat(body.size()).isEqualTo(10);
-		for (String field : List.of("profileImageId", "proposalId", "userId", "birthDate")) {
+		assertThat(body.size()).isEqualTo(9);
+		for (String field : List.of("imageUrl", "profileImageId", "proposalId", "userId", "birthDate")) {
 			assertThat(body.has(field)).as(field).isFalse();
 		}
 	}
@@ -91,10 +90,8 @@ class ProposalResponseTest {
 			.andExpect(status().isOk())
 			.andExpect(jsonPath("$.hasProfilePhoto").value(false)).andReturn();
 		var body = mapper.readTree(result.getResponse().getContentAsString());
-		for (String field : List.of("imageUrl", "introduction")) {
-			assertThat(body.has(field)).as(field).isTrue();
-			assertThat(body.get(field).isNull()).as(field).isTrue();
-		}
+		assertThat(body.has("introduction")).isTrue();
+		assertThat(body.get("introduction").isNull()).isTrue();
 	}
 
 	@Test
