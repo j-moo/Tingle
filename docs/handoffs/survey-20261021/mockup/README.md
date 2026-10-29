@@ -19,16 +19,19 @@ node preview.mjs
 
 ## 계산 검증
 
-같은 폴더에서 아래 네 명령을 실행한다.
+S15P31E106-181에서 실행형 테스트 4개와 전용 fixture 2개를 `ai-server/tests/`로 이관했다. 이 mockup 폴더에서는 아래 명령으로 Python 테스트·Node 회귀·JS parity 전체를 실행한다. Python 가상환경과 기존 `ai-server/requirements.txt` 설치가 필요하다.
 
 ~~~text
-node experience100.test.mjs
-node religion-tattoo.test.mjs
-node wording-age.test.mjs
-node type-reference.test.mjs
+python ../../../../ai-server/scripts/run_tests.py
 ~~~
 
-wording-age와 type-reference 테스트는 휴대 가능한 fixtures 경로로만 수정했다. 런타임 dist 파일은 변경하지 않았다. wording-baseline의16개 응답은 demoAnswers로 생성한 합성 대표값과 동일함을 검증했다. v14-source-manifest는 여섯 핵심 파일의 변경 없음을 비교하는 과거 해시 자료이며 현재 게시 버전은 v15다. 개인 설문 파일·자격증명·.git·.openai·node_modules는 포함하지 않았다.
+Node 테스트만 실행하려면 저장소 루트에서 아래 명령을 사용한다. 별도 npm 설치는 필요하지 않다.
+
+~~~text
+node --test ai-server/tests/node/experience100.test.mjs ai-server/tests/node/religion-tattoo.test.mjs ai-server/tests/node/wording-age.test.mjs ai-server/tests/node/type-reference.test.mjs
+~~~
+
+[이동 경로·검증·학습 안내](../../../../ai-server/tests/README.md)에 파일별 용도를 기록했다. `wording-baseline.json`의 합성 응답·기대값과 `v14-source-manifest.json`의 여섯 핵심 파일 해시는 그대로다. 현재 게시 버전은 v15이며 런타임 `dist/` 파일도 변경하지 않았다. 과거 검증 기록과 해시 출처는 인계 당시 기록으로 보존한다. 목업 미리보기는 이 폴더만으로 실행되지만 전체 회귀 검사는 저장소 전체가 필요하다. 개인 설문 파일·자격증명·.git·.openai·node_modules는 포함하지 않았다.
 
 ## 읽을 코드
 

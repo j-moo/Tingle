@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
-import {questions,validAnswer,answeredCount} from './dist/data100.mjs';
-import {model,demoAnswers,classifyAnswers,classifyProfile,profileFromAnswers,pair,direction,wishFit,readings,recommendations} from './dist/engine100.mjs';
+import {questions,validAnswer,answeredCount} from '../../../docs/handoffs/survey-20261021/mockup/dist/data100.mjs';
+import {model,demoAnswers,classifyAnswers,classifyProfile,profileFromAnswers,pair,direction,wishFit,readings,recommendations} from '../../../docs/handoffs/survey-20261021/mockup/dist/engine100.mjs';
 assert.equal(questions.length,100);
 assert.equal(new Set(questions.map(q=>q.id)).size,100);
 assert.deepEqual(questions.map(q=>q.id),Array.from({length:100},(_,i)=>i+1));
