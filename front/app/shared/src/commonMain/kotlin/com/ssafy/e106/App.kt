@@ -24,6 +24,8 @@ import com.ssafy.e106.core.ui.theme.AppSpacing
 import com.ssafy.e106.core.ui.theme.AppTheme
 import com.ssafy.e106.core.ui.theme.appLayer
 import com.ssafy.e106.core.ui.theme.behindLayer
+import com.ssafy.e106.core.ui.theme.screenGutter
+import com.ssafy.e106.core.ui.theme.screenPadding
 
 @Composable
 fun App() {
@@ -34,7 +36,7 @@ fun App() {
             // 뒤 배경: 레이어가 높아지면 흐려지고 어두워진다
             Surface(modifier = Modifier.fillMaxSize().behindLayer(current)) {
                 Column(
-                    modifier = Modifier.fillMaxSize().safeDrawingPadding().padding(AppSpacing.Section),
+                    modifier = Modifier.fillMaxSize().safeDrawingPadding().screenPadding(),
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.spacedBy(AppSpacing.Large, Alignment.CenterVertically),
                 ) {
@@ -47,7 +49,8 @@ fun App() {
             }
             // 떠 있는 레이어: 단계에 맞는 그림자
             Surface(
-                modifier = Modifier.align(Alignment.BottomCenter).padding(AppSpacing.Section)
+                modifier = Modifier.align(Alignment.BottomCenter)
+                    .padding(horizontal = screenGutter(), vertical = AppSpacing.Section)
                     .fillMaxWidth().appLayer(current),
                 shape = AppShapes.Control,
             ) {

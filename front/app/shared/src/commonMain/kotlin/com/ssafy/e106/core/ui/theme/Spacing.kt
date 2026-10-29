@@ -18,16 +18,15 @@ object AppSpacing {
 
 /** 반복해서 쓰는 크기. 화면 코드에 size(24.dp) 같은 숫자를 직접 적지 않는다. */
 object AppSizes {
-    /** 화면 좌우 여백 */
-    val ScreenGutter = 16.dp
     val IconSmall = 20.dp
     val Icon = 24.dp
     /** 목록 줄의 아바타 */
     val AvatarSmall = 40.dp
     /** 프로필 상단·제안 카드의 아바타 */
     val Avatar = 56.dp
-    val TopBarHeight = 56.dp
-    val BottomBarHeight = 56.dp
+    /** 상단 바 · 하단 바. Figma 01 ServiceHeader 64 · BottomNavigation 72. 글자 확대에 대비해 height() 가 아니라 heightIn(min) 으로 쓴다 */
+    val TopBarMinHeight = 64.dp
+    val BottomBarMinHeight = 72.dp
     /** 손가락으로 누르는 요소의 최소 넓이·높이 */
     val TouchTarget = 48.dp
 }
