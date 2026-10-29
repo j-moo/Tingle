@@ -1,9 +1,9 @@
 {
-  "version": "1.2.0-erd22-runtime-storage",
-  "date": "2026-10-28",
-  "status": "사용자 승인: 22표 유지·업무별 보존 컬럼 보완; 공유 DB 미적용",
-  "total_tables": 22,
-  "total_columns": 176,
+  "version": "1.3.0-settings-snapshot-storage",
+  "date": "2026-10-29",
+  "status": "사용자 승인: 불변 입력표1개 추가; 공유 DB 미적용",
+  "total_tables": 23,
+  "total_columns": 181,
   "physical_foreign_keys": false,
   "source_sha256": "7641a0f6be97895c42abf724ea5269367f696e30311f7bf600b6546261cbcb21",
   "source_name": "붙여넣은 텍스트.txt",
@@ -2661,6 +2661,108 @@
           "meaning": null
         }
       ]
+    },
+    "settings_snapshot": {
+      "name": "settings_snapshot",
+      "purpose": "사용자·설정 버전별 불변 입력 보존 기반; 소비 형식/준비 검증 별도",
+      "columns": [
+        {
+          "name": "id",
+          "type": "bigint",
+          "meaning": "내부 저장 ID",
+          "nullable": false,
+          "pk": true,
+          "increment": true,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "user_id",
+          "type": "bigint",
+          "meaning": "입력 소유 사용자",
+          "nullable": false,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": "users.id",
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "settings_version",
+          "type": "bigint",
+          "meaning": "당시 서버 설정 세대",
+          "nullable": false,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "input_format",
+          "type": "varchar(64)",
+          "meaning": "호출자가 명시한 입력 형식 버전",
+          "nullable": false,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "input_json",
+          "type": "text",
+          "meaning": "정규화 불변 JSON 입력 증거; READY 승인 아님",
+          "nullable": false,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "input_hash",
+          "type": "varchar(64)",
+          "meaning": "정규화 UTF8 입력 SHA256",
+          "nullable": false,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "captured_at",
+          "type": "timestamptz",
+          "meaning": "실제 보존 시각",
+          "nullable": false,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        }
+      ],
+      "indexes": [
+        {
+          "columns": [
+            "user_id",
+            "settings_version"
+          ],
+          "primary_key": false,
+          "unique": true,
+          "name": "uq_settings_snapshot_user_version",
+          "meaning": "사용자·세대 유일성"
+        }
+      ]
     }
   },
   "enums": {
@@ -3299,6 +3401,13 @@
       "relation": ">",
       "to_table": "users",
       "to_column": "id"
+    },
+    {
+      "from_table": "settings_snapshot",
+      "from_column": "user_id",
+      "relation": ">",
+      "to_table": "users",
+      "to_column": "id"
     }
   ],
   "amendments": [
@@ -3316,6 +3425,11 @@
       "date": "2026-10-28",
       "issue": "S15P31E106-175 / S15P31E106-177 / S15P31E106-178",
       "reason": "사용자 승인: 22표 유지·업무 전용 보존 컬럼, 불연속 읽음 배치 유지, 제안 생성 후 영구 재매칭 금지. 과거 시각/정의/ID 추정 금지. 원본 source_sha256 유지."
+    },
+    {
+      "date": "2026-10-29",
+      "issue": "S15P31E106-72 / S15P31E106-101",
+      "reason": "사용자 승인으로 입력표1개·7컬럼·논리관계1개 추가. 입력 조합/READY 판단·legacy UUID 대응은 별도. source_sha256은 최초 첨부 해시 유지."
     }
   ]
 }

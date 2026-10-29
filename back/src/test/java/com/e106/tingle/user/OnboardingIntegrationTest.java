@@ -388,14 +388,17 @@ class OnboardingIntegrationTest extends IntegrationTestSupport {
 		JsonNode tokens = login("kakao", newSocialId());
 		completeOnboarding(tokens);
 		long userId = userIdOf(tokens);
-		for (Long invalid : List.of(0L, -1L, 2L)) {
+		long required = jdbc.queryForObject("select settings_version from user_setting where user_id=?",
+			Long.class, userId);
+		for (Long invalid : List.of(0L, -1L, required + 1)) {
 			jdbc.update("update keyring set synced_settings_version=? where owner_user_id=?", invalid, userId);
-			assertVersions(tokens, 1, null, false);
+			assertVersions(tokens, required, null, false);
 		}
 		jdbc.update("update keyring set synced_settings_version=null where owner_user_id=?", userId);
-		assertVersions(tokens, 1, null, false);
-		jdbc.update("update keyring set synced_settings_version=1,state='UNBOUND' where owner_user_id=?", userId);
-		assertVersions(tokens, 1, null, false);
+		assertVersions(tokens, required, null, false);
+		jdbc.update("update keyring set synced_settings_version=?,state='UNBOUND' where owner_user_id=?",
+			required, userId);
+		assertVersions(tokens, required, null, false);
 	}
 
 	private void assertVersions(JsonNode tokens, long required, Long acknowledged, boolean ready) throws Exception {
@@ -417,6 +420,9 @@ class OnboardingIntegrationTest extends IntegrationTestSupport {
 		agree(minor).andExpect(status().isOk());
 		long minorId = userIdOf(minor);
 		long keyringId = bindKeyring(minorId);
+		patchProfile(minor, Map.of("nickname", uniqueNickname())).andExpect(status().isOk());
+		assertThat(jdbc.queryForObject("select count(*) from settings_snapshot where user_id=?", Integer.class,
+			minorId)).isPositive();
 		LocalDate today = LocalDate.now(ZoneId.of("Asia/Seoul"));
 		String eighteen = today.minusYears(19).plusDays(1).toString();
 
@@ -425,7 +431,7 @@ class OnboardingIntegrationTest extends IntegrationTestSupport {
 		// 회원과 그 자료가 지워져 세션도 끝나고, 키링은 소유가 풀린다
 		perform(get(me(minor, "/profile")), minor, null).andExpect(status().isUnauthorized());
 		for (String table : List.of("profile", "user_consents", "refresh_token", "matching_preference",
-			"user_setting")) {
+			"user_setting", "settings_snapshot")) {
 			assertThat(jdbc.queryForObject("select count(*) from " + table + " where user_id=?", Integer.class,
 				minorId)).as(table).isZero();
 		}

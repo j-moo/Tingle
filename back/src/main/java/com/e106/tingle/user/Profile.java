@@ -124,6 +124,10 @@ public class Profile {
 		this.introduction = introduction;
 	}
 
+	void applyPersonality(long resultId) {
+		this.activePersonalityId = resultId;
+	}
+
 	void changeImageUrl(String imageUrl) {
 		this.imageUrl = imageUrl;
 	}

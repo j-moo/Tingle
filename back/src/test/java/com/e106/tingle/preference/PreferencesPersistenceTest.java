@@ -37,6 +37,7 @@ import com.e106.tingle.global.error.ErrorCode;
 import com.e106.tingle.preference.PreferencesService.VersionedPreferences;
 import com.e106.tingle.preference.dto.PreferencesRequest;
 import com.e106.tingle.settings.UserSetting;
+import com.e106.tingle.settings.snapshot.SettingsChangeCoordinator;
 import com.e106.tingle.user.Gender;
 
 /**
@@ -47,6 +48,9 @@ import com.e106.tingle.user.Gender;
 	"spring.profiles.active=test", "spring.jpa.open-in-view=false"
 })
 class PreferencesPersistenceTest {
+
+	@MockitoBean
+	private SettingsChangeCoordinator settingsChanges;
 
 	@Configuration(proxyBeanMethods = false)
 	@EnableAutoConfiguration

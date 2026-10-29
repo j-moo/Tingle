@@ -38,28 +38,29 @@ class PreferencesOnboardingIntegrationTest extends IntegrationTestSupport {
 		patchProfile(tokens, fullProfile(uniqueNickname())).andExpect(status().isOk());
 		completeProfile(tokens).andExpect(status().isOk());
 		long personalityId = finishSurvey(userId);
-		onboarding(tokens, "PREFERENCES_REQUIRED", 0, false);
+		long before = settingsVersion(userId);
+		onboarding(tokens, "PREFERENCES_REQUIRED", before, false);
 		perform(get(me(tokens, "/preferences")), tokens, null).andExpect(status().isOk())
-			.andExpect(header().string("ETag", "\"0\""))
+			.andExpect(header().string("ETag", etag(before)))
 			.andExpect(jsonPath("$.desiredAgeMode").isEmpty())
 			.andExpect(jsonPath("$.desiredGenders[0]").value("MALE"));
-		perform(put(me(tokens, "/preferences")).header("If-Match", "\"0\""), tokens, ANY)
-			.andExpect(status().isOk()).andExpect(header().string("ETag", "\"1\""));
-		onboarding(tokens, "SYNC_PENDING", 1, false);
+		perform(put(me(tokens, "/preferences")).header("If-Match", etag(before)), tokens, ANY)
+			.andExpect(status().isOk()).andExpect(header().string("ETag", etag(before + 1)));
+		onboarding(tokens, "SYNC_PENDING", before + 1, false);
 		acknowledgeSync(userId, keyringId, personalityId);
-		onboarding(tokens, "READY", 1, true);
-		perform(put(me(tokens, "/preferences")).header("If-Match", "\"1\""), tokens,
+		onboarding(tokens, "READY", before + 1, true);
+		perform(put(me(tokens, "/preferences")).header("If-Match", etag(before + 1)), tokens,
 			"{\"desiredAgeMode\":\"RANGE\",\"desiredAgeMin\":25,\"desiredAgeMax\":null}")
-			.andExpect(status().isOk()).andExpect(header().string("ETag", "\"2\""));
-		onboarding(tokens, "SYNC_PENDING", 2, false);
+			.andExpect(status().isOk()).andExpect(header().string("ETag", etag(before + 2)));
+		onboarding(tokens, "SYNC_PENDING", before + 2, false);
 		perform(get(me(tokens, "/onboarding")), tokens, null).andExpect(jsonPath("$.signupCompleted").value(true))
-			.andExpect(jsonPath("$.acknowledgedSettingsVersion").value(1));
-		perform(put(me(tokens, "/preferences")).header("If-Match", "\"1\""), tokens, ANY)
+			.andExpect(jsonPath("$.acknowledgedSettingsVersion").value(before + 1));
+		perform(put(me(tokens, "/preferences")).header("If-Match", etag(before + 1)), tokens, ANY)
 			.andExpect(status().isPreconditionFailed());
 		assertThat(jdbc.queryForObject("select settings_version from user_setting where user_id=?",
-			Long.class, userId)).isEqualTo(2);
+			Long.class, userId)).isEqualTo(before + 2);
 		acknowledgeSync(userId, keyringId, personalityId);
-		onboarding(tokens, "READY", 2, true);
+		onboarding(tokens, "READY", before + 2, true);
 	}
 
 	@Test
@@ -82,5 +83,13 @@ class PreferencesOnboardingIntegrationTest extends IntegrationTestSupport {
 			.andExpect(jsonPath("$.nextStep").value(step))
 			.andExpect(jsonPath("$.requiredSettingsVersion").value(version))
 			.andExpect(jsonPath("$.matchingReady").value(ready));
+	}
+
+	private long settingsVersion(long userId) {
+		return jdbc.queryForObject("select settings_version from user_setting where user_id=?", Long.class, userId);
+	}
+
+	private static String etag(long version) {
+		return "\"" + version + "\"";
 	}
 }

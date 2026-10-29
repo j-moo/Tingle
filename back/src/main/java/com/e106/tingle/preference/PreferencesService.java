@@ -10,6 +10,7 @@ import com.e106.tingle.global.error.ErrorCode;
 import com.e106.tingle.preference.dto.PreferencesRequest;
 import com.e106.tingle.preference.dto.PreferencesResponse;
 import com.e106.tingle.settings.UserSetting;
+import com.e106.tingle.settings.snapshot.SettingsChangeCoordinator;
 import com.e106.tingle.user.Gender;
 
 import lombok.RequiredArgsConstructor;
@@ -24,11 +25,13 @@ public class PreferencesService {
 	private final PreferenceMemberAccess members;
 	private final MatchingPreferenceRepository preferences;
 	private final PreferenceUserSettingRepository settings;
+	private final SettingsChangeCoordinator changes;
 
 	@Transactional
 	public VersionedPreferences get(long authenticatedUserId, long userId) {
 		PreferencesRules.requireOwner(authenticatedUserId, userId);
 		Gender gender = members.requireGender(userId);
+		changes.refreshAgeReferenceIfPresent(userId);
 		UserSetting setting = settings.findForRead(userId)
 			.orElseThrow(() -> new BusinessException(ErrorCode.SERVICE_UNAVAILABLE));
 		return response(findPreference(userId), gender, setting.getSettingsVersion());
@@ -50,6 +53,7 @@ public class PreferencesService {
 		MatchingPreference preference = findPreference(userId);
 		setting.advanceVersion();
 		preference.changeAge(request);
+		changes.captureCurrent(userId);
 		return response(preference, gender, setting.getSettingsVersion());
 	}
 

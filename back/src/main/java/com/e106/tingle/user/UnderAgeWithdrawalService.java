@@ -28,11 +28,13 @@ public class UnderAgeWithdrawalService {
 		if (jdbc.queryForList("select id from users where id=? for update", Long.class, userId).isEmpty()) {
 			return;
 		}
+		// 설정 저장이 입력을 보존하기 전에 탈퇴의 입력 삭제를 지나가지 못하게 같은 행을 먼저 잠근다.
+		jdbc.queryForList("select user_id from user_setting where user_id=? for update", Long.class, userId);
 		String surveys = "(select id from survey where user_id=?)";
 		jdbc.update("delete from personality where survey_id in " + surveys, userId);
 		jdbc.update("delete from survey_answer where survey_id in " + surveys, userId);
-		for (String table : new String[] {"survey", "profile", "matching_preference", "user_setting",
-			"user_consents", "refresh_token"}) {
+		for (String table : new String[] {"survey", "profile", "matching_preference", "settings_snapshot",
+			"user_setting", "user_consents", "refresh_token"}) {
 			jdbc.update("delete from " + table + " where user_id=?", userId);
 		}
 		jdbc.update("update push_installation set user_id=null, login_family_id=null, binding_id=null, "
