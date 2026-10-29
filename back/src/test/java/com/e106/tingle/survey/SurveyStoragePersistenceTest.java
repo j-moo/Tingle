@@ -2,12 +2,12 @@ package com.e106.tingle.survey;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.Mockito.doReturn;
 
 import java.sql.Timestamp;
+import java.time.Clock;
 import java.time.Instant;
+import java.time.ZoneOffset;
 import java.util.List;
-import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
@@ -25,7 +25,6 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Import;
 import org.springframework.data.jpa.repository.config.EnableJpaRepositories;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 
 import com.e106.tingle.global.error.BusinessException;
@@ -63,6 +62,11 @@ class SurveyStoragePersistenceTest {
 		JsonMapper jsonMapper() {
 			return JsonMapper.builder().build();
 		}
+
+		@Bean
+		Clock clock() {
+			return Clock.fixed(NOW, ZoneOffset.UTC);
+		}
 	}
 
 	@Autowired
@@ -73,44 +77,35 @@ class SurveyStoragePersistenceTest {
 	private JdbcTemplate jdbc;
 	@Autowired
 	private JsonMapper mapper;
-	@MockitoSpyBean
-	private SurveyCatalog catalog;
 
 	@Test
-	@DisplayName("22개 실제 설계에서 숫자 회차와 신규 불변 정의를 저장하고 구 aggregate 표는 쓰지 않는다")
+	@DisplayName("22개 실제 설계에서 숫자 회차만 만들고 옛 칸(문항 사본·metadata·요청 키)은 쓰지 않는다")
 	void createsCanonicalSessionAndFreezesItsDefinition() {
 		long userId = registeredMember();
-		SurveySessionResponse session = service.start(userId, UUID.randomUUID(), VERSION);
+		SurveySessionResponse session = service.start(userId, VERSION);
 		assertThat(session.sessionId()).isPositive();
-		assertThat(session.revision()).isZero();
 		assertThat(session.answers()).isEmpty();
 		assertThat(session.questionCount()).isEqualTo(100);
 		assertThat(jdbc.queryForObject("select count(*) from information_schema.tables where table_schema='public' "
 			+ "and table_type='BASE TABLE'", Integer.class)).isEqualTo(22);
 		assertThat(jdbc.queryForObject("select to_regclass('public.survey_responses')::text", String.class))
 			.isNull();
-		assertThat(jdbc.queryForMap("select legacy_public_id,"
-			+ "jsonb_exists(response_context,'answers') as hidden_answers,"
-			+ "definition_snapshot is not null as frozen from survey where id=?", session.sessionId()))
-			.containsEntry("legacy_public_id", null).containsEntry("hidden_answers", false)
-			.containsEntry("frozen", true);
+		assertThat(jdbc.queryForMap("select legacy_public_id,client_request_id,response_context,definition_snapshot,"
+			+ "revision from survey where id=?", session.sessionId()))
+			.containsEntry("legacy_public_id", null).containsEntry("client_request_id", null)
+			.containsEntry("response_context", null).containsEntry("definition_snapshot", null)
+			.containsEntry("revision", 0L);
 	}
 
 	@Test
-	@DisplayName("같은 요청·이어하기 키는 기존 숫자 회차와 변경 번호를 보존하고 완료 뒤에도 재사용한다")
-	void preservesCurrentIdempotentResumeAndCompletionState() {
+	@DisplayName("작성 중 회차는 다시 시작해도 이어가고, 완료 뒤에는 새 회차를 만든다. 남의 회차는 404")
+	void resumesDraftAndStartsNewAfterCompletion() {
 		long userId = registeredMember();
-		UUID initial = UUID.randomUUID();
-		SurveySessionResponse first = service.start(userId, initial, VERSION);
-		assertThat(service.start(userId, initial, VERSION).sessionId()).isEqualTo(first.sessionId());
-		UUID resumed = UUID.randomUUID();
-		assertThat(service.start(userId, resumed, VERSION).revision()).isEqualTo(first.revision());
-		jdbc.update("update survey set completed_at=?,revision=7 where id=?", Timestamp.from(NOW), first.sessionId());
-		SurveySessionResponse completed = service.start(userId, resumed, VERSION);
-		assertThat(completed.sessionId()).isEqualTo(first.sessionId());
-		assertThat(completed.status()).isEqualTo("COMPLETED");
-		assertThat(completed.completedAt()).isEqualTo(NOW);
-		assertThat(completed.revision()).isEqualTo(7);
+		SurveySessionResponse first = service.start(userId, VERSION);
+		assertThat(service.start(userId, VERSION).sessionId()).isEqualTo(first.sessionId());
+		jdbc.update("update survey set completed_at=? where id=?", Timestamp.from(NOW), first.sessionId());
+		assertThat(service.get(userId, first.sessionId()).completedAt()).isEqualTo(NOW);
+		assertThat(service.start(userId, VERSION).sessionId()).isNotEqualTo(first.sessionId());
 		assertThatThrownBy(() -> service.get(registeredMember(), first.sessionId()))
 			.isInstanceOfSatisfying(BusinessException.class,
 				error -> assertThat(error.getErrorCode()).isEqualTo(ErrorCode.RESOURCE_NOT_FOUND));
@@ -120,7 +115,7 @@ class SurveyStoragePersistenceTest {
 	@DisplayName("문항별 행에서 숫자·문자·참거짓·null 타입과 미상 답변 시각을 그대로 복원한다")
 	void readsTypedScalarAnswersFromDedicatedRows() {
 		long userId = registeredMember();
-		long id = service.start(userId, UUID.randomUUID(), VERSION).sessionId();
+		long id = service.start(userId, VERSION).sessionId();
 		answers.saveAllAndFlush(List.of(
 			SurveyAnswer.of(id, "Q001", mapper.readTree("4"), null),
 			SurveyAnswer.of(id, "Q002", mapper.readTree("\"4\""), null),
@@ -139,23 +134,14 @@ class SurveyStoragePersistenceTest {
 	}
 
 	@Test
-	@DisplayName("새 회차는 현재 카탈로그 조회가 사라져도 저장한 원문·manifest·문항 순서를 유지한다")
-	void retrievesFrozenQuestionnaireWithoutReplacingItFromCurrentFiles() {
-		long userId = registeredMember();
-		SurveySessionResponse first = service.start(userId, UUID.randomUUID(), VERSION);
-		doReturn(Optional.empty()).when(catalog).find(VERSION);
-		assertThat(service.get(userId, first.sessionId()).manifest()).isEqualTo(first.manifest());
-		assertThat(service.questionnaireOf(userId, first.sessionId()).questions()).hasSize(100);
-		assertThat(service.questionnaireOf(userId, first.sessionId()).metadataSchema()).isNotNull();
-	}
-
-	@Test
 	@DisplayName("과거 정의·타입 증거가 없거나 복합·초과 답이면 조용히 추정하거나 잘라 저장하지 않는다")
 	void refusesUnknownOrUnrepresentableEvidence() {
 		long userId = registeredMember();
-		long id = service.start(userId, UUID.randomUUID(), VERSION).sessionId();
+		long id = service.start(userId, VERSION).sessionId();
 		assertThatThrownBy(() -> SurveyAnswer.of(id, "Q001", mapper.readTree("{\"x\":1}"), NOW))
 			.isInstanceOf(IllegalArgumentException.class);
+		assertThat(SurveyAnswer.of(id, "Q001", mapper.readTree("[1,\"a\"]"), NOW).value(mapper))
+			.isEqualTo(mapper.readTree("[1,\"a\"]"));
 		assertThatThrownBy(() -> SurveyAnswer.of(id, "Q001",
 			mapper.readTree(mapper.writeValueAsString("x".repeat(101))), NOW))
 			.isInstanceOf(IllegalArgumentException.class);
@@ -163,7 +149,7 @@ class SurveyStoragePersistenceTest {
 		assertThatThrownBy(() -> service.get(userId, id)).isInstanceOfSatisfying(BusinessException.class,
 			error -> assertThat(error.getErrorCode()).isEqualTo(ErrorCode.SERVICE_UNAVAILABLE));
 		jdbc.update("delete from survey_answer where survey_id=?", id);
-		jdbc.update("update survey set definition_snapshot=null,survey_version='missing-version' where id=?", id);
+		jdbc.update("update survey set survey_version='missing-version' where id=?", id);
 		assertThatThrownBy(() -> service.get(userId, id)).isInstanceOfSatisfying(BusinessException.class,
 			error -> assertThat(error.getErrorCode()).isEqualTo(ErrorCode.SERVICE_UNAVAILABLE));
 	}
@@ -178,12 +164,12 @@ class SurveyStoragePersistenceTest {
 			var first = executor.submit(() -> {
 				ready.countDown();
 				go.await(10, TimeUnit.SECONDS);
-				return service.start(userId, UUID.randomUUID(), VERSION).sessionId();
+				return service.start(userId, VERSION).sessionId();
 			});
 			var second = executor.submit(() -> {
 				ready.countDown();
 				go.await(10, TimeUnit.SECONDS);
-				return service.start(userId, UUID.randomUUID(), VERSION).sessionId();
+				return service.start(userId, VERSION).sessionId();
 			});
 			assertThat(ready.await(10, TimeUnit.SECONDS)).isTrue();
 			go.countDown();
