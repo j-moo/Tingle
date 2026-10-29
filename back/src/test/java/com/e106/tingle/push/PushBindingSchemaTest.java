@@ -11,7 +11,7 @@ import java.util.UUID;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.springframework.core.io.FileSystemResource;
+import org.springframework.core.io.ClassPathResource;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import org.springframework.jdbc.datasource.init.ResourceDatabasePopulator;
@@ -31,17 +31,17 @@ class PushBindingSchemaTest {
 	static void createDisposableDesignSchema() {
 		DriverManagerDataSource source = new DriverManagerDataSource(POSTGRES.getJdbcUrl(),
 			POSTGRES.getUsername(), POSTGRES.getPassword());
-		new ResourceDatabasePopulator(new FileSystemResource("database/schema.sql")).execute(source);
+		new ResourceDatabasePopulator(new ClassPathResource("database/schema.sql")).execute(source);
 		jdbc = new JdbcTemplate(source);
 	}
 
 	@Test
-	@DisplayName("설계 DDL은 23개 테이블·181개 컬럼과 nullable 연결 세대 두 칸을 만든다")
+	@DisplayName("설계 DDL은 25개 테이블·225개 컬럼과 nullable 연결 세대 두 칸을 만든다")
 	void preservesApprovedLayoutAndNullableGenerationTypes() {
 		assertThat(jdbc.queryForObject("select count(*) from information_schema.tables "
-			+ "where table_schema='public' and table_type='BASE TABLE'", Integer.class)).isEqualTo(23);
+			+ "where table_schema='public' and table_type='BASE TABLE'", Integer.class)).isEqualTo(25);
 		assertThat(jdbc.queryForObject("select count(*) from information_schema.columns "
-			+ "where table_schema='public'", Integer.class)).isEqualTo(181);
+			+ "where table_schema='public'", Integer.class)).isEqualTo(225);
 		List<Map<String, Object>> columns = jdbc.queryForList("select column_name,data_type,is_nullable,column_default "
 			+ "from information_schema.columns where table_schema='public' and table_name='push_installation' "
 			+ "and column_name in ('binding_id','linked_at') order by column_name");

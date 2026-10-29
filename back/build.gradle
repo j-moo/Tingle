@@ -56,5 +56,43 @@ checkstyle {
 }
 
 tasks.named('test') {
-	useJUnitPlatform()
+	useJUnitPlatform {
+		excludeTags 'ai-risk-http', 'ai-explanation-http'
+	}
+}
+
+tasks.register('riskAiSmokeTest', Test) {
+	group = 'verification'
+	description = 'Verify BE service JWT and risk HTTP against the synthetic loopback FastAPI server'
+	testClassesDirs = sourceSets.test.output.classesDirs
+	classpath = sourceSets.test.runtimeClasspath
+	dependsOn tasks.named('testClasses')
+	outputs.upToDateWhen { false }
+	outputs.cacheIf { false }
+	useJUnitPlatform {
+		includeTags 'ai-risk-http'
+	}
+	doFirst {
+		if (!System.getenv('RISK_TEST_PYTHON')?.trim()) {
+			throw new GradleException('riskAiSmokeTest requires RISK_TEST_PYTHON with the AI test dependencies')
+		}
+	}
+}
+
+tasks.register('explanationAiSmokeTest', Test) {
+	group = 'verification'
+	description = 'Verify service JWT and rule explanations against the synthetic loopback FastAPI server'
+	testClassesDirs = sourceSets.test.output.classesDirs
+	classpath = sourceSets.test.runtimeClasspath
+	dependsOn tasks.named('testClasses')
+	outputs.upToDateWhen { false }
+	outputs.cacheIf { false }
+	useJUnitPlatform {
+		includeTags 'ai-explanation-http'
+	}
+	doFirst {
+		if (!System.getenv('EXPLANATION_TEST_PYTHON')?.trim()) {
+			throw new GradleException('explanationAiSmokeTest requires EXPLANATION_TEST_PYTHON with AI dependencies')
+		}
+	}
 }

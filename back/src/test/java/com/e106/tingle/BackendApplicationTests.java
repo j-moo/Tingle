@@ -25,7 +25,7 @@ class BackendApplicationTests {
 	}
 
 	@Test
-	@DisplayName("새 23표 DDL의 공통 필드 타입과 물리 FK 미사용을 검증한다")
+	@DisplayName("새 25표 DDL의 공통 필드 타입과 물리 FK 미사용을 검증한다")
 	void commonStorageMatchesCanonicalDesign() {
 		List<String> types = jdbc.query("select table_name,column_name,data_type from information_schema.columns "
 			+ "where table_schema='public' and ((table_name='users' "
@@ -35,7 +35,7 @@ class BackendApplicationTests {
 			+ "or (table_name='user_consents' and column_name in ('consent_type','document_version')))",
 			(rs, row) -> rs.getString(1) + "." + rs.getString(2) + ":" + rs.getString(3));
 		assertThat(jdbc.queryForObject("select count(*) from information_schema.tables "
-			+ "where table_schema='public' and table_type='BASE TABLE'", Integer.class)).isEqualTo(23);
+			+ "where table_schema='public' and table_type='BASE TABLE'", Integer.class)).isEqualTo(25);
 		assertThat(types).containsExactlyInAnyOrder("users.provider:USER-DEFINED",
 			"users.provider_user_id:character varying", "users.status:text", "users.email:character varying",
 			"profile.nickname:character varying", "profile.gender:USER-DEFINED", "profile.smoking_status:USER-DEFINED",
