@@ -1,12 +1,8 @@
 {
-  "version": "1.3.0-settings-snapshot-storage",
-  "date": "2026-10-29",
-  "status": "사용자 승인: 불변 입력표1개 추가; 공유 DB 미적용",
-  "total_tables": 23,
-  "total_columns": 181,
+  "version": "1.5.1-keyring-settings-chat-cleanup-integration",
+  "total_tables": 25,
+  "total_columns": 225,
   "physical_foreign_keys": false,
-  "source_sha256": "7641a0f6be97895c42abf724ea5269367f696e30311f7bf600b6546261cbcb21",
-  "source_name": "붙여넣은 텍스트.txt",
   "tables": {
     "personality": {
       "name": "personality",
@@ -842,6 +838,30 @@
           "reference": null,
           "default": null,
           "json_shape": null
+        },
+        {
+          "name": "chat_deletion_state",
+          "type": "jsonb",
+          "meaning": "채팅 DB 삭제 전용 실행 세대·보관 기한·재시도 및 승인 외부 대상 참조. 채팅 삭제 뒤에도 보존하며 원문·토큰은 저장하지 않음",
+          "nullable": true,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "chat_external_cleanup_state",
+          "type": "jsonb",
+          "meaning": "승인된 외부 대상의 삭제·잔존 확인·재시도 상태. DB 삭제와 독립된 검증 세대로 복원 후 재확인하며 원문·토큰은 저장하지 않음",
+          "nullable": true,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
         }
       ],
       "indexes": [
@@ -985,6 +1005,54 @@
           "name": "synced_at",
           "type": "timestamptz",
           "meaning": "설정 적용 시각 — 그 설정 버전의 실제 적용을 서버가 확인한 시각",
+          "nullable": true,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "credential_key_id",
+          "type": "varchar(64)",
+          "meaning": "등록 시 서버가 serial에 대응시킨 기기 검증키 식별자. 원문 개인키는 서버에 저장하지 않으며 기존 미상 행은 NULL.",
+          "nullable": true,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "credential_public_key",
+          "type": "varchar(128)",
+          "meaning": "사전 등록한 Ed25519 공개키의 X.509 SPKI 인코딩. 요청에서 받은 공개키를 신뢰하지 않으며 기존 미상 행은 NULL.",
+          "nullable": true,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "credential_revoked_at",
+          "type": "timestamptz",
+          "meaning": "이 검증 자격이 폐기된 실제 시각. NULL은 폐기 기록 없음이며 누락된 키의 유효성을 추정하지 않는다.",
+          "nullable": true,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "owner_generation",
+          "type": "uuid",
+          "meaning": "현재 소유 등록 세대. 새로 검증한 등록에서만 발급하며 기존 소유자의 미상 세대를 임의 UUID로 채우지 않는다.",
           "nullable": true,
           "pk": false,
           "increment": false,
@@ -1218,7 +1286,7 @@
         {
           "name": "client_request_id",
           "type": "uuid",
-          "meaning": "최초 생성 요청 키. 회원별 재시도는 같은 회차. 과거 미상은 NULL",
+          "meaning": "과거 최초 생성 요청 키 보존용. 현재 회차 시작 API는 이 값을 받거나 새로 채우지 않으며 회원·버전별 미완료 회차를 재사용한다. 기존 미상은 NULL.",
           "nullable": true,
           "pk": false,
           "increment": false,
@@ -1230,7 +1298,7 @@
         {
           "name": "revision",
           "type": "bigint",
-          "meaning": "응답 동시성 증거. 기존 revision을 보존하고 임의 초기화하지 않음",
+          "meaning": "과거 응답 변경 번호 보존용. 현재 API는 이 값을 ETag로 사용하거나 JPA @Version으로 증가시키지 않는다. 기존 값은 유지하며 새 회차 초기값은 0이다.",
           "nullable": false,
           "pk": false,
           "increment": false,
@@ -1254,7 +1322,7 @@
         {
           "name": "response_context",
           "type": "jsonb",
-          "meaning": "answers 외 원본 업무 문맥. 문항별 답변의 중복 저장이 아님",
+          "meaning": "과거 answers 외 원본 업무 문맥 보존용. 현재 설문 API는 새 값을 채우거나 읽지 않으며 문항별 답은 survey_answer에 저장한다.",
           "nullable": true,
           "pk": false,
           "increment": false,
@@ -1266,7 +1334,7 @@
         {
           "name": "definition_snapshot",
           "type": "jsonb",
-          "meaning": "시작 시 검증한 불변 문항·manifest 증거. 과거 미상은 NULL",
+          "meaning": "과거 시작 시 검증한 문항·manifest 사본 보존용. 현재 설문 API는 새 사본을 채우거나 읽지 않고 회차의 survey_version 파일을 사용한다. 기존 미상은 NULL이며 추정 복원하지 않는다.",
           "nullable": true,
           "pk": false,
           "increment": false,
@@ -1601,7 +1669,7 @@
         {
           "name": "photo_url",
           "type": "varchar(2048)",
-          "meaning": "프로필 사진 주소 — NULL이면 사진 없음(hasProfilePhoto = 이 칸이 비어 있지 않음). 저장 전 서버 검증: (1) https:// 로 시작 (2) 우리 사진 저장소 주소(서버 설정 파일의 허용 주소)로 시작 (3) 그 안에서도 이 회원 폴더(profile/{userId}/)만 허용해 남의 사진 주소 도용 차단 (4) ? 가 붙은 주소 거부 = 금방 만료되는 서명 URL 저장 금지 (5) 2048자 이하, 빈 문자열·공백 거부(삭제는 사진 삭제 API로). 위반이면 400 PHOTO_URL_INVALID, 기존 사진 유지. DB에도 같은 안전장치(CHECK 제약): NULL이거나, https:// 로 시작하고 ? 가 없어야 저장됨. 삭제하면 NULL로 바꾸고(반복 삭제도 204) 저장소 파일은 정리 작업이 따로 지움. 탈퇴 시 파일도 삭제. 상대 사진 조회에서 NULL이면 410. 이미지 용량: 앱이 올리기 전에 1080×1080 이하로 줄이고 WebP(품질 80)로 바꿔 보통 300KB 안팎, 업로드 주소 발급 때 최대 1MB로 제한(넘으면 저장소가 업로드 거부)",
+          "meaning": "프로필 사진 파일 키. NULL이면 사진 없음. 서버 사진 폴더(tingle.photo.dir) 기준 profile/{userId}/{uuid}.jpg만 저장하며 절대 경로·URL·쿼리 문자열은 저장하지 않는다. 응답은 권한 검증을 거친 사진 API로 제공한다.",
           "nullable": true,
           "pk": false,
           "increment": false,
@@ -2335,7 +2403,7 @@
         {
           "name": "answer_value",
           "type": "varchar(100)",
-          "meaning": "고른 답 — 설문 파일의 보기 ID나 점수(예: 4). 설문 버전의 보기 목록으로 검증",
+          "meaning": "설문 버전 규칙으로 검증한 답의 저장 문자열(최대 100자). STRING은 원문, NUMBER는 후행 0 없는 수치 표기, BOOLEAN/NULL은 JSON 표기, ARRAY는 문자열·숫자 항목 배열의 JSON 표기다. 문자열 \"4\"를 숫자 4로 추정하지 않는다.",
           "nullable": false,
           "pk": false,
           "increment": false,
@@ -2359,7 +2427,7 @@
         {
           "name": "answer_type",
           "type": "text",
-          "meaning": "scalar 원래 형식 STRING/NUMBER/BOOLEAN/NULL. 증거 미상은 추정하지 않음",
+          "meaning": "답 원래 형식 STRING/NUMBER/BOOLEAN/NULL/ARRAY. ARRAY는 문자열·숫자 항목 배열이며 새 enum 타입을 만들지 않는다. 과거 형식 미상은 NULL로 보존하고 추정하지 않는다.",
           "nullable": true,
           "pk": false,
           "increment": false,
@@ -2658,6 +2726,557 @@
           "primary_key": false,
           "unique": false,
           "name": "ix_service_case_closed",
+          "meaning": null
+        }
+      ]
+    },
+    "registration_challenge": {
+      "name": "registration_challenge",
+      "purpose": "회원별 등록 증명 challenge와 단회 소비·최초 등록 결과. 기기 미지정 발급과 병렬 요청을 보존한다.",
+      "columns": [
+        {
+          "name": "id",
+          "type": "bigint",
+          "meaning": "등록 challenge 내부 ID",
+          "nullable": false,
+          "pk": true,
+          "increment": true,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "challenge_id",
+          "type": "uuid",
+          "meaning": "서버가 발급한 공개 challenge ID. 같은 등록 요청의 재시도는 같은 ID를 사용한다.",
+          "nullable": false,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "user_id",
+          "type": "bigint",
+          "meaning": "challenge를 발급받은 본인 회원 ID",
+          "nullable": false,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": "users.id",
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "request_key",
+          "type": "uuid",
+          "meaning": "회원 범위 등록 challenge 발급 Idempotency-Key",
+          "nullable": false,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "nonce",
+          "type": "varchar(43)",
+          "meaning": "기기 등록 서명에 포함하는 32바이트 canonical unpadded base64url nonce. 회원 귀속·단회 소비와 함께 검증한다.",
+          "nullable": false,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "protocol_version",
+          "type": "varchar(32)",
+          "meaning": "발급 시 고정한 등록 증명 규격. tingle-device-proof-v1",
+          "nullable": false,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "issued_at",
+          "type": "timestamptz",
+          "meaning": "실제 서버 Clock의 최초 발급 시각",
+          "nullable": false,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "expires_at",
+          "type": "timestamptz",
+          "meaning": "최초 발급 시각부터 5분인 만료 시각. 재시도로 연장하지 않는다.",
+          "nullable": false,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "consumed_at",
+          "type": "timestamptz",
+          "meaning": "검증된 등록과 같은 원자 처리에서 단회 소비한 실제 서버 시각",
+          "nullable": true,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "registered_keyring_id",
+          "type": "bigint",
+          "meaning": "최초 성공한 등록 기기. 소비 전에는 NULL",
+          "nullable": true,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": "keyring.id",
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "registered_owner_generation",
+          "type": "uuid",
+          "meaning": "최초 성공한 소유 세대. 같은 등록 재시도의 결과 검증에 사용하며 새로운 세대로 바꾸지 않는다.",
+          "nullable": true,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "registered_key_id",
+          "type": "varchar(64)",
+          "meaning": "등록 성공 시 검증한 서버 대응 검증키 식별자",
+          "nullable": true,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "registration_proof_hash",
+          "type": "varchar(64)",
+          "meaning": "등록에 성공한 증명 바이트의 SHA-256 소문자 hex. 상이한 재시도 판정용",
+          "nullable": true,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "registration_request_key",
+          "type": "uuid",
+          "meaning": "회원별 등록 API 전체 범위에서 최초 성공 요청에 고정한 Idempotency-Key. challenge 발급 키와 구분하며 기존 미상 값은 NULL.",
+          "nullable": true,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "registration_request_hash",
+          "type": "varchar(64)",
+          "meaning": "최초 등록 요청 본문 비교용 SHA-256 소문자 hex. 같은 키의 다른 본문을 거부하며 기존 요청을 추정해 채우지 않는다.",
+          "nullable": true,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "registered_firmware_version",
+          "type": "varchar(30)",
+          "meaning": "최초 등록 성공 응답의 firmwareVersion. 재시도 시 현재 기기 값 대신 원래 응답을 사용하며 기존 미상 값은 NULL.",
+          "nullable": true,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "registered_status",
+          "type": "text",
+          "meaning": "최초 등록 성공 응답의 REGISTERED 또는 SYNC_PENDING 상태. 이후 동기화 상태로 원래 응답을 덮어쓰지 않으며 기존 미상 값은 NULL.",
+          "nullable": true,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "revision",
+          "type": "bigint",
+          "meaning": "JPA 낙관 잠금 버전. 생성자가 0부터 설정하며 DB default로 생성하지 않는다.",
+          "nullable": false,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        }
+      ],
+      "indexes": [
+        {
+          "columns": [
+            "challenge_id"
+          ],
+          "primary_key": false,
+          "unique": true,
+          "name": "uq_registration_challenge_public",
+          "meaning": null
+        },
+        {
+          "columns": [
+            "user_id",
+            "request_key"
+          ],
+          "primary_key": false,
+          "unique": true,
+          "name": "uq_registration_challenge_request",
+          "meaning": null
+        },
+        {
+          "columns": [
+            "user_id",
+            "registration_request_key"
+          ],
+          "primary_key": false,
+          "unique": true,
+          "name": "uq_registration_challenge_registration_request",
+          "meaning": "회원별 등록 API Idempotency-Key 유일성. PostgreSQL의 기본 NULL 구분으로 기존 NULL 행은 여러 개 보존한다."
+        },
+        {
+          "columns": [
+            "expires_at"
+          ],
+          "primary_key": false,
+          "unique": false,
+          "name": "ix_registration_challenge_expiry",
+          "meaning": null
+        }
+      ]
+    },
+    "keyring_sync_run": {
+      "name": "keyring_sync_run",
+      "purpose": "기기·소유 세대·설정 버전에 고정한 동기화 실행과 불변 payload 및 저장 ACK 증거. 복수 실행의 이력을 덮어쓰지 않는다.",
+      "columns": [
+        {
+          "name": "id",
+          "type": "bigint",
+          "meaning": "동기화 실행 내부 ID",
+          "nullable": false,
+          "pk": true,
+          "increment": true,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "sync_run_id",
+          "type": "uuid",
+          "meaning": "서버가 발급한 불변 공개 실행 ID",
+          "nullable": false,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "keyring_id",
+          "type": "bigint",
+          "meaning": "동기화 대상 숫자 keyring.id",
+          "nullable": false,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": "keyring.id",
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "owner_user_id",
+          "type": "bigint",
+          "meaning": "실행 생성 당시 소유 회원 ID",
+          "nullable": false,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": "users.id",
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "owner_generation",
+          "type": "uuid",
+          "meaning": "실행 생성 당시 소유 세대. 재등록 이전 ACK의 새 소유 반영을 금지한다.",
+          "nullable": false,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "credential_key_id",
+          "type": "varchar(64)",
+          "meaning": "실행에 고정한 서버 대응 기기 검증키 식별자",
+          "nullable": false,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "protocol_version",
+          "type": "varchar(32)",
+          "meaning": "실행 당시 증명 규격. tingle-device-proof-v1",
+          "nullable": false,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "settings_version",
+          "type": "bigint",
+          "meaning": "실행에 고정한 양수 설정 버전. ACK 시 현재 설정과 함께 재검증한다.",
+          "nullable": false,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "payload_format",
+          "type": "varchar(64)",
+          "meaning": "실행 생성 시 실제 전송 바이트와 함께 고정한 payload 형식 식별자. 이후 형식으로 교체하지 않으며 기존 미상 출처는 NULL로 보존한다. 서버 입력 증거의 형식으로 추정 대체하지 않는다.",
+          "nullable": true,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "payload",
+          "type": "bytea",
+          "meaning": "실제로 전달하는 당시 payload의 불변 원본 바이트. 현재 설정이나 임의 JSON 재직렬화로 대체하지 않는다.",
+          "nullable": false,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "payload_hash",
+          "type": "varchar(64)",
+          "meaning": "불변 payload 원본의 SHA-256 소문자 hex",
+          "nullable": false,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "nonce",
+          "type": "varchar(43)",
+          "meaning": "이 실행에 고정한 32바이트 canonical unpadded base64url nonce",
+          "nullable": false,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "created_at",
+          "type": "timestamptz",
+          "meaning": "실제 서버 Clock의 최초 실행 생성 시각",
+          "nullable": false,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "state",
+          "type": "varchar(16)",
+          "meaning": "동기화 영속 상태 PENDING / ACKED / FAILED. HTTP 응답 투영은 별도 연동",
+          "nullable": false,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "acked_at",
+          "type": "timestamptz",
+          "meaning": "저장 증명·소유 세대·실행·현재 버전 검사 후 최초 확정한 ACK 시각",
+          "nullable": true,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "ack_proof_hash",
+          "type": "varchar(64)",
+          "meaning": "최초 수용한 저장 증명 바이트 SHA-256 소문자 hex. 중복·상이한 ACK 판정용",
+          "nullable": true,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "request_key",
+          "type": "uuid",
+          "meaning": "기기·소유 세대 범위 실행 생성 Idempotency-Key",
+          "nullable": false,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "request_key_aliases",
+          "type": "jsonb",
+          "meaning": "같은 기기·소유 세대·설정 버전의 불변 실행에 추가로 대응시킨 Idempotency-Key의 UUID 문자열 배열(List<String>). 최초 request_key는 유지하고 기기 잠금 아래 검증한 키만 추가한다. 기존 미상 값은 NULL이며 빈 배열과 구분한다.",
+          "nullable": true,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "ack_request_key",
+          "type": "uuid",
+          "meaning": "최초 수용한 저장 ACK Idempotency-Key",
+          "nullable": true,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "revision",
+          "type": "bigint",
+          "meaning": "JPA 낙관 잠금 버전. 생성자가 0부터 설정하며 DB default로 생성하지 않는다.",
+          "nullable": false,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        }
+      ],
+      "indexes": [
+        {
+          "columns": [
+            "sync_run_id"
+          ],
+          "primary_key": false,
+          "unique": true,
+          "name": "uq_keyring_sync_run_public",
+          "meaning": null
+        },
+        {
+          "columns": [
+            "keyring_id",
+            "owner_generation",
+            "settings_version"
+          ],
+          "primary_key": false,
+          "unique": true,
+          "name": "uq_keyring_sync_run_version",
+          "meaning": null
+        },
+        {
+          "columns": [
+            "keyring_id",
+            "owner_generation",
+            "request_key"
+          ],
+          "primary_key": false,
+          "unique": true,
+          "name": "uq_keyring_sync_run_request",
+          "meaning": null
+        },
+        {
+          "columns": [
+            "owner_user_id",
+            "keyring_id"
+          ],
+          "primary_key": false,
+          "unique": false,
+          "name": "ix_keyring_sync_run_owner",
           "meaning": null
         }
       ]
@@ -3403,6 +4022,34 @@
       "to_column": "id"
     },
     {
+      "from_table": "registration_challenge",
+      "from_column": "user_id",
+      "relation": ">",
+      "to_table": "users",
+      "to_column": "id"
+    },
+    {
+      "from_table": "registration_challenge",
+      "from_column": "registered_keyring_id",
+      "relation": ">?",
+      "to_table": "keyring",
+      "to_column": "id"
+    },
+    {
+      "from_table": "keyring_sync_run",
+      "from_column": "keyring_id",
+      "relation": ">",
+      "to_table": "keyring",
+      "to_column": "id"
+    },
+    {
+      "from_table": "keyring_sync_run",
+      "from_column": "owner_user_id",
+      "relation": ">",
+      "to_table": "users",
+      "to_column": "id"
+    },
+    {
       "from_table": "settings_snapshot",
       "from_column": "user_id",
       "relation": ">",
@@ -3428,8 +4075,28 @@
     },
     {
       "date": "2026-10-29",
+      "issue": "S15P31E106-81",
+      "reason": "승인된 81 구현: matching.chat_deletion_state 전용 nullable JSONB로 삭제 후 참조·실행 증거를 보존한다. 기존 정의 실컬럼 174개에 1개를 추가한 175개이며, 이전 집계값 176의 오기는 실정의와 맞춘다. 원본 source_sha256 유지. 공유 DB 미적용."
+    },
+    {
+      "date": "2026-10-29",
+      "issue": "S15P31E106-104",
+      "reason": "승인된 104 구현: matching.chat_external_cleanup_state 전용 nullable JSONB로 외부 대상별 정리·잔존 확인을 DB 삭제 상태와 분리한다. 22표176컬럼, 원본 source_sha256 유지. 공유 DB 미적용."
+    },
+    {
+      "date": "2026-10-29",
       "issue": "S15P31E106-72 / S15P31E106-101",
       "reason": "사용자 승인으로 입력표1개·7컬럼·논리관계1개 추가. 입력 조합/READY 판단·legacy UUID 대응은 별도. source_sha256은 최초 첨부 해시 유지."
+    },
+    {
+      "date": "2026-10-29",
+      "issue": "S15P31E106-81 / S15P31E106-72",
+      "reason": "고정 develop 5bfd8b5의 불변 입력표와 81 삭제 상태를 함께 보존해 실제 정의를 23표182컬럼으로 정렬한다. 기존 첨부 source_sha256 및 각 변경 이력은 유지한다. 서버 최신 상태 검증이나 공유 DB 적용 증거가 아님."
+    },
+    {
+      "date": "2026-10-29",
+      "issue": "S15P31E106-104 / S15P31E106-81 / S15P31E106-72",
+      "reason": "고정 develop 5bfd8b5의 입력표 및 81 DB 삭제 상태와 104 외부 정리 상태를 함께 보존해 실제 정의를 23표183컬럼으로 정렬한다. 원본 source_sha256과 선행 변경 이력을 유지한다. 서버 최신 상태 검증이나 공유 DB 적용 증거가 아님."
     }
   ]
 }

@@ -10,7 +10,7 @@ import java.util.UUID;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.springframework.core.io.FileSystemResource;
+import org.springframework.core.io.ClassPathResource;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import org.springframework.jdbc.datasource.init.ResourceDatabasePopulator;
@@ -40,7 +40,7 @@ class MemberAccessReadinessPersistenceTest {
 	static void createDisposableCanonicalSchema() {
 		DriverManagerDataSource source = new DriverManagerDataSource(POSTGRES.getJdbcUrl(),
 			POSTGRES.getUsername(), POSTGRES.getPassword());
-		new ResourceDatabasePopulator(new FileSystemResource("database/schema.sql")).execute(source);
+		new ResourceDatabasePopulator(new ClassPathResource("database/schema.sql")).execute(source);
 		jdbc = new JdbcTemplate(source);
 		MockEnvironment environment = new MockEnvironment();
 		for (int index = 0; index < REQUIRED.size(); index++) {

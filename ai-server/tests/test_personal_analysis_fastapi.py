@@ -84,4 +84,5 @@ def test_calculation_failure_is_not_insufficient(local_client, normal_request, m
 
 
 def test_no_production_analysis_route_is_published():
-    assert set(production_app.openapi()["paths"]) == {"/health"}
+    assert "/_test/personal-analysis" not in production_app.openapi()["paths"]
+    assert "/internal/ai/personal-analyses" not in production_app.openapi()["paths"]

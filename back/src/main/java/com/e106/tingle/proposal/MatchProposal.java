@@ -3,6 +3,7 @@ package com.e106.tingle.proposal;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.LinkedHashMap;
 import java.util.Map;
 
 import org.hibernate.annotations.JdbcTypeCode;
@@ -62,6 +63,12 @@ public class MatchProposal {
 	@JdbcTypeCode(SqlTypes.JSON)
 	@Column(columnDefinition = "jsonb")
 	private Map<String, Object> legacyState;
+	@JdbcTypeCode(SqlTypes.JSON)
+	@Column(columnDefinition = "jsonb")
+	private Map<String, Object> chatDeletionState;
+	@JdbcTypeCode(SqlTypes.JSON)
+	@Column(columnDefinition = "jsonb")
+	private Map<String, Object> chatExternalCleanupState;
 
 	/** 검증된 제안 생성자의 입력용. 만남·평가 증거를 이 factory가 만들어 주는 것은 아니다. */
 	public static MatchProposal proposed(long first, long second, Instant proposedAt) {
@@ -78,6 +85,27 @@ public class MatchProposal {
 
 	public long getPairId() {
 		return id;
+	}
+
+	/** matching 행 잠금 안에서 설명 영역만 갱신하고 당시 판정 원본은 보존한다. */
+	public void recordExplanations(Map<String, Object> nextEvaluation) {
+		if (nextEvaluation == null || !nextEvaluation.containsKey("matchExplanations")) {
+			throw new IllegalArgumentException("Explanation state is required");
+		}
+		Map<String, Object> next = evaluation == null ? new LinkedHashMap<>() : new LinkedHashMap<>(evaluation);
+		next.put("matchExplanations", nextEvaluation.get("matchExplanations"));
+		evaluation = next;
+	}
+
+	/** matching 행 잠금 안에서 당시 근거만 추가하며 원본 판정과 다른 영역을 보존한다. */
+	public void recordHistoricalEvidence(Map<String, Object> captured) {
+		if (captured == null || evaluation == null || evaluation.isEmpty()
+			|| evaluation.containsKey("historicalEvidence")) {
+			throw new IllegalStateException("Historical evidence cannot replace an existing decision");
+		}
+		Map<String, Object> next = new LinkedHashMap<>(evaluation);
+		next.put("historicalEvidence", new LinkedHashMap<>(captured));
+		evaluation = next;
 	}
 
 	public Instant getCreatedAt() {

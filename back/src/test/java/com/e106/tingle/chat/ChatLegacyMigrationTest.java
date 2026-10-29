@@ -20,7 +20,6 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.core.io.ClassPathResource;
-import org.springframework.core.io.FileSystemResource;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import org.springframework.jdbc.datasource.init.ResourceDatabasePopulator;
@@ -51,7 +50,7 @@ class ChatLegacyMigrationTest {
 		// This database exists only inside the test container above.
 		jdbc.execute("drop schema public cascade");
 		jdbc.execute("create schema public");
-		new ResourceDatabasePopulator(new FileSystemResource("database/schema.sql")).execute(source);
+		new ResourceDatabasePopulator(new ClassPathResource("database/schema.sql")).execute(source);
 		jdbc.execute("drop table chat_message");
 		jdbc.execute("drop table chat_participant");
 		jdbc.execute("drop table chat");
@@ -59,7 +58,7 @@ class ChatLegacyMigrationTest {
 	}
 
 	@Test
-	@DisplayName("23표로 이관해도 번호·수명·안내 UUID·선점·전달 영수증·불연속 읽음 증거를 보존한다")
+	@DisplayName("25표로 이관해도 번호·수명·안내 UUID·선점·전달 영수증·불연속 읽음 증거를 보존한다")
 	void preservesDurableChatAndNoticeEvidenceWithoutFillingReadGaps() throws Exception {
 		Legacy legacy = seedLegacyChat();
 		jdbc.queryForObject("select setval(pg_get_serial_sequence('chat_rooms','chat_room_id'),4000,true)", Long.class);
@@ -67,7 +66,7 @@ class ChatLegacyMigrationTest {
 			Long.class);
 		migrate();
 		assertThat(jdbc.queryForObject("select count(*) from information_schema.tables where table_schema='public' "
-			+ "and table_type='BASE TABLE'", Integer.class)).isEqualTo(23);
+			+ "and table_type='BASE TABLE'", Integer.class)).isEqualTo(25);
 		assertThat(jdbc.queryForMap("select legacy_public_id,matching_id,created_at,expires_at,retain_until "
 			+ "from chat where id=?", legacy.roomId()))
 			.containsEntry("legacy_public_id", legacy.roomUuid()).containsEntry("matching_id", 20L)
