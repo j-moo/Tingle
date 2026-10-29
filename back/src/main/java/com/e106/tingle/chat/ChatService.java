@@ -143,8 +143,7 @@ public class ChatService {
 		}
 		List<ChatRoom> page = visible.stream().limit(limit).toList();
 		String next = visible.size() > limit ? encode("r|" + userId + "|" + page.getLast().getPublicId()) : null;
-		return new ChatPage(page.stream().map(r -> roomView(r,
-			owned(r, userId).member().getFirstNoticeAckedAt() != null)).toList(), next, clock.instant());
+		return new ChatPage(page.stream().map(r -> roomView(r, true)).toList(), next, clock.instant());
 	}
 
 	@Transactional(readOnly = true)
@@ -154,7 +153,7 @@ public class ChatService {
 			return roomView(owned.room(), false);
 		}
 		requireAccess(owned);
-		return roomView(owned.room(), owned.member().getFirstNoticeAckedAt() != null);
+		return roomView(owned.room(), true);
 	}
 
 	@Transactional(readOnly = true)
@@ -246,9 +245,6 @@ public class ChatService {
 		}
 		Owned owned = owned(room, userId);
 		requireAccess(owned);
-		if (owned.member().getFirstNoticeAckedAt() == null) {
-			throw new BusinessException(ErrorCode.CHAT_NOTICE_REQUIRED);
-		}
 		return owned;
 	}
 

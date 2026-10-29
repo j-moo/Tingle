@@ -24,7 +24,6 @@ import org.springframework.test.context.ActiveProfiles;
 import com.e106.tingle.IntegrationTestSupport;
 import com.e106.tingle.TestcontainersConfiguration;
 import com.e106.tingle.chat.dto.MessageView;
-import com.e106.tingle.chat.notice.ChatNoticeService;
 import com.e106.tingle.global.error.BusinessException;
 import com.e106.tingle.global.error.ErrorCode;
 import com.e106.tingle.proposal.MatchProposal;
@@ -42,8 +41,6 @@ import tools.jackson.databind.JsonNode;
 class ChatIntegrationTest extends IntegrationTestSupport {
 	@Autowired
 	private ChatService chats;
-	@Autowired
-	private ChatNoticeService notices;
 	@Autowired
 	private ChatRoomRepository rooms;
 	@Autowired
@@ -83,13 +80,7 @@ class ChatIntegrationTest extends IntegrationTestSupport {
 		assertThat(rooms.findBySourceProposalId(proposalId)).isEmpty();
 		proposals.decide(proposalId, secondUserId, MatchProposal.Decision.ACCEPT, UUID.randomUUID(),
 			proposals.profile(proposalId, secondUserId).profileVersion());
-		ChatRoom saved = rooms.findBySourceProposalId(proposalId).orElseThrow();
-		for (long userId : List.of(firstUserId, secondUserId)) {
-			if (chats.available(saved, userId)) {
-				ackFirst(saved, userId);
-			}
-		}
-		return saved;
+		return rooms.findBySourceProposalId(proposalId).orElseThrow();
 	}
 
 	@Test
@@ -106,6 +97,51 @@ class ChatIntegrationTest extends IntegrationTestSupport {
 		perform(get("/api/chat-rooms"), first, null).andExpect(status().isOk())
 			.andExpect(header().string("Cache-Control", "no-store"))
 			.andExpect(jsonPath("$.items[0].chatRoomId").value(room.getPublicId()));
+	}
+
+	@Test
+	void messagesAndReadsWorkWithoutEntriesOrNoticeAcknowledgement() throws Exception {
+		List<String> originalNotices = noticeStates();
+		assertThat(originalNotices).hasSize(2).allSatisfy(state -> assertThat(state).doesNotContain("FIRST_ENTRY"));
+		for (JsonNode user : List.of(first, second)) {
+			perform(get("/api/chat-rooms"), user, null).andExpect(status().isOk())
+				.andExpect(jsonPath("$.items[0].canRead").value(true))
+				.andExpect(jsonPath("$.items[0].canSend").value(true));
+			perform(get(path()), user, null).andExpect(status().isOk())
+				.andExpect(jsonPath("$.canRead").value(true)).andExpect(jsonPath("$.canSend").value(true));
+			perform(get(path() + "/messages"), user, null).andExpect(status().isOk())
+				.andExpect(jsonPath("$.items").isEmpty());
+		}
+		String response = perform(post(path() + "/messages").header("Idempotency-Key", UUID.randomUUID()), first,
+			toJson(Map.of("clientMessageId", UUID.randomUUID(), "text", "hello without entry acknowledgement")))
+			.andExpect(status().isCreated()).andReturn().getResponse().getContentAsString();
+		long messageId = jsonMapper.readTree(response).path("messageId").asLong();
+		perform(get(path() + "/messages"), second, null).andExpect(status().isOk())
+			.andExpect(jsonPath("$.items[0].messageId").value(messageId));
+		assertThat(jdbc.queryForObject("select read_state from chat_participant where chat_id=? and user_id=?",
+			String.class, room.getId(), secondId)).isEqualTo("{}");
+		perform(post(path() + "/reads"), second, toJson(Map.of("messageIds", List.of(messageId))))
+			.andExpect(status().isOk());
+		assertThat(jdbc.queryForObject("select last_read_message_seq from chat_participant "
+			+ "where chat_id=? and user_id=?", Long.class, room.getId(), secondId)).isEqualTo(1);
+		assertThat(noticeStates()).isEqualTo(originalNotices);
+	}
+
+	@Test
+	void failedDisplayAcknowledgementDoesNotRestrictMessagesOrChangeNoticeState() throws Exception {
+		List<String> originalNotices = noticeStates();
+		perform(put(path() + "/notices/" + UUID.randomUUID() + "/ack")
+			.header("Idempotency-Key", UUID.randomUUID()), first, null).andExpect(status().isNotFound());
+		MessageView message = send("hello after failed display acknowledgement");
+		perform(get(path() + "/messages"), second, null).andExpect(status().isOk())
+			.andExpect(jsonPath("$.items[0].messageId").value(message.messageId()));
+		perform(post(path() + "/reads"), second, toJson(Map.of("messageIds", List.of(message.messageId()))))
+			.andExpect(status().isOk());
+		for (long userId : List.of(firstId, secondId)) {
+			assertThat(chats.room(room.getPublicId(), userId).canRead()).isTrue();
+			assertThat(chats.room(room.getPublicId(), userId).canSend()).isTrue();
+		}
+		assertThat(noticeStates()).isEqualTo(originalNotices);
 	}
 
 	@Test
@@ -256,8 +292,10 @@ class ChatIntegrationTest extends IntegrationTestSupport {
 		jdbc.update("insert into user_consents(user_id,consent_type,document_version,agreed,recorded_at) "
 			+ "values (?,'AI_RISK_DETECTION',?,true,?)", firstId, AI_RISK_VERSION,
 			Timestamp.from(testClock.instant()));
-		ackFirst(next, firstId);
 		assertThat(chats.room(next.getPublicId(), firstId).canSend()).isTrue();
+		assertThat(chats.messages(next.getPublicId(), firstId, null, 20).items()).isEmpty();
+		assertThat(chats.send(next.getPublicId(), firstId, UUID.randomUUID(), UUID.randomUUID(), "after reconsent")
+			.text()).isEqualTo("after reconsent");
 		assertCode(() -> chats.messages(room.getPublicId(), firstId, null, 20), ErrorCode.CHAT_CLOSED);
 	}
 
@@ -274,11 +312,9 @@ class ChatIntegrationTest extends IntegrationTestSupport {
 		assertCode(() -> chats.messages(room.getPublicId(), firstId, foreign, 1), ErrorCode.INVALID_REQUEST);
 	}
 
-	private void ackFirst(ChatRoom target, long userId) {
-		var entry = notices.enter(target.getPublicId(), userId, UUID.randomUUID());
-		for (var notice : entry.notices()) {
-			notices.ack(target.getPublicId(), notice.noticeId(), userId, UUID.randomUUID());
-		}
+	private List<String> noticeStates() {
+		return jdbc.queryForList("select notice_state from chat_participant where chat_id=? order by user_id",
+			String.class, room.getId());
 	}
 
 	private MessageView send(String text) {

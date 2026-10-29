@@ -36,42 +36,34 @@ public class ChatNoticeService {
 	@Transactional
 	public EntryView enter(long roomId, long userId, UUID key) {
 		ChatService.NoticeAccess access = chats.noticeAccess(roomId, userId, true, false);
-		ChatNoticeJob first = store.ensure(access.room(), userId, "FIRST_ENTRY", clock.instant());
-		bind(first, userId, key, "entry");
-		return new EntryView(chats.room(roomId, userId), pending(access, first));
+		// 기존 입장 경로는 유지하되 FIRST_ENTRY나 입장 확인 키를 새로 저장하지 않는다.
+		return new EntryView(chats.room(roomId, userId), pending(access));
 	}
 
 	@Transactional
 	public NoticesView list(long roomId, long userId) {
 		ChatService.NoticeAccess access = chats.noticeAccess(roomId, userId, true, false);
-		ChatNoticeJob first = jobs.findByBusinessKey(ChatNoticeJob.key(access.room().getId(), userId, "FIRST_ENTRY"))
-			.orElse(null);
-		return new NoticesView(pending(access, first));
+		return new NoticesView(pending(access));
 	}
 
 	@Transactional
 	public NoticeAck ack(long roomId, UUID noticeId, long userId, UUID key) {
 		ChatService.NoticeAccess access = chats.noticeAccess(roomId, userId, true, true);
 		ChatNoticeJob job = jobs.findByPublicId(noticeId).orElseThrow(this::notFound);
-		if ((!job.getJobType().equals("FIRST_ENTRY") && !job.getJobType().equals("END_NOTICE"))
-			|| job.userId() != userId || job.roomId() != access.room().getId()) {
+		if (!job.getJobType().equals("END_NOTICE") || job.userId() != userId
+			|| job.roomId() != access.room().getId()) {
 			throw notFound();
 		}
-		boolean first = job.getJobType().equals("FIRST_ENTRY");
-		if (!first && (!job.getJobType().equals("END_NOTICE")
-			|| clock.instant().isBefore(access.room().getExpiresAt().minusSeconds(3600)))) {
+		if (clock.instant().isBefore(access.room().getExpiresAt().minusSeconds(3600))) {
 			throw new BusinessException(ErrorCode.NOTICE_STATE_CONFLICT);
 		}
 		bind(job, userId, key, "ack");
-		access.member().ackNotice(first, clock.instant());
+		access.member().ackNotice(false, clock.instant());
 		return new NoticeAck(clock.instant());
 	}
 
-	private List<NoticeView> pending(ChatService.NoticeAccess access, ChatNoticeJob first) {
+	private List<NoticeView> pending(ChatService.NoticeAccess access) {
 		List<NoticeView> result = new ArrayList<>();
-		if (first != null && access.member().getFirstNoticeAckedAt() == null) {
-			result.add(view(first, access.room()));
-		}
 		if (!clock.instant().isBefore(access.room().getExpiresAt().minusSeconds(3600))
 			&& access.member().getEndNoticeAckedAt() == null) {
 			result.add(view(store.ensure(access.room(), access.member().getUserId(), "END_NOTICE", clock.instant()),
@@ -81,13 +73,12 @@ public class ChatNoticeService {
 	}
 
 	private NoticeView view(ChatNoticeJob job, ChatRoom room) {
-		boolean first = job.getJobType().equals("FIRST_ENTRY");
 		String end = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm").withZone(ZoneId.of("Asia/Seoul"))
 			.format(room.getExpiresAt());
 		long minutes = Math.max(1, (Duration.between(clock.instant(), room.getExpiresAt()).getSeconds() + 59) / 60);
-		String text = first ? Messages.get("notice.first", end) : Messages.get("notice.end", end, minutes);
-		return new NoticeView(job.getPublicId(), first ? "FIRST_ENTRY" : "ONE_HOUR_BEFORE_END",
-			first ? job.getRunAt() : room.getExpiresAt().minusSeconds(3600), room.getExpiresAt(), text, null);
+		String text = Messages.get("notice.end", end, minutes);
+		return new NoticeView(job.getPublicId(), "ONE_HOUR_BEFORE_END", room.getExpiresAt().minusSeconds(3600),
+			room.getExpiresAt(), text, null);
 	}
 
 	private void bind(ChatNoticeJob job, long userId, UUID key, String operation) {
