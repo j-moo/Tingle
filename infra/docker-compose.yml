@@ -85,8 +85,10 @@ services:
       PUSH_ENABLED: ${PUSH_ENABLED:-false}
       FIREBASE_PROJECT_ID: ${FIREBASE_PROJECT_ID:-}
       GOOGLE_APPLICATION_CREDENTIALS: /run/secrets/tingle/fcm.json
+      PHOTO_STORAGE_DIR: /data/photos # 프로필 사진 파일 폴더. 아래 볼륨으로 호스트 /data/uploads/{prod|dev} 에 둔다 (backup-daily.sh 백업 대상)
     volumes: &back-volumes
       - /srv/tingle/secrets:/run/secrets/tingle:ro # Jenkins 가 쓰는 비밀 파일 (fcm.json)
+      - /data/uploads/prod:/data/photos # 운영 사진. 블루 · 그린이 같은 폴더를 함께 쓴다. 호스트 폴더 소유자는 이미지 실행 사용자(uid 1000)
     depends_on: [db]
     mem_limit: 1536m
     restart: unless-stopped
@@ -105,7 +107,9 @@ services:
       <<: *back-env
       SPRING_PROFILES_ACTIVE: dev
       SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/tingle_dev
-    volumes: *back-volumes
+    volumes: # 개발 사진은 운영과 섞이지 않게 따로 둔다
+      - /srv/tingle/secrets:/run/secrets/tingle:ro
+      - /data/uploads/dev:/data/photos
     depends_on: [db]
     mem_limit: 1536m
     restart: unless-stopped

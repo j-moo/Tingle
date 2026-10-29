@@ -30,7 +30,7 @@ class JpaWholeStorageIntegrationTest {
 	private JsonMapper mapper;
 
 	@Test
-	@DisplayName("실제 전체 앱의 JPA 생성은 설계와 같은 22표·176칼럼만 만들고 구 테이블을 추가하지 않는다")
+	@DisplayName("실제 전체 앱의 JPA 생성은 설계와 같은 23표·181칼럼만 만들고 구 테이블을 추가하지 않는다")
 	void generatesExactlyCanonicalTablesAndColumnsWithoutBootstrapSql() throws Exception {
 		JsonNode design = mapper.readTree(Files.readString(Path.of("database/tables.json")));
 		List<String> expected = new ArrayList<>();
@@ -54,9 +54,9 @@ class JpaWholeStorageIntegrationTest {
 				}
 				return rs.getString(1) + "." + rs.getString(2) + ":" + type + ":" + rs.getString(5);
 			});
-		assertThat(actual).containsExactlyInAnyOrderElementsOf(expected).hasSize(176);
+		assertThat(actual).containsExactlyInAnyOrderElementsOf(expected).hasSize(181);
 		assertThat(jdbc.queryForObject("select count(*) from information_schema.tables "
-			+ "where table_schema='public' and table_type='BASE TABLE'", Integer.class)).isEqualTo(22);
+			+ "where table_schema='public' and table_type='BASE TABLE'", Integer.class)).isEqualTo(23);
 		assertThat(jdbc.queryForObject("select count(*) from information_schema.table_constraints "
 			+ "where constraint_schema='public' and constraint_type='FOREIGN KEY'", Integer.class)).isZero();
 	}

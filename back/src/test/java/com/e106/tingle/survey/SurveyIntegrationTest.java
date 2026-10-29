@@ -1,17 +1,19 @@
 package com.e106.tingle.survey;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.hamcrest.Matchers.contains;
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.nullValue;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import java.util.List;
 import java.util.Map;
-import java.util.UUID;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -40,7 +42,7 @@ class SurveyIntegrationTest extends IntegrationTestSupport {
 	private static final String SURVEY_VERSION = "SIS-Q-1.1-100";
 
 	@Test
-	@DisplayName("현재 설문은 100문항을 표시 순서대로, 버전 정보와 나이 입력 스키마와 함께 준다")
+	@DisplayName("현재 설문은 100문항을 표시 순서대로 버전 정보와 함께 준다")
 	void currentQuestionnaire() throws Exception {
 		JsonNode tokens = registeredMember();
 		perform(get("/api/surveys/current"), tokens, null).andExpect(status().isOk())
@@ -50,36 +52,32 @@ class SurveyIntegrationTest extends IntegrationTestSupport {
 			.andExpect(jsonPath("$.questions", hasSize(100)))
 			.andExpect(jsonPath("$.questions[0].questionId").value("Q001"))
 			.andExpect(jsonPath("$.questions[99].questionId").value("Q100"))
-			.andExpect(jsonPath("$.metadataSchema.required", hasSize(3)));
+			.andExpect(jsonPath("$.metadataSchema").doesNotExist());
 	}
 
 	@Test
-	@DisplayName("회차를 시작하면 201·ETag 와 빈 초안을 주고, 다시 시작하면 같은 초안을 이어간다")
+	@DisplayName("회차를 시작하면 201과 빈 초안을 주고, 다시 시작하면 같은 초안을, 완료 뒤에는 새 회차를 준다")
 	void startAndResume() throws Exception {
 		JsonNode tokens = registeredMember();
-		JsonNode first = json(start(tokens, UUID.randomUUID(), SURVEY_VERSION).andExpect(status().isCreated())
-			.andExpect(header().string("ETag", "\"0\""))
+		JsonNode first = json(start(tokens, SURVEY_VERSION).andExpect(status().isCreated())
+			.andExpect(header().doesNotExist("ETag"))
 			.andExpect(jsonPath("$.status").value("DRAFT"))
-			.andExpect(jsonPath("$.revision").value(0))
+			.andExpect(jsonPath("$.revision").doesNotExist())
 			.andExpect(jsonPath("$.answeredCount").value(0))
 			.andExpect(jsonPath("$.questionCount").value(100))
 			.andExpect(jsonPath("$.nextQuestionId").value("Q001"))
 			.andExpect(jsonPath("$.sessionId").isNumber())
 			.andExpect(jsonPath("$.answers", hasSize(0)))
-			.andExpect(jsonPath("$.metadata.ownAge").value(nullValue()))
+			.andExpect(jsonPath("$.metadata").doesNotExist())
 			.andExpect(jsonPath("$.completedAt").value(nullValue())));
 		long sessionId = first.get("sessionId").asLong();
 
-		// 다른 Idempotency-Key 로 다시 시작해도 작성 중 회차를 이어가고, 변경 번호는 그대로다
-		UUID resumeKey = UUID.randomUUID();
-		start(tokens, resumeKey, SURVEY_VERSION).andExpect(status().isCreated())
-			.andExpect(header().string("ETag", "\"0\""))
+		start(tokens, SURVEY_VERSION).andExpect(status().isCreated())
 			.andExpect(jsonPath("$.sessionId").value(sessionId));
 		assertThat(jdbc.queryForObject("select count(*) from survey where user_id=?", Long.class,
 			userIdOf(tokens))).isEqualTo(1);
 
 		perform(get(SESSIONS + "/" + sessionId), tokens, null).andExpect(status().isOk())
-			.andExpect(header().string("ETag", "\"0\""))
 			.andExpect(jsonPath("$.sessionId").value(sessionId));
 		perform(get(SESSIONS + "/" + sessionId + "/questionnaire"), tokens, null).andExpect(status().isOk())
 			.andExpect(jsonPath("$.manifest.surveyVersion").value(SURVEY_VERSION))
@@ -88,18 +86,18 @@ class SurveyIntegrationTest extends IntegrationTestSupport {
 			.andExpect(jsonPath("$.surveySessionId").value(sessionId))
 			.andExpect(jsonPath("$.nextQuestionId").value("Q001"));
 
-		// 이어간 요청의 키로 완료 뒤 재시도해도 같은 회차를 준다
+		// 완료한 회차가 있어도 다시 응답하려면 새 회차로 시작한다
 		jdbc.update("update survey set completed_at=now() where id=?", sessionId);
-		start(tokens, resumeKey, SURVEY_VERSION).andExpect(status().isCreated())
-			.andExpect(jsonPath("$.sessionId").value(sessionId))
-			.andExpect(jsonPath("$.status").value("COMPLETED"));
+		long second = json(start(tokens, SURVEY_VERSION).andExpect(status().isCreated())
+			.andExpect(jsonPath("$.status").value("DRAFT"))).get("sessionId").asLong();
+		assertThat(second).isNotEqualTo(sessionId);
 	}
 
 	@Test
 	@DisplayName("저장된 응답으로 진행 정보를 계산하고, 응답은 표시 순서대로 준다")
 	void progressFromStoredAnswers() throws Exception {
 		JsonNode tokens = registeredMember();
-		long sessionId = json(start(tokens, UUID.randomUUID(), SURVEY_VERSION)).get("sessionId").asLong();
+		long sessionId = json(start(tokens, SURVEY_VERSION)).get("sessionId").asLong();
 		jdbc.update("insert into survey_answer(survey_id,question_id,answer_value,answer_type) "
 			+ "values (?,'Q002','unknown','STRING'), (?,'Q001','4','NUMBER')", sessionId, sessionId);
 
@@ -112,48 +110,29 @@ class SurveyIntegrationTest extends IntegrationTestSupport {
 	}
 
 	@Test
-	@DisplayName("같은 Idempotency-Key 는 처음 회차를 다시 주고, 다른 버전이면 409")
-	void idempotentStart() throws Exception {
-		JsonNode tokens = registeredMember();
-		UUID key = UUID.randomUUID();
-		long sessionId = json(start(tokens, key, SURVEY_VERSION)).get("sessionId").asLong();
-		// 완료된 뒤에 같은 키로 다시 와도 새 회차를 만들지 않는다
-		jdbc.update("update survey set completed_at=now() where id=?", sessionId);
-
-		start(tokens, key, SURVEY_VERSION).andExpect(status().isCreated())
-			.andExpect(jsonPath("$.sessionId").value(sessionId))
-			.andExpect(jsonPath("$.status").value("COMPLETED"));
-		start(tokens, key, "SIS-Q-0.9").andExpect(status().isNotFound());
-		jdbc.update("update survey set survey_version='SIS-Q-OLD' where id=?",
-			sessionId);
-		start(tokens, key, SURVEY_VERSION).andExpect(status().isConflict())
-			.andExpect(jsonPath("$.code").value("IDEMPOTENCY_CONFLICT"));
-	}
-
-	@Test
 	@DisplayName("프로필 등록 전에는 회차를 시작할 수 없고, 남의 회차·없는 회차는 404")
 	void accessRules() throws Exception {
 		JsonNode unregistered = login("kakao", newSocialId());
 		agree(unregistered).andExpect(status().isOk());
-		start(unregistered, UUID.randomUUID(), SURVEY_VERSION).andExpect(status().isForbidden())
+		start(unregistered, SURVEY_VERSION).andExpect(status().isForbidden())
 			.andExpect(jsonPath("$.code").value("ONBOARDING_REQUIRED"));
 
 		JsonNode owner = registeredMember();
-		long sessionId = json(start(owner, UUID.randomUUID(), SURVEY_VERSION)).get("sessionId").asLong();
+		long sessionId = json(start(owner, SURVEY_VERSION)).get("sessionId").asLong();
 		JsonNode other = registeredMember();
 		perform(get(SESSIONS + "/" + sessionId), other, null).andExpect(status().isNotFound());
 		perform(get(SESSIONS + "/" + Long.MAX_VALUE), owner, null).andExpect(status().isNotFound())
 			.andExpect(jsonPath("$.code").value("RESOURCE_NOT_FOUND"));
-		perform(post(SESSIONS), owner, toJson(Map.of("surveyVersion", SURVEY_VERSION)))
-			.andExpect(status().isBadRequest());
+		perform(get(SESSIONS + "/0"), owner, null).andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.code").value("INVALID_REQUEST"));
 	}
 
 	@Test
 	@DisplayName("설문 버전은 저장 한도인 30자까지 받고, 넘으면 400")
 	void surveyVersionMaxLength() throws Exception {
 		JsonNode tokens = registeredMember();
-		start(tokens, UUID.randomUUID(), "S".repeat(30)).andExpect(status().isNotFound());
-		start(tokens, UUID.randomUUID(), "S".repeat(31)).andExpect(status().isBadRequest())
+		start(tokens, "S".repeat(30)).andExpect(status().isNotFound());
+		start(tokens, "S".repeat(31)).andExpect(status().isBadRequest())
 			.andExpect(jsonPath("$.code").value("INVALID_REQUEST"));
 	}
 
@@ -162,11 +141,169 @@ class SurveyIntegrationTest extends IntegrationTestSupport {
 	void concurrentStartCreatesOneDraft() throws Exception {
 		JsonNode tokens = registeredMember();
 		List<Integer> statuses = runConcurrently(
-			() -> start(tokens, UUID.randomUUID(), SURVEY_VERSION).andReturn().getResponse().getStatus(),
-			() -> start(tokens, UUID.randomUUID(), SURVEY_VERSION).andReturn().getResponse().getStatus());
+			() -> start(tokens, SURVEY_VERSION).andReturn().getResponse().getStatus(),
+			() -> start(tokens, SURVEY_VERSION).andReturn().getResponse().getStatus());
 		assertThat(statuses).containsOnly(201);
 		assertThat(jdbc.queryForObject("select count(*) from survey where user_id=?", Long.class,
 			userIdOf(tokens))).isEqualTo(1);
+	}
+
+	@Test
+	@DisplayName("답 저장은 덮어쓰고 배열 답은 배열로 돌려주며, 삭제는 미응답으로 되돌리고 없는 답 삭제도 200")
+	void saveAndDeleteAnswers() throws Exception {
+		JsonNode tokens = registeredMember();
+		long sessionId = json(start(tokens, SURVEY_VERSION)).get("sessionId").asLong();
+
+		saveAnswer(tokens, sessionId, "Q001", 4).andExpect(status().isOk())
+			.andExpect(jsonPath("$.answeredCount").value(1))
+			.andExpect(jsonPath("$.nextQuestionId").value("Q002"))
+			.andExpect(jsonPath("$.answers[0].value").value(4));
+		saveAnswer(tokens, sessionId, "Q001", 5.0).andExpect(status().isOk())
+			.andExpect(jsonPath("$.answeredCount").value(1))
+			.andExpect(jsonPath("$.answers[0].value").value(5));
+		saveAnswer(tokens, sessionId, "Q040", List.of("rest", "talk")).andExpect(status().isOk())
+			.andExpect(jsonPath("$.answers[1].questionId").value("Q040"))
+			.andExpect(jsonPath("$.answers[1].value", hasSize(2)))
+			.andExpect(jsonPath("$.answers[1].value[0]").value("rest"));
+		assertThat(jdbc.queryForMap("select answer_value,answer_type,answered_at is not null as timed "
+			+ "from survey_answer where survey_id=? and question_id='Q040'", sessionId))
+			.containsEntry("answer_value", "[\"rest\",\"talk\"]").containsEntry("answer_type", "ARRAY")
+			.containsEntry("timed", true);
+
+		perform(delete(answerPath(sessionId, "Q001")), tokens, null).andExpect(status().isOk())
+			.andExpect(jsonPath("$.answeredCount").value(1))
+			.andExpect(jsonPath("$.nextQuestionId").value("Q001"));
+		perform(delete(answerPath(sessionId, "Q001")), tokens, null).andExpect(status().isOk())
+			.andExpect(jsonPath("$.answeredCount").value(1));
+		perform(delete(answerPath(sessionId, "Q999")), tokens, null).andExpect(status().isNotFound());
+	}
+
+	@Test
+	@DisplayName("문항 규칙에 맞지 않으면 422, 답 형식이 틀리면 400, 없는 문항·남의 회차는 404")
+	void rejectsInvalidAnswers() throws Exception {
+		JsonNode tokens = registeredMember();
+		long sessionId = json(start(tokens, SURVEY_VERSION)).get("sessionId").asLong();
+
+		for (Object invalid : List.<Object>of(6, "4", "any", List.of("rest", "rest"), List.of("rest", "unknown"))) {
+			String question = invalid instanceof List ? "Q040" : "Q001";
+			saveAnswer(tokens, sessionId, question, invalid).andExpect(status().is(422))
+				.andExpect(jsonPath("$.code").value("INVALID_ANSWER"));
+		}
+		// 숫자 배열·아주 크거나 무한대로 읽히는 숫자도 500이 아니라 422
+		for (String body : List.of("{\"value\":[1,2]}", "{\"value\":1e100}", "{\"value\":1e999}",
+			"{\"value\":" + "9".repeat(200) + "}")) {
+			String question = body.contains("[") ? "Q040" : "Q001";
+			perform(put(answerPath(sessionId, question)), tokens, body).andExpect(status().is(422))
+				.andExpect(jsonPath("$.code").value("INVALID_ANSWER"));
+		}
+		// 같은 값의 긴 소수 표기는 짧은 표기로 저장한다(저장 한도 100자 안)
+		perform(put(answerPath(sessionId, "Q002")), tokens, "{\"value\":4." + "0".repeat(200) + "}")
+			.andExpect(status().isOk()).andExpect(jsonPath("$.answers[0].value").value(4));
+		perform(delete(answerPath(sessionId, "Q002")), tokens, null).andExpect(status().isOk());
+		saveAnswer(tokens, sessionId, "Q061", "any").andExpect(status().isOk());
+		for (String body : List.of("{}", "{\"value\":null}", "{\"value\":true}", "{\"value\":{\"a\":1}}")) {
+			perform(put(answerPath(sessionId, "Q001")), tokens, body).andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.code").value("INVALID_REQUEST"));
+		}
+		saveAnswer(tokens, sessionId, "Q999", 4).andExpect(status().isNotFound())
+			.andExpect(jsonPath("$.code").value("RESOURCE_NOT_FOUND"));
+		saveAnswer(registeredMember(), sessionId, "Q001", 4).andExpect(status().isNotFound());
+		perform(post(SESSIONS + "/" + sessionId + "/complete"), registeredMember(), null)
+			.andExpect(status().isNotFound());
+		assertThat(jdbc.queryForObject("select count(*) from survey_answer where survey_id=?", Long.class,
+			sessionId)).isEqualTo(1);
+	}
+
+	@Test
+	@DisplayName("모든 문항에 답해야 완료되고(unknown 도 답), 반복 완료는 같은 결과, 완료 뒤 저장·삭제는 409")
+	void completeRequiresAllAnswers() throws Exception {
+		JsonNode tokens = registeredMember();
+		long sessionId = json(start(tokens, SURVEY_VERSION)).get("sessionId").asLong();
+		String complete = SESSIONS + "/" + sessionId + "/complete";
+		jdbc.update("insert into survey_answer(survey_id,question_id,answer_value,answer_type) "
+			+ "select ?, 'Q' || lpad(g::text, 3, '0'), 'unknown', 'STRING' from generate_series(2, 100) g", sessionId);
+
+		perform(post(complete), tokens, null).andExpect(status().isConflict())
+			.andExpect(jsonPath("$.code").value("ANSWERS_INCOMPLETE"));
+		// 옛 자료처럼 규칙에 맞지 않는 값(숫자 문항에 문자열 "4")이 저장돼 있으면 답한 것으로 세지 않는다
+		jdbc.update("insert into survey_answer(survey_id,question_id,answer_value,answer_type) "
+			+ "values (?,'Q001','4','STRING')", sessionId);
+		perform(post(complete), tokens, null).andExpect(status().isConflict())
+			.andExpect(jsonPath("$.code").value("ANSWERS_INCOMPLETE"));
+		saveAnswer(tokens, sessionId, "Q001", 3).andExpect(status().isOk());
+
+		JsonNode completed = json(perform(post(complete), tokens, null).andExpect(status().isOk())
+			.andExpect(jsonPath("$.status").value("COMPLETED"))
+			.andExpect(jsonPath("$.answeredCount").value(100))
+			.andExpect(jsonPath("$.nextQuestionId").value(nullValue())));
+		perform(post(complete), tokens, null).andExpect(status().isOk())
+			.andExpect(jsonPath("$.completedAt").value(completed.get("completedAt").asString()));
+
+		saveAnswer(tokens, sessionId, "Q001", 4).andExpect(status().isConflict())
+			.andExpect(jsonPath("$.code").value("SESSION_COMPLETED"));
+		perform(delete(answerPath(sessionId, "Q001")), tokens, null).andExpect(status().isConflict())
+			.andExpect(jsonPath("$.code").value("SESSION_COMPLETED"));
+	}
+
+	@Test
+	@DisplayName("이관 미리보기는 규칙 파일대로 문항을 나누고, 이관은 원본을 그대로 둔 채 새 버전 회차에 옮길 답만 복사한다")
+	void migratesToNewVersion() throws Exception {
+		JsonNode tokens = registeredMember();
+		long source = json(start(tokens, SURVEY_VERSION)).get("sessionId").asLong();
+		saveAnswer(tokens, source, "Q001", 4).andExpect(status().isOk());
+		saveAnswer(tokens, source, "Q002", 3).andExpect(status().isOk());
+		saveAnswer(tokens, source, "Q003", 5).andExpect(status().isOk());
+		// 새 버전 Q040 은 하나만 고를 수 있어 두 개 고른 답은 옮길 수 없다
+		saveAnswer(tokens, source, "Q040", List.of("rest", "talk")).andExpect(status().isOk());
+		String plan = SESSIONS + "/" + source + "/migration-plan?targetSurveyVersion=";
+
+		JsonNode preview = json(perform(get(plan + "TEST-Q-2"), tokens, null).andExpect(status().isOk())
+			.andExpect(jsonPath("$.sourceSessionId").value(source))
+			.andExpect(jsonPath("$.targetSurveyVersion").value("TEST-Q-2"))
+			.andExpect(jsonPath("$.preservedQuestionIds", contains("Q001")))
+			.andExpect(jsonPath("$.reconfirmQuestionIds", contains("Q002")))
+			.andExpect(jsonPath("$.incompatibleQuestionIds", contains("Q003", "Q040")))
+			.andExpect(jsonPath("$.policyHash").isString()));
+		String policyHash = preview.get("policyHash").asString();
+
+		perform(get(plan + SURVEY_VERSION), tokens, null).andExpect(status().isConflict())
+			.andExpect(jsonPath("$.code").value("MIGRATION_UNSUPPORTED"));
+		perform(get(plan + "SIS-Q-0.9"), tokens, null).andExpect(status().isConflict());
+		perform(get(SESSIONS + "/" + source + "/migration-plan"), tokens, null).andExpect(status().isBadRequest());
+		perform(get(plan + "TEST-Q-2"), registeredMember(), null).andExpect(status().isNotFound());
+		migrate(tokens, source, "TEST-Q-2", "stale").andExpect(status().isConflict())
+			.andExpect(jsonPath("$.code").value("MIGRATION_POLICY_CHANGED"));
+
+		long migrated = json(migrate(tokens, source, "TEST-Q-2", policyHash).andExpect(status().isCreated())
+			.andExpect(jsonPath("$.manifest.surveyVersion").value("TEST-Q-2"))
+			.andExpect(jsonPath("$.status").value("DRAFT"))
+			.andExpect(jsonPath("$.questionCount").value(3))
+			.andExpect(jsonPath("$.answeredCount").value(1))
+			.andExpect(jsonPath("$.answers[0].questionId").value("Q001"))
+			.andExpect(jsonPath("$.answers[0].value").value(4))
+			.andExpect(jsonPath("$.nextQuestionId").value("Q002"))).get("sessionId").asLong();
+		assertThat(migrated).isNotEqualTo(source);
+		// 원본 답은 그대로이고, 다시 이관하면 같은 버전의 작성 중 회차를 돌려준다
+		perform(get(SESSIONS + "/" + source), tokens, null)
+			.andExpect(jsonPath("$.manifest.surveyVersion").value(SURVEY_VERSION))
+			.andExpect(jsonPath("$.answeredCount").value(4));
+		migrate(tokens, source, "TEST-Q-2", policyHash).andExpect(status().isCreated())
+			.andExpect(jsonPath("$.sessionId").value(migrated));
+	}
+
+	private ResultActions migrate(JsonNode tokens, long sessionId, String target, String policyHash)
+		throws Exception {
+		return perform(post(SESSIONS + "/" + sessionId + "/migrations"), tokens,
+			toJson(Map.of("targetSurveyVersion", target, "policyHash", policyHash)));
+	}
+
+	private ResultActions saveAnswer(JsonNode tokens, long sessionId, String questionId, Object value)
+		throws Exception {
+		return perform(put(answerPath(sessionId, questionId)), tokens, toJson(Map.of("value", value)));
+	}
+
+	private static String answerPath(long sessionId, String questionId) {
+		return SESSIONS + "/" + sessionId + "/answers/" + questionId;
 	}
 
 	private JsonNode registeredMember() throws Exception {
@@ -177,8 +314,8 @@ class SurveyIntegrationTest extends IntegrationTestSupport {
 		return tokens;
 	}
 
-	private ResultActions start(JsonNode tokens, UUID key, String version) throws Exception {
-		return perform(post(SESSIONS).header("Idempotency-Key", key), tokens,
+	private ResultActions start(JsonNode tokens, String version) throws Exception {
+		return perform(post(SESSIONS), tokens,
 			toJson(Map.of("surveyVersion", version)));
 	}
 

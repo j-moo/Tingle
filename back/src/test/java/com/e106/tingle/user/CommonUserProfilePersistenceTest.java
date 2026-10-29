@@ -27,6 +27,7 @@ import org.springframework.context.annotation.Import;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.jpa.repository.config.EnableJpaRepositories;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.testcontainers.postgresql.PostgreSQLContainer;
@@ -35,6 +36,7 @@ import com.e106.tingle.auth.SocialProvider;
 import com.e106.tingle.global.error.BusinessException;
 import com.e106.tingle.profile.PublicProfile;
 import com.e106.tingle.profile.PublicProfileRepository;
+import com.e106.tingle.settings.snapshot.SettingsChangeCoordinator;
 
 import tools.jackson.databind.json.JsonMapper;
 
@@ -44,6 +46,9 @@ import tools.jackson.databind.json.JsonMapper;
 	"spring.sql.init.mode=always", "spring.sql.init.schema-locations=classpath:common-user-profile-151.sql"
 })
 class CommonUserProfilePersistenceTest {
+
+	@MockitoBean
+	private SettingsChangeCoordinator settingsChanges;
 	private static final Instant NOW = Instant.parse("2026-10-28T00:00:00Z");
 	private final JsonMapper jsonMapper = JsonMapper.builder().build();
 
@@ -132,7 +137,7 @@ class CommonUserProfilePersistenceTest {
 	void readsOneCanonicalProfileThroughBothMappings() {
 		long id = user();
 		String nickname = "Original" + id;
-		String photo = "https://photos.example/profile/" + id + "/photo.webp";
+		String photo = "profile/" + id + "/" + java.util.UUID.randomUUID() + ".jpg";
 		jdbc.update("insert into profile(user_id,nickname,gender,smoking_status,drinking_frequency,religion,"
 			+ "photo_url,active_personality_id) values (?,?,'MALE','NON_SMOKER','NEVER','UNDISCLOSED',?,91)",
 			id, nickname, photo);

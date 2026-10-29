@@ -46,6 +46,7 @@ import com.e106.tingle.push.PushInstallationService;
 import com.e106.tingle.push.dto.PushAcknowledgement;
 import com.e106.tingle.user.OnboardingService;
 import com.e106.tingle.user.ProfileService;
+import com.e106.tingle.user.UnderAgeWithdrawalService;
 import com.e106.tingle.user.UserController;
 import com.e106.tingle.user.UserPathInterceptor;
 
@@ -85,6 +86,9 @@ class KeyringPushRouteTest {
 
 	@MockitoBean
 	private ProfileService profiles;
+
+	@MockitoBean
+	private UnderAgeWithdrawalService underAgeWithdrawal;
 
 	@BeforeEach
 	void authenticateOwnedSession() {

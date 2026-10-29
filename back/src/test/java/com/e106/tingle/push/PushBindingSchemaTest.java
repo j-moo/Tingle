@@ -36,12 +36,12 @@ class PushBindingSchemaTest {
 	}
 
 	@Test
-	@DisplayName("설계 DDL은 22개 테이블·176개 컬럼과 nullable 연결 세대 두 칸을 만든다")
+	@DisplayName("설계 DDL은 23개 테이블·181개 컬럼과 nullable 연결 세대 두 칸을 만든다")
 	void preservesApprovedLayoutAndNullableGenerationTypes() {
 		assertThat(jdbc.queryForObject("select count(*) from information_schema.tables "
-			+ "where table_schema='public' and table_type='BASE TABLE'", Integer.class)).isEqualTo(22);
+			+ "where table_schema='public' and table_type='BASE TABLE'", Integer.class)).isEqualTo(23);
 		assertThat(jdbc.queryForObject("select count(*) from information_schema.columns "
-			+ "where table_schema='public'", Integer.class)).isEqualTo(176);
+			+ "where table_schema='public'", Integer.class)).isEqualTo(181);
 		List<Map<String, Object>> columns = jdbc.queryForList("select column_name,data_type,is_nullable,column_default "
 			+ "from information_schema.columns where table_schema='public' and table_name='push_installation' "
 			+ "and column_name in ('binding_id','linked_at') order by column_name");

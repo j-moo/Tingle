@@ -14,7 +14,6 @@ import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
-import jakarta.persistence.Version;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -37,9 +36,6 @@ public class SurveyResponse {
 	@Column(name = "id")
 	private Long id;
 
-	// 이미 발급한 과거 공개 UUID를 보존한다. 새 회차에는 만들지 않으며 현재 API는 숫자 id만 사용한다.
-	private UUID legacyPublicId;
-
 	@Column(nullable = false)
 	private Long userId;
 
@@ -47,36 +43,40 @@ public class SurveyResponse {
 	@Column(name = "survey_version", nullable = false, length = 30)
 	private String versionCode;
 
-	// 회차를 만든 요청의 Idempotency-Key. 같은 키로 다시 오면 같은 회차를 돌려준다.
+	private Instant completedAt;
+
+	// 아래 칸은 ERD에 남은 옛 설계(재시도 키·ETag 변경 번호·공개 UUID·metadata·문항 사본)의 기존 값 보존용이다.
+	// 현재 명세는 쓰지 않으므로 새 회차는 비워 두고 읽지도 않는다. 칸 자체는 ERD와 같게 매핑만 유지한다.
+	@Getter(AccessLevel.NONE)
 	private UUID clientRequestId;
 
-	// 과거 응답의 answers 이외 루트 정보만 보존한다. 답은 여기에 중복 저장하지 않는다.
-	@JdbcTypeCode(SqlTypes.JSON)
-	@Column(columnDefinition = "jsonb")
-	private String responseContext;
-
-	// 새 회차는 실제 확인한 문항 파일·manifest·metadata schema를 고정한다. 과거 파일 증거는 추정하지 않는다.
-	@JdbcTypeCode(SqlTypes.JSON)
-	@Column(columnDefinition = "jsonb")
-	private String definitionSnapshot;
-
-	// 동시 저장 검사용 변경 번호(앱에는 ETag 로 전달). 저장할 때마다 JPA 가 1씩 올린다.
-	@Version
+	@Getter(AccessLevel.NONE)
 	@ColumnDefault("0")
 	@Column(nullable = false)
 	private long revision;
 
-	private Instant completedAt;
+	@Getter(AccessLevel.NONE)
+	private UUID legacyPublicId;
 
-	static SurveyResponse start(long userId, String versionCode, UUID clientRequestId,
-		String responseContext, String definitionSnapshot) {
+	@Getter(AccessLevel.NONE)
+	@JdbcTypeCode(SqlTypes.JSON)
+	@Column(columnDefinition = "jsonb")
+	private String responseContext;
+
+	@Getter(AccessLevel.NONE)
+	@JdbcTypeCode(SqlTypes.JSON)
+	@Column(columnDefinition = "jsonb")
+	private String definitionSnapshot;
+
+	static SurveyResponse start(long userId, String versionCode) {
 		SurveyResponse response = new SurveyResponse();
 		response.userId = userId;
 		response.versionCode = versionCode;
-		response.clientRequestId = clientRequestId;
-		response.responseContext = responseContext;
-		response.definitionSnapshot = definitionSnapshot;
 		return response;
+	}
+
+	void complete(Instant now) {
+		completedAt = now;
 	}
 
 	public boolean isCompleted() {

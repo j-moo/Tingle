@@ -7,6 +7,9 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.e106.tingle.agreement.AgreementService;
 import com.e106.tingle.auth.MemberAccessRepository;
+import com.e106.tingle.global.error.BusinessException;
+import com.e106.tingle.global.error.ErrorCode;
+import com.e106.tingle.settings.snapshot.SettingsChangeCoordinator;
 import com.e106.tingle.survey.SurveyService;
 import com.e106.tingle.user.dto.OnboardingDetailResponse;
 
@@ -26,6 +29,7 @@ public class OnboardingService {
 	private final UserRepository userRepository;
 	private final SurveyService surveyService;
 	private final Clock clock;
+	private final SettingsChangeCoordinator settingsChanges;
 
 	// 미구현 단계도 통과시키지 않는다. 각 도메인의 실제 데이터로 판단하고, READY 는 매칭 제안과 같은 기준(ready)을 쓴다.
 	@Transactional(readOnly = true)
@@ -54,11 +58,17 @@ public class OnboardingService {
 	 */
 	@Transactional
 	public OnboardingDetailResponse detail(long userId) {
+		// 뒤의 가입 완료 기록도 회원 행을 쓰므로 회원→설정 순서로 잠근다.
+		userRepository.findByIdForUpdate(userId)
+			.orElseThrow(() -> new BusinessException(ErrorCode.AUTH_REQUIRED));
+		settingsChanges.refreshAgeReferenceIfPresent(userId);
 		OnboardingStatus status = recordProgress(userId);
 		boolean ready = status == OnboardingStatus.READY;
 		SurveyService.Progress survey = surveyService.progress(userId);
 		MemberAccessRepository.SettingsVersions versions = members.settingsVersions(userId);
-		return new OnboardingDetailResponse(status, signupCompleted(userId), ready, ready,
+		// 가입 완료 bulk 갱신 직후이므로 잠글 때 읽은 엔티티의 이전 값 대신 실제 DB 값을 사용한다.
+		return new OnboardingDetailResponse(status, members.signupCompleted(userId), ready,
+			ready && members.matchingEnabled(userId),
 			survey.sessionId(), survey.answeredCount(), survey.questionCount(), survey.nextQuestionId(),
 			versions.required(), versions.acknowledged(), clock.instant());
 	}

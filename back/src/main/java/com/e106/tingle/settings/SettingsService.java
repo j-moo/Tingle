@@ -10,6 +10,7 @@ import com.e106.tingle.preference.MatchingPreferenceRepository;
 import com.e106.tingle.preference.PreferenceUserSettingRepository;
 import com.e106.tingle.settings.dto.SettingsRequest;
 import com.e106.tingle.settings.dto.SettingsResponse;
+import com.e106.tingle.settings.snapshot.SettingsChangeCoordinator;
 import com.e106.tingle.user.OnboardingService;
 import com.e106.tingle.user.OnboardingStatus;
 
@@ -23,10 +24,12 @@ public class SettingsService {
 	private final OnboardingService onboarding;
 	private final MatchingPreferenceRepository preferences;
 	private final PreferenceUserSettingRepository settings;
+	private final SettingsChangeCoordinator changes;
 
 	@Transactional
 	public VersionedSettings get(long authenticatedUserId, long userId) {
 		requireAccess(authenticatedUserId, userId);
+		changes.refreshAgeReferenceIfPresent(userId);
 		UserSetting setting = settings.findForRead(userId)
 			.orElseThrow(() -> new BusinessException(ErrorCode.SERVICE_UNAVAILABLE));
 		return response(findPreference(userId), setting);
@@ -46,6 +49,7 @@ public class SettingsService {
 		MatchingPreference preference = findPreference(userId);
 		setting.advanceVersion();
 		preference.changeMatchingOptions(request.matchingEnabled(), request.requirePartnerPhoto());
+		changes.captureCurrent(userId);
 		return response(preference, setting);
 	}
 

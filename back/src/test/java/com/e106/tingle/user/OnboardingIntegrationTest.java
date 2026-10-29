@@ -100,6 +100,12 @@ class OnboardingIntegrationTest extends IntegrationTestSupport {
 			.andExpect(jsonPath("$.serverTime").isNotEmpty());
 		// 처음 READY 가 된 시각을 남긴다
 		assertThat(userRepository.findById(userId).orElseThrow().getSignupCompletedAt()).isNotNull();
+
+		// 매칭 켜짐을 끄면 가입 완료는 그대로지만 새 매칭은 시작하지 않는다
+		jdbc.update("update matching_preference set matching_enabled=false where user_id=?", userId);
+		perform(get(me(tokens, "/onboarding")), tokens, null).andExpect(jsonPath("$.nextStep").value("READY"))
+			.andExpect(jsonPath("$.onboardingCompleted").value(true))
+			.andExpect(jsonPath("$.matchingReady").value(false));
 	}
 
 	private void assertNextStep(JsonNode tokens, String step) throws Exception {
@@ -241,7 +247,7 @@ class OnboardingIntegrationTest extends IntegrationTestSupport {
 		perform(get(me(tokens, "/profile")), tokens, null).andExpect(status().isOk())
 			.andExpect(jsonPath("$.completed").value(false))
 			.andExpect(jsonPath("$.hasProfilePhoto").value(false))
-			.andExpect(jsonPath("$.imageUrl").value(nullValue()))
+			.andExpect(jsonPath("$.imageUrl").doesNotExist())
 			.andExpect(jsonPath("$.nickname").value(nullValue()));
 	}
 
@@ -382,14 +388,17 @@ class OnboardingIntegrationTest extends IntegrationTestSupport {
 		JsonNode tokens = login("kakao", newSocialId());
 		completeOnboarding(tokens);
 		long userId = userIdOf(tokens);
-		for (Long invalid : List.of(0L, -1L, 2L)) {
+		long required = jdbc.queryForObject("select settings_version from user_setting where user_id=?",
+			Long.class, userId);
+		for (Long invalid : List.of(0L, -1L, required + 1)) {
 			jdbc.update("update keyring set synced_settings_version=? where owner_user_id=?", invalid, userId);
-			assertVersions(tokens, 1, null, false);
+			assertVersions(tokens, required, null, false);
 		}
 		jdbc.update("update keyring set synced_settings_version=null where owner_user_id=?", userId);
-		assertVersions(tokens, 1, null, false);
-		jdbc.update("update keyring set synced_settings_version=1,state='UNBOUND' where owner_user_id=?", userId);
-		assertVersions(tokens, 1, null, false);
+		assertVersions(tokens, required, null, false);
+		jdbc.update("update keyring set synced_settings_version=?,state='UNBOUND' where owner_user_id=?",
+			required, userId);
+		assertVersions(tokens, required, null, false);
 	}
 
 	private void assertVersions(JsonNode tokens, long required, Long acknowledged, boolean ready) throws Exception {
@@ -404,16 +413,35 @@ class OnboardingIntegrationTest extends IntegrationTestSupport {
 	}
 
 	@Test
-	@DisplayName("만 19세 미만은 403 UNDER_AGE로 저장하지 않고, 미래·없는 날짜는 400 INVALID_BIRTH_DATE")
+	@DisplayName("만 19세 미만은 403 UNDER_AGE와 함께 바로 탈퇴되고, 미래·없는 날짜는 400 INVALID_BIRTH_DATE")
 	void birthDateRules() throws Exception {
-		JsonNode tokens = agreedUser();
+		String socialId = newSocialId();
+		JsonNode minor = login("kakao", socialId);
+		agree(minor).andExpect(status().isOk());
+		long minorId = userIdOf(minor);
+		long keyringId = bindKeyring(minorId);
+		patchProfile(minor, Map.of("nickname", uniqueNickname())).andExpect(status().isOk());
+		assertThat(jdbc.queryForObject("select count(*) from settings_snapshot where user_id=?", Integer.class,
+			minorId)).isPositive();
 		LocalDate today = LocalDate.now(ZoneId.of("Asia/Seoul"));
 		String eighteen = today.minusYears(19).plusDays(1).toString();
 
-		patchProfile(tokens, Map.of("birthDate", eighteen)).andExpect(status().isForbidden())
-			.andExpect(jsonPath("$.code").value("UNDER_AGE"));
-		perform(get(me(tokens, "/profile")), tokens, null).andExpect(jsonPath("$.birthDate").doesNotExist());
+		patchProfile(minor, Map.of("nickname", uniqueNickname(), "birthDate", eighteen))
+			.andExpect(status().isForbidden()).andExpect(jsonPath("$.code").value("UNDER_AGE"));
+		// 회원과 그 자료가 지워져 세션도 끝나고, 키링은 소유가 풀린다
+		perform(get(me(minor, "/profile")), minor, null).andExpect(status().isUnauthorized());
+		for (String table : List.of("profile", "user_consents", "refresh_token", "matching_preference",
+			"user_setting", "settings_snapshot")) {
+			assertThat(jdbc.queryForObject("select count(*) from " + table + " where user_id=?", Integer.class,
+				minorId)).as(table).isZero();
+		}
+		assertThat(userRepository.findById(minorId)).isEmpty();
+		assertThat(jdbc.queryForMap("select owner_user_id, state::text as state from keyring where id=?", keyringId))
+			.containsEntry("owner_user_id", null).containsEntry("state", "UNBOUND");
+		// 같은 소셜 계정으로 다시 로그인하면 새 회원으로 시작한다
+		assertThat(userIdOf(login("kakao", socialId))).isNotEqualTo(minorId);
 
+		JsonNode tokens = agreedUser();
 		patchProfile(tokens, Map.of("birthDate", today.minusYears(19).toString())).andExpect(status().isOk());
 		patchProfile(tokens, Map.of("birthDate", today.plusDays(1).toString())).andExpect(status().isBadRequest())
 			.andExpect(jsonPath("$.code").value("INVALID_BIRTH_DATE"));

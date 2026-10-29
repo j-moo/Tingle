@@ -46,19 +46,24 @@ public class TokenService {
 	private final Clock clock;
 
 	/**
-	 * 새 로그인 세션(family)을 시작하고 토큰을 발급한다. 같은 회원이 다른 기기에서 로그인해도 기존 세션은 유지된다.
+	 * 새 로그인 세션(family)을 시작하고 토큰을 발급한다. 로그인 기기는 하나라서, 이전 세션은 모두 끝내고
+	 * 그 세션들의 푸시 연결도 비운다(이전 기기의 액세스 토큰도 바로 막힌다).
+	 * 동시에 두 기기에서 로그인해도 하나만 남도록 회원 행을 잠근다(재발급·로그아웃과 같은 잠금).
 	 */
 	@Transactional
 	public IssuedTokens issue(long userId) {
+		userRepository.findByIdForUpdate(userId).orElseThrow();
 		Instant now = clock.instant();
+		pushInstallations.clearUserConnections(userId, now);
+		refreshTokenRepository.revokeAllByUserId(userId, now);
 		UUID familyId = UUID.randomUUID();
-		return issued(userId, familyId, now, newRefreshToken(userId, familyId, now, null));
+		return issued(userId, familyId, now, newRefreshToken(userId, familyId, now));
 	}
 
 	/**
 	 * 리프레시 토큰을 교체한다. 세션(family)은 그대로다.
 	 * <ul>
-	 *   <li>로그아웃 등으로 이미 끝난 세션의 토큰이면 401만 준다(다른 기기 세션은 건드리지 않는다).</li>
+	 *   <li>로그아웃·새 로그인 등으로 이미 끝난 세션의 토큰이면 401만 준다(지금 세션은 건드리지 않는다).</li>
 	 *   <li>이미 쓰인 토큰이 다시 오면, 쓰인 지 유예 시간(기본 30초) 안이고 그 뒤에 발급된 살아 있는 토큰이
 	 *       하나뿐이며 아직 쓰이지 않았을 때만 응답 유실로 인한 재시도로 보고 다시 발급한다.</li>
 	 *   <li>그 밖의 쓰인 토큰, 폐기된 토큰의 재사용은 탈취로 보고 그 회원의 모든 리프레시 토큰(모든 세션)을 폐기한다.
@@ -99,11 +104,11 @@ public class TokenService {
 		}
 
 		current.markUsed(now);
-		return issued(userId, familyId, now, newRefreshToken(userId, familyId, now, current.getDeviceName()));
+		return issued(userId, familyId, now, newRefreshToken(userId, familyId, now));
 	}
 
 	/**
-	 * 리프레시 토큰이 속한 세션(family)을 끝낸다. 그 세션의 액세스 토큰도 바로 거절된다. 다른 세션은 유지한다.
+	 * 리프레시 토큰이 속한 세션(family)을 끝낸다. 그 세션의 액세스 토큰도 바로 거절된다.
 	 * 만료된 토큰이나 이미 로그아웃한 토큰으로 다시 불러도 같은 결과(세션 종료)라 성공으로 본다.
 	 */
 	@Transactional
@@ -165,12 +170,12 @@ public class TokenService {
 		return jwtEncoder.encode(JwtEncoderParameters.from(header, claims)).getTokenValue();
 	}
 
-	private NewRefreshToken newRefreshToken(long userId, UUID familyId, Instant now, String deviceName) {
+	private NewRefreshToken newRefreshToken(long userId, UUID familyId, Instant now) {
 		byte[] bytes = new byte[32];
 		RANDOM.nextBytes(bytes);
 		String raw = Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
 		RefreshToken entity = refreshTokenRepository.save(
-			new RefreshToken(userId, familyId, hash(raw), now.plus(properties.refreshTokenTtl()), deviceName, now));
+			new RefreshToken(userId, familyId, hash(raw), now.plus(properties.refreshTokenTtl())));
 		return new NewRefreshToken(raw, entity);
 	}
 

@@ -1,4 +1,5 @@
--- ERD21 source + approved preservation amendments / 2026-10-28 / 22 tables, 176 columns
+-- Current branch design:23 tables/181 columns/37 logical references after approved72 addition.
+-- ERD21 source + approved preservation amendments / 2026-10-28 / 22 tables, 174 columns
 -- Design DDL, not an automatic migration. Not applied to shared/production DBs.
 -- Verified only with disposable PostgreSQL test databases.
 -- Empty-database PostgreSQL design DDL. Logical references only; no physical FOREIGN KEY constraints.
@@ -95,21 +96,17 @@ CREATE TABLE "refresh_token" (
     "expires_at" timestamptz NOT NULL,
     "used_at" timestamptz,
     "revoked_at" timestamptz,
-    "device_name" varchar(100),
-    "last_used_at" timestamptz,
     CONSTRAINT "pk_refresh_token" PRIMARY KEY ("id"),
     CONSTRAINT "uq_refresh_token_token_hash" UNIQUE ("token_hash")
 );
 COMMENT ON TABLE "refresh_token" IS '로그인 토큰(기기별)';
 COMMENT ON COLUMN "refresh_token"."id" IS '토큰 번호';
 COMMENT ON COLUMN "refresh_token"."user_id" IS '회원 ID';
-COMMENT ON COLUMN "refresh_token"."family_id" IS '로그인 기기 ID(sid) — 같은 기기에서 재발급된 토큰은 같은 값. 로그인 기기 목록 = 폐기 안 된 family 목록';
+COMMENT ON COLUMN "refresh_token"."family_id" IS '로그인 세션 ID(sid) — 재발급된 토큰은 같은 값. 로그인 기기는 1개라 새로 로그인하면 이전 family는 모두 폐기';
 COMMENT ON COLUMN "refresh_token"."token_hash" IS '리프레시 토큰 해시 — 원문 저장 안 함';
 COMMENT ON COLUMN "refresh_token"."expires_at" IS '만료 시각';
 COMMENT ON COLUMN "refresh_token"."used_at" IS '재발급에 쓴 시각 — 이미 쓴 토큰이 다시 오면 그 family 전체 폐기(탈취 감지)';
 COMMENT ON COLUMN "refresh_token"."revoked_at" IS '폐기 시각 — 로그아웃·탈취 감지·탈퇴';
-COMMENT ON COLUMN "refresh_token"."device_name" IS '기기 이름 — 로그인 기기 목록에 보여 줄 이름(예: Galaxy S24). 재발급 때 그대로 이어받음';
-COMMENT ON COLUMN "refresh_token"."last_used_at" IS '마지막 사용 시각 — 로그인·재발급한 시각. 로그인 기기 목록에 표시';
 CREATE INDEX "ix_refresh_token_family" ON "refresh_token" ("family_id");
 
 CREATE INDEX "ix_refresh_token_user" ON "refresh_token" ("user_id");
@@ -328,7 +325,7 @@ CREATE TABLE "profile" (
     "completed_at" timestamptz,
     "active_personality_id" bigint,
     CONSTRAINT "pk_profile" PRIMARY KEY ("user_id"),
-    CONSTRAINT ck_profile_photo_url CHECK (photo_url IS NULL OR (photo_url LIKE 'https://%' AND position('?' in photo_url)=0))
+    CONSTRAINT ck_profile_photo_url CHECK (photo_url IS NULL OR photo_url ~ '^profile/[0-9]+/[0-9a-f-]{36}\.jpg$')
 );
 COMMENT ON TABLE "profile" IS '프로필';
 COMMENT ON COLUMN "profile"."user_id" IS '회원 ID — 프로필 소유 회원 ID';
@@ -339,7 +336,7 @@ COMMENT ON COLUMN "profile"."smoking_status" IS '흡연 여부 — 필수 흡연
 COMMENT ON COLUMN "profile"."drinking_frequency" IS '음주 빈도 — 필수 음주 빈도 선택 코드';
 COMMENT ON COLUMN "profile"."religion" IS '종교 — 별도 동의를 받은 선택 종교 정보. 비공개·미입력을 무교로 추정하지 않음';
 COMMENT ON COLUMN "profile"."introduction" IS '자기소개 — 선택 자기소개. 최대 200자·줄바꿈 최대 3개 등 명세 기준 적용';
-COMMENT ON COLUMN "profile"."photo_url" IS '프로필 사진 주소 — NULL이면 사진 없음(hasProfilePhoto = 이 칸이 비어 있지 않음). 저장 전 서버 검증: (1) https:// 로 시작 (2) 우리 사진 저장소 주소(서버 설정 파일의 허용 주소)로 시작 (3) 그 안에서도 이 회원 폴더(profile/{userId}/)만 허용해 남의 사진 주소 도용 차단 (4) ? 가 붙은 주소 거부 = 금방 만료되는 서명 URL 저장 금지 (5) 2048자 이하, 빈 문자열·공백 거부(삭제는 사진 삭제 API로). 위반이면 400 PHOTO_URL_INVALID, 기존 사진 유지. DB에도 같은 안전장치(CHECK 제약): NULL이거나, https:// 로 시작하고 ? 가 없어야 저장됨. 삭제하면 NULL로 바꾸고(반복 삭제도 204) 저장소 파일은 정리 작업이 따로 지움. 탈퇴 시 파일도 삭제. 상대 사진 조회에서 NULL이면 410. 이미지 용량: 앱이 올리기 전에 1080×1080 이하로 줄이고 WebP(품질 80)로 바꿔 보통 300KB 안팎, 업로드 주소 발급 때 최대 1MB로 제한(넘으면 저장소가 업로드 거부)';
+COMMENT ON COLUMN "profile"."photo_url" IS '프로필 사진 파일 키 — NULL이면 사진 없음(hasProfilePhoto = 이 칸이 비어 있지 않음). 서버 디스크 사진 폴더(설정 tingle.photo.dir) 기준 키 profile/{userId}/{uuid}.jpg 만 저장(절대 경로·URL 아님, CHECK 제약으로 형식 강제). 서버가 받은 JPEG/PNG/WebP(최대 10MB)를 EXIF 방향 적용·가운데 정사각형·최대 1080px·JPEG(품질 85)로 바꿔 메타데이터 없이 저장. 새로 올리면 새 파일을 쓰고 이 칸을 바꾼 뒤 이전 파일 삭제, 삭제 API는 NULL로 바꾸고 파일도 삭제(반복 삭제도 204). 키는 응답에 내보내지 않고, 사진은 본인 사진 조회·상대 사진 조회(partner-photo) API가 권한 확인 뒤 바이트로만 전달. 상대 사진 조회에서 NULL이면 410 PHOTO_REMOVED';
 COMMENT ON COLUMN "profile"."completed_at" IS '프로필 완료 시각 — 프로필 최종 등록 성공 시각. 초안 저장 시에는 설정하지 않음';
 COMMENT ON COLUMN "profile"."active_personality_id" IS '적용 중인 분석 ID — 현재 새 매칭에 적용하는 유효 분석 결과 ID. 재검사 대기·실패 중에는 기존 값 유지';
 CREATE UNIQUE INDEX "uq_profile_nickname_lower" ON "profile" (lower(nickname));
@@ -593,3 +590,15 @@ CREATE UNIQUE INDEX "uq_chat_legacy_public_id" ON "chat" ("legacy_public_id");
 CREATE UNIQUE INDEX "uq_chat_message_legacy_public_id" ON "chat_message" ("legacy_public_id");
 CREATE UNIQUE INDEX "uq_matching_participant_user_request" ON "matching_participant" ("user_id", "decision_request_key");
 COMMENT ON COLUMN "survey_answer"."answered_at" IS '답한 시각 — 같은 문항을 다시 고르면 값과 시각을 덮어씀；구 JSON에 문항별 시각이 없으면 NULL. 현재·완료 시각 추정 금지';
+
+--72: dedicated frozen input evidence; design DDL, not automatic migration.
+CREATE TABLE "settings_snapshot" (
+    "id" BIGSERIAL PRIMARY KEY,
+    "user_id" BIGINT NOT NULL,
+    "settings_version" BIGINT NOT NULL,
+    "input_format" VARCHAR(64) NOT NULL,
+    "input_json" TEXT NOT NULL,
+    "input_hash" VARCHAR(64) NOT NULL,
+    "captured_at" TIMESTAMPTZ NOT NULL,
+    CONSTRAINT "uq_settings_snapshot_user_version" UNIQUE ("user_id", "settings_version")
+);
