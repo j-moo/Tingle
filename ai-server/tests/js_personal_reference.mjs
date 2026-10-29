@@ -1,9 +1,9 @@
 // Independent oracle: import original handoff modules, never Python outputs.
 import fs from 'node:fs';
 import crypto from 'node:crypto';
-import {questions, validAnswer, featureLabels, domainDefs} from '../../docs/handoffs/survey-20261021/mockup/dist/data100.mjs';
-import {model, demoAnswers, profileFromAnswers, classifyAnswers, classifyProfile, readings, preferenceGaps, wishFit} from '../../docs/handoffs/survey-20261021/mockup/dist/engine100.mjs';
-import {typeRecommendations} from '../../docs/handoffs/survey-20261021/mockup/dist/type-recommendations100.mjs';
+import {questions, validAnswer, featureLabels, domainDefs} from '../reference/survey-20261021/mockup/dist/data100.mjs';
+import {model, demoAnswers, profileFromAnswers, classifyAnswers, classifyProfile, readings, preferenceGaps, wishFit} from '../reference/survey-20261021/mockup/dist/engine100.mjs';
+import {typeRecommendations} from '../reference/survey-20261021/mockup/dist/type-recommendations100.mjs';
 
 const baseline = JSON.parse(fs.readFileSync(new URL('./fixtures/wording-baseline.json', import.meta.url)));
 const base = baseline.fixtures[9];
@@ -90,5 +90,8 @@ for(const id of Array.from({length:35},(_,i)=>i+61)) {
 }
 const sourceRoot=new URL('../../',import.meta.url);
 const provenance=JSON.parse(fs.readFileSync(new URL('../app/personal_analysis/data/provenance.json',import.meta.url)));
-const hashes=Object.fromEntries(Object.keys(provenance.artifacts).map(path=>[path,crypto.createHash('sha256').update(fs.readFileSync(new URL(path,sourceRoot))).digest('hex')]));
+const localSource = path => path
+  .replace('docs/contracts/survey/', 'ai-server/reference/survey-20261021/')
+  .replace('docs/handoffs/survey-20261021/mockup/', 'ai-server/reference/survey-20261021/mockup/');
+const hashes=Object.fromEntries(Object.keys(provenance.artifacts).map(path=>[path,crypto.createHash('sha256').update(fs.readFileSync(new URL(localSource(path),sourceRoot))).digest('hex')]));
 process.stdout.write(JSON.stringify({cases,profiles,wishCases,reference:{model,questions,featureLabels,domainDefs},hashes}));

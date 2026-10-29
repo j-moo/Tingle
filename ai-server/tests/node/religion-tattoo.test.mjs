@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
-import {questions,questionnaireVersion,answeredCount,validAnswer} from '../../../docs/handoffs/survey-20261021/mockup/dist/data100.mjs';
-import {demoAnswers,classifyAnswers,direction,pair,wishFit} from '../../../docs/handoffs/survey-20261021/mockup/dist/engine100.mjs';
-import {previousVersion,revisedIds,normalizeRecord} from '../../../docs/handoffs/survey-20261021/mockup/dist/record100.mjs';
+import {questions,questionnaireVersion,answeredCount,validAnswer} from '../../reference/survey-20261021/mockup/dist/data100.mjs';
+import {demoAnswers,classifyAnswers,direction,pair,wishFit} from '../../reference/survey-20261021/mockup/dist/engine100.mjs';
+import {previousVersion,revisedIds,normalizeRecord} from '../../reference/survey-20261021/mockup/dist/record100.mjs';
 assert.equal(questions.length,100);
 assert.ok(validAnswer(56,'none'));assert.ok(!validAnswer(56,3));
 assert.ok(validAnswer(91,['none','buddhist']));assert.ok(validAnswer(95,'any'));

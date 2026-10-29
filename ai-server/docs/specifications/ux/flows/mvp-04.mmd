@@ -1,0 +1,46 @@
+flowchart LR
+  start(["두 키링이 가까워짐"])
+  ready{"키링 준비·양쪽 매칭 ON?"}
+  skip(["이번 새 매칭 없음"])
+  repeat{"동일 쌍 처리·제한 중?"}
+  suppress(["중복 안내 없음"])
+  exchange["키링끼리 입력 교환"]
+  enough{"판단 입력 충분?"}
+  incomplete(["단순 발견·성공 아님"])
+  calc["각 키링 궁합 계산"]
+  match{"양쪽 매칭 조건 충족?"}
+  record["만남 기록 안전하게 저장"]
+  near{"아직 서로 근처?"}
+  channels["본인 진동·LED 설정 적용"]
+  physical["켜진 채널만 한 번 안내"]
+  stop[/"버튼으로 진동 중지"/]
+  silent["지연 물리 안내 생략"]
+  sync(["05 나중에 기록 동기화"])
+  start --> ready
+  ready -->|"아니요"| skip
+  ready -->|"예"| repeat
+  repeat -->|"예"| suppress
+  repeat -->|"아니요"| exchange
+  exchange --> enough
+  enough -->|"아니요"| incomplete
+  enough -->|"예·이탈해도 계산"| calc
+  calc --> match
+  match -->|"아니요"| skip
+  match -->|"예"| record
+  record --> near
+  near -->|"예"| channels
+  channels --> physical
+  physical -.->|"진동 중 사용자 선택"| stop
+  stop -->|"제안 거절 아님"| sync
+  physical -.->|"버튼 조작 없음"| sync
+  near -->|"아니요"| silent
+  silent -.->|"기록 경로 유지"| sync
+classDef screen fill:#A0F4CD,stroke:#53B78E
+classDef action fill:#E2E5E3,stroke:#8D9891
+class exchange,calc,record,channels,physical,silent action
+classDef decision fill:#ECFBF4,stroke:#53B78E
+class ready,repeat,enough,match,near decision
+classDef input fill:#E2E5E3,stroke:#8D9891
+class stop input
+classDef terminal fill:#F5F6F5,stroke:#8D9891
+class start,skip,suppress,incomplete,sync terminal

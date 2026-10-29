@@ -123,7 +123,7 @@ def test_5832_wish_fit_cases_and_thresholds_match_js(js_reference):
 def test_reference_data_and_sources_are_unchanged(js_reference):
     assert_same(REFERENCE, js_reference["reference"])
     assert PROVENANCE["artifacts"] == js_reference["hashes"]
-    catalogue_path = Path(__file__).resolve().parents[2] / "docs/contracts/survey/questionnaire-SIS-Q-1.1-100.json"
+    catalogue_path = Path(__file__).resolve().parents[2] / "ai-server/reference/survey-20261021/questionnaire-SIS-Q-1.1-100.json"
     packaged = Path(__file__).resolve().parents[1] / "app/personal_analysis/data" / catalogue_path.name
     assert packaged.read_bytes() == catalogue_path.read_bytes()
     assert {q["ordinal"] for q in CATALOGUE["questions"]} == set(range(1, 101))

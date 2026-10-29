@@ -1,0 +1,70 @@
+{
+  "date": "2026-10-28",
+  "source_sha256": "7641a0f6be97895c42abf724ea5269367f696e30311f7bf600b6546261cbcb21",
+  "tables": 21,
+  "columns": 151,
+  "enums": 21,
+  "logical_relations": 35,
+  "sql_statements": 244,
+  "source_structure": "PASS",
+  "postgresql_parse": "PASS",
+  "metadata": "PASS",
+  "mermaid_structure": "PASS",
+  "mermaid_render": "not run",
+  "import_diagram_structure": "PASS",
+  "markdown_tables": "PASS",
+  "database_execution": false,
+  "web": {
+    "method": "internal browser only; existing documents edited; reload readback",
+    "notion": {
+      "status": "PASS",
+      "url": "https://app.notion.com/p/ERD-401c91ccb660802ba0e7feb95483fcee",
+      "current_tables_covered": 11,
+      "native_tables_verified": 10,
+      "current_fields_verified": 71,
+      "all_cells_equal_after_reload": true,
+      "historical_rows_explicitly_marked_not_current": 4,
+      "historical_only_sections": [
+        "encounter_submissions",
+        "match_proposals",
+        "chat_message_reads",
+        "user_blocks",
+        "ai_results",
+        "background_jobs"
+      ],
+      "historical_settings_snapshots": "not current; recorded in personality history row and explanation",
+      "preserved_other_owner_sections": [
+        "01",
+        "02",
+        "push_installation",
+        "operator_audit",
+        "service_case",
+        "service_case_history"
+      ],
+      "screenshots": [
+        "tmp/erd21-notion-overview-saved.png",
+        "tmp/erd21-notion-matching-saved.png"
+      ]
+    },
+    "erdcloud": {
+      "status": "PASS",
+      "url": "https://www.erdcloud.com/d/62ajQmkQWgGCL2MTn",
+      "existing_diagram": "Tingle_erd; creator 가을",
+      "existing_entity_names_verified": 21,
+      "structure_mutations": false,
+      "column_comments_saved_and_reopened": [
+        "matching.proposed_at",
+        "matching.raw_delete_at"
+      ],
+      "scoped_clarification_memos_added": 1,
+      "memo_characters": 863,
+      "memo_exact_after_reload": true,
+      "screenshots": [
+        "tmp/erd21-erdcloud-entities-saved.png",
+        "tmp/erd21-erdcloud-proposed-at-saved.png",
+        "tmp/erd21-erdcloud-raw-delete-saved.png",
+        "tmp/erd21-erdcloud-memo-saved.png"
+      ]
+    }
+  }
+}
