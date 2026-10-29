@@ -1,5 +1,6 @@
 package com.e106.tingle.chat;
 
+import java.util.List;
 import java.util.Optional;
 
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -9,6 +10,8 @@ import org.springframework.data.jpa.repository.Query;
 import jakarta.persistence.LockModeType;
 
 public interface ChatMemberRepository extends JpaRepository<ChatMember, Long> {
+	List<ChatMember> findByChatRoomId(long roomId);
+
 	Optional<ChatMember> findByChatRoomIdAndUserId(long roomId, long userId);
 
 	@Lock(LockModeType.PESSIMISTIC_WRITE)
