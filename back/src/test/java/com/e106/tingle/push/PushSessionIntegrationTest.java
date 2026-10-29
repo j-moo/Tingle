@@ -71,15 +71,15 @@ class PushSessionIntegrationTest extends IntegrationTestSupport {
 	}
 
 	@Test
-	@DisplayName("다른 설치의 활성 로그인이 로그아웃한 설치의 채팅 알림 권한을 되살리지 않는다")
+	@DisplayName("새 기기 로그인은 이전 기기 설치의 알림 연결을 끊고, 이전 세션의 늦은 로그아웃은 새 연결을 건드리지 않는다")
 	void isolatesSessionStatePerInstallation() throws Exception {
 		String socialId = newSocialId();
 		JsonNode first = login("kakao", socialId);
 		completeOnboarding(first);
-		JsonNode second = login("kakao", socialId);
 		UUID firstId = UUID.randomUUID();
 		UUID secondId = UUID.randomUUID();
 		register(first, firstId, "synthetic-first").andExpect(status().isOk());
+		JsonNode second = login("kakao", socialId);
 		register(second, secondId, "synthetic-second").andExpect(status().isOk());
 
 		logout(first.path("refreshToken").asString()).andExpect(status().isNoContent());
@@ -115,9 +115,10 @@ class PushSessionIntegrationTest extends IntegrationTestSupport {
 	@DisplayName("다른 회원이나 다른 세션의 리프레시 증명으로 설치 연결을 해제할 수 없다")
 	void releaseRequiresMatchingOwnerAndFamily() throws Exception {
 		String socialId = newSocialId();
+		// 로그인 기기는 하나라서 다른 세션은 새 로그인으로 끝난 이전 세션이다.
+		JsonNode otherSession = login("kakao", socialId);
 		JsonNode owner = login("kakao", socialId);
 		completeOnboarding(owner);
-		JsonNode otherSession = login("kakao", socialId);
 		JsonNode otherUser = readyUser();
 		UUID id = UUID.randomUUID();
 		register(owner, id, "synthetic-owner").andExpect(status().isOk());

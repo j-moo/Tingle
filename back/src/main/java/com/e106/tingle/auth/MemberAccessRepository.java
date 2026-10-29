@@ -45,6 +45,12 @@ public class MemberAccessRepository {
 			+ "where m.user_id=? and " + AGE_SELECTED + ")", Boolean.class, userId));
 	}
 
+	// 회원이 매칭 켜짐을 끈 상태면 가입을 마쳤어도 새 매칭을 시작하지 않는다.
+	public boolean matchingEnabled(long userId) {
+		return Boolean.TRUE.equals(jdbc.queryForObject("select exists (select 1 from matching_preference "
+			+ "where user_id=? and matching_enabled)", Boolean.class, userId));
+	}
+
 	public void lockMember(long userId) {
 		jdbc.queryForObject("select id from users where id=? for update", Long.class, userId);
 	}

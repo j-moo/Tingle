@@ -129,14 +129,12 @@ class PushLogoutPersistenceTest {
 	}
 
 	@Test
-	@DisplayName("일반 로그아웃은 같은 회원·family 연결만 원자 비우고 행·암호문·다른 로그인을 보존한다")
+	@DisplayName("일반 로그아웃은 같은 회원·family 연결만 원자 비우고 행·암호문·다른 회원 로그인을 보존한다")
 	void normalLogoutClearsOnlyExactSession() {
 		IssuedTokens first = login(newUser());
-		IssuedTokens otherFamily = login(first.userId());
 		IssuedTokens otherUser = login(newUser());
 		UUID firstId = register(first, "synthetic-first");
 		UUID secondId = register(first, "synthetic-second-install");
-		UUID familyId = register(otherFamily, "synthetic-other-family");
 		UUID foreignId = register(otherUser, "synthetic-other-user");
 		Map<String, Object> before = row(firstId);
 		time.set(NOW.plusSeconds(1));
@@ -149,10 +147,9 @@ class PushLogoutPersistenceTest {
 			Instant.class, firstId)).isEqualTo(NOW.plusSeconds(1));
 		assertThat(jdbc.queryForObject("select revoked_at from refresh_token where family_id=?",
 			Instant.class, family(first))).isEqualTo(NOW.plusSeconds(1));
-		assertThat(row(familyId)).containsEntry("user_id", first.userId());
 		assertThat(row(foreignId)).containsEntry("user_id", otherUser.userId());
 		assertThat(sessions.isSessionActive(family(first), first.userId())).isFalse();
-		assertThat(sessions.isSessionActive(family(otherFamily), first.userId())).isTrue();
+		assertThat(sessions.isSessionActive(family(otherUser), otherUser.userId())).isTrue();
 	}
 
 	@Test
@@ -241,10 +238,9 @@ class PushLogoutPersistenceTest {
 	@DisplayName("탈취 감지 401도 전체 세션 폐기와 해당 회원 연결 정리를 실제 커밋한다")
 	void theftRevocationCommitsUnbindingDespiteBusinessException() {
 		IssuedTokens first = login(newUser());
-		IssuedTokens another = login(first.userId());
 		IssuedTokens foreign = login(newUser());
 		UUID firstId = register(first, "synthetic-first");
-		UUID secondId = register(another, "synthetic-another");
+		UUID secondId = register(first, "synthetic-another");
 		UUID foreignId = register(foreign, "synthetic-foreign");
 		tokens.rotate(first.refreshToken());
 		time.set(NOW.plusSeconds(31));
@@ -253,7 +249,6 @@ class PushLogoutPersistenceTest {
 		assertUnbound(firstId);
 		assertUnbound(secondId);
 		assertThat(sessions.isSessionActive(family(first), first.userId())).isFalse();
-		assertThat(sessions.isSessionActive(family(another), first.userId())).isFalse();
 		assertThat(row(foreignId)).containsEntry("user_id", foreign.userId());
 	}
 
@@ -319,30 +314,19 @@ class PushLogoutPersistenceTest {
 	}
 
 	@Test
-	@DisplayName("로그인 시각은 실제 발급 시각이며 기기 이름이 없는 요청에서 임의 이름을 만들지 않는다")
-	void issueRecordsActualUsageWithoutInventingDeviceName() {
-		IssuedTokens session = login(newUser());
-		assertThat(jdbc.queryForMap("select device_name,last_used_at from refresh_token where family_id=?",
-			family(session))).containsEntry("device_name", null)
-			.containsEntry("last_used_at", java.sql.Timestamp.from(NOW));
-	}
-
-	@Test
-	@DisplayName("정상 회전과 응답 유실 재시도는 기기 이름과 family를 보존하고 실제 사용 시각을 기록한다")
-	void rotationPreservesDeviceNameAndActualLastUsage() {
-		IssuedTokens session = login(newUser());
-		UUID familyId = family(session);
-		jdbc.update("update refresh_token set device_name='synthetic-device' where family_id=?", familyId);
+	@DisplayName("새 로그인은 이전 세션을 모두 끝내고 그 푸시 연결을 비우며 다른 회원은 건드리지 않는다")
+	void newLoginEndsPreviousSessionsAndConnections() {
+		IssuedTokens old = login(newUser());
+		IssuedTokens foreign = login(newUser());
+		UUID oldId = register(old, "synthetic-old-device");
+		UUID foreignId = register(foreign, "synthetic-foreign");
 		time.set(NOW.plusSeconds(1));
-		IssuedTokens rotated = tokens.rotate(session.refreshToken());
-		assertThat(family(rotated)).isEqualTo(familyId);
-		time.set(NOW.plusSeconds(2));
-		IssuedTokens retried = tokens.rotate(session.refreshToken());
-		assertThat(family(retried)).isEqualTo(familyId);
-		assertThat(jdbc.queryForObject("select count(*) from refresh_token where family_id=? and device_name=?",
-			Integer.class, familyId, "synthetic-device")).isEqualTo(3);
-		assertThat(jdbc.queryForObject("select max(last_used_at) from refresh_token where family_id=?",
-			Instant.class, familyId)).isEqualTo(NOW.plusSeconds(2));
+		IssuedTokens current = login(old.userId());
+		assertUnbound(oldId);
+		assertThat(sessions.isSessionActive(family(old), old.userId())).isFalse();
+		assertThat(sessions.isSessionActive(family(current), old.userId())).isTrue();
+		assertThat(row(foreignId)).containsEntry("user_id", foreign.userId());
+		assertThat(sessions.isSessionActive(family(foreign), foreign.userId())).isTrue();
 	}
 
 	private void assertUnbound(UUID id) {

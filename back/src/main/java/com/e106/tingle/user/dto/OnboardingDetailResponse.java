@@ -12,7 +12,7 @@ import com.e106.tingle.user.OnboardingStatus;
  * @param nextStep 다음에 마칠 가입 단계. 로그인 응답의 onboardingStatus 와 같은 값이다
  * @param signupCompleted 한 번이라도 모든 가입 단계를 마친 적이 있는지 (users.signup_completed_at)
  * @param onboardingCompleted 지금 모든 단계를 마친 상태(READY)인지. 약관 버전이 오르면 다시 false 가 될 수 있다
- * @param matchingReady 새 매칭을 시작할 수 있는지. 지금은 onboardingCompleted 와 같다
+ * @param matchingReady 새 매칭을 시작할 수 있는지. 지금 READY(성향 분석 결과 포함)이고 매칭 켜짐일 때만 true
  * @param surveySessionId 현재 버전 설문의 작성 중 회차. 없으면 null
  * @param answeredCount 응답을 저장한 문항 수
  * @param questionCount 현재 버전 설문의 전체 문항 수

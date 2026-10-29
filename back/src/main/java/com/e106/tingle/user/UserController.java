@@ -9,6 +9,8 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.e106.tingle.global.error.BusinessException;
+import com.e106.tingle.global.error.ErrorCode;
 import com.e106.tingle.user.dto.NicknameAvailabilityResponse;
 import com.e106.tingle.user.dto.OnboardingDetailResponse;
 import com.e106.tingle.user.dto.OnboardingResponse;
@@ -27,6 +29,7 @@ public class UserController {
 
 	private final OnboardingService onboardingService;
 	private final ProfileService profileService;
+	private final UnderAgeWithdrawalService underAgeWithdrawal;
 
 	@GetMapping("/api/users/{userId}/onboarding")
 	@RequiresOnboarding(OnboardingStatus.AGREEMENT_REQUIRED)
@@ -42,10 +45,19 @@ public class UserController {
 	}
 
 	// 생략과 null 을 구분해야 해서(PATCH) 정해진 DTO 대신 JSON 그대로 받는다.
+	// 만 19세 미만이면 저장은 롤백되고, 별도 트랜잭션에서 바로 탈퇴시킨 뒤 403 UNDER_AGE 를 그대로 돌려준다.
 	@PatchMapping("/api/users/{userId}/profile")
 	@RequiresOnboarding(OnboardingStatus.KEYRING_REQUIRED)
 	public ProfileResponse patchProfile(@AuthenticationPrincipal Jwt jwt, @RequestBody JsonNode body) {
-		ProfileResponse profile = profileService.patch(userId(jwt), body);
+		ProfileResponse profile;
+		try {
+			profile = profileService.patch(userId(jwt), body);
+		} catch (BusinessException e) {
+			if (e.getErrorCode() == ErrorCode.UNDER_AGE) {
+				underAgeWithdrawal.withdraw(userId(jwt));
+			}
+			throw e;
+		}
 		onboardingService.recordProgress(userId(jwt));
 		return profile;
 	}

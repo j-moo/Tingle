@@ -1,4 +1,4 @@
--- ERD21 source + approved preservation amendments / 2026-10-28 / 22 tables, 176 columns
+-- ERD21 source + approved preservation amendments / 2026-10-28 / 22 tables, 174 columns
 -- Design DDL, not an automatic migration. Not applied to shared/production DBs.
 -- Verified only with disposable PostgreSQL test databases.
 -- Empty-database PostgreSQL design DDL. Logical references only; no physical FOREIGN KEY constraints.
@@ -95,21 +95,17 @@ CREATE TABLE "refresh_token" (
     "expires_at" timestamptz NOT NULL,
     "used_at" timestamptz,
     "revoked_at" timestamptz,
-    "device_name" varchar(100),
-    "last_used_at" timestamptz,
     CONSTRAINT "pk_refresh_token" PRIMARY KEY ("id"),
     CONSTRAINT "uq_refresh_token_token_hash" UNIQUE ("token_hash")
 );
 COMMENT ON TABLE "refresh_token" IS '로그인 토큰(기기별)';
 COMMENT ON COLUMN "refresh_token"."id" IS '토큰 번호';
 COMMENT ON COLUMN "refresh_token"."user_id" IS '회원 ID';
-COMMENT ON COLUMN "refresh_token"."family_id" IS '로그인 기기 ID(sid) — 같은 기기에서 재발급된 토큰은 같은 값. 로그인 기기 목록 = 폐기 안 된 family 목록';
+COMMENT ON COLUMN "refresh_token"."family_id" IS '로그인 세션 ID(sid) — 재발급된 토큰은 같은 값. 로그인 기기는 1개라 새로 로그인하면 이전 family는 모두 폐기';
 COMMENT ON COLUMN "refresh_token"."token_hash" IS '리프레시 토큰 해시 — 원문 저장 안 함';
 COMMENT ON COLUMN "refresh_token"."expires_at" IS '만료 시각';
 COMMENT ON COLUMN "refresh_token"."used_at" IS '재발급에 쓴 시각 — 이미 쓴 토큰이 다시 오면 그 family 전체 폐기(탈취 감지)';
 COMMENT ON COLUMN "refresh_token"."revoked_at" IS '폐기 시각 — 로그아웃·탈취 감지·탈퇴';
-COMMENT ON COLUMN "refresh_token"."device_name" IS '기기 이름 — 로그인 기기 목록에 보여 줄 이름(예: Galaxy S24). 재발급 때 그대로 이어받음';
-COMMENT ON COLUMN "refresh_token"."last_used_at" IS '마지막 사용 시각 — 로그인·재발급한 시각. 로그인 기기 목록에 표시';
 CREATE INDEX "ix_refresh_token_family" ON "refresh_token" ("family_id");
 
 CREATE INDEX "ix_refresh_token_user" ON "refresh_token" ("user_id");
