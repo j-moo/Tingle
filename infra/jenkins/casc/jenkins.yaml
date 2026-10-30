@@ -17,9 +17,12 @@ jenkins:
 
 # Credentials 는 여기서 관리하지 않는다. credentials: 를 두면 재시작마다 그 목록으로 덮어써 화면에서 넣은 비밀값이 지워진다 (2026-10-22 확인).
 # 비밀값은 Jenkins 관리 → Credentials 에만 있고 jenkins_home 볼륨에 암호화돼 남는다. 볼륨을 새로 만들면 아래를 다시 넣는다.
-#   gitlab-clone       Username with password  jenkins / GitLab 프로젝트 토큰 "jenkins" (Developer · api · read_repository)
-#   gitlab-api         GitLab API token        같은 토큰
-#   tingle-db          Username with password  DB 사용자 / 비밀번호 → app.env 의 POSTGRES_USER · POSTGRES_PASSWORD
+#   gitlab-clone             Username with password  jenkins / GitLab 프로젝트 토큰 "jenkins" (Developer · api · read_repository)
+#   gitlab-api               GitLab API token        같은 토큰
+#   tingle-app-env           Secret file             app.env 통째로 (서버 환경변수 + 배포 APK 의 소셜 로그인 키)
+#   tingle-release-key       Secret file             tingle-release.jks (공개 APK 서명)
+#   tingle-release-password  Secret text             위 키 저장소 비밀번호
+#   tingle-fcm               Secret file             Firebase 서비스 계정 JSON (서버 푸시)
 unclassified:
   location:
     url: 'https://${DOMAIN}/jenkins/'

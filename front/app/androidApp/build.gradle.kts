@@ -6,6 +6,9 @@ plugins {
     alias(libs.plugins.googleServices)
 }
 
+// 소셜 로그인 키. Jenkins 는 tingle-app-env 에서 환경변수로, 로컬은 ~/.gradle/gradle.properties 에 둔다(저장소에 넣지 않는다). 없으면 그 공급자 버튼이 숨는다
+fun key(name: String) = providers.gradleProperty(name).orNull ?: System.getenv(name) ?: ""
+
 android {
     namespace = "com.ssafy.e106"
     compileSdk = libs.versions.compileSdk.get().toInt()
@@ -16,10 +19,9 @@ android {
         targetSdk = libs.versions.targetSdk.get().toInt()
         versionCode = 1
         versionName = "0.1.0"
-        // 소셜 로그인 키. Jenkins 는 tingle-app-env 에서 환경변수로, 로컬은 ~/.gradle/gradle.properties 에 둔다(저장소에 넣지 않는다). 없으면 그 공급자 버튼이 숨는다
-        fun key(name: String) = providers.gradleProperty(name).orNull ?: System.getenv(name) ?: ""
         listOf("GOOGLE_WEB_CLIENT_ID", "KAKAO_NATIVE_APP_KEY", "NAVER_CLIENT_ID", "NAVER_CLIENT_SECRET").forEach { buildConfigField("String", it, "\"${key(it)}\"") }
         manifestPlaceholders["kakaoScheme"] = "kakao" + key("KAKAO_NATIVE_APP_KEY").ifEmpty { "unconfigured" }   // 카카오 로그인 콜백 주소
+        manifestPlaceholders["appLabel"] = "Tingle"
     }
 
     // 팀 서명 키는 Jenkins Credentials(tingle-release-key · tingle-release-password)가 환경변수로 넘긴다 — 공개 APK 는 debug·release 모두 이 키로 찍는다.
@@ -40,6 +42,13 @@ android {
     buildTypes {
         debug {
             if (teamKey != null) signingConfig = teamKey
+            // 개발용은 식별자·표시 이름을 나눠 운영 APK 와 한 폰에 같이 깔리게 한다
+            applicationIdSuffix = ".dev"
+            manifestPlaceholders["appLabel"] = "Tingle 개발"
+            // 카카오 콜백 스킴은 앱 키에서 나온다. 운영과 같은 키를 쓰면 두 앱이 같은 스킴을 등록해 콜백이 엉뚱한 쪽으로 간다
+            val devKakao = key("KAKAO_NATIVE_APP_KEY_DEV").ifEmpty { key("KAKAO_NATIVE_APP_KEY") }
+            buildConfigField("String", "KAKAO_NATIVE_APP_KEY", "\"$devKakao\"")
+            manifestPlaceholders["kakaoScheme"] = "kakao" + devKakao.ifEmpty { "unconfigured" }
             buildConfigField("String", "API_BASE_URL", "\"https://k15e106.p.ssafy.io/dev/api/\"")
             buildConfigField("boolean", "HTTP_LOG", "true")
         }
