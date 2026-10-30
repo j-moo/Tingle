@@ -10,7 +10,8 @@ import lombok.RequiredArgsConstructor;
 @Configuration
 @EnableScheduling
 @RequiredArgsConstructor
-@ConditionalOnProperty(name = "app.chat-notices.scheduling-enabled", havingValue = "true", matchIfMissing = true)
+@ConditionalOnProperty(name = {"app.chat-notices.end-notice-enabled", "app.chat-notices.scheduling-enabled"},
+	havingValue = "true")
 public class NoticeScheduler {
 	private final NoticeDispatcher dispatcher;
 

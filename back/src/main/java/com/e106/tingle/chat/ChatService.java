@@ -28,6 +28,7 @@ import com.e106.tingle.chat.dto.MessagePage;
 import com.e106.tingle.chat.dto.MessageView;
 import com.e106.tingle.chat.dto.ReadMessagesResult;
 import com.e106.tingle.chat.notice.ChatNoticeJobs;
+import com.e106.tingle.chat.notice.EndNoticePolicy;
 import com.e106.tingle.global.error.BusinessException;
 import com.e106.tingle.global.error.ErrorCode;
 import com.e106.tingle.proposal.MatchProposal;
@@ -52,6 +53,7 @@ public class ChatService {
 	private final EntityManager entityManager;
 	private final Clock clock;
 	private final ChatNoticeJobs noticeJobs;
+	private final EndNoticePolicy endNotices;
 
 	// 제안 서비스가 쌍·제안 행 잠금을 보유한 트랜잭션에서만 호출한다.
 	@Transactional(propagation = Propagation.MANDATORY)
@@ -77,8 +79,10 @@ public class ChatService {
 			ChatRoom room = rooms.saveAndFlush(new ChatRoom(pair.getId(), proposal.getId(), acceptedAt));
 			participants.save(new ChatMember(room.getId(), pair.getUserLow()));
 			participants.save(new ChatMember(room.getId(), pair.getUserHigh()));
-			noticeJobs.ensure(room, pair.getUserLow(), "END_NOTICE", clock.instant());
-			noticeJobs.ensure(room, pair.getUserHigh(), "END_NOTICE", clock.instant());
+			if (endNotices.enabled()) {
+				noticeJobs.ensure(room, pair.getUserLow(), "END_NOTICE", clock.instant());
+				noticeJobs.ensure(room, pair.getUserHigh(), "END_NOTICE", clock.instant());
+			}
 			return room;
 		});
 	}
@@ -114,25 +118,31 @@ public class ChatService {
 	@Transactional(readOnly = true)
 	public ChatPage list(long userId, String cursor, int limit) {
 		requireAccount(userId);
-		long before = Long.MAX_VALUE;
+		boolean firstPage = cursor == null;
+		Instant beforeCreatedAt = clock.instant();
+		long beforeId = 0;
 		if (cursor != null) {
 			String[] parts = decode(cursor, "r", Long.toString(userId));
 			try {
 				ChatRoom position = rooms.findByPublicId(Long.parseLong(parts[2])).orElseThrow(this::notFound);
 				owned(position, userId);
-				before = position.getId();
+				beforeCreatedAt = position.getCreatedAt();
+				beforeId = position.getId();
 			} catch (IllegalArgumentException exception) {
 				throw invalid();
 			}
 		}
 		List<ChatRoom> visible = new ArrayList<>();
 		while (visible.size() <= limit) {
-			List<ChatRoom> candidates = rooms.page(userId, clock.instant(), before, PageRequest.of(0, 100));
+			List<ChatRoom> candidates = rooms.page(userId, clock.instant(), firstPage, beforeCreatedAt, beforeId,
+				PageRequest.of(0, 100));
 			if (candidates.isEmpty()) {
 				break;
 			}
 			for (ChatRoom room : candidates) {
-				before = room.getId();
+				firstPage = false;
+				beforeCreatedAt = room.getCreatedAt();
+				beforeId = room.getId();
 				if (available(room, userId)) {
 					visible.add(room);
 				}
