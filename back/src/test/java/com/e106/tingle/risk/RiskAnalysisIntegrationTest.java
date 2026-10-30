@@ -404,6 +404,368 @@ class RiskAnalysisIntegrationTest extends IntegrationTestSupport {
 			.filter(Message::fresh).map(Message::sequence)).containsExactly(1L, 2L, 3L, 4L);
 	}
 
+	@Test
+	void automaticRetryPinsInputManifestAndDeadlineDespiteNewMessages() throws Exception {
+		Fixture room = room();
+		message(room, 1, room.firstParticipant(), "첫 가상 메시지");
+		given(gateway.analyze(any(), any(), any(Duration.class))).willReturn(failed());
+		Manifest manifest = manifest("synthetic-v1");
+		assertThat(service.analyzeNext(room.id(), manifest)).isTrue();
+		JsonNode first = jsonMapper.readTree(state(room)).path("riskAnalysis");
+		message(room, 2, room.secondParticipant(), "재시도 중 도착한 가상 메시지");
+		given(testClock.instant()).willReturn(NOW.plusSeconds(1));
+		assertThat(service.analyzeNext(room.id(), manifest("synthetic-v2"))).isFalse();
+		assertThat(service.analyzeNext(room.id(), manifest)).isTrue();
+		JsonNode second = jsonMapper.readTree(state(room)).path("riskAnalysis");
+		assertThat(second.path("firstStartedAt")).isEqualTo(first.path("firstStartedAt"));
+		assertThat(second.path("throughSeq").asLong()).isEqualTo(1);
+		assertThat(second.path("manifest")).isEqualTo(first.path("manifest"));
+		assertThat(second.path("attemptId")).isNotEqualTo(first.path("attemptId"));
+		given(testClock.instant()).willReturn(NOW.plusSeconds(2));
+		assertThat(service.analyzeNext(room.id(), manifest)).isTrue();
+		given(testClock.instant()).willReturn(NOW.plusSeconds(3));
+		assertThat(service.analyzeNext(room.id(), manifest)).isFalse();
+		JsonNode terminal = jsonMapper.readTree(state(room)).path("riskAnalysis");
+		assertThat(terminal.path("terminal").asBoolean()).isTrue();
+		assertThat(terminal.path("attempts").asInt()).isEqualTo(3);
+		assertThat(terminal.path("receipts").size()).isEqualTo(3);
+		assertThat(terminal.path("lastAnalyzedSeq").asLong()).isZero();
+		ArgumentCaptor<Input> sent = ArgumentCaptor.forClass(Input.class);
+		verify(gateway, times(3)).analyze(any(), sent.capture(), any(Duration.class));
+		assertThat(sent.getAllValues()).allSatisfy(input -> {
+			assertThat(input.manifest()).isEqualTo(manifest);
+			assertThat(input.messages()).extracting(Message::sequence).containsExactly(1L);
+		});
+		String failedAttempt = terminal.path("attemptId").asString();
+		JsonNode failedReceipt = terminal.path("receipts").path(failedAttempt);
+		JsonNode range = terminal.path("terminalRanges").path(failedAttempt);
+		assertThat(range.path("fromSeq").asLong()).isEqualTo(1);
+		assertThat(range.path("throughSeq").asLong()).isEqualTo(1);
+		assertThat(range.path("kind").asString()).isEqualTo("FAILED");
+		assertThat(terminal.path("processedThroughSeq").asLong()).isEqualTo(1);
+		given(gateway.analyze(any(), any(), any(Duration.class))).willReturn(normal());
+		assertThat(service.analyzeNext(room.id(), manifest)).isTrue();
+		JsonNode successor = jsonMapper.readTree(state(room)).path("riskAnalysis");
+		assertThat(successor.path("lastAnalyzedSeq").asLong()).isEqualTo(2);
+		assertThat(successor.path("terminalRanges").path(failedAttempt)).isEqualTo(range);
+		assertThat(successor.path("receipts").path(failedAttempt)).isEqualTo(failedReceipt);
+		ArgumentCaptor<Input> allSent = ArgumentCaptor.forClass(Input.class);
+		verify(gateway, times(4)).analyze(any(), allSent.capture(), any(Duration.class));
+		Input later = allSent.getAllValues().getLast();
+		assertThat(later.messages().stream().filter(Message::fresh).map(Message::sequence)).containsExactly(2L);
+		assertThat(later.messages().stream().filter(message -> !message.fresh()).map(Message::sequence))
+			.containsExactly(1L);
+		assertThat(service.analyzeNext(room.id(), manifest)).isFalse();
+	}
+
+	@Test
+	void automaticSuccessAdvancesOnlyTheSuccessfullyAnalyzedPrefix() throws Exception {
+		Fixture room = room();
+		for (int seq = 1; seq <= 12; seq++) {
+			message(room, seq, room.firstParticipant(), "가상 메시지 " + seq);
+		}
+		given(gateway.analyze(any(), any(), any(Duration.class))).willReturn(normal());
+		assertThat(service.analyzeNext(room.id(), manifest("synthetic-v1"))).isTrue();
+		assertThat(service.analyzeNext(room.id(), manifest("synthetic-v1"))).isTrue();
+		assertThat(jsonMapper.readTree(state(room)).path("riskAnalysis").path("lastAnalyzedSeq").asLong())
+			.isEqualTo(12);
+		ArgumentCaptor<Input> sent = ArgumentCaptor.forClass(Input.class);
+		verify(gateway, times(2)).analyze(any(), sent.capture(), any(Duration.class));
+		assertThat(sent.getAllValues().stream().flatMap(input -> input.messages().stream())
+			.filter(Message::fresh).map(Message::sequence)).containsExactly(1L, 2L, 3L, 4L, 5L, 6L,
+				7L, 8L, 9L, 10L, 11L, 12L);
+	}
+
+	@Test
+	void automaticLeaseRecoveryKeepsAttemptAndDeadlineAndRejectsTheOldGeneration() throws Exception {
+		Fixture room = room();
+		message(room, 1, room.firstParticipant(), "가상 메시지");
+		Manifest manifest = manifest("synthetic-v1");
+		RiskAnalysisStore.Claim first = store.claimNext(room.id(), manifest);
+		assertThat(store.claimNext(room.id(), manifest)).isNull();
+		given(testClock.instant()).willReturn(NOW.plusSeconds(31));
+		RiskAnalysisStore.Claim recovered = store.claimNext(room.id(), manifest);
+		assertThat(recovered.request().attemptId()).isEqualTo(first.request().attemptId());
+		assertThat(recovered.deadlineAt()).isEqualTo(first.deadlineAt());
+		assertThat(recovered.generation()).isGreaterThan(first.generation());
+		assertThat(store.canTransmit(first)).isFalse();
+		assertThat(store.canTransmit(recovered)).isTrue();
+		assertThat(store.finish(first, normal()).status()).isEqualTo("FAILED");
+		assertThat(store.finish(recovered, normal()).status()).isEqualTo("SUCCEEDED");
+		assertThat(jsonMapper.readTree(state(room)).path("riskAnalysis").path("attempts").asInt()).isEqualTo(2);
+	}
+
+	@Test
+	void automaticDeadlineFinalizesTheFailedRangeWithoutReprocessingIt() throws Exception {
+		Fixture room = room();
+		message(room, 1, room.firstParticipant(), "가상 메시지");
+		RiskAnalysisStore.Claim first = store.claimNext(room.id(), manifest("synthetic-v1"));
+		given(testClock.instant()).willReturn(first.deadlineAt());
+		assertThat(store.canTransmit(first)).isFalse();
+		assertThat(service.analyzeNext(room.id(), manifest("synthetic-v1"))).isFalse();
+		JsonNode failed = jsonMapper.readTree(state(room)).path("riskAnalysis");
+		assertThat(failed.path("terminal").asBoolean()).isTrue();
+		assertThat(failed.path("receipts").path(first.request().attemptId().toString()).has("result")).isTrue();
+		assertThat(failed.path("processedThroughSeq").asLong()).isEqualTo(1);
+		assertThat(failed.path("lastAnalyzedSeq").asLong()).isZero();
+		assertThat(store.candidates(room.id() - 1, 20)).doesNotContain(room.id());
+		assertThat(service.analyzeNext(room.id(), manifest("synthetic-v1"))).isFalse();
+		verify(gateway, never()).analyze(any(), any(), any(Duration.class));
+	}
+
+	@Test
+	void automaticReceiptsBeyond128RemainReplayableAfterReleaseChanges() throws Exception {
+		Fixture room = room();
+		Manifest original = manifest("synthetic-v1");
+		given(gateway.analyze(any(), any(), any(Duration.class))).willReturn(normal());
+		Request first = null;
+		Response firstResult = null;
+		for (int sequence = 1; sequence <= 129; sequence++) {
+			message(room, sequence, room.firstParticipant(), "영수증 보존 가상 메시지 " + sequence);
+			assertThat(service.analyzeNext(room.id(), original)).isTrue();
+			if (sequence == 1) {
+				String id = jsonMapper.readTree(state(room)).path("riskAnalysis").path("attemptId").asString();
+				first = new Request(UUID.fromString(id), room.id(), original);
+				firstResult = service.analyze(first);
+			}
+		}
+		assertThat(jsonMapper.readTree(state(room)).path("riskAnalysis").path("receipts").size()).isEqualTo(129);
+		given(manifests.supports(original)).willReturn(false);
+		message(room, 130, room.secondParticipant(), "새 릴리스 가상 메시지");
+		assertThat(service.analyzeNext(room.id(), manifest("synthetic-v2"))).isTrue();
+		String before = state(room);
+		assertThat(service.analyze(first)).isEqualTo(firstResult);
+		assertThat(state(room)).isEqualTo(before);
+		Request conflict = new Request(first.attemptId(), room.id(), manifest("synthetic-v2"));
+		assertCode(() -> service.analyze(conflict), ErrorCode.IDEMPOTENCY_CONFLICT);
+		verify(gateway, times(130)).analyze(any(), any(), any(Duration.class));
+		verify(gateway, never()).analyze(any(), any());
+		consent(room.first(), false, AI_RISK_VERSION, NOW.plusSeconds(1));
+		Request replay = first;
+		assertCode(() -> service.analyze(replay), ErrorCode.CHAT_CLOSED);
+	}
+
+	@Test
+	void insufficientTerminalRangeIsNotConvertedIntoNormalByLaterSuccess() throws Exception {
+		Fixture room = room();
+		message(room, 1, room.firstParticipant(), "문맥 부족 가상 메시지");
+		Manifest manifest = manifest("synthetic-v1");
+		given(gateway.analyze(any(), any(), any(Duration.class))).willReturn(new Verdict(
+			Kind.INSUFFICIENT, List.of(), null, "synthetic-model-v1", "synthetic-prompt-v1"));
+		for (int attempt = 0; attempt < 3; attempt++) {
+			given(testClock.instant()).willReturn(NOW.plusSeconds(attempt));
+			assertThat(service.analyzeNext(room.id(), manifest)).isTrue();
+		}
+		given(testClock.instant()).willReturn(NOW.plusSeconds(3));
+		assertThat(service.analyzeNext(room.id(), manifest)).isFalse();
+		JsonNode terminal = jsonMapper.readTree(state(room)).path("riskAnalysis");
+		String id = terminal.path("attemptId").asString();
+		assertThat(terminal.path("terminalRanges").path(id).path("kind").asString()).isEqualTo("INSUFFICIENT");
+		message(room, 2, room.secondParticipant(), "나중 가상 메시지");
+		given(gateway.analyze(any(), any(), any(Duration.class))).willReturn(normal());
+		assertThat(service.analyzeNext(room.id(), manifest)).isTrue();
+		assertThat(jsonMapper.readTree(state(room)).path("riskAnalysis").path("terminalRanges").path(id))
+			.isEqualTo(terminal.path("terminalRanges").path(id));
+		assertThat(notices(room)).isZero();
+	}
+
+	@Test
+	void terminalRangeSurvivesConcurrentSuccessorAndLateOriginalCompletion() throws Exception {
+		Fixture room = room();
+		message(room, 1, room.firstParticipant(), "첫 가상 메시지");
+		Manifest manifest = manifest("synthetic-v1");
+		RiskAnalysisStore.Claim expired = store.claimNext(room.id(), manifest);
+		given(testClock.instant()).willReturn(expired.deadlineAt());
+		assertThat(store.claimNext(room.id(), manifest)).isNull();
+		// Existing terminal rows predating the processed cursor keep their stable receipt.
+		jdbc.update("update chat set ai_state=ai_state #- '{riskAnalysis,processedThroughSeq}' "
+			+ "#- '{riskAnalysis,terminalRanges}' where id=?", room.id());
+		message(room, 2, room.secondParticipant(), "후속 가상 메시지");
+		try (ExecutorService workers = Executors.newFixedThreadPool(2)) {
+			Future<RiskAnalysisStore.Claim> left = workers.submit(() -> store.claimNext(room.id(), manifest));
+			Future<RiskAnalysisStore.Claim> right = workers.submit(() -> store.claimNext(room.id(), manifest));
+			RiskAnalysisStore.Claim leftClaim = left.get(10, TimeUnit.SECONDS);
+			RiskAnalysisStore.Claim rightClaim = right.get(10, TimeUnit.SECONDS);
+			assertThat((leftClaim == null) != (rightClaim == null)).isTrue();
+			RiskAnalysisStore.Claim successor = leftClaim == null ? rightClaim : leftClaim;
+			assertThat(successor.input().messages().stream().filter(Message::fresh).map(Message::sequence))
+				.containsExactly(2L);
+			String running = state(room);
+			assertThat(store.finish(expired, normal()).status()).isEqualTo("FAILED");
+			assertThat(state(room)).isEqualTo(running);
+			assertThat(store.finish(successor, normal()).status()).isEqualTo("SUCCEEDED");
+			String completed = state(room);
+			assertThat(store.finish(expired, normal()).status()).isEqualTo("FAILED");
+			assertThat(state(room)).isEqualTo(completed);
+			assertThat(service.analyze(expired.request()).status()).isEqualTo("FAILED");
+		}
+	}
+
+	@Test
+	void automaticConsentGenerationChangeCannotRestartTheBatch() throws Exception {
+		Fixture room = room();
+		message(room, 1, room.firstParticipant(), "가상 메시지");
+		given(gateway.analyze(any(), any(), any(Duration.class))).willReturn(failed());
+		service.analyzeNext(room.id(), manifest("synthetic-v1"));
+		String before = state(room);
+		consent(room.first(), true, AI_RISK_VERSION, NOW.plusSeconds(1));
+		given(testClock.instant()).willReturn(NOW.plusSeconds(2));
+		assertThat(service.analyzeNext(room.id(), manifest("synthetic-v1"))).isFalse();
+		assertThat(state(room)).isEqualTo(before);
+		verify(gateway, times(1)).analyze(any(), any(), any(Duration.class));
+	}
+
+	@Test
+	void automaticInputMutationTerminatesWithoutSendingTheChangedMessages() throws Exception {
+		Fixture room = room();
+		message(room, 1, room.firstParticipant(), "가상 메시지");
+		given(gateway.analyze(any(), any(), any(Duration.class))).willReturn(failed());
+		service.analyzeNext(room.id(), manifest("synthetic-v1"));
+		jdbc.update("update chat_message set body='변경된 가상 메시지' where chat_id=?", room.id());
+		given(testClock.instant()).willReturn(NOW.plusSeconds(1));
+		assertThat(service.analyzeNext(room.id(), manifest("synthetic-v1"))).isFalse();
+		assertThat(jsonMapper.readTree(state(room)).path("riskAnalysis").path("terminal").asBoolean()).isTrue();
+		verify(gateway, times(1)).analyze(any(), any(), any(Duration.class));
+	}
+
+	@Test
+	void automaticClosedAndWithdrawnRoomsDiscardResultsAfterTheCall() throws Exception {
+		for (boolean close : List.of(true, false)) {
+			Fixture room = room();
+			message(room, 1, room.firstParticipant(), "가상 메시지");
+			given(gateway.analyze(any(), any(), any(Duration.class))).willAnswer(invocation -> {
+				assertThat(org.springframework.transaction.support.TransactionSynchronizationManager
+					.isActualTransactionActive()).isFalse();
+				if (close) {
+					jdbc.update("update chat set closed_at=?,close_reason='LEFT' where id=?", stamp(NOW), room.id());
+				} else {
+					consent(room.first(), false, AI_RISK_VERSION);
+				}
+				return money(invocation.getArgument(1));
+			});
+			assertThat(service.analyzeNext(room.id(), manifest("synthetic-v1"))).isTrue();
+			assertThat(notices(room)).isZero();
+			assertThat(jsonMapper.readTree(state(room)).path("riskAnalysis").path("lastAnalyzedSeq").asLong())
+				.isZero();
+		}
+	}
+
+	@Test
+	void automaticConcurrentClaimsShareOneLeaseAndCannotCreateDuplicateCalls() throws Exception {
+		Fixture room = room();
+		message(room, 1, room.firstParticipant(), "가상 메시지");
+		CountDownLatch entered = new CountDownLatch(1);
+		CountDownLatch release = new CountDownLatch(1);
+		given(gateway.analyze(any(), any(), any(Duration.class))).willAnswer(invocation -> {
+			entered.countDown();
+			await(release);
+			return normal();
+		});
+		try (ExecutorService workers = Executors.newFixedThreadPool(2)) {
+			Future<Boolean> first = workers.submit(() -> service.analyzeNext(room.id(), manifest("synthetic-v1")));
+			await(entered);
+			try {
+				assertThat(workers.submit(() -> service.analyzeNext(room.id(), manifest("synthetic-v1")))
+					.get(10, TimeUnit.SECONDS)).isFalse();
+			} finally {
+				release.countDown();
+			}
+			assertThat(first.get(10, TimeUnit.SECONDS)).isTrue();
+		}
+		verify(gateway, times(1)).analyze(any(), any(), any(Duration.class));
+	}
+
+	@Test
+	void automaticRevalidationCannotCrossTheLeaseDeadlineOrRoomExpiry() throws Exception {
+		for (int seconds : List.of(30, 300, 1)) {
+			given(testClock.instant()).willReturn(NOW);
+			given(gateway.countTokens(any())).willReturn(100);
+			Fixture room = room();
+			message(room, 1, room.firstParticipant(), "시간 경계 가상 메시지");
+			RiskAnalysisStore.Claim claim = store.claimNext(room.id(), manifest("synthetic-v1"));
+			if (seconds == 1) {
+				jdbc.update("update chat set expires_at=? where id=?", stamp(NOW.plusSeconds(1)), room.id());
+			}
+			given(gateway.countTokens(any())).willAnswer(invocation -> {
+				given(testClock.instant()).willReturn(NOW.plusSeconds(seconds));
+				return 100;
+			});
+			assertThat(store.canTransmit(claim)).isFalse();
+			given(testClock.instant()).willReturn(NOW);
+			assertThat(store.finish(claim, normal()).status()).isEqualTo("FAILED");
+			assertThat(jsonMapper.readTree(state(room)).path("riskAnalysis").path("lastAnalyzedSeq").asLong())
+				.isZero();
+		}
+	}
+
+	@Test
+	void changedManifestDoesNotLeaveAnExpiredAutomaticReceiptRunning() throws Exception {
+		Fixture room = room();
+		message(room, 1, room.firstParticipant(), "가상 메시지");
+		RiskAnalysisStore.Claim first = store.claimNext(room.id(), manifest("synthetic-v1"));
+		given(testClock.instant()).willReturn(first.deadlineAt().minusSeconds(1));
+		assertThat(service.analyzeNext(room.id(), manifest("synthetic-v2"))).isFalse();
+		given(testClock.instant()).willReturn(first.deadlineAt());
+		assertThat(service.analyzeNext(room.id(), manifest("synthetic-v2"))).isFalse();
+		JsonNode state = jsonMapper.readTree(state(room)).path("riskAnalysis");
+		assertThat(state.path("status").asString()).isEqualTo("FAILED");
+		assertThat(state.path("terminal").asBoolean()).isTrue();
+		assertThat(state.path("receipts").path(first.request().attemptId().toString())
+			.path("result").path("status").asString()).isEqualTo("FAILED");
+		verify(gateway, never()).analyze(any(), any(), any(Duration.class));
+	}
+
+	@Test
+	void automaticServiceExecutesHttpAfterClaimCommitAndStoresTheCorrelatedResult() throws Exception {
+		Fixture room = room();
+		message(room, 1, room.firstParticipant(), "HTTP 가상 메시지");
+		assertThat(store.candidates(room.id() - 1, 20)).contains(room.id());
+		java.util.concurrent.atomic.AtomicReference<Throwable> serverFailure =
+			new java.util.concurrent.atomic.AtomicReference<>();
+		com.sun.net.httpserver.HttpServer server = com.sun.net.httpserver.HttpServer.create(
+			new java.net.InetSocketAddress("127.0.0.1", 0), 0);
+		server.createContext("/internal/ai/risk-detections", exchange -> {
+			try (exchange) {
+				JsonNode body = jsonMapper.readTree(exchange.getRequestBody());
+				assertThat(body.size()).isEqualTo(4);
+				assertThat(body.path("contextId").asLong()).isEqualTo(room.id());
+				assertThat(body.path("attemptId").asString())
+					.isEqualTo(exchange.getRequestHeaders().getFirst("X-Request-Id"));
+				assertThat(exchange.getRequestHeaders().getFirst("Authorization"))
+					.isEqualTo("Bearer synthetic-risk-token");
+				assertThat(jsonMapper.readTree(state(room)).path("riskAnalysis").path("status").asString())
+					.isEqualTo("RUNNING");
+				byte[] response = jsonMapper.writeValueAsBytes(new HttpRiskAnalysisGateway.WireResponse(
+					UUID.fromString(body.path("attemptId").asString()), manifest("synthetic-v1"), normal()));
+				exchange.sendResponseHeaders(200, response.length);
+				exchange.getResponseBody().write(response);
+			} catch (Throwable failure) {
+				serverFailure.set(failure);
+			}
+		});
+		server.start();
+		try {
+			var tokens = org.mockito.Mockito.mock(com.e106.tingle.global.ai.AiServiceTokenProvider.class);
+			given(tokens.issue()).willReturn("synthetic-risk-token");
+			var properties = new com.e106.tingle.global.ai.AiServiceProperties(true, "test", "synthetic", "",
+				"http://127.0.0.1:" + server.getAddress().getPort());
+			var client = new com.e106.tingle.global.ai.AiInternalClient(properties, tokens, jsonMapper);
+			HttpRiskAnalysisGateway http = new HttpRiskAnalysisGateway(client, input -> 100);
+			given(gateway.analyze(any(), any(), any(Duration.class))).willAnswer(invocation -> {
+				assertThat(org.springframework.transaction.support.TransactionSynchronizationManager
+					.isActualTransactionActive()).isFalse();
+				return http.analyze(invocation.getArgument(0), invocation.getArgument(1), invocation.getArgument(2));
+			});
+			assertThat(service.analyzeNext(room.id(), manifest("synthetic-v1"))).isTrue();
+			assertThat(serverFailure.get()).isNull();
+			assertThat(jsonMapper.readTree(state(room)).path("riskAnalysis").path("status").asString())
+				.isEqualTo("SUCCEEDED");
+			assertThat(store.candidates(room.id() - 1, 20)).doesNotContain(room.id());
+		} finally {
+			server.stop(0);
+		}
+	}
+
 	private void assertRecordedFailureReplay(Fixture room, Request request, Response response, Instant finishedAt)
 		throws Exception {
 		assertThat(response.status()).isEqualTo("FAILED");

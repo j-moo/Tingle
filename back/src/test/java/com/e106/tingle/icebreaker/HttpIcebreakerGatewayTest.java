@@ -1,6 +1,7 @@
 package com.e106.tingle.icebreaker;
 
 import static org.assertj.core.api.Assertions.*;
+import static org.mockito.Mockito.*;
 
 import java.io.IOException;
 import java.net.InetSocketAddress;
@@ -23,11 +24,15 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.springframework.core.io.DefaultResourceLoader;
 
+import com.e106.tingle.global.ai.AiInternalClient;
+import com.e106.tingle.global.ai.AiServiceProperties;
+import com.e106.tingle.global.ai.AiServiceTokenProvider;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.json.JsonMapper;
 
 class HttpIcebreakerGatewayTest {
 	@TempDir
@@ -135,7 +140,7 @@ class HttpIcebreakerGatewayTest {
 
 	@Test
 	void rateLimitedAndServerResponsesAreRetryableWithoutExposingProviderBodies() throws Exception {
-		for (int status : new int[] {429, 503}) {
+		for (int status : new int[] {429, 502}) {
 			startServer(status, "{\"detail\":\"synthetic-provider-private-detail\"}");
 			HttpIcebreakerGateway gateway = gateway(true, validDescriptor().toUri().toString(), endpoint());
 			assertThatThrownBy(() -> gateway.generate(2048, UUID.randomUUID(), gateway.manifest(), deadline()))
@@ -150,7 +155,7 @@ class HttpIcebreakerGatewayTest {
 
 	@Test
 	void permanentProviderRejectionsAreNotRetried() throws Exception {
-		for (int status : new int[] {400, 403}) {
+		for (int status : new int[] {400, 403, 503}) {
 			startServer(status, "{\"detail\":\"rejected\"}");
 			HttpIcebreakerGateway gateway = gateway(true, validDescriptor().toUri().toString(), endpoint());
 			assertThatThrownBy(() -> gateway.generate(2048, UUID.randomUUID(), gateway.manifest(), deadline()))
@@ -158,7 +163,7 @@ class HttpIcebreakerGatewayTest {
 					exception -> assertThat(exception.retryable()).isFalse());
 			server.stop(0);
 		}
-		assertThat(requests.get()).isEqualTo(2);
+		assertThat(requests.get()).isEqualTo(3);
 	}
 
 	@Test
@@ -288,7 +293,7 @@ class HttpIcebreakerGatewayTest {
 	private HttpIcebreakerGateway gateway(String location, Duration maximumCallTime) {
 		return new HttpIcebreakerGateway(new IcebreakerProperties(true, endpoint(),
 			"synthetic-service-token", location, "classpath:icebreakers/general-ko-v1.json"),
-			new DefaultResourceLoader(), mapper, clock, maximumCallTime);
+			new DefaultResourceLoader(), mapper, clock, client(endpoint()), maximumCallTime);
 	}
 
 	private Path validDescriptor() throws Exception {
@@ -354,7 +359,15 @@ class HttpIcebreakerGatewayTest {
 	private HttpIcebreakerGateway gateway(boolean enabled, String location, String endpoint) {
 		return new HttpIcebreakerGateway(new IcebreakerProperties(enabled, endpoint,
 			"synthetic-service-token", location, "classpath:icebreakers/general-ko-v1.json"),
-			new DefaultResourceLoader(), mapper, clock);
+			new DefaultResourceLoader(), mapper, clock, client(endpoint));
+	}
+
+	private AiInternalClient client(String endpoint) {
+		AiServiceTokenProvider tokens = mock(AiServiceTokenProvider.class);
+		when(tokens.issue()).thenReturn("synthetic-service-token");
+		String base = endpoint.substring(0, endpoint.indexOf("/internal/"));
+		return new AiInternalClient(new AiServiceProperties(true, "test", "synthetic", "", base),
+			tokens, JsonMapper.builder().build());
 	}
 
 	private record CapturedRequest(String method, String path, String authorization, String contentType,

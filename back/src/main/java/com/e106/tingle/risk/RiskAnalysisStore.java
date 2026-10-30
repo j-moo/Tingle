@@ -9,6 +9,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -23,6 +24,7 @@ import com.e106.tingle.risk.RiskAnalysisTypes.Audience;
 import com.e106.tingle.risk.RiskAnalysisTypes.Finding;
 import com.e106.tingle.risk.RiskAnalysisTypes.Input;
 import com.e106.tingle.risk.RiskAnalysisTypes.Kind;
+import com.e106.tingle.risk.RiskAnalysisTypes.Manifest;
 import com.e106.tingle.risk.RiskAnalysisTypes.Message;
 import com.e106.tingle.risk.RiskAnalysisTypes.Request;
 import com.e106.tingle.risk.RiskAnalysisTypes.Response;
@@ -39,7 +41,6 @@ public class RiskAnalysisStore {
 	private static final Duration BUDGET = Duration.ofMinutes(5);
 	private static final Duration LEASE = Duration.ofSeconds(30);
 	private static final int MAX_ATTEMPTS = 3;
-	private static final int MAX_RECEIPTS = 128;
 	private static final String STATE = "riskAnalysis";
 
 	private final JdbcTemplate jdbc;
@@ -48,6 +49,23 @@ public class RiskAnalysisStore {
 	private final AgreementProperties agreements;
 	private final RiskInputBuilder inputs;
 	private final RiskVerdicts verdicts;
+
+	/** 현재 접근 권한은 재검사하지만 완료 영수증을 새 릴리스로 다시 실행하지 않는다. */
+	@Transactional
+	public Optional<Response> replay(Request request) {
+		Room room = lock(request.contextId());
+		eligible(room);
+		Map<String, Object> state = map(document(room.json()).get(STATE));
+		Map<String, Object> receipt = map(map(state.get("receipts")).get(request.attemptId().toString()));
+		if (receipt.isEmpty()) {
+			return Optional.empty();
+		}
+		String signature = ChatText.hash(json.writeValueAsString(request.manifest()));
+		if (!signature.equals(receipt.get("signature"))) {
+			throw error(ErrorCode.IDEMPOTENCY_CONFLICT);
+		}
+		return receipt.containsKey("result") ? Optional.of(response(receipt.get("result"))) : Optional.empty();
+	}
 
 	@Transactional
 	public Claim claim(Request request) {
@@ -65,19 +83,18 @@ public class RiskAnalysisStore {
 				throw error(ErrorCode.IDEMPOTENCY_CONFLICT);
 			}
 			if (receipt.containsKey("result")) {
-				return new Claim(request, null, response(receipt.get("result")), 0, 0, 0, 0, signature);
+				return new Claim(request, null, response(receipt.get("result")), 0, 0, 0, 0, signature, null);
 			}
 			if (!key.equals(state.get("attemptId")) || !"RUNNING".equals(state.get("status"))
 				|| now.isBefore(Instant.parse((String)state.get("startedAt")).plus(LEASE))) {
 				throw error(ErrorCode.SERVICE_UNAVAILABLE);
 			}
 		}
-		if ("RUNNING".equals(state.get("status"))
-			&& now.isBefore(Instant.parse((String)state.get("startedAt")).plus(LEASE))) {
+		if (Boolean.TRUE.equals(state.get("automatic"))) {
 			throw error(ErrorCode.SERVICE_UNAVAILABLE);
 		}
-		if (receipt.isEmpty() && receipts.size() >= MAX_RECEIPTS) {
-			// 영수증을 조용히 지워 같은 실행을 반복하지 않고 용량 상한에서 처리 보류한다.
+		if ("RUNNING".equals(state.get("status"))
+			&& now.isBefore(Instant.parse((String)state.get("startedAt")).plus(LEASE))) {
 			throw error(ErrorCode.SERVICE_UNAVAILABLE);
 		}
 		long last = number(state.get("lastAnalyzedSeq"));
@@ -108,7 +125,189 @@ public class RiskAnalysisStore {
 		state.put("receipts", receipts);
 		document.put(STATE, state);
 		save(room.id(), document);
-		return new Claim(request, input, null, generation, through, consents.low(), consents.high(), signature);
+		return new Claim(request, input, null, generation, through, consents.low(), consents.high(), signature,
+			first.plus(BUDGET));
+	}
+
+	/** 후보에는 본문을 싣지 않는다. 실제 참여·동의·세대 검사는 선점 트랜잭션에서 다시 한다. */
+	public List<Long> candidates(long afterId, int limit) {
+		return jdbc.queryForList("select c.id from chat c join matching m on m.id=c.matching_id "
+			+ "where c.id>? and c.closed_at is null and c.expires_at>? and m.status<>'CLOSED' "
+			+ "and exists(select 1 from chat_message cm where cm.chat_id=c.id "
+			+ "and cm.seq>greatest(coalesce((c.ai_state->'riskAnalysis'->>'lastAnalyzedSeq')::bigint,0),"
+			+ "coalesce((c.ai_state->'riskAnalysis'->>'processedThroughSeq')::bigint,0))) "
+			+ "order by c.id limit ?", Long.class, afterId, Timestamp.from(now()), Math.max(1, Math.min(limit, 20)));
+	}
+
+	/** 자동 배치는 본문 사본 없이 범위·manifest·입력 해시·동의 세대와 최초 예산을 고정한다. */
+	@Transactional
+	public Claim claimNext(long roomId, Manifest configured) {
+		Room room = lock(roomId);
+		Consents consents = eligible(room);
+		Map<String, Object> document = document(room.json());
+		Map<String, Object> state = map(document.get(STATE));
+		boolean continuing = !state.isEmpty() && !"SUCCEEDED".equals(state.get("status"));
+		if (continuing && !Boolean.TRUE.equals(state.get("automatic"))) {
+			// 기존 수동 실패/진행 이력은 자동으로 새 실행으로 바꾸지 않는다.
+			return null;
+		}
+		Instant now = now();
+		if (continuing && Boolean.TRUE.equals(state.get("terminal"))) {
+			if (!recordTerminalRange(state, now)) {
+				return null;
+			}
+			document.put(STATE, state);
+			save(room.id(), document);
+			continuing = false;
+		}
+		Instant first = continuing ? Instant.parse((String)state.get("firstStartedAt")) : now;
+		int attempts = continuing ? (int)number(state.get("attempts")) : 0;
+		if (continuing && (attempts >= MAX_ATTEMPTS || !now.isBefore(first.plus(BUDGET)))) {
+			// 마지막 회차가 아직 실행 중이면 해당 lease 동안 결과를 기다린다. 전체 기한은 연장하지 않는다.
+			if ("RUNNING".equals(state.get("status")) && now.isBefore(first.plus(BUDGET))
+				&& now.isBefore(Instant.parse((String)state.get("startedAt")).plus(LEASE))) {
+				return null;
+			}
+			terminal(room, document, state);
+			return null;
+		}
+		if (continuing && (!configured.equals(json.convertValue(state.get("manifest"), Manifest.class))
+			|| number(state.get("consentLow")) != consents.low()
+			|| number(state.get("consentHigh")) != consents.high())) {
+			return null;
+		}
+
+		boolean recovering = continuing && "RUNNING".equals(state.get("status"));
+		if (recovering && now.isBefore(Instant.parse((String)state.get("startedAt")).plus(LEASE))
+			|| continuing && state.get("retryAt") instanceof String retry && now.isBefore(Instant.parse(retry))) {
+			return null;
+		}
+		Map<String, Object> receipts = map(state.get("receipts"));
+		UUID attempt = recovering ? UUID.fromString((String)state.get("attemptId")) : UUID.randomUUID();
+		Request request = new Request(attempt, roomId, configured);
+		long last = processedThrough(state);
+		if (!continuing && !Boolean.TRUE.equals(jdbc.queryForObject("select exists(select 1 from chat_message "
+			+ "where chat_id=? and seq>?)", Boolean.class, roomId, last))) {
+			return null;
+		}
+		Input input;
+		try {
+			input = continuing ? pinnedInput(room, state, configured) : input(room, last, request);
+		} catch (BusinessException exception) {
+			if (!continuing) {
+				throw exception;
+			}
+			terminal(room, document, state);
+			return null;
+		}
+		String inputHash = ChatText.hash(json.writeValueAsString(input));
+		if (continuing && !inputHash.equals(state.get("inputHash"))) {
+			terminal(room, document, state);
+			return null;
+		}
+		long through = input.messages().getLast().sequence();
+		String signature = ChatText.hash(json.writeValueAsString(configured));
+		long generation = number(state.get("generation")) + 1;
+		state.put("automatic", true);
+		state.put("terminal", false);
+		state.put("manifest", configured);
+		state.put("firstSeq", input.messages().getFirst().sequence());
+		state.put("freshFrom", input.messages().stream().filter(Message::fresh)
+			.mapToLong(Message::sequence).min().orElseThrow());
+		state.put("inputHash", inputHash);
+		state.put("generation", generation);
+		state.put("attemptId", attempt.toString());
+		state.put("signature", signature);
+		state.put("throughSeq", through);
+		state.put("lastAnalyzedSeq", number(state.get("lastAnalyzedSeq")));
+		state.put("consentLow", consents.low());
+		state.put("consentHigh", consents.high());
+		state.put("attempts", attempts + 1);
+		state.put("firstStartedAt", first.toString());
+		state.put("startedAt", now.toString());
+		state.put("status", "RUNNING");
+		if (!continuing) {
+			state.remove("kind");
+			state.remove("retryAt");
+		}
+		receipts.put(attempt.toString(), new LinkedHashMap<>(Map.of("signature", signature)));
+		state.put("receipts", receipts);
+		document.put(STATE, state);
+		save(roomId, document);
+		return new Claim(request, input, null, generation, through, consents.low(), consents.high(), signature,
+			first.plus(BUDGET));
+	}
+
+	@Transactional
+	public boolean canTransmit(Claim claim) {
+		try {
+			Room room = lock(claim.request().contextId());
+			Consents current = eligible(room);
+			Map<String, Object> state = map(document(room.json()).get(STATE));
+			boolean same = sameMessages(room, claim);
+			current = eligible(room);
+			Instant checked = now();
+			return "RUNNING".equals(state.get("status")) && number(state.get("generation")) == claim.generation()
+				&& claim.request().attemptId().toString().equals(state.get("attemptId"))
+				&& current.low() == claim.lowConsent() && current.high() == claim.highConsent()
+				&& checked.isBefore(claim.deadlineAt())
+				&& checked.isBefore(Instant.parse((String)state.get("startedAt")).plus(LEASE))
+				&& same;
+		} catch (BusinessException exception) {
+			return false;
+		}
+	}
+
+	private Input pinnedInput(Room room, Map<String, Object> state, Manifest manifest) {
+		long freshFrom = number(state.get("freshFrom"));
+		List<Message> messages = jdbc.query("select cm.seq,cp.user_id,cm.body from chat_message cm "
+			+ "join chat_participant cp on cp.id=cm.sender_participant_id and cp.chat_id=cm.chat_id "
+			+ "where cm.chat_id=? and cm.seq>=? and cm.seq<=? order by cm.seq",
+			(rs, row) -> new Message(rs.getLong(1), rs.getLong(2) == room.low() ? "A" : "B", rs.getString(3),
+				rs.getLong(1) >= freshFrom, rs.getString(3).contains("[웹 주소 차단]")), room.id(),
+			number(state.get("firstSeq")), number(state.get("throughSeq")));
+		return inputs.build(messages, manifest);
+	}
+
+	private void terminal(Room room, Map<String, Object> document, Map<String, Object> state) {
+		String attempt = (String)state.get("attemptId");
+		Map<String, Object> receipts = map(state.get("receipts"));
+		Map<String, Object> receipt = map(receipts.get(attempt));
+		if (!receipt.containsKey("result")) {
+			receipt.put("result", failed(UUID.fromString(attempt)));
+			receipts.put(attempt, receipt);
+		}
+		state.put("receipts", receipts);
+		state.put("terminal", true);
+		state.put("status", "FAILED");
+		state.put("kind", Kind.INSUFFICIENT.name().equals(state.get("kind"))
+			? Kind.INSUFFICIENT.name() : Kind.FAILED.name());
+		recordTerminalRange(state, now());
+		document.put(STATE, state);
+		save(room.id(), document);
+	}
+
+	private long processedThrough(Map<String, Object> state) {
+		return Math.max(number(state.get("lastAnalyzedSeq")), number(state.get("processedThroughSeq")));
+	}
+
+	/** 실패 범위는 성공 watermark와 분리한다. 영수증과 함께 기존 chat 삭제 시점까지 보존한다. */
+	private boolean recordTerminalRange(Map<String, Object> state, Instant at) {
+		long from = number(state.get("freshFrom"));
+		long through = number(state.get("throughSeq"));
+		String attempt = (String)state.get("attemptId");
+		Map<String, Object> receipt = map(map(state.get("receipts")).get(attempt));
+		if (from < 1 || through < from || attempt == null || !receipt.containsKey("result")
+			|| !Boolean.TRUE.equals(state.get("automatic")) || !"FAILED".equals(state.get("status"))) {
+			return false;
+		}
+		Map<String, Object> ranges = map(state.get("terminalRanges"));
+		ranges.putIfAbsent(attempt, Map.of("fromSeq", from, "throughSeq", through, "kind",
+			Kind.INSUFFICIENT.name().equals(state.get("kind")) ? Kind.INSUFFICIENT.name() : Kind.FAILED.name(),
+			"finalizedAt", at.toString(), "generation", number(state.get("generation"))));
+		state.put("terminalRanges", ranges);
+		state.put("processedThroughSeq", Math.max(processedThrough(state), through));
+		return true;
 	}
 
 	@Transactional
@@ -123,11 +322,19 @@ public class RiskAnalysisStore {
 		}
 		Map<String, Object> document = document(room.json());
 		Map<String, Object> state = map(document.get(STATE));
+		boolean same = sameMessages(room, claim);
+		try {
+			current = eligible(room);
+		} catch (BusinessException exception) {
+			return failed(claim.request().attemptId());
+		}
 		Instant now = now();
 		if (!"RUNNING".equals(state.get("status")) || number(state.get("generation")) != claim.generation()
 			|| !claim.request().attemptId().toString().equals(state.get("attemptId"))
 			|| current.low() != claim.lowConsent() || current.high() != claim.highConsent()
-			|| !sameMessages(room, claim)
+			|| !same
+			|| Boolean.TRUE.equals(state.get("automatic"))
+				&& !now.isBefore(Instant.parse((String)state.get("startedAt")).plus(LEASE))
 			|| !now.isBefore(Instant.parse((String)state.get("firstStartedAt")).plus(BUDGET))) {
 			return recordDiscardedFailure(room, document, state, claim, now);
 		}
@@ -138,6 +345,9 @@ public class RiskAnalysisStore {
 				notice(room, claim.input(), finding, now);
 			}
 			state.put("lastAnalyzedSeq", claim.through());
+			if (Boolean.TRUE.equals(state.get("automatic"))) {
+				state.put("processedThroughSeq", Math.max(processedThrough(state), claim.through()));
+			}
 		}
 		state.put("kind", result.kind().name());
 		state.put("status", succeeded ? "SUCCEEDED" : "FAILED");
@@ -314,7 +524,7 @@ public class RiskAnalysisStore {
 	}
 
 	public record Claim(Request request, Input input, Response cached, long generation, long through,
-		long lowConsent, long highConsent, String signature) {
+		long lowConsent, long highConsent, String signature, Instant deadlineAt) {
 	}
 
 	private record Room(long id, long matching, long low, long high, String json) {

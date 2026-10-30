@@ -4,10 +4,7 @@ import java.time.Instant;
 import java.util.Map;
 import java.util.UUID;
 
-import org.springframework.stereotype.Component;
-
-/** Common service authentication must be wired before enabling external generation. */
-@Component
+/** Explicit disabled test adapter; runtime HTTP adapter remains OFF by default. */
 public class PendingIcebreakerGateway implements IcebreakerGateway {
 	@Override
 	public boolean enabled() {

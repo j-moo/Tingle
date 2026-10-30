@@ -1,5 +1,6 @@
 package com.e106.tingle.risk;
 
+import java.time.Duration;
 import java.util.List;
 import java.util.UUID;
 import java.util.function.ToIntFunction;
@@ -47,11 +48,16 @@ public final class HttpRiskAnalysisGateway implements RiskAnalysisGateway {
 
 	@Override
 	public Verdict analyze(Request request, Input input) {
+		return analyze(request, input, Duration.ofSeconds(10));
+	}
+
+	@Override
+	public Verdict analyze(Request request, Input input, Duration budget) {
 		requireAvailable();
 		WireRequest body = new WireRequest(request.attemptId(), request.contextId(), input.manifest(),
 			input.messages());
 		WireResponse response = client.post("/internal/ai/risk-detections", body, WireResponse.class,
-			request.attemptId());
+			request.attemptId(), budget, 1_048_576);
 		if (response == null || !request.attemptId().equals(response.attemptId())
 			|| !input.manifest().equals(response.manifest()) || response.verdict() == null) {
 			throw new BusinessException(ErrorCode.SERVICE_UNAVAILABLE);

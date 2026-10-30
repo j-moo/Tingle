@@ -12,8 +12,10 @@ import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletionStage;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Flow;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 import org.springframework.stereotype.Component;
 
@@ -52,38 +54,61 @@ public class AiInternalClient {
 	}
 
 	public <T> T post(String path, Object body, Class<T> responseType, UUID requestId) {
-		requireAvailable();
-		if (path == null || !PATHS.contains(path) || body == null || responseType == null) {
-			throw unavailable();
-		}
+		return post(path, body, responseType, requestId, Duration.ofSeconds(10), MAX_RESPONSE_BYTES);
+	}
+
+	/** 호출자의 남은 전체 기한을 인증 갱신과 본문 수신에도 동일하게 적용한다. */
+	public <T> T post(String path, Object body, Class<T> responseType, UUID requestId,
+		Duration budget, int maxResponseBytes) {
 		try {
-			long deadline = System.nanoTime() + Duration.ofSeconds(10).toNanos();
+			requireAvailable();
+			if (path == null || !PATHS.contains(path) || body == null || responseType == null
+				|| budget == null || budget.isNegative() || budget.isZero()
+				|| maxResponseBytes < 1 || maxResponseBytes > MAX_RESPONSE_BYTES) {
+				throw new AiCallException(false);
+			}
+			Duration bounded = budget.compareTo(Duration.ofSeconds(10)) > 0 ? Duration.ofSeconds(10) : budget;
+			long deadline = System.nanoTime() + bounded.toNanos();
 			UUID trace = requestId == null ? UUID.randomUUID() : requestId;
 			String serialized = json.writeValueAsString(body);
 			for (int attempt = 0; attempt < 2; attempt++) {
-				HttpResponse<byte[]> response = send(path, serialized, trace, deadline);
+				HttpResponse<byte[]> response = send(path, serialized, trace, deadline, maxResponseBytes);
 				if (attempt == 0 && expired(response)) {
 					continue;
 				}
 				if (response.statusCode() < 200 || response.statusCode() >= 300) {
-					throw unavailable();
+					throw new AiCallException(response.statusCode() >= 500 || response.statusCode() == 429,
+						response.statusCode());
 				}
 				T result = json.readValue(response.body(), responseType);
+				remaining(deadline);
 				if (result == null) {
-					throw unavailable();
+					throw new AiCallException(false);
 				}
 				return result;
 			}
-			throw unavailable();
+			throw new AiCallException(false);
+		} catch (AiCallException exception) {
+			throw exception;
 		} catch (InterruptedException exception) {
 			Thread.currentThread().interrupt();
-			throw unavailable();
+			throw new AiCallException(true);
+		} catch (TimeoutException | IOException exception) {
+			throw new AiCallException(true);
+		} catch (ExecutionException exception) {
+			for (Throwable cause = exception.getCause(); cause != null; cause = cause.getCause()) {
+				if (cause instanceof AiCallException failure) {
+					throw failure;
+				}
+			}
+			throw new AiCallException(exception.getCause() instanceof IOException);
 		} catch (Exception exception) {
-			throw unavailable();
+			throw new AiCallException(false);
 		}
 	}
 
-	private HttpResponse<byte[]> send(String path, String body, UUID trace, long deadline) throws Exception {
+	private HttpResponse<byte[]> send(String path, String body, UUID trace, long deadline,
+		int maxResponseBytes) throws Exception {
 		remaining(deadline);
 		String token = tokens.issue();
 		HttpRequest request = HttpRequest.newBuilder(base.resolve(path))
@@ -91,7 +116,7 @@ public class AiInternalClient {
 			.header("Accept", "application/json").header("Authorization", "Bearer " + token)
 			.header("X-Request-Id", trace.toString())
 			.POST(HttpRequest.BodyPublishers.ofString(body, StandardCharsets.UTF_8)).build();
-		var pending = http.sendAsync(request, info -> new BoundedBody());
+		var pending = http.sendAsync(request, info -> new BoundedBody(maxResponseBytes));
 		try {
 			return pending.get(remaining(deadline), TimeUnit.NANOSECONDS);
 		} finally {
@@ -117,7 +142,7 @@ public class AiInternalClient {
 	private long remaining(long deadline) {
 		long nanos = deadline - System.nanoTime();
 		if (nanos <= 0) {
-			throw unavailable();
+			throw new AiCallException(true);
 		}
 		return nanos;
 	}
@@ -148,6 +173,11 @@ public class AiInternalClient {
 		private final HttpResponse.BodySubscriber<byte[]> delegate = HttpResponse.BodySubscribers.ofByteArray();
 		private Flow.Subscription subscription;
 		private long received;
+		private final int limit;
+
+		private BoundedBody(int limit) {
+			this.limit = limit;
+		}
 
 		@Override
 		public CompletionStage<byte[]> getBody() {
@@ -164,9 +194,9 @@ public class AiInternalClient {
 		public void onNext(List<ByteBuffer> buffers) {
 			for (ByteBuffer buffer : buffers) {
 				received += buffer.remaining();
-				if (received > MAX_RESPONSE_BYTES) {
+				if (received > limit) {
 					subscription.cancel();
-					delegate.onError(new IOException("AI response exceeds the size limit"));
+					delegate.onError(new AiCallException(false));
 					return;
 				}
 			}
