@@ -49,6 +49,7 @@ import com.e106.tingle.chat.deletion.external.ExternalCleanupState.Status;
 import com.e106.tingle.chat.deletion.external.ExternalCopyDeletionPort.Outcome;
 import com.e106.tingle.chat.deletion.external.ExternalCopyDeletionPort.Request;
 import com.e106.tingle.chat.deletion.external.ExternalCopyDeletionPort.Result;
+import com.e106.tingle.chat.deletion.restore.DeletionJournal;
 
 import tools.jackson.databind.json.JsonMapper;
 
@@ -84,6 +85,8 @@ class ExternalCleanupIntegrationTest {
 	private Clock clock;
 	@MockitoBean
 	private ChatDeletionReferenceSource references;
+	@MockitoBean
+	private DeletionJournal journal;
 	private final List<Fixture> fixtures = new ArrayList<>();
 	private final Map<Long, Inventory> approved = new ConcurrentHashMap<>();
 
@@ -347,7 +350,9 @@ class ExternalCleanupIntegrationTest {
 
 	@Test
 	void duplicateInventoryReferencesDoNotAuthorizeAmbiguousCleanup() {
-		Fixture fixture = fixture(inventory(FIRST, FIRST), true);
+		Fixture fixture = fixture(inventory(FIRST), true);
+		// Older DB deletion journals may already contain duplicates; cleanup must still reject them.
+		changeDb(fixture, state -> copy(state, state.attempt(), inventory(FIRST, FIRST), state.status()));
 		assertThat(service.claim(fixture.matching())).isEmpty();
 		assertThat(service.inspect(fixture.matching()).orElseThrow().status()).isEqualTo(Status.BLOCKED);
 		assertThat(first.requests).isEmpty();

@@ -7,7 +7,10 @@ import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doCallRealMethod;
 import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.doThrow;
 
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.sql.Timestamp;
 import java.time.Clock;
 import java.time.Duration;
@@ -24,6 +27,7 @@ import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.ApplicationContext;
@@ -42,6 +46,13 @@ import com.e106.tingle.chat.deletion.ChatDeletionReferenceSource.Reference;
 import com.e106.tingle.chat.deletion.ChatDeletionService.Claim;
 import com.e106.tingle.chat.deletion.ChatDeletionService.Outcome;
 import com.e106.tingle.chat.deletion.ChatDeletionState.Status;
+import com.e106.tingle.chat.deletion.external.ExternalCleanupRepository;
+import com.e106.tingle.chat.deletion.external.ExternalCleanupService;
+import com.e106.tingle.chat.deletion.restore.DeletionJournal;
+import com.e106.tingle.chat.deletion.restore.FileDeletionJournal;
+import com.e106.tingle.chat.deletion.restore.RestoreReplayService;
+
+import tools.jackson.databind.json.JsonMapper;
 
 /** Only the new disposable PostgreSQL container supplied by TestcontainersConfiguration is used. */
 @SpringBootTest
@@ -58,12 +69,23 @@ class ChatDeletionIntegrationTest {
 	private ApplicationContext application;
 	@Autowired
 	private PlatformTransactionManager transactions;
+	@Autowired
+	private ExternalCleanupRepository externalRepository;
+	@Autowired
+	private ExternalCleanupService externalCleanup;
+	@Autowired
+	private JsonMapper mapper;
+	@TempDir
+	private Path journalDirectory;
 	@MockitoSpyBean
 	private ChatDeletionRepository repository;
 	@MockitoBean
 	private Clock clock;
 	@MockitoBean
 	private ChatDeletionReferenceSource references;
+	// Synthetic journal for the existing DB-boundary suite; real filesystem durability has its own tests.
+	@MockitoBean
+	private DeletionJournal journal;
 	private final List<Fixture> fixtures = new ArrayList<>();
 
 	@BeforeEach
@@ -74,6 +96,16 @@ class ChatDeletionIntegrationTest {
 			return new Inventory(true, false, "test-contract-v1",
 				List.of(new Reference("test-provider", "v1", "copy-" + context.chatId())));
 		});
+	}
+
+	@Test
+	void unavailableExternalJournalPreventsEveryDbDeletion() {
+		Fixture fixture = fixture(NOW.minus(NORMAL_RETENTION), false);
+		Claim claim = service.claimNext().orElseThrow();
+		doThrow(new IllegalStateException("Synthetic journal unavailable")).when(journal).record(any());
+		assertThatThrownBy(() -> service.deleteClaim(claim)).isInstanceOf(IllegalStateException.class);
+		assertThat(count("chat_message", "chat_id", fixture.chat())).isEqualTo(1);
+		assertThat(count("chat", "id", fixture.chat())).isEqualTo(1);
 	}
 
 	@AfterEach
@@ -172,6 +204,35 @@ class ChatDeletionIntegrationTest {
 		doReturn(new Inventory(true, false, "test-contract-v1", List.of())).when(references).inspect(any());
 		assertThat(service.claimNext()).isEmpty();
 		assertThat(count("chat", "id", fixture.chat())).isEqualTo(1);
+		assertThat(service.handoff(fixture.matching())).isEmpty();
+	}
+
+	@Test
+	void blocksDuplicateReferencesBeforeDeletingChatRows() {
+		Fixture fixture = fixture(NOW.minus(NORMAL_RETENTION), false);
+		Reference reference = new Reference("test-provider", "v1", "copy-" + fixture.chat());
+		doReturn(new Inventory(true, false, "test-contract-v1", List.of(reference, reference)))
+			.when(references).inspect(any());
+		assertThat(service.claimNext()).isEmpty();
+		assertThat(repository.state(fixture.matching()).orElseThrow().status()).isEqualTo(Status.BLOCKED_REFERENCES);
+		assertThat(count("chat", "id", fixture.chat())).isOne();
+		assertThat(count("chat_message", "chat_id", fixture.chat())).isOne();
+		assertThat(service.handoff(fixture.matching())).isEmpty();
+	}
+
+	@Test
+	void rejectsDuplicateReferencesIntroducedAfterTheClaim() {
+		Fixture fixture = fixture(NOW.minus(NORMAL_RETENTION), false);
+		Claim claim = service.claimNext().orElseThrow();
+		ChatDeletionState state = repository.state(fixture.matching()).orElseThrow();
+		Reference reference = state.inventory().references().getFirst();
+		repository.save(fixture.matching(), new ChatDeletionState(state.schemaVersion(), state.generation(),
+			state.context(), state.status(), state.attempt(), state.leaseUntil(), state.nextAttemptAt(),
+			new Inventory(true, false, state.inventory().approvalId(), List.of(reference, reference)),
+			state.failureCode(), state.dbDeletedAt()));
+		assertThat(service.deleteClaim(claim)).isEqualTo(Outcome.STALE);
+		assertThat(count("chat", "id", fixture.chat())).isOne();
+		assertThat(count("chat_message", "chat_id", fixture.chat())).isOne();
 		assertThat(service.handoff(fixture.matching())).isEmpty();
 	}
 
@@ -312,6 +373,210 @@ class ChatDeletionIntegrationTest {
 	}
 
 	@Test
+	void independentJournalReplaysDeletionAfterRestoringAnOlderDatabaseWithoutItsDeletionState() throws Exception {
+		FileDeletionJournal durableJournal = durableJournal();
+		Fixture fixture = fixture(NOW.minus(NORMAL_RETENTION), false);
+		Backup backup = backup(fixture);
+		assertThat(service.deleteClaim(service.claimNext().orElseThrow())).isEqualTo(Outcome.DELETED);
+		restore(backup);
+		jdbc.update("update matching set chat_deletion_state=null,chat_external_cleanup_state=null where id=?",
+			fixture.matching());
+		Path marker = journalDirectory.resolve("restored.marker");
+		RestoreReplayService replay = new RestoreReplayService(repository, externalRepository, externalCleanup,
+			durableJournal, clock, transactions, UUID.randomUUID().toString(), marker.toString());
+		assertThat(replay.replayAndVerify(durableJournal.snapshot().fingerprint())).isTrue();
+		assertThat(count("chat", "id", fixture.chat())).isZero();
+		assertThat(count("chat_message", "chat_id", fixture.chat())).isZero();
+		assertThat(Files.exists(marker)).isTrue();
+		assertThat(Files.exists(Path.of(marker + ".pending"))).isFalse();
+		assertThat(repository.state(fixture.matching()).orElseThrow().status()).isEqualTo(Status.DB_DELETED);
+	}
+
+	@Test
+	void restoreReplayReconcilesBothDeletionUuidsAfterNormalWorkerDeletesRestoredRoom() throws Exception {
+		FileDeletionJournal durableJournal = durableJournal();
+		Fixture fixture = fixture(NOW.minus(NORMAL_RETENTION), false);
+		Backup backup = backup(fixture);
+		Claim original = service.claimNext().orElseThrow();
+		assertThat(service.deleteClaim(original)).isEqualTo(Outcome.DELETED);
+		restore(backup);
+		jdbc.update("update matching set chat_deletion_state=null,chat_external_cleanup_state=null where id=?",
+			fixture.matching());
+		Claim replacement = service.claimNext().orElseThrow();
+		assertThat(replacement.generation()).isNotEqualTo(original.generation());
+		assertThat(service.deleteClaim(replacement)).isEqualTo(Outcome.DELETED);
+		assertThat(durableJournal.snapshot().entries()).extracting(ChatDeletionState::generation)
+			.containsExactly(original.generation(), replacement.generation());
+		String fingerprint = durableJournal.snapshot().fingerprint();
+		String restoreGeneration = UUID.randomUUID().toString();
+		Path marker = journalDirectory.resolve("restored.marker");
+		RestoreReplayService replay = new RestoreReplayService(repository, externalRepository, externalCleanup,
+			durableJournal, clock, transactions, restoreGeneration, marker.toString());
+		assertThat(replay.replayAndVerify(fingerprint)).isTrue();
+		assertThat(count("chat", "id", fixture.chat())).isZero();
+		assertThat(count("chat_message", "chat_id", fixture.chat())).isZero();
+		assertThat(repository.state(fixture.matching()).orElseThrow().generation())
+			.isEqualTo(replacement.generation());
+		assertThat(Files.readString(marker)).isEqualTo("RESTORE_VERIFIED_V2\n" + restoreGeneration + "\n"
+			+ fingerprint + "\n");
+		assertThat(Files.exists(Path.of(marker + ".pending"))).isFalse();
+	}
+
+	@Test
+	void uncommittedDeletionIntentCannotBypassLaterReportRetentionDuringRestoreReplay() throws Exception {
+		FileDeletionJournal durableJournal = durableJournal();
+		Fixture fixture = fixture(NOW.minus(NORMAL_RETENTION), false);
+		Claim claim = service.claimNext().orElseThrow();
+		report(fixture, NOW);
+		assertThat(service.deleteClaim(claim)).isEqualTo(Outcome.RETAINED);
+		assertThat(durableJournal.snapshot().entries()).hasSize(1);
+		assertThat(repository.state(fixture.matching()).orElseThrow().context().dueAt())
+			.isEqualTo(NOW.plus(Duration.ofDays(90)));
+		Path marker = journalDirectory.resolve("restored.marker");
+		RestoreReplayService replay = new RestoreReplayService(repository, externalRepository, externalCleanup,
+			durableJournal, clock, transactions, UUID.randomUUID().toString(), marker.toString());
+		assertThat(replay.replayAndVerify(durableJournal.snapshot().fingerprint())).isFalse();
+		assertThat(count("chat", "id", fixture.chat())).isOne();
+		assertThat(count("chat_message", "chat_id", fixture.chat())).isOne();
+		assertThat(count("chat_report", "chat_id", fixture.chat())).isOne();
+		assertThat(Files.readString(marker)).isEqualTo("RESTORE_PENDING_V1\n");
+		assertThat(Files.exists(Path.of(marker + ".pending"))).isTrue();
+	}
+
+	@Test
+	void rolledBackIntentCannotDeleteOldBackupThatLostALaterReportAndDeletionState() throws Exception {
+		FileDeletionJournal durableJournal = durableJournal();
+		Fixture fixture = fixture(NOW.minus(NORMAL_RETENTION), false);
+		Backup backup = backup(fixture);
+		Claim claim = service.claimNext().orElseThrow();
+		doAnswer(invocation -> {
+			jdbc.update("delete from chat_message where chat_id=?", fixture.chat());
+			throw new IllegalStateException("Synthetic deletion rollback before commit");
+		}).when(repository).deleteChat(any());
+		assertThatThrownBy(() -> service.deleteClaim(claim))
+			.hasRootCauseInstanceOf(IllegalStateException.class)
+			.hasMessageContaining("Synthetic deletion rollback before commit");
+		assertThat(count("chat_message", "chat_id", fixture.chat())).isOne();
+		doCallRealMethod().when(repository).deleteChat(any());
+		report(fixture, NOW);
+		assertThat(service.deleteClaim(claim)).isEqualTo(Outcome.RETAINED);
+		assertThat(repository.state(fixture.matching()).orElseThrow().context().dueAt())
+			.isEqualTo(NOW.plus(Duration.ofDays(90)));
+		// Recreate an older database image that contains neither the later report nor deletion state.
+		jdbc.update("delete from chat_report_message where report_id in "
+			+ "(select id from chat_report where chat_id=?)", fixture.chat());
+		jdbc.update("delete from chat_report where chat_id=?", fixture.chat());
+		jdbc.update("delete from chat_message where chat_id=?", fixture.chat());
+		jdbc.update("delete from chat_participant where chat_id=?", fixture.chat());
+		jdbc.update("delete from chat where id=?", fixture.chat());
+		restore(backup);
+		jdbc.update("update matching set chat_deletion_state=null,chat_external_cleanup_state=null where id=?",
+			fixture.matching());
+		assertThat(durableJournal.snapshot().entries()).allMatch(entry -> entry.status() == Status.RUNNING);
+		Path marker = journalDirectory.resolve("restored.marker");
+		RestoreReplayService replay = new RestoreReplayService(repository, externalRepository, externalCleanup,
+			durableJournal, clock, transactions, UUID.randomUUID().toString(), marker.toString());
+		assertThat(replay.replayAndVerify(durableJournal.snapshot().fingerprint())).isFalse();
+		assertThat(count("chat", "id", fixture.chat())).isOne();
+		assertThat(count("chat_message", "chat_id", fixture.chat())).isOne();
+		assertThat(Files.readString(marker)).isEqualTo("RESTORE_PENDING_V1\n");
+		assertThat(Files.exists(Path.of(marker + ".pending"))).isTrue();
+	}
+
+	@Test
+	void olderCommittedGenerationCannotAuthorizeANewerRolledBackGenerationAfterLostReportRestore() throws Exception {
+		FileDeletionJournal durableJournal = durableJournal();
+		Fixture fixture = fixture(NOW.minus(NORMAL_RETENTION), false);
+		Backup backup = backup(fixture);
+		Claim original = service.claimNext().orElseThrow();
+		assertThat(service.deleteClaim(original)).isEqualTo(Outcome.DELETED);
+		restore(backup);
+		jdbc.update("update matching set chat_deletion_state=null,chat_external_cleanup_state=null where id=?",
+			fixture.matching());
+		Claim replacement = service.claimNext().orElseThrow();
+		assertThat(replacement.generation()).isNotEqualTo(original.generation());
+		doAnswer(invocation -> {
+			jdbc.update("delete from chat_message where chat_id=?", fixture.chat());
+			throw new IllegalStateException("Synthetic newer generation rollback");
+		}).when(repository).deleteChat(any());
+		assertThatThrownBy(() -> service.deleteClaim(replacement))
+			.hasRootCauseInstanceOf(IllegalStateException.class)
+			.hasMessageContaining("Synthetic newer generation rollback");
+		doCallRealMethod().when(repository).deleteChat(any());
+		report(fixture, NOW);
+		assertThat(service.deleteClaim(replacement)).isEqualTo(Outcome.RETAINED);
+		assertThat(repository.state(fixture.matching()).orElseThrow().context().dueAt())
+			.isEqualTo(NOW.plus(Duration.ofDays(90)));
+		jdbc.update("delete from chat_report_message where report_id in "
+			+ "(select id from chat_report where chat_id=?)", fixture.chat());
+		jdbc.update("delete from chat_report where chat_id=?", fixture.chat());
+		jdbc.update("delete from chat_message where chat_id=?", fixture.chat());
+		jdbc.update("delete from chat_participant where chat_id=?", fixture.chat());
+		jdbc.update("delete from chat where id=?", fixture.chat());
+		restore(backup);
+		jdbc.update("update matching set chat_deletion_state=null,chat_external_cleanup_state=null where id=?",
+			fixture.matching());
+		assertThat(durableJournal.snapshot().entries()).extracting(ChatDeletionState::generation)
+			.containsExactly(original.generation(), replacement.generation());
+		assertThat(durableJournal.snapshot().entries()).extracting(ChatDeletionState::status)
+			.containsExactly(Status.DB_DELETED, Status.RUNNING);
+		Path marker = journalDirectory.resolve("restored.marker");
+		RestoreReplayService replay = new RestoreReplayService(repository, externalRepository, externalCleanup,
+			durableJournal, clock, transactions, UUID.randomUUID().toString(), marker.toString());
+		assertThat(replay.replayAndVerify(durableJournal.snapshot().fingerprint())).isFalse();
+		assertThat(count("chat", "id", fixture.chat())).isOne();
+		assertThat(count("chat_message", "chat_id", fixture.chat())).isOne();
+		assertThat(Files.readString(marker)).isEqualTo("RESTORE_PENDING_V1\n");
+		assertThat(Files.exists(Path.of(marker + ".pending"))).isTrue();
+	}
+
+	@Test
+	void failedCommitReceiptLeavesDbDeletedButRestoreVerificationBlocked() throws Exception {
+		FileDeletionJournal durableJournal = durableJournal();
+		Fixture fixture = fixture(NOW.minus(NORMAL_RETENTION), false);
+		doAnswer(invocation -> {
+			ChatDeletionState state = invocation.getArgument(0);
+			if (state.status() == Status.DB_DELETED) {
+				throw new IllegalStateException("Synthetic journal commit receipt unavailable");
+			}
+			durableJournal.record(state);
+			return null;
+		}).when(journal).record(any());
+		assertThatThrownBy(() -> service.deleteClaim(service.claimNext().orElseThrow()))
+			.isInstanceOf(IllegalStateException.class);
+		assertThat(count("chat", "id", fixture.chat())).isZero();
+		assertThat(count("chat_message", "chat_id", fixture.chat())).isZero();
+		assertThat(durableJournal.snapshot().entries()).hasSize(1)
+			.allMatch(entry -> entry.status() == Status.RUNNING);
+		Path marker = journalDirectory.resolve("restored.marker");
+		RestoreReplayService replay = new RestoreReplayService(repository, externalRepository, externalCleanup,
+			durableJournal, clock, transactions, UUID.randomUUID().toString(), marker.toString());
+		assertThat(replay.replayAndVerify(durableJournal.snapshot().fingerprint())).isFalse();
+		assertThat(Files.readString(marker)).isEqualTo("RESTORE_PENDING_V1\n");
+		assertThat(Files.exists(Path.of(marker + ".pending"))).isTrue();
+	}
+
+	@Test
+	void restoreReplayKeepsChangedSourceAndLeavesServingFencePending() throws Exception {
+		FileDeletionJournal durableJournal = durableJournal();
+		Fixture fixture = fixture(NOW.minus(NORMAL_RETENTION), false);
+		Backup backup = backup(fixture);
+		assertThat(service.deleteClaim(service.claimNext().orElseThrow())).isEqualTo(Outcome.DELETED);
+		restore(backup);
+		jdbc.update("update matching set chat_deletion_state=null,chat_external_cleanup_state=null where id=?",
+			fixture.matching());
+		jdbc.update("update chat set ai_state='{\"changedAfterBackup\":true}' where id=?", fixture.chat());
+		Path marker = journalDirectory.resolve("restored.marker");
+		RestoreReplayService replay = new RestoreReplayService(repository, externalRepository, externalCleanup,
+			durableJournal, clock, transactions, UUID.randomUUID().toString(), marker.toString());
+		assertThat(replay.replayAndVerify(durableJournal.snapshot().fingerprint())).isFalse();
+		assertThat(count("chat", "id", fixture.chat())).isOne();
+		assertThat(count("chat_message", "chat_id", fixture.chat())).isOne();
+		assertThat(Files.readString(marker)).isEqualTo("RESTORE_PENDING_V1\n");
+		assertThat(Files.exists(Path.of(marker + ".pending"))).isTrue();
+	}
+
+	@Test
 	void restoredSameGenerationIsDeletedAgainWithoutLosingTheFirstHandoff() {
 		Fixture fixture = fixture(NOW.minus(NORMAL_RETENTION), false);
 		Backup backup = backup(fixture);
@@ -410,6 +675,18 @@ class ChatDeletionIntegrationTest {
 			Thread.currentThread().interrupt();
 			throw new IllegalStateException("Test interrupted", exception);
 		}
+	}
+
+	private FileDeletionJournal durableJournal() {
+		FileDeletionJournal.initialize(journalDirectory);
+		FileDeletionJournal durable = new FileDeletionJournal(journalDirectory.toString(), mapper);
+		doAnswer(invocation -> {
+			durable.record(invocation.getArgument(0));
+			return null;
+		}).when(journal).record(any());
+		// This is a synthetic test attestation, never approval of the production inventory.
+		doReturn(new Inventory(true, true, "test-restore-no-copies", List.of())).when(references).inspect(any());
+		return durable;
 	}
 
 	private Backup backup(Fixture fixture) {

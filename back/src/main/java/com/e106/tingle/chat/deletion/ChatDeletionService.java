@@ -6,11 +6,15 @@ import java.util.Optional;
 import java.util.UUID;
 
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import com.e106.tingle.chat.deletion.ChatDeletionReferenceSource.Context;
 import com.e106.tingle.chat.deletion.ChatDeletionReferenceSource.Inventory;
 import com.e106.tingle.chat.deletion.ChatDeletionState.Status;
+import com.e106.tingle.chat.deletion.restore.DeletionJournal;
 
 import lombok.RequiredArgsConstructor;
 
@@ -20,6 +24,8 @@ public class ChatDeletionService {
 	private final ChatDeletionRepository repository;
 	private final ChatDeletionReferenceSource references;
 	private final Clock clock;
+	private final DeletionJournal journal;
+	private final PlatformTransactionManager transactions;
 
 	@Transactional
 	public Optional<Claim> claimNext() {
@@ -71,8 +77,30 @@ public class ChatDeletionService {
 		return Optional.of(new Claim(matchingId, context.chatId(), generation, state.attempt()));
 	}
 
-	@Transactional
 	public Outcome deleteClaim(Claim claim) {
+		if (TransactionSynchronizationManager.isActualTransactionActive()) {
+			throw new IllegalStateException("Deletion journal handoff requires no enclosing transaction");
+		}
+		ChatDeletionState intent = repository.state(claim.matchingId()).orElse(null);
+		if (current(intent, claim) && intent.inventory().authorizesDeletion()) {
+			// Intent survives a DB rollback/restore. Replay still rechecks source, generation and retention.
+			// Acquire the journal before DB row locks; restore replay takes locks in that same order.
+			journal.record(intent);
+		}
+		Outcome outcome = new TransactionTemplate(transactions).execute(status -> deleteCurrentClaim(claim));
+		if (outcome == Outcome.DELETED || outcome == Outcome.ALREADY_DELETED) {
+			// Confirmation is durable only after the DB transaction has returned from commit. Failure leaves
+			// a PREPARED intent that restore must block, never infer as committed from an older DB snapshot.
+			ChatDeletionState committed = repository.state(claim.matchingId())
+				.filter(state -> matches(state, claim) && state.status() == Status.DB_DELETED
+					&& state.dbDeletedAt() != null).orElseThrow(() -> new IllegalStateException(
+					"Deletion commit requires reconciliation"));
+			journal.record(committed);
+		}
+		return outcome;
+	}
+
+	private Outcome deleteCurrentClaim(Claim claim) {
 		if (!repository.lockMatching(claim.matchingId())) {
 			return Outcome.STALE;
 		}

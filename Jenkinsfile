@@ -199,13 +199,13 @@ sh gradlew check :androidApp:$APK_TASK --no-daemon -Dorg.gradle.jvmargs=-Xmx3g -
           def target = DEPLOY[env.gitlabSourceBranch]
           gitlabCommitStatus(name: "deploy-${env.gitlabSourceBranch}") {
             if (target.backup) {
-              // 운영 DB tingle 을 pg_dump 로 받아 30개까지 보관한다. 복구: pg_restore -U <사용자> -d tingle --clean <파일>
+              // 두 DB 백업 계열 모두 최대 7일. 복원 후 재삭제 검증 전에는 서비스 개방 금지.
               sh '''
                 umask 077
-                f=/backup/db-tingle-$(date +%Y%m%d-%H%M%S)-$(git rev-parse --short HEAD).dump
+                docker run --rm --volumes-from "$(hostname)" -w "$WORKSPACE" python:3.12-slim python infra/backup-retention.py --directory /backup --apply
+                f=/backup/db-tingle-$(date -u +%Y%m%d-%H%M%S)-$(git rev-parse --short HEAD).dump
                 docker exec tingle-db-1 sh -c 'pg_dump -U "$POSTGRES_USER" -Fc tingle' > "$f.tmp"
                 mv "$f.tmp" "$f"
-                ls -t /backup/db-tingle-*.dump | tail -n +31 | xargs -r rm --
                 echo "DB 백업: $f ($(du -h "$f" | cut -f1))"
               '''
             }

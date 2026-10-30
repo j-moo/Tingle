@@ -43,6 +43,7 @@ public interface ChatDeletionReferenceSource {
 
 		public boolean authorizesDeletion() {
 			return complete && approvalId != null && approvalId.matches("[A-Za-z0-9][A-Za-z0-9._:-]{0,119}")
+				&& references.stream().distinct().count() == references.size()
 				&& (!references.isEmpty() || absenceConfirmed);
 		}
 	}
