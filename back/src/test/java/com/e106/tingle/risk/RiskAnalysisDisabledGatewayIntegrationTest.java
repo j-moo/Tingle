@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verifyNoInteractions;
 
+import java.time.Clock;
 import java.util.UUID;
 
 import org.junit.jupiter.api.Test;
@@ -25,6 +26,7 @@ class RiskAnalysisDisabledGatewayIntegrationTest {
 		RiskManifestCatalog manifests = mock(RiskManifestCatalog.class);
 		RiskVerdicts verdicts = mock(RiskVerdicts.class);
 		new ApplicationContextRunner().withUserConfiguration(RiskOnlyConfiguration.class)
+			.withBean(Clock.class, Clock::systemUTC)
 			.withBean(RiskAnalysisStore.class, () -> store)
 			.withBean(RiskManifestCatalog.class, () -> manifests)
 			.withBean(RiskVerdicts.class, () -> verdicts)

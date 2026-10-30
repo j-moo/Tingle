@@ -25,7 +25,6 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.context.ApplicationContext;
 import org.springframework.context.annotation.Import;
-import org.springframework.core.io.DefaultResourceLoader;
 import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
@@ -124,20 +123,15 @@ class IcebreakerExternalBoundaryIntegrationTest extends IntegrationTestSupport {
 	}
 
 	@Test
-	void configuredLegacyTransportCannotBypassPendingCommonAuthentication() throws Exception {
+	void configuredLegacyTransportCannotBypassDisabledCommonAuthentication() throws Exception {
 		assertThat(properties.externalEnabled()).isTrue();
 		assertThat(properties.endpoint()).isNotBlank();
 		assertThat(properties.serviceToken()).isNotBlank();
-		HttpIcebreakerGateway boundedTransport = new HttpIcebreakerGateway(properties,
-			new DefaultResourceLoader(), jsonMapper, clock);
-		assertThat(boundedTransport.enabled()).isTrue();
-		assertThat(boundedTransport.manifest()).hasSize(11);
 		assertThat(context.getBeansOfType(IcebreakerGateway.class)).hasSize(1).containsValue(gateway);
-		assertThat(context.getBeansOfType(HttpIcebreakerGateway.class)).isEmpty();
-		assertThat(gateway).isExactlyInstanceOf(PendingIcebreakerGateway.class);
+		assertThat(gateway).isExactlyInstanceOf(HttpIcebreakerGateway.class);
 		assertThat(gateway.enabled()).isFalse();
 		assertThat(gateway.manifest()).isEmpty();
-		assertThatThrownBy(() -> gateway.generate(1, UUID.randomUUID(), boundedTransport.manifest(),
+		assertThatThrownBy(() -> gateway.generate(1, UUID.randomUUID(), Map.of(),
 			clock.instant().plus(Duration.ofMinutes(5))))
 			.isInstanceOfSatisfying(IcebreakerGateway.GatewayException.class,
 				exception -> assertThat(exception.retryable()).isFalse());

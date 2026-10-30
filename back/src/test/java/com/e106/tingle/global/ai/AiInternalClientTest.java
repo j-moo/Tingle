@@ -142,8 +142,13 @@ class AiInternalClientTest {
 				exchange.getResponseBody().write(content);
 				exchange.close();
 			});
-			assertUnavailable(() -> client("test", base)
-				.post("/internal/ai/risk-detections", Map.of(), Map.class, UUID.randomUUID()));
+			assertThatThrownBy(() -> client("test", base)
+				.post("/internal/ai/risk-detections", Map.of(), Map.class, UUID.randomUUID()))
+				.isInstanceOfSatisfying(AiCallException.class, exception -> {
+					assertThat(exception.httpStatus()).isEqualTo(status);
+					assertThat(exception.retryable()).isEqualTo(status == 503);
+					assertThat(exception.getMessage()).doesNotContain("ACCESS_TOKEN_EXPIRED");
+				});
 			server.removeContext("/internal/ai/risk-detections");
 		}
 		assertThat(calls.get()).isEqualTo(5);

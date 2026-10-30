@@ -53,6 +53,7 @@ class RiskManifestCatalogTest {
 
 	@Test
 	void acceptsOnlyTheCompleteRegisteredTupleWithTheActualArtifactHash() {
+		assertThat(catalog.current()).contains(requested);
 		assertThat(catalog.supports(requested)).isTrue();
 		for (String field : manifest.keySet()) {
 			Map<String, Object> different = new HashMap<>(manifest);
@@ -66,6 +67,8 @@ class RiskManifestCatalogTest {
 	@Test
 	void emptyAndMissingConfigurationNeverApproveAManifest() {
 		assertThat(new RiskReleaseProperties(null).descriptorFile()).isEmpty();
+		assertThat(catalog(null).current()).isEmpty();
+		assertThat(catalog(directory.resolve("missing.json").toString()).current()).isEmpty();
 		assertThat(catalog(null).supports(requested)).isFalse();
 		assertThat(catalog("").supports(requested)).isFalse();
 		assertThat(catalog(" ").supports(requested)).isFalse();
@@ -75,10 +78,13 @@ class RiskManifestCatalogTest {
 
 	@Test
 	void artifactTamperingOrRemovalIsDetectedOnEveryLookup() throws Exception {
+		assertThat(catalog.current()).contains(requested);
 		assertThat(catalog.supports(requested)).isTrue();
 		Files.writeString(directory.resolve(ARTIFACT), "changed synthetic rules");
+		assertThat(catalog.current()).isEmpty();
 		assertThat(catalog.supports(requested)).isFalse();
 		Files.delete(directory.resolve(ARTIFACT));
+		assertThat(catalog.current()).isEmpty();
 		assertThat(catalog.supports(requested)).isFalse();
 	}
 
@@ -145,6 +151,7 @@ class RiskManifestCatalogTest {
 			"{\"manifest\":" + JSON.writeValueAsString(manifest)
 				+ ",\"artifact\":\"artifact.json\",\"artifact\":\"artifact.json\"}")) {
 			Files.writeString(descriptor, invalid);
+			assertThat(catalog.current()).isEmpty();
 			assertThat(catalog.supports(requested)).isFalse();
 		}
 	}

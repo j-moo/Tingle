@@ -1,5 +1,7 @@
 package com.e106.tingle.risk;
 
+import java.time.Duration;
+
 import com.e106.tingle.risk.RiskAnalysisTypes.Input;
 import com.e106.tingle.risk.RiskAnalysisTypes.Request;
 import com.e106.tingle.risk.RiskAnalysisTypes.Verdict;
@@ -15,5 +17,9 @@ public interface RiskAnalysisGateway {
 
 	default Verdict analyze(Request request, Input input) {
 		return analyze(input);
+	}
+
+	default Verdict analyze(Request request, Input input, Duration budget) {
+		return analyze(request, input);
 	}
 }

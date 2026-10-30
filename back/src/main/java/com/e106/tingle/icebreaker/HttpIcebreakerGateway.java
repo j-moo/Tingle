@@ -1,13 +1,7 @@
 package com.e106.tingle.icebreaker;
 
-import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
-import java.net.URI;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
-import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -15,25 +9,22 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.HexFormat;
-import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.CompletionStage;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.Flow;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
 
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.io.ResourceLoader;
-import org.springframework.http.HttpHeaders;
-import org.springframework.http.MediaType;
+import org.springframework.stereotype.Component;
+
+import com.e106.tingle.global.ai.AiCallException;
+import com.e106.tingle.global.ai.AiInternalClient;
 
 import tools.jackson.core.type.TypeReference;
 import tools.jackson.databind.ObjectMapper;
 
-/** Bounded transport retained for verification; production uses PendingIcebreakerGateway until common auth is wired. */
+/** 공통 서비스 인증을 사용하며 명시적 활성화와 검증된 불변 manifest를 요구한다. */
+@Component
 public class HttpIcebreakerGateway implements IcebreakerGateway {
 	private static final Set<String> MANIFEST_FIELDS = Set.of("releaseId", "surveyVersion", "wordingVersion",
 		"scoringVersion", "typeModelVersion", "analysisVersion", "typeReferenceVersion", "matchingVersion",
@@ -41,30 +32,37 @@ public class HttpIcebreakerGateway implements IcebreakerGateway {
 	private final IcebreakerProperties properties;
 	private final ResourceLoader resources;
 	private final ObjectMapper mapper;
-	private final HttpClient client;
+	private final AiInternalClient client;
 	private final Clock clock;
 	private final Duration maxCallTime;
 
+	@Autowired
 	public HttpIcebreakerGateway(IcebreakerProperties properties, ResourceLoader resources, ObjectMapper mapper,
-		Clock clock) {
-		this(properties, resources, mapper, clock, Duration.ofSeconds(10));
+		Clock clock, AiInternalClient client) {
+		this(properties, resources, mapper, clock, client, Duration.ofSeconds(10));
 	}
 
 	HttpIcebreakerGateway(IcebreakerProperties properties, ResourceLoader resources, ObjectMapper mapper,
-		Clock clock, Duration maxCallTime) {
+		Clock clock, AiInternalClient client, Duration maxCallTime) {
 		this.properties = properties;
 		this.resources = resources;
 		this.mapper = mapper;
 		this.clock = clock;
+		this.client = client;
 		this.maxCallTime = maxCallTime;
-		client = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(3))
-			.version(HttpClient.Version.HTTP_1_1).build();
 	}
 
 	@Override
 	public boolean enabled() {
-		return properties.externalEnabled() && !properties.endpoint().isBlank()
-			&& !properties.serviceToken().isBlank() && !properties.manifestLocation().isBlank();
+		if (!properties.externalEnabled() || properties.manifestLocation().isBlank()) {
+			return false;
+		}
+		try {
+			client.requireAvailable();
+			return true;
+		} catch (RuntimeException exception) {
+			return false;
+		}
 	}
 
 	@Override
@@ -84,7 +82,10 @@ public class HttpIcebreakerGateway implements IcebreakerGateway {
 					return Map.of();
 				}
 			}
-			UUID.fromString((String)values.get("releaseId"));
+			String release = (String)values.get("releaseId");
+			if (!UUID.fromString(release).toString().equals(release)) {
+				return Map.of();
+			}
 			String expected = (String)values.get("contentHash");
 			if (!expected.matches("[0-9a-f]{64}")) {
 				return Map.of();
@@ -108,12 +109,11 @@ public class HttpIcebreakerGateway implements IcebreakerGateway {
 		}
 	}
 
+
 	@Override
 	public Generated generate(long contextId, UUID attemptId, Map<String, Object> manifest, Instant deadlineAt) {
-		if (!clock.instant().isBefore(deadlineAt)) {
-			throw new GatewayException(true);
-		}
-		if (!enabled() || manifest.isEmpty() || !manifest.equals(manifest())) {
+		if (contextId <= 0 || attemptId == null || deadlineAt == null || !enabled()
+			|| manifest == null || manifest.isEmpty() || !manifest.equals(manifest())) {
 			throw new GatewayException(false);
 		}
 		Duration remaining = Duration.between(clock.instant(), deadlineAt);
@@ -121,94 +121,16 @@ public class HttpIcebreakerGateway implements IcebreakerGateway {
 		if (budget.isNegative() || budget.isZero()) {
 			throw new GatewayException(true);
 		}
-		long started = System.nanoTime();
-		CompletableFuture<HttpResponse<byte[]>> response = null;
 		try {
-			HttpRequest request = HttpRequest.newBuilder(URI.create(properties.endpoint())).timeout(budget)
-				.header(HttpHeaders.AUTHORIZATION, "Bearer " + properties.serviceToken())
-				.header(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE)
-				.POST(HttpRequest.BodyPublishers.ofByteArray(mapper.writeValueAsBytes(
-					Map.of("contextId", contextId, "attemptId", attemptId, "manifest", manifest)))).build();
-			response = client.sendAsync(request, info -> new LimitedBody());
-			// The future includes the entire body, not only response headers or an individual socket read.
-			long nanos = budget.toNanos() - (System.nanoTime() - started);
-			if (nanos <= 0) {
-				throw new GatewayException(true);
-			}
-			HttpResponse<byte[]> received = response.get(nanos, TimeUnit.NANOSECONDS);
-			if (received.statusCode() < 200 || received.statusCode() >= 300) {
-				throw new GatewayException(received.statusCode() >= 500 || received.statusCode() == 429);
-			}
-			Generated result = mapper.readValue(received.body(), Generated.class);
-			if (!clock.instant().isBefore(deadlineAt) || System.nanoTime() - started >= budget.toNanos()) {
+			Generated result = client.post("/internal/ai/icebreakers",
+				Map.of("contextId", contextId, "attemptId", attemptId, "manifest", manifest),
+				Generated.class, attemptId, budget, 16 * 1024);
+			if (!clock.instant().isBefore(deadlineAt)) {
 				throw new GatewayException(true);
 			}
 			return result;
-		} catch (TimeoutException exception) {
-			throw new GatewayException(true);
-		} catch (InterruptedException exception) {
-			Thread.currentThread().interrupt();
-			throw new GatewayException(true);
-		} catch (ExecutionException exception) {
-			Throwable cause = exception.getCause();
-			for (Throwable current = cause; current != null; current = current.getCause()) {
-				if (current instanceof GatewayException failure) {
-					throw failure;
-				}
-			}
-			throw new GatewayException(cause instanceof IOException);
-		} catch (GatewayException exception) {
-			throw exception;
-		} catch (RuntimeException exception) {
-			throw new GatewayException(false);
-		} finally {
-			if (response != null && !response.isDone()) {
-				response.cancel(true);
-			}
-		}
-	}
-
-	private static final class LimitedBody implements HttpResponse.BodySubscriber<byte[]> {
-		// Internal transport guard; the public three-question contract is unchanged.
-		private static final int MAX_BYTES = 16 * 1024;
-		private final ByteArrayOutputStream bytes = new ByteArrayOutputStream();
-		private final CompletableFuture<byte[]> body = new CompletableFuture<>();
-		private Flow.Subscription subscription;
-
-		@Override
-		public CompletionStage<byte[]> getBody() {
-			return body;
-		}
-
-		@Override
-		public void onSubscribe(Flow.Subscription incoming) {
-			subscription = incoming;
-			subscription.request(1);
-		}
-
-		@Override
-		public void onNext(List<ByteBuffer> buffers) {
-			for (ByteBuffer buffer : buffers) {
-				if (buffer.remaining() > MAX_BYTES - bytes.size()) {
-					body.completeExceptionally(new GatewayException(false));
-					subscription.cancel();
-					return;
-				}
-				byte[] chunk = new byte[buffer.remaining()];
-				buffer.get(chunk);
-				bytes.writeBytes(chunk);
-			}
-			subscription.request(1);
-		}
-
-		@Override
-		public void onError(Throwable failure) {
-			body.completeExceptionally(failure);
-		}
-
-		@Override
-		public void onComplete() {
-			body.complete(bytes.toByteArray());
+		} catch (AiCallException exception) {
+			throw new GatewayException(!Integer.valueOf(503).equals(exception.httpStatus()) && exception.retryable());
 		}
 	}
 }

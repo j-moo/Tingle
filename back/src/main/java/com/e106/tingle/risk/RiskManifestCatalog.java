@@ -10,6 +10,7 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.HexFormat;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 
@@ -44,8 +45,13 @@ public class RiskManifestCatalog {
 	}
 
 	public boolean supports(Manifest manifest) {
-		if (manifest == null || properties.descriptorFile().isBlank()) {
-			return false;
+		return manifest != null && current().filter(manifest::equals).isPresent();
+	}
+
+	/** 현재 등록본도 매번 파일과 해시를 검증하며 무효한 설정을 캐시하지 않는다. */
+	public Optional<Manifest> current() {
+		if (properties.descriptorFile().isBlank()) {
+			return Optional.empty();
 		}
 		try {
 			Path configured = Path.of(properties.descriptorFile()).toAbsolutePath().normalize();
@@ -56,23 +62,21 @@ public class RiskManifestCatalog {
 			if (!descriptor.keySet().equals(Set.of("manifest", "artifact"))
 				|| !(descriptor.get("manifest") instanceof Map<?, ?> values) || !valid(values)
 				|| !(descriptor.get("artifact") instanceof String artifact)) {
-				return false;
+				return Optional.empty();
 			}
 			Manifest registered = mapper.convertValue(values, Manifest.class);
-			if (!registered.equals(manifest)) {
-				return false;
-			}
 			Path artifactFile = artifact(parent, artifact);
 			if (artifactFile == null) {
-				return false;
+				return Optional.empty();
 			}
 			byte[] bytes = read(artifactFile, MAX_ARTIFACT_BYTES);
 			String actual = HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(bytes));
 			return MessageDigest.isEqual(actual.getBytes(StandardCharsets.US_ASCII),
-				registered.contentHash().getBytes(StandardCharsets.US_ASCII));
+				registered.contentHash().getBytes(StandardCharsets.US_ASCII))
+				? Optional.of(registered) : Optional.empty();
 		} catch (IOException | NoSuchAlgorithmException | RuntimeException exception) {
 			// 파일 경로·내용·예외를 로그/응답에 복사하지 않고 미지원으로 처리한다.
-			return false;
+			return Optional.empty();
 		}
 	}
 
