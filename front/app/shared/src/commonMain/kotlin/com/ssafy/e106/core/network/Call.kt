@@ -23,10 +23,21 @@ suspend inline fun <reified T> HttpClient.call(crossinline request: suspend Http
     } catch (e: CancellationException) {
         throw e
     } catch (e: IOException) {
-        ApiResult.Fail(AppError.Offline)        // 연결 실패 · 타임아웃(HttpRequestTimeoutException 도 IOException)
+        ApiResult.Fail(AppError.Offline)        // 연결 실패 · 타임아웃(HttpRequestTimeoutException 도 IOException). 재발급의 연결 실패도
+    } catch (e: RefreshFailed) {
+        ApiResult.Fail(e.error)                 // 재발급 5xx. 토큰은 남아 있다
     } catch (e: Exception) {
         ApiResult.Fail(AppError.Unknown(e))     // 성공 응답 파싱 실패 등
     }
+
+/** runCatching 과 같지만 코루틴 취소는 잡지 않고 다시 던진다(화면을 떠난 것은 오류가 아니다) */
+internal suspend inline fun <T> catchingNonCancel(block: suspend () -> T): Result<T> = try {
+    Result.success(block())
+} catch (e: CancellationException) {
+    throw e
+} catch (e: Exception) {
+    Result.failure(e)
+}
 
 /** 서버 오류 본문은 {code, message} 두 필드뿐(B/global/error/ErrorResponse.java). 본문이 깨져 있으면 빈 값 → 기본 문구 */
 @Serializable
