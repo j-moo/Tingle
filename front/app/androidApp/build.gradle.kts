@@ -23,7 +23,7 @@ android {
     }
 
     // 팀 서명 키는 Jenkins Credentials(tingle-release-key · tingle-release-password)가 환경변수로 넘긴다 — 공개 APK 는 debug·release 모두 이 키로 찍는다.
-    // 키가 없는 PC 에서는 debug·release 모두 디버그 키로 서명한다.
+    // 키가 없는 PC 에서는 debug·release 모두 로컬 Android 디버그 키로 서명한다.
     val releaseKeystore = System.getenv("TINGLE_KEYSTORE")
     signingConfigs {
         if (releaseKeystore != null) {
