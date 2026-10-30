@@ -123,7 +123,7 @@
       "datasource": { "type": "loki", "uid": "loki" },
       "options": { "showTime": true, "wrapLogMessage": true, "sortOrder": "Descending" },
       "targets": [
-        { "refId": "A", "expr": "{service=~\"back-.*|ai-.*\"} |~ \"ERROR|Exception|Traceback\"" }
+        { "refId": "A", "expr": "{service=~\"(back|ai)-(blue|green|dev)\"} |~ \"ERROR|Exception|Traceback\" | label_format environment_path=`{{ if hasSuffix \"-dev\" .service }}/dev/api/{{ else }}/api/{{ end }}`, ai_environment_path=`{{ if or (eq .service \"ai-blue\") (eq .service \"ai-green\") }}/ai/{{ else }}/{{ end }}` | (environment_path=~\"$env\" or ai_environment_path=~\"$env\") | drop environment_path, ai_environment_path" }
       ]
     }
   ]
