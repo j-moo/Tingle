@@ -30,6 +30,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
 import org.springframework.test.web.servlet.ResultMatcher;
@@ -38,6 +39,8 @@ import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilde
 import com.e106.tingle.auth.SocialProvider;
 import com.e106.tingle.auth.SocialVerifier;
 import com.e106.tingle.auth.SocialVerifier.SocialAccount;
+import com.e106.tingle.personality.PersonalAnalysisClient;
+import com.e106.tingle.user.ProfileAnalysisApplicationService;
 
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
@@ -64,6 +67,14 @@ public abstract class IntegrationTestSupport {
 
 	@MockitoBean
 	protected Clock clock;
+
+	// AI 서버 대신. 기본값 ready()=false 라 따로 설정하지 않은 테스트에서는 분석을 실행하지 않는다.
+	@MockitoBean
+	protected PersonalAnalysisClient personalAnalysisClient;
+
+	// 실제 동작 그대로. 분석 결과 적용의 일시 오류를 흉내 낼 때만 바꾼다.
+	@MockitoSpyBean
+	protected ProfileAnalysisApplicationService profileAnalysisApplications;
 
 	protected final AtomicReference<Duration> timeShift = new AtomicReference<>(Duration.ZERO);
 

@@ -13,5 +13,8 @@ app:
 
 # 테스트가 만든 사진 파일은 로컬 실행용 폴더와 섞이지 않게 따로 둔다.
 tingle:
+  ai:
+    personal-analysis:
+      scheduling-enabled: false
   photo:
     dir: ${java.io.tmpdir}/tingle-photos-test
