@@ -5,7 +5,7 @@
     <application
         android:name=".TingleApplication"
         android:allowBackup="false"
-        android:label="tingle"
+        android:label="${appLabel}"
         android:supportsRtl="true"
         android:theme="@android:style/Theme.Material.Light.NoActionBar">
         <activity
