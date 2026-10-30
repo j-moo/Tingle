@@ -32,17 +32,23 @@ android {
         }
     }
     val teamKey = signingConfigs.findByName("release")
+    // 서버 주소 · HTTP 로그는 빌드 타입이 정한다. shared 의 coreModule(BuildConfig.API_BASE_URL, BuildConfig.HTTP_LOG) 로 넘긴다
     buildTypes {
         debug {
             if (teamKey != null) signingConfig = teamKey
+            buildConfigField("String", "API_BASE_URL", "\"https://k15e106.p.ssafy.io/dev/api/\"")
+            buildConfigField("boolean", "HTTP_LOG", "true")
         }
         release {
             signingConfig = teamKey ?: signingConfigs.getByName("debug")
+            buildConfigField("String", "API_BASE_URL", "\"https://k15e106.p.ssafy.io/api/\"")
+            buildConfigField("boolean", "HTTP_LOG", "false")   // release 는 URL 도 남기지 않는다
         }
     }
 
     buildFeatures {
         compose = true
+        buildConfig = true
     }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
