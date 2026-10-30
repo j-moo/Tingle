@@ -100,7 +100,7 @@ pnpm build
               // Android SDK 는 처음 한 번 볼륨에 받고, 필요한 플랫폼·빌드 도구는 AGP 가 알아서 내려받는다.
               // 메모리: gradle.properties 기본값(4G + Kotlin 데몬 3G)은 서버에 크므로 Kotlin 을 gradle 안에서 돌리고 3G 로 줄인다.
               // develop · master 머지는 공개할 APK 를 팀 서명 키(Credentials tingle-release-key · tingle-release-password)로 찍는다 — master 는 release, develop 은 debug.
-              // 디버그 키는 빌드 컨테이너마다 새로 생겨 매번 서명이 달라지므로 덮어 설치가 안 된다. MR 검사는 키 없이 debug.
+              // MR builds use the local Android debug signing key.
               script {
                 def apkDir = [develop: '/srv/tingle/app/dev', master: '/srv/tingle/app'][env.gitlabSourceBranch]
                 def publish = env.gitlabActionType == 'PUSH' && apkDir
