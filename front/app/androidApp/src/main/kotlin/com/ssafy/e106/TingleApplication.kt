@@ -1,6 +1,7 @@
 package com.ssafy.e106
 
 import android.app.Application
+import com.ssafy.e106.core.auth.SocialKeys
 import com.ssafy.e106.di.coreModule
 import org.koin.android.ext.koin.androidContext
 import org.koin.core.context.startKoin
@@ -11,7 +12,8 @@ class TingleApplication : Application() {
         super.onCreate()
         startKoin {
             androidContext(this@TingleApplication)
-            modules(coreModule(BuildConfig.API_BASE_URL, BuildConfig.HTTP_LOG))
+            val socialKeys = SocialKeys(BuildConfig.GOOGLE_WEB_CLIENT_ID, BuildConfig.KAKAO_NATIVE_APP_KEY, BuildConfig.NAVER_CLIENT_ID, BuildConfig.NAVER_CLIENT_SECRET)
+            modules(coreModule(BuildConfig.API_BASE_URL, BuildConfig.HTTP_LOG, socialKeys))
         }
     }
 }

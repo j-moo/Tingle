@@ -16,6 +16,10 @@ android {
         targetSdk = libs.versions.targetSdk.get().toInt()
         versionCode = 1
         versionName = "0.1.0"
+        // 소셜 로그인 키. Jenkins 는 tingle-app-env 에서 환경변수로, 로컬은 ~/.gradle/gradle.properties 에 둔다(저장소에 넣지 않는다). 없으면 그 공급자 버튼이 숨는다
+        fun key(name: String) = providers.gradleProperty(name).orNull ?: System.getenv(name) ?: ""
+        listOf("GOOGLE_WEB_CLIENT_ID", "KAKAO_NATIVE_APP_KEY", "NAVER_CLIENT_ID", "NAVER_CLIENT_SECRET").forEach { buildConfigField("String", it, "\"${key(it)}\"") }
+        manifestPlaceholders["kakaoScheme"] = "kakao" + key("KAKAO_NATIVE_APP_KEY").ifEmpty { "unconfigured" }   // 카카오 로그인 콜백 주소
     }
 
     // 팀 서명 키는 Jenkins Credentials(tingle-release-key · tingle-release-password)가 환경변수로 넘긴다 — 공개 APK 는 debug·release 모두 이 키로 찍는다.

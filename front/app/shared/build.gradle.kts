@@ -52,6 +52,11 @@ kotlin {
         androidMain.dependencies {
             implementation(libs.ktor.client.okhttp)
             implementation(libs.koin.android)   // androidContext() — TokenStore 가 Context 를 쓴다
+            implementation(libs.androidx.credentials)   // 소셜 로그인 SDK (AndroidSocialLogin)
+            implementation(libs.androidx.credentials.play)
+            implementation(libs.googleid)
+            implementation(libs.kakao.user)
+            implementation(libs.naver.oauth)
         }
         getByName("androidDeviceTest").dependencies {
             implementation(libs.androidx.test.runner)
