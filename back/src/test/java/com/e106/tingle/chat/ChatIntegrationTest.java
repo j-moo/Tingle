@@ -20,6 +20,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.context.annotation.Import;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 
 import com.e106.tingle.IntegrationTestSupport;
 import com.e106.tingle.TestcontainersConfiguration;
@@ -39,10 +40,12 @@ import tools.jackson.databind.JsonNode;
 @ActiveProfiles({"test", "erd"})
 @Import(TestcontainersConfiguration.class)
 class ChatIntegrationTest extends IntegrationTestSupport {
-	@Autowired
+	@MockitoSpyBean
 	private ChatService chats;
 	@Autowired
 	private ChatRoomRepository rooms;
+	@Autowired
+	private ChatMemberRepository chatMembers;
 	@Autowired
 	private ProposalService proposals;
 	@Autowired
@@ -310,6 +313,48 @@ class ChatIntegrationTest extends IntegrationTestSupport {
 		String foreign = java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(
 			("m|" + UUID.randomUUID() + "|2").getBytes(java.nio.charset.StandardCharsets.UTF_8));
 		assertCode(() -> chats.messages(room.getPublicId(), firstId, foreign, 1), ErrorCode.INVALID_REQUEST);
+	}
+
+	@Test
+	void roomPaginationUsesCreatedAtThenIdAndKeepsOpaqueCursor() throws Exception {
+		ChatRoom restored = pageRoom(room.getCreatedAt().minusSeconds(120));
+		ChatRoom tied = pageRoom(room.getCreatedAt());
+		var page = chats.list(firstId, null, 1);
+		assertThat(page.items()).extracting(v -> v.chatRoomId()).containsExactly(tied.getId());
+		String cursor = page.nextCursor();
+		assertThat(new String(java.util.Base64.getUrlDecoder().decode(cursor),
+			java.nio.charset.StandardCharsets.UTF_8)).isEqualTo("r|" + firstId + "|" + tied.getId());
+		page = chats.list(firstId, cursor, 1);
+		assertThat(page.items()).extracting(v -> v.chatRoomId()).containsExactly(room.getId());
+		page = chats.list(firstId, page.nextCursor(), 1);
+		assertThat(page.items()).extracting(v -> v.chatRoomId()).containsExactly(restored.getId());
+		assertThat(page.nextCursor()).isNull();
+		assertCode(() -> chats.list(secondId, cursor, 1), ErrorCode.INVALID_REQUEST);
+		assertCode(() -> chats.list(firstId, "invalid!", 1), ErrorCode.INVALID_REQUEST);
+	}
+
+	@Test
+	void roomPaginationAdvancesBothKeysAcrossMoreThanOneFilteredBatch() throws Exception {
+		for (int i = 1; i <= 101; i++) {
+			pageRoom(room.getCreatedAt().plusSeconds(i));
+		}
+		// Isolate the scan boundary while the other tests exercise real eligibility checks.
+		doAnswer(call -> ((ChatRoom)call.getArgument(0)).getId().equals(room.getId()))
+			.when(chats).available(any(ChatRoom.class), eq(firstId));
+		var page = chats.list(firstId, null, 1);
+		assertThat(page.items()).extracting(v -> v.chatRoomId()).containsExactly(room.getId());
+		assertThat(page.nextCursor()).isNull();
+	}
+
+	private ChatRoom pageRoom(Instant createdAt) throws Exception {
+		var partner = login("google", newSocialId());
+		completeOnboarding(partner);
+		long partnerId = userIdOf(partner);
+		MatchProposal proposal = proposalRows.saveAndFlush(MatchProposal.proposed(firstId, partnerId, createdAt));
+		ChatRoom saved = rooms.saveAndFlush(new ChatRoom(proposal.getId(), proposal.getId(), createdAt));
+		chatMembers.saveAllAndFlush(List.of(new ChatMember(saved.getId(), firstId),
+			new ChatMember(saved.getId(), partnerId)));
+		return saved;
 	}
 
 	private List<String> noticeStates() {

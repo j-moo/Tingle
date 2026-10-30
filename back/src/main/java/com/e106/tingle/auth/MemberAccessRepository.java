@@ -123,8 +123,11 @@ public class MemberAccessRepository {
 			+ "join matching_participant p on p.matching_id=m.id "
 			+ "where ((m.user_low_id=? and m.user_high_id=?) or (m.user_low_id=? and m.user_high_id=?)) "
 			+ "and p.user_id in (m.user_low_id,m.user_high_id) and p.blocked_at is not null) "
+			+ "or exists (select 1 from matching m where m.user_low_id=least(?,?) and m.user_high_id=greatest(?,?) "
+			+ "and (m.status='CLOSED' or exists (select 1 from chat c where c.matching_id=m.id "
+			+ "and c.close_reason='LEFT'))) "
 			+ "or exists (select 1 from users where id in (?,?) and status<>'ACTIVE')",
-			Boolean.class, first, second, second, first, first, second));
+			Boolean.class, first, second, second, first, first, second, first, second, first, second));
 	}
 
 	public record AgreementItem(String type, String version, boolean required) {

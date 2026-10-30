@@ -28,7 +28,10 @@ public interface ChatRoomRepository extends JpaRepository<ChatRoom, Long> {
 
 	@Query("select r from ChatRoom r join ChatMember m on m.chatRoomId = r.id "
 		+ "where m.userId = :userId and m.leftAt is null and r.closedAt is null and r.expiresAt > :now "
-		+ "and r.id < :before order by r.id desc")
+		+ "and (:firstPage = true or r.createdAt < :beforeCreatedAt "
+		+ "or (r.createdAt = :beforeCreatedAt and r.id < :beforeId)) "
+		+ "order by r.createdAt desc, r.id desc")
 	List<ChatRoom> page(@Param("userId") long userId, @Param("now") Instant now,
-		@Param("before") long before, Pageable page);
+		@Param("firstPage") boolean firstPage, @Param("beforeCreatedAt") Instant beforeCreatedAt,
+		@Param("beforeId") long beforeId, Pageable page);
 }

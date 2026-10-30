@@ -32,6 +32,7 @@ public class ChatNoticeService {
 	private final ChatNoticeJobs store;
 	private final ChatNoticeJobRepository jobs;
 	private final Clock clock;
+	private final EndNoticePolicy endNotices;
 
 	@Transactional
 	public EntryView enter(long roomId, long userId, UUID key) {
@@ -63,6 +64,9 @@ public class ChatNoticeService {
 	}
 
 	private List<NoticeView> pending(ChatService.NoticeAccess access) {
+		if (!endNotices.enabled()) {
+			return List.of();
+		}
 		List<NoticeView> result = new ArrayList<>();
 		if (!clock.instant().isBefore(access.room().getExpiresAt().minusSeconds(3600))
 			&& access.member().getEndNoticeAckedAt() == null) {
