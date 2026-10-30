@@ -101,6 +101,8 @@ public class SurveyService {
 	 */
 	@Transactional
 	public SurveySessionResponse complete(long userId, long sessionId) {
+		// 성향 분석 결과 적용(최신 완료 회차인지 확인)과 같은 회원 행 잠금으로 줄 세운다.
+		userRepository.findByIdForUpdate(userId).orElseThrow(() -> new BusinessException(ErrorCode.AUTH_REQUIRED));
 		SurveyResponse response = lockedOwned(userId, sessionId);
 		SurveyDefinition definition = definitionOf(response);
 		if (response.isCompleted()) {

@@ -47,6 +47,28 @@ public class Personality {
 	@Column(name = "result", columnDefinition = "jsonb")
 	private String result;
 
+	/** 새 분석 요청. 재시도 정보는 result 에 둔다(attempts·nextRetryAt·lastErrorCode, 응답에 내보내지 않음). */
+	public static Personality pending(long surveyId, String analysisVersion, String retryState) {
+		Personality personality = new Personality();
+		personality.surveyId = surveyId;
+		personality.analysisVersion = analysisVersion;
+		personality.status = AnalysisStatus.PENDING;
+		personality.result = retryState;
+		return personality;
+	}
+
+	/** 실행을 선점했거나 실패해 다시 기다리는 상태. result 는 재시도 정보만 담는다. */
+	void retryState(AnalysisStatus status, String retryState) {
+		this.status = status;
+		this.result = retryState;
+	}
+
+	/** AI 결과(SUCCEEDED·INSUFFICIENT)를 받은 그대로 저장한다. */
+	void finish(AnalysisStatus status, String aiResult) {
+		this.status = status;
+		this.result = aiResult;
+	}
+
 	public enum AnalysisStatus {
 		PENDING,
 		SUCCEEDED,

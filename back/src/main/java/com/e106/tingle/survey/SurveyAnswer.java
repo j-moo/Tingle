@@ -73,7 +73,7 @@ public class SurveyAnswer {
 		return answer;
 	}
 
-	JsonNode value(JsonMapper mapper) {
+	public JsonNode value(JsonMapper mapper) {
 		if ("STRING".equals(answerType)) {
 			return mapper.readTree(mapper.writeValueAsString(answerValue));
 		}
