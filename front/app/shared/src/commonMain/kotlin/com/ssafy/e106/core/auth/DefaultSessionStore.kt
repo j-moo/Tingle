@@ -5,6 +5,7 @@ import com.ssafy.e106.core.network.AppError
 import com.ssafy.e106.core.network.SessionAuth
 import com.ssafy.e106.core.network.call
 import com.ssafy.e106.core.network.catchingNonCancel
+import com.ssafy.e106.core.storage.StoredTokens
 import com.ssafy.e106.core.storage.TokenStore
 import io.ktor.client.HttpClient
 import io.ktor.client.plugins.auth.authProvider
@@ -55,7 +56,8 @@ internal class DefaultSessionStore(
     private val lock = Mutex()
     private var onboardingSent = 0L                      // 단계 조회 순번. 늦게 온 옛 조회가 더 최근 결과를 덮지 않게
     private var onboardingApplied = 0L
-    private var announceStep = false                     // 403 을 받아 단계를 다시 읽는 중. 그동안 단계가 바뀌면 OnboardingRequired 1회
+    private var announceStep = false
+    private var generation = 0L                          // 세션 세대. 로그인 · 로그아웃(만료 포함)마다 오른다. 재발급은 같은 세션이라 그대로                     // 403 을 받아 단계를 다시 읽는 중. 그동안 단계가 바뀌면 OnboardingRequired 1회
 
     private val onboardingLock = Mutex()
     private var onboarding: Deferred<ApiResult<Unit>>? = null
@@ -130,8 +132,43 @@ internal class DefaultSessionStore(
         BearerTokens(stored.accessToken, stored.refreshToken)
     }
 
-    /** 세션을 바로 끝낸다(193 로그아웃 등). HTTP 401 은 [expireIfCurrent] 로 온다 */
+    /** 세션을 바로 끝내고 안내한다(쓸 수 없는 재발급 응답 등). HTTP 401 은 [expireIfCurrent] 로 온다 */
     suspend fun expire() = lock.withLock { signOutLocked(announce = true) }
+
+    /**
+     * 로그인 응답 저장 → 단계 조회 → SignedIn. 단계 조회가 실패하면 로그인 응답의 단계로 들어간다(signupCompleted 는 모름 → false).
+     * 단계 조회 중 401 이나 로그아웃으로 토큰이 바뀌었으면 null
+     */
+    suspend fun signIn(res: TokenResponse): Session.SignedIn? {
+        val stored = res.toStored(signupCompleted = false) ?: return null   // sub 없는 토큰으로는 어떤 API 도 못 부른다
+        val seq = lock.withLock {
+            tokenStore.save(stored)
+            generation++
+            client.authProvider<BearerAuthProvider>()?.clearToken()   // 메모리에 남은 이전 계정 토큰 대신 새 토큰을 읽게
+            announceStep = false
+            ++onboardingSent
+        }
+        val detail = (client.call<OnboardingDetail> { get("users/${stored.userId}/onboarding") } as? ApiResult.Ok)?.value
+        return lock.withLock {
+            if (tokenStore.load()?.refreshToken != stored.refreshToken) return@withLock null
+            val signedIn = Session.SignedIn(stored.userId, detail?.nextStep ?: res.onboardingStatus, detail?.signupCompleted ?: false)
+            onboardingApplied = seq
+            _state.value = signedIn
+            if (detail != null) catchingNonCancel { tokenStore.save(stored.copy(onboardingStatus = detail.nextStep, signupCompleted = detail.signupCompleted)) }
+            signedIn
+        }
+    }
+
+    /** 로그아웃 시작: 지금 토큰(서버 로그아웃 요청용)과 세션 세대. 세대는 [signOut] 에 그대로 넘긴다 */
+    suspend fun beginSignOut(): Pair<StoredTokens?, Long> = lock.withLock { tokenStore.load() to generation }
+
+    /**
+     * 사용자가 직접 로그아웃: 토큰 · 메모리 토큰 삭제 → SignedOut. 안내(Expired)는 내지 않는다. 부른 쪽이 취소돼도 끝까지 한다.
+     * [startedAt] 세대가 지금과 다르면(로그아웃 응답을 기다리는 사이 만료 · 다른 로그인) 새 세션을 지우지 않는다. null 이면 시작 전 취소 — 그냥 정리한다
+     */
+    suspend fun signOut(startedAt: Long?) = withContext(NonCancellable) {
+        lock.withLock { if (startedAt == null || startedAt == generation) signOutLocked(announce = false) }
+    }
 
     override suspend fun expireIfCurrent(sentAccessToken: String) = lock.withLock {
         val cur = tokenStore.load()
@@ -143,6 +180,7 @@ internal class DefaultSessionStore(
     /** 토큰 · 메모리 토큰을 지우고 SignedOut. 이미 SignedOut 이어도 지우기는 한다(남은 토큰 정리). 안내 이벤트는 처음 한 번만 */
     private suspend fun signOutLocked(announce: Boolean) {
         val before = _state.getAndUpdate { Session.SignedOut }
+        generation++
         announceStep = false
         // 부른 쪽이 취소돼도(화면 전환) 끝까지 지운다. 안 그러면 SignedOut 인데 저장 토큰이 남는다
         withContext(NonCancellable) {

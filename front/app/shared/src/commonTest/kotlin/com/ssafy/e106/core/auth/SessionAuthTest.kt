@@ -531,11 +531,18 @@ class SessionAuthTest {
     @Test
     fun coreModuleWiresOneSessionAndClient() = runTest {
         val koin = koinApplication {
-            modules(coreModule("https://test/api/", httpLog = false), module { single<TokenStore> { MemoryTokenStore(null) } })
+            modules(
+                coreModule("https://test/api/", httpLog = false, SocialKeys()),
+                module {
+                    single<TokenStore> { MemoryTokenStore(null) }
+                    single<SocialLogin> { NoSocial }                 // 실제 SDK 는 Android Context 가 필요하다
+                },
+            )
         }.koin
         val session = koin.get<DefaultSessionStore>()
         assertTrue(koin.get<SessionStore>() === session)
         assertTrue(koin.get<HttpClient>() === session.client)
+        assertTrue(koin.get<AuthRepository>() is DefaultAuthRepository)
         withContext(Dispatchers.Default) { withTimeout(5_000) { session.state.first { it == Session.SignedOut } } }   // restore 가 시작됐다
         koin.close()
     }
@@ -674,3 +681,9 @@ private suspend fun Harness.awaitEvent(): SessionEvent = withContext(Dispatchers
 private suspend fun eventually(check: () -> Boolean) = withContext(Dispatchers.Default) { withTimeout(5_000) { while (!check()) delay(10) } }
 
 private suspend fun delay300() = withContext(Dispatchers.Default) { delay(300) }
+
+private object NoSocial : SocialLogin {
+    override fun configured(provider: Provider) = false
+    override suspend fun token(provider: Provider) = SocialToken.Failed
+    override suspend fun clear() = Unit
+}
