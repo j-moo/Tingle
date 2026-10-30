@@ -64,6 +64,7 @@ kotlin {
 
 dependencies {
     implementation(project(":shared"))
+    implementation(libs.koin.android)   // TingleApplication 의 startKoin
     implementation(libs.androidx.activity.compose)
     implementation(platform(libs.firebase.bom))
     implementation(libs.firebase.messaging)

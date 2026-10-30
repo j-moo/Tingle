@@ -21,10 +21,17 @@ import kotlinx.serialization.json.Json
 val ApiJson = Json { ignoreUnknownKeys = true; explicitNulls = false }
 
 /**
- * 앱에 하나뿐인 HttpClient. Koin `coreModule` 이 만들고 각 기능 Api 가 `get()` 으로 받는다.
- * 주소 앞부분(baseUrl, / 로 끝남)과 로그 여부(httpLog)는 앱 빌드 타입이 정해 넘긴다. JSON · 타임아웃이 여기 있고, Api 는 "users/…" 상대 경로만 쓴다. Bearer 는 §2 에서 여기에 더한다.
+ * 앱에 하나뿐인 HttpClient. Koin `coreModule` 이 세션과 같이 만들고 각 기능 Api 가 `get()` 으로 받는다.
+ * 주소 앞부분(baseUrl, / 로 끝남)과 로그 여부(httpLog)는 앱 빌드 타입이 정해 넘긴다. JSON · 타임아웃 · Bearer 가 여기 있고, Api 는 "users/…" 상대 경로만 쓴다.
+ * [session] 이 없으면 Bearer 없이 만든다(테스트용).
  */
-fun createHttpClient(baseUrl: String, httpLog: Boolean, engine: HttpClientEngine? = null): HttpClient {
+internal fun createHttpClient(
+    baseUrl: String,
+    httpLog: Boolean,
+    engine: HttpClientEngine? = null,
+    session: SessionAuth? = null,
+    refreshRetryDelays: List<Long> = REFRESH_RETRY_DELAYS,
+): HttpClient {
     val config: HttpClientConfig<*>.() -> Unit = {
         expectSuccess = false                            // 4xx·5xx 도 예외 대신 응답으로 받아 call 이 AppError 로 바꾼다
         install(ContentNegotiation) { json(ApiJson) }
@@ -39,6 +46,7 @@ fun createHttpClient(baseUrl: String, httpLog: Boolean, engine: HttpClientEngine
             header(HttpHeaders.AcceptLanguage, "ko")
             contentType(ContentType.Application.Json)
         }
+        if (session != null) installSessionAuth(baseUrl, session, refreshRetryDelays)
     }
     // 엔진을 안 넘기면 Ktor 가 의존성에 있는 엔진(androidMain 의 OkHttp)을 고른다
     return if (engine != null) HttpClient(engine, config) else HttpClient(config)
