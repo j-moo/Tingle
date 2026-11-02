@@ -1,0 +1,39 @@
+/* 약관 · 동의 문서 페이지(terms · privacy · ai-risk) 공통. 색 · 글꼴은 src/index.css 의 디자인 기초 값을 그대로 옮겼다(React 를 거치지 않는 정적 파일이라 따로 둔다) */
+:root {
+  --bg-canvas: #ffffff;
+  --bg-surface: #f5f5f5;
+  --text-primary: #171717;
+  --text-secondary: #696969;
+  --border-subtle: #e7e7e7;
+  --font-sans: 'Pretendard', 'SUIT', 'Wanted Sans', system-ui, -apple-system, 'Noto Sans KR', sans-serif;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg-canvas: #101010;
+    --bg-surface: #1c1c1c;
+    --text-primary: #f5f5f5;
+    --text-secondary: #a5a5a5;
+    --border-subtle: #303030;
+    color-scheme: dark;
+  }
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--bg-canvas);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  line-height: 1.7;
+  word-break: keep-all;
+}
+main { max-width: 720px; margin: 0 auto; padding: 48px 20px 64px; }
+h1 { font-size: 24px; line-height: 1.4; margin: 0 0 8px; }
+h2 { font-size: 18px; margin: 32px 0 8px; }
+.meta { color: var(--text-secondary); font-size: 14px; margin: 0 0 32px; }
+ul { padding-left: 20px; }
+table { width: 100%; border-collapse: collapse; font-size: 14px; margin: 8px 0; }
+th, td { border: 1px solid var(--border-subtle); padding: 8px 10px; text-align: left; vertical-align: top; }
+th { background: var(--bg-surface); }
+/* 아직 확정되지 않은 부분. 확정되면 내용으로 바꾸고 표시를 지운다 */
+.pending { color: var(--text-secondary); font-style: italic; }
