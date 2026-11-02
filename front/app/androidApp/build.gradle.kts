@@ -76,6 +76,8 @@ kotlin {
 }
 
 dependencies {
+    debugImplementation(libs.compose.ui.tooling)
+    debugImplementation(libs.compose.ui.tooling.preview)
     implementation(project(":shared"))
     implementation(libs.koin.android)   // TingleApplication 의 startKoin
     implementation(libs.androidx.activity.compose)
