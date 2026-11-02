@@ -66,7 +66,7 @@ public class RestoreServingGateFilter extends OncePerRequestFilter {
 	@Override
 	protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
 		throws ServletException, IOException {
-		if (generation.isEmpty() || verified()) {
+		if (servingAllowed()) {
 			chain.doFilter(request, response);
 			return;
 		}
@@ -76,6 +76,10 @@ public class RestoreServingGateFilter extends OncePerRequestFilter {
 		response.setHeader("Cache-Control", "no-store");
 		response.getWriter().write(mapper.writeValueAsString(new ErrorResponse("RESTORE_VERIFICATION_REQUIRED",
 			Messages.get("error.SERVICE_UNAVAILABLE"))));
+	}
+
+	public boolean servingAllowed() {
+		return generation.isEmpty() || verified();
 	}
 
 	private boolean verified() {

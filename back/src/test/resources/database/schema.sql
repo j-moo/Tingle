@@ -244,6 +244,7 @@ CREATE TABLE "chat_message" (
     "request_hash" bytea NOT NULL,
     "created_at" timestamptz NOT NULL,
     "legacy_public_id" uuid,
+    "push_state" jsonb NOT NULL DEFAULT '{}'::jsonb,
     CONSTRAINT "pk_chat_message" PRIMARY KEY ("id")
 );
 COMMENT ON TABLE "chat_message" IS '채팅 메시지';

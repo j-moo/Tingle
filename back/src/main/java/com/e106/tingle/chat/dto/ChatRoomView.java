@@ -6,5 +6,5 @@ import com.fasterxml.jackson.annotation.JsonInclude;
 
 @JsonInclude(JsonInclude.Include.ALWAYS)
 public record ChatRoomView(Long chatRoomId, String status, Instant createdAt, Instant expiresAt,
-	Instant closedAt, Instant deleteAt, Instant serverTime, boolean canRead, boolean canSend) {
+	Instant closedAt, Instant deleteAt, Instant serverTime, boolean canRead, boolean canSend, boolean hasNewMessage) {
 }

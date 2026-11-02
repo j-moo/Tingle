@@ -1,7 +1,7 @@
 {
-  "version": "1.5.1-keyring-settings-chat-cleanup-integration",
+  "version": "1.6.0-chat-message-push",
   "total_tables": 25,
-  "total_columns": 225,
+  "total_columns": 226,
   "physical_foreign_keys": false,
   "tables": {
     "personality": {
@@ -1186,6 +1186,18 @@
           "unique": true,
           "reference": null,
           "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "push_state",
+          "type": "jsonb",
+          "meaning": "새 채팅 메시지 푸시 후보 연결 세대·선점·재시도·단말별 제공자 결과. 원문 토큰·본문 미저장. 과거 빈 객체는 미발송",
+          "nullable": false,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": "'{}'",
           "json_shape": null
         }
       ],

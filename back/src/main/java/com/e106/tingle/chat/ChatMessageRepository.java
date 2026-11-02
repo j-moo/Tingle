@@ -11,6 +11,11 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 public interface ChatMessageRepository extends JpaRepository<ChatMessage, Long> {
+	@Query(value = "select exists (select 1 from chat_message m join chat_participant p on p.chat_id=m.chat_id "
+		+ "where m.chat_id=:roomId and p.user_id=:userId and m.sender_participant_id<>p.id "
+		+ "and (p.read_state -> cast(m.id as text) ->> 'readAt') is null)", nativeQuery = true)
+	boolean hasUnacknowledgedPartnerMessage(@Param("roomId") long roomId, @Param("userId") long userId);
+
 	@Query("select m from ChatMessage m join ChatMember p on p.id=m.senderParticipantId "
 		+ "where p.userId=:userId and m.requestKey=:key")
 	Optional<ChatMessage> findBySenderIdAndRequestKey(long userId, UUID key);
@@ -25,6 +30,10 @@ public interface ChatMessageRepository extends JpaRepository<ChatMessage, Long> 
 	@Query("select m from ChatMessage m where m.chatRoomId = :roomId and m.sequence < :before "
 		+ "order by m.sequence desc")
 	List<ChatMessage> page(@Param("roomId") long roomId, @Param("before") long before, Pageable page);
+
+	@Query("select m from ChatMessage m where m.chatRoomId=:roomId and m.sequence>:after "
+		+ "order by m.sequence asc")
+	List<ChatMessage> after(@Param("roomId") long roomId, @Param("after") long after, Pageable page);
 
 	List<ChatMessage> findByChatRoomIdOrderBySequenceAsc(long roomId);
 }
