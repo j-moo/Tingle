@@ -83,6 +83,9 @@ services:
       PUSH_TOKEN_ENCRYPTION_KEY: ${PUSH_TOKEN_ENCRYPTION_KEY:?}
       GOOGLE_WEB_CLIENT_ID: ${GOOGLE_WEB_CLIENT_ID:-} # 소셜 토큰 검증(back application.yml google-client-id · kakao-app-id). 비면 그 공급자 로그인만 실패
       KAKAO_APP_ID: ${KAKAO_APP_ID:-}
+      # 네이버 OIDC: 서버가 앱이 보낸 인가 코드를 비밀값으로 교환하고 id_token 의 aud 를 Client ID 와 대조한다(S15P31E106-193). 비밀값은 서버에만
+      NAVER_CLIENT_ID: ${NAVER_CLIENT_ID:-}
+      NAVER_CLIENT_SECRET: ${NAVER_CLIENT_SECRET:-}
       # 푸시(FCM): Jenkins Credentials 에 tingle-fcm(서비스 계정 JSON)이 있으면 Jenkins 가 키 파일을 쓰고 app.env 에 켜는 값을 넣는다. 없으면 꺼진 채로 뜬다.
       PUSH_ENABLED: ${PUSH_ENABLED:-false}
       CHAT_MESSAGE_PUSH_SCHEDULING_ENABLED: ${CHAT_MESSAGE_PUSH_SCHEDULING_ENABLED:-false}
