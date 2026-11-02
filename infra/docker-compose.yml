@@ -93,6 +93,10 @@ services:
       FIREBASE_PROJECT_ID: ${FIREBASE_PROJECT_ID:-}
       GOOGLE_APPLICATION_CREDENTIALS: /run/secrets/tingle/fcm.json
       PHOTO_STORAGE_DIR: /data/photos # 프로필 사진 파일 폴더. 아래 볼륨으로 호스트 /data/uploads/{prod|dev} 에 둔다 (backup-daily.sh 백업 대상)
+      # 가입 화면 약관 전문 링크(back application.yml agreement content-url). front/web/public 정적 페이지. 비밀값이 아니라 app.env 대신 여기 둔다. 끝의 / 는 빼면 안 된다(S15P31E106-220)
+      TERMS_CONTENT_URL: https://${DOMAIN:?}/terms/
+      PRIVACY_CONTENT_URL: https://${DOMAIN:?}/privacy/
+      AI_RISK_CONTENT_URL: https://${DOMAIN:?}/ai-risk/
     volumes: &back-volumes
       - /srv/tingle/secrets:/run/secrets/tingle:ro # Jenkins 가 쓰는 비밀 파일 (fcm.json)
       - /data/uploads/prod:/data/photos # 운영 사진. 블루 · 그린이 같은 폴더를 함께 쓴다. 호스트 폴더 소유자는 이미지 실행 사용자(uid 1000)
@@ -114,6 +118,9 @@ services:
       <<: *back-env
       SPRING_PROFILES_ACTIVE: dev
       SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/tingle_dev
+      TERMS_CONTENT_URL: https://${DOMAIN:?}/dev/terms/ # 개발은 develop 에 머지된 web-dev 페이지
+      PRIVACY_CONTENT_URL: https://${DOMAIN:?}/dev/privacy/
+      AI_RISK_CONTENT_URL: https://${DOMAIN:?}/dev/ai-risk/
     volumes: # 개발 사진은 운영과 섞이지 않게 따로 둔다
       - /srv/tingle/secrets:/run/secrets/tingle:ro
       - /data/uploads/dev:/data/photos
