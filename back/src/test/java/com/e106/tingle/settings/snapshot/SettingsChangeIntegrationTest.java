@@ -105,6 +105,9 @@ class SettingsChangeIntegrationTest {
 		jdbc.update("insert into profile(user_id,nickname,birth_date,gender,smoking_status,drinking_frequency,"
 			+ "introduction,photo_url,completed_at) values (?,?,'1998-01-01','MALE','NON_SMOKER','NEVER',?,?,?)",
 			userId, "s101" + userId, PRIVATE_INTRODUCTION, PRIVATE_PHOTO, Timestamp.from(NOW.minusSeconds(1)));
+		// 자기소개 저장은 선택 동의가 있어야 한다(S15P31E106-216).
+		jdbc.update("insert into user_consents(user_id,consent_type,document_version,agreed,recorded_at) "
+			+ "values (?,'PROFILE_INTRODUCTION','2026-11-02',true,?)", userId, Timestamp.from(NOW));
 		given(onboarding.canAccess(userId, OnboardingStatus.PREFERENCES_REQUIRED)).willReturn(true);
 		given(members.requireGender(userId)).willReturn(Gender.MALE);
 	}

@@ -16,6 +16,8 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.multipart.MultipartFile;
 
+import com.e106.tingle.agreement.OptionalConsent;
+import com.e106.tingle.agreement.UserConsentRepository;
 import com.e106.tingle.global.error.BusinessException;
 import com.e106.tingle.global.error.ErrorCode;
 import com.e106.tingle.settings.snapshot.SettingsChangeCoordinator;
@@ -41,14 +43,17 @@ public class ProfilePhotoService {
 	private final UserRepository userRepository;
 	private final SettingsChangeCoordinator changes;
 	private final TransactionTemplate transaction;
+	private final UserConsentRepository consents;
 	private final Path root;
 
 	public ProfilePhotoService(ProfileRepository profileRepository, UserRepository userRepository,
-		SettingsChangeCoordinator changes, TransactionTemplate transaction, @Value("${tingle.photo.dir}") Path root) {
+		SettingsChangeCoordinator changes, TransactionTemplate transaction, UserConsentRepository consents,
+		@Value("${tingle.photo.dir}") Path root) {
 		this.profileRepository = profileRepository;
 		this.userRepository = userRepository;
 		this.changes = changes;
 		this.transaction = transaction;
+		this.consents = consents;
 		this.root = root.toAbsolutePath().normalize();
 	}
 
@@ -62,6 +67,10 @@ public class ProfilePhotoService {
 			// 같은 회원의 업로드·삭제가 동시에 와도 이전 파일 정리가 꼬이지 않게 회원 행을 잠근다.
 			userRepository.findByIdForUpdate(userId)
 				.orElseThrow(() -> new BusinessException(ErrorCode.AUTH_REQUIRED));
+			// 회원 행을 잠근 뒤 확인해야 동시에 온 동의 철회와 엇갈려 사진이 남지 않는다.
+			if (!consents.isAgreed(userId, OptionalConsent.PROFILE_PHOTO.name())) {
+				throw new BusinessException(ErrorCode.OPTIONAL_CONSENT_REQUIRED);
+			}
 			changes.lockIfPresent(userId);
 			Profile profile = profileRepository.findById(userId).orElseGet(() -> Profile.empty(userId));
 			String previous = profile.getImageUrl();

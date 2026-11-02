@@ -5,6 +5,7 @@ import static org.mockito.BDDMockito.given;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import java.time.Clock;
@@ -52,6 +53,7 @@ import tools.jackson.databind.json.JsonMapper;
 public abstract class IntegrationTestSupport {
 
 	protected static final String VERSION = "2026-10-19";
+	protected static final String OPTIONAL_CONSENT_VERSION = "2026-11-02";
 
 	@Autowired
 	protected MockMvc mockMvc;
@@ -155,6 +157,12 @@ public abstract class IntegrationTestSupport {
 		// 앱처럼 단계를 조회하면 READY 도달이 기록된다(가입 완료 시각)
 		perform(get(me(tokens, "/onboarding")), tokens, null).andExpect(status().isOk());
 		return nickname;
+	}
+
+	// 선택 정보(PROFILE_PHOTO·PROFILE_INTRODUCTION·PROFILE_RELIGION) 동의. 이미 동의했으면 기록이 늘지 않는다.
+	protected ResultActions consentOptional(JsonNode tokens, String type, boolean agreed) throws Exception {
+		return perform(put(me(tokens, "/optional-consents/" + type)), tokens,
+			"{\"agreed\":" + agreed + ",\"version\":\"" + OPTIONAL_CONSENT_VERSION + "\"}");
 	}
 
 	// ---------- 아직 API가 없는 가입 단계 (ERD 테이블에 직접 기록) ----------

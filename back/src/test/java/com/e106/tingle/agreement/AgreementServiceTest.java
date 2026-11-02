@@ -78,13 +78,13 @@ class AgreementServiceTest {
 	}
 
 	@Test
-	@DisplayName("현재 항목이 빠져 있으면 앱이 오래된 목록을 보여 준 것이므로 AGREEMENT_VERSION_OUTDATED")
-	void missingCurrentItemIsOutdated() {
-		List<AgreementAnswer> answers = List.of(
-			new AgreementAnswer("TERMS", V, true),
-			new AgreementAnswer("ADULT", V, true));
-
-		assertErrorCode(() -> service.validate(answers), ErrorCode.AGREEMENT_VERSION_OUTDATED);
+	@DisplayName("필수 항목이 빠져 있으면 앱이 오래된 목록을 보여 준 것이므로 AGREEMENT_VERSION_OUTDATED, 선택 항목은 빠져도 된다")
+	void missingRequiredItemIsOutdated() {
+		assertErrorCode(() -> service.validate(List.of(new AgreementAnswer("TERMS", V, true),
+			new AgreementAnswer("MARKETING", V, false))), ErrorCode.AGREEMENT_VERSION_OUTDATED);
+		// 선택 정보 동의는 가입 뒤 따로 받을 수 있다(S15P31E106-216).
+		assertThatCode(() -> service.validate(List.of(new AgreementAnswer("TERMS", V, true),
+			new AgreementAnswer("ADULT", V, true)))).doesNotThrowAnyException();
 	}
 
 	@Test

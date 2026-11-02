@@ -345,6 +345,8 @@ class ProfilePhotoIntegrationTest extends IntegrationTestSupport {
 	}
 
 	private ResultActions upload(JsonNode tokens, byte[] bytes) throws Exception {
+		// 사진은 선택 동의가 있어야 올릴 수 있다(동의 검사는 OptionalConsentIntegrationTest).
+		consentOptional(tokens, "PROFILE_PHOTO", true).andExpect(status().isOk());
 		// 파일 이름·Content-Type 은 일부러 틀리게 보낸다. 형식은 내용으로만 판별해야 한다.
 		return mockMvc.perform(multipart(me(tokens, "/profile/photos"))
 			.file(new MockMultipartFile("file", "photo.heic", "application/octet-stream", bytes))

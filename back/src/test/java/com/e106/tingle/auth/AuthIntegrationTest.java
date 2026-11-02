@@ -140,7 +140,7 @@ class AuthIntegrationTest extends IntegrationTestSupport {
 		mockMvc.perform(get("/api/agreements").header("Accept-Language", "en"))
 			.andExpect(status().isOk())
 			// 설정의 모든 항목에 messages.properties 제목이 있어야 한다
-			.andExpect(jsonPath("$.agreements.length()").value(4))
+			.andExpect(jsonPath("$.agreements.length()").value(7))
 			.andExpect(jsonPath("$.agreements[*].title", everyItem(not(emptyOrNullString()))))
 			.andExpect(jsonPath("$.agreements[2].title").value("AI 대화 위험 감지를 위한 개인정보 처리 동의"))
 			.andExpect(jsonPath("$.agreements[0].type").value("TERMS"))
