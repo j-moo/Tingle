@@ -1,5 +1,6 @@
 package com.e106.tingle;
 
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -90,7 +91,8 @@ public abstract class IntegrationTestSupport {
 	// ---------- 로그인·토큰 ----------
 
 	protected JsonNode login(String provider, String socialId) throws Exception {
-		given(socialVerifier.verify(eq(SocialProvider.fromPath(provider)), eq("social-" + socialId)))
+		given(socialVerifier.verify(eq(SocialProvider.fromPath(provider)),
+			argThat(request -> ("social-" + socialId).equals(request.token()))))
 			.willReturn(new SocialAccount(socialId, null));
 		String response = mockMvc.perform(post("/api/auth/" + provider)
 				.contentType(MediaType.APPLICATION_JSON)

@@ -63,6 +63,10 @@ app:
     refresh-reuse-grace: 30s
     google-client-id: ${GOOGLE_WEB_CLIENT_ID:}
     kakao-app-id: ${KAKAO_APP_ID:}
+    # 네이버 OIDC: 앱이 넘긴 인가 코드를 서버가 비밀값으로 교환한다. 콜백 주소는 운영 앱 기준(개발 앱은 application-dev.yml).
+    naver-client-id: ${NAVER_CLIENT_ID:}
+    naver-client-secret: ${NAVER_CLIENT_SECRET:}
+    naver-redirect-uri: ${NAVER_REDIRECT_URI:https://k15e106.p.ssafy.io/auth/naver/callback}
     # 액세스 토큰에 iss·aud 가 있으면 이 값과 같아야 한다(없으면 통과).
     issuer: tingle
     audience: mobile-app

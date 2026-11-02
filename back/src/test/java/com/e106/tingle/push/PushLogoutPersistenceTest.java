@@ -91,7 +91,7 @@ class PushLogoutPersistenceTest {
 		@Bean
 		AuthProperties authProperties() {
 			return new AuthProperties("synthetic-test-key-only-32-bytes-minimum", Duration.ofMinutes(15),
-				Duration.ofDays(30), Duration.ofSeconds(30), null, null, "synthetic", "synthetic");
+				Duration.ofDays(30), Duration.ofSeconds(30), null, null, null, null, null, "synthetic", "synthetic");
 		}
 
 		@Bean

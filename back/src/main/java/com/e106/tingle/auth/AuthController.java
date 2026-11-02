@@ -28,7 +28,7 @@ public class AuthController {
 
 	@PostMapping("/{provider}")
 	public TokenResponse login(@PathVariable String provider, @Valid @RequestBody LoginRequest request) {
-		return authService.login(provider, request.token());
+		return authService.login(provider, request);
 	}
 
 	@PostMapping("/token/refresh")

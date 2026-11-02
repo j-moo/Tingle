@@ -4,7 +4,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
-import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.clearInvocations;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -46,6 +45,7 @@ import com.e106.tingle.agreement.AgreementService;
 import com.e106.tingle.auth.AuthService;
 import com.e106.tingle.auth.SocialVerifier;
 import com.e106.tingle.auth.TokenService;
+import com.e106.tingle.auth.dto.LoginRequest;
 import com.e106.tingle.global.error.BusinessException;
 import com.e106.tingle.global.error.ErrorCode;
 import com.e106.tingle.global.error.GlobalExceptionHandler;
@@ -111,7 +111,7 @@ class PreferenceLoginConnectionTest {
 		jdbc.update("delete from matching_preference");
 		jdbc.update("delete from user_setting");
 		jdbc.update("delete from users");
-		given(socials.verify(any(), anyString())).willReturn(new SocialVerifier.SocialAccount("member-70", null));
+		given(socials.verify(any(), any())).willReturn(new SocialVerifier.SocialAccount("member-70", null));
 		given(onboarding.statusOf(anyLong())).willReturn(OnboardingStatus.AGREEMENT_REQUIRED);
 		given(onboarding.canAccess(anyLong(), any())).willReturn(true);
 		given(tokens.issue(anyLong())).willAnswer(invocation -> {
@@ -135,7 +135,7 @@ class PreferenceLoginConnectionTest {
 
 	@Test
 	void loginInitializesBeforeIssuingTokensThenPreferencesCanBeReadAndSaved() throws Exception {
-		assertThat(auth.login("kakao", "test-social").onboardingStatus())
+		assertThat(auth.login("kakao", new LoginRequest("test-social", null, null, null, null)).onboardingStatus())
 			.isEqualTo(OnboardingStatus.AGREEMENT_REQUIRED);
 		long userId = loggedInUser();
 		prepareRegisteredProfile(userId);
@@ -151,12 +151,12 @@ class PreferenceLoginConnectionTest {
 
 	@Test
 	void reloginPreservesSavedChoicesVersionAndOtherSettings() {
-		auth.login("kakao", "test-social");
+		auth.login("kakao", new LoginRequest("test-social", null, null, null, null));
 		long userId = loggedInUser();
 		prepareRegisteredProfile(userId);
 		jdbc.update("update user_setting set vibration_enabled=false,led_enabled=false,settings_version=8");
 		jdbc.update("update matching_preference set age_preference_mode=true,min_age=30,photo_required=true");
-		auth.login("kakao", "test-social-again");
+		auth.login("kakao", new LoginRequest("test-social-again", null, null, null, null));
 		assertThat(jdbc.queryForObject("select count(*) from users", Long.class)).isEqualTo(1);
 		assertThat(preferences.get(userId, userId).etag()).isEqualTo("\"8\"");
 		assertThat(preferences.get(userId, userId).body().desiredAgeMin()).isEqualTo(30);
@@ -168,7 +168,7 @@ class PreferenceLoginConnectionTest {
 	void inactiveMemberCannotBeInitializedOrIssuedTokens() {
 		jdbc.update("insert into users(provider,provider_user_id,status,created_at,is_operator) "
 			+ "values ('KAKAO','member-70','SUSPENDED',?,false)", java.sql.Timestamp.from(NOW));
-		assertThatThrownBy(() -> auth.login("kakao", "test-social"))
+		assertThatThrownBy(() -> auth.login("kakao", new LoginRequest("test-social", null, null, null, null)))
 			.isInstanceOf(BusinessException.class)
 			.extracting(exception -> ((BusinessException)exception).getErrorCode())
 			.isEqualTo(ErrorCode.RESOURCE_NOT_FOUND);
@@ -178,7 +178,7 @@ class PreferenceLoginConnectionTest {
 
 	@Test
 	void reloginCannotResetMissingSettingOrIssueTokens() {
-		auth.login("kakao", "test-social");
+		auth.login("kakao", new LoginRequest("test-social", null, null, null, null));
 		long userId = loggedInUser();
 		jdbc.update("update matching_preference set age_preference_mode=true,min_age=30,photo_required=true");
 		jdbc.update("delete from user_setting");
@@ -202,7 +202,7 @@ class PreferenceLoginConnectionTest {
 	}
 
 	private void assertServiceUnavailableLogin() {
-		assertThatThrownBy(() -> auth.login("kakao", "test-social"))
+		assertThatThrownBy(() -> auth.login("kakao", new LoginRequest("test-social", null, null, null, null)))
 			.isInstanceOf(BusinessException.class)
 			.extracting(exception -> ((BusinessException)exception).getErrorCode())
 			.isEqualTo(ErrorCode.SERVICE_UNAVAILABLE);
@@ -212,7 +212,7 @@ class PreferenceLoginConnectionTest {
 	void initializationFailureDoesNotIssueTokensOrLeavePartialSettings() {
 		jdbc.execute("alter table matching_preference add constraint test_fail_initialization check (user_id<0)");
 		try {
-			assertThatThrownBy(() -> auth.login("kakao", "test-social"))
+			assertThatThrownBy(() -> auth.login("kakao", new LoginRequest("test-social", null, null, null, null)))
 				.isInstanceOf(DataIntegrityViolationException.class);
 			verifyNoInteractions(tokens);
 			assertThat(jdbc.queryForObject("select count(*) from user_setting", Long.class)).isZero();
