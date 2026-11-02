@@ -66,6 +66,14 @@ server {
         proxy_pass http://$up;
     }
 
+    # Android App Links — 네이버 로그인(OIDC) 콜백 https://${DOMAIN}/auth/naver/callback(운영 앱) · /dev/auth/naver/callback(개발 앱)을
+    # 브라우저 대신 앱이 받게 한다. 패키지 2개 × 서명 키 2개: 운영 tingle-release.jks(Jenkins APK) · 팀 공용 디버그 키(front/app/tingle-debug.keystore, 로컬 빌드)
+    location = /.well-known/assetlinks.json {
+        default_type application/json;
+        add_header Cache-Control "max-age=300";
+        return 200 '[{"relation":["delegate_permission/common.handle_all_urls"],"target":{"namespace":"android_app","package_name":"com.ssafy.tingle","sha256_cert_fingerprints":["DA:56:86:05:32:B1:3D:4F:B0:76:EF:07:CD:8A:BE:0F:AB:FB:7C:8E:F9:C1:7C:BB:B7:F8:E7:76:0B:80:54:4A","45:E7:2E:2F:51:C1:F4:0F:25:77:9E:27:B3:EE:17:0B:81:C1:E8:71:51:E3:C4:AB:D1:AE:73:38:43:B6:B1:34"]}},{"relation":["delegate_permission/common.handle_all_urls"],"target":{"namespace":"android_app","package_name":"com.ssafy.tingle.dev","sha256_cert_fingerprints":["DA:56:86:05:32:B1:3D:4F:B0:76:EF:07:CD:8A:BE:0F:AB:FB:7C:8E:F9:C1:7C:BB:B7:F8:E7:76:0B:80:54:4A","45:E7:2E:2F:51:C1:F4:0F:25:77:9E:27:B3:EE:17:0B:81:C1:E8:71:51:E3:C4:AB:D1:AE:73:38:43:B6:B1:34"]}}]';
+    }
+
     # 개발 — /dev 접두사를 떼고 -dev 컨테이너로 넘긴다
     location = /dev {
         return 301 /dev/;
