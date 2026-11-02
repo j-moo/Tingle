@@ -22,6 +22,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.e106.tingle.agreement.AgreementProperties;
 import com.e106.tingle.auth.MemberAccessRepository;
+import com.e106.tingle.chat.delivery.ChatMessagePushEnqueuer;
 import com.e106.tingle.chat.dto.ChatPage;
 import com.e106.tingle.chat.dto.ChatRoomView;
 import com.e106.tingle.chat.dto.MessagePage;
@@ -54,6 +55,7 @@ public class ChatService {
 	private final Clock clock;
 	private final ChatNoticeJobs noticeJobs;
 	private final EndNoticePolicy endNotices;
+	private final ChatMessagePushEnqueuer messagePush;
 
 	// 제안 서비스가 쌍·제안 행 잠금을 보유한 트랜잭션에서만 호출한다.
 	@Transactional(propagation = Propagation.MANDATORY)
@@ -153,17 +155,66 @@ public class ChatService {
 		}
 		List<ChatRoom> page = visible.stream().limit(limit).toList();
 		String next = visible.size() > limit ? encode("r|" + userId + "|" + page.getLast().getPublicId()) : null;
-		return new ChatPage(page.stream().map(r -> roomView(r, true)).toList(), next, clock.instant());
+		return new ChatPage(page.stream().map(r -> roomView(r, userId, true)).toList(), next, clock.instant());
 	}
 
 	@Transactional(readOnly = true)
 	public ChatRoomView room(long id, long userId) {
 		Owned owned = owned(rooms.findByPublicId(id).orElseThrow(this::notFound), userId);
 		if (!owned.room().active(clock.instant())) {
-			return roomView(owned.room(), false);
+			return roomView(owned.room(), userId, false);
 		}
 		requireAccess(owned);
-		return roomView(owned.room(), true);
+		return roomView(owned.room(), userId, true);
+	}
+
+	@Transactional(readOnly = true)
+	public MessagePage messages(long id, long userId, String cursor, int limit, Long afterSequence) {
+		if (afterSequence != null && (afterSequence < 0 || cursor != null)) {
+			throw invalid();
+		}
+		if (afterSequence != null) {
+			return recover(id, userId, afterSequence, limit);
+		}
+		if (cursor != null) {
+			String[] parts = cursorParts(cursor);
+			if (parts[0].equals("ma")) {
+				String[] scoped = decode(cursor, "ma", Long.toString(id));
+				try {
+					return recover(id, userId, Long.parseLong(scoped[2]), limit);
+				} catch (IllegalArgumentException exception) {
+					throw invalid();
+				}
+			}
+		}
+		return messages(id, userId, cursor, limit);
+	}
+
+	@Transactional(readOnly = true)
+	public void requireRecoveryPosition(long id, long userId, long afterSequence) {
+		Owned owned = find(id, userId, false);
+		requireRecoveryPosition(owned, afterSequence);
+	}
+
+	private void requireRecoveryPosition(Owned owned, long afterSequence) {
+		if (afterSequence < 0 || afterSequence > owned.room().getLastSequence()) {
+			throw invalid();
+		}
+	}
+
+	@Transactional(readOnly = true)
+	public MessagePage recover(long id, long userId, long afterSequence, int limit) {
+		if (afterSequence < 0 || limit < 1 || limit > 100) {
+			throw invalid();
+		}
+		Owned owned = find(id, userId, false);
+		requireRecoveryPosition(owned, afterSequence);
+		List<ChatMessage> rows = messages.after(owned.room().getId(), afterSequence, PageRequest.of(0, limit + 1));
+		List<ChatMessage> page = rows.stream().limit(limit).toList();
+		requireAccess(owned);
+		String next = rows.size() > limit ? encode("ma|" + id + "|" + page.getLast().getSequence()) : null;
+		return new MessagePage(page.stream().map(m -> messageView(m, owned.member().getId())).toList(),
+			next, clock.instant());
 	}
 
 	@Transactional(readOnly = true)
@@ -217,6 +268,7 @@ public class ChatService {
 		}
 		ChatMessage saved = messages.saveAndFlush(new ChatMessage(owned.room().getId(), owned.member().getId(),
 			clientId, key, hash, owned.room().nextSequence(), processed, now));
+		messagePush.enqueue(saved, owned.pair().partnerOf(userId));
 		return messageView(saved, owned.member().getId());
 	}
 
@@ -338,7 +390,7 @@ public class ChatService {
 			message.getSequence(), message.getBody(), message.getCreatedAt());
 	}
 
-	private ChatRoomView roomView(ChatRoom room, boolean allowed) {
+	private ChatRoomView roomView(ChatRoom room, long userId, boolean allowed) {
 		Instant now = clock.instant();
 		boolean active = room.active(now);
 		Instant closed = room.getClosedAt() != null ? room.getClosedAt() : active ? null : room.getExpiresAt();
@@ -348,11 +400,24 @@ public class ChatService {
 			deletion = room.getRetainUntil();
 		}
 		return new ChatRoomView(room.getPublicId(), active ? "ACTIVE" : "CLOSED", room.getCreatedAt(),
-			room.getExpiresAt(), closed, deletion, now, active && allowed, active && allowed);
+			room.getExpiresAt(), closed, deletion, now, active && allowed, active && allowed,
+			active && allowed && messages.hasUnacknowledgedPartnerMessage(room.getId(), userId));
 	}
 
 	private String encode(String value) {
 		return Base64.getUrlEncoder().withoutPadding().encodeToString(value.getBytes(StandardCharsets.UTF_8));
+	}
+
+	private String[] cursorParts(String cursor) {
+		try {
+			String[] parts = new String(Base64.getUrlDecoder().decode(cursor), StandardCharsets.UTF_8).split("\\|", -1);
+			if (parts.length != 3) {
+				throw invalid();
+			}
+			return parts;
+		} catch (IllegalArgumentException exception) {
+			throw invalid();
+		}
 	}
 
 	private String[] decode(String cursor, String type, String scope) {

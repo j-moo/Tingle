@@ -51,8 +51,9 @@ public class ChatController {
 	@GetMapping("/{id}/messages")
 	public ResponseEntity<MessagePage> messages(@AuthenticationPrincipal Jwt jwt, @PathVariable long id,
 		@RequestParam(required = false) @Size(max = 256) String cursor,
-		@RequestParam(defaultValue = "20") @Min(1) @Max(100) int limit) {
-		return ok(service.messages(id, Long.parseLong(jwt.getSubject()), cursor, limit));
+		@RequestParam(defaultValue = "20") @Min(1) @Max(100) int limit,
+		@RequestParam(required = false) @Min(0) Long afterSequence) {
+		return ok(service.messages(id, Long.parseLong(jwt.getSubject()), cursor, limit, afterSequence));
 	}
 
 	@PostMapping("/{id}/messages")

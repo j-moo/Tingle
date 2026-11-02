@@ -38,7 +38,7 @@ class KeyringAdditiveDdlTest {
 				+ "where table_schema=current_schema() and table_type='BASE TABLE'", Integer.class))
 				.isEqualTo(25);
 			assertThat(jdbc.queryForObject("select count(*) from information_schema.columns "
-				+ "where table_schema=current_schema()", Integer.class)).isEqualTo(225);
+				+ "where table_schema=current_schema()", Integer.class)).isEqualTo(226);
 			assertThat(jdbc.queryForObject("select count(*) from information_schema.table_constraints "
 				+ "where constraint_schema=current_schema() and constraint_type='FOREIGN KEY'", Integer.class))
 				.isZero();
