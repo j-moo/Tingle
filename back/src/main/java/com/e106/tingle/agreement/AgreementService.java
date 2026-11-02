@@ -59,8 +59,8 @@ public class AgreementService {
 	/**
 	 * 앱이 보낸 선택이 현재 항목 목록과 맞는지 검증한다.
 	 * <ul>
-	 *   <li>현재 없는 항목, 버전이 다른 항목, 표시하지 않은(빠진) 현재 항목 → AGREEMENT_VERSION_OUTDATED
-	 *       (앱이 오래된 목록을 보여 준 경우라 다시 불러와야 한다)</li>
+	 *   <li>현재 없는 항목, 버전이 다른 항목, 표시하지 않은(빠진) 현재 필수 항목 → AGREEMENT_VERSION_OUTDATED
+	 *       (앱이 오래된 목록을 보여 준 경우라 다시 불러와야 한다). 선택 항목은 빠져도 된다(나중에 따로 동의)</li>
 	 *   <li>필수 항목에 동의하지 않음 → REQUIRED_AGREEMENT_MISSING</li>
 	 * </ul>
 	 */
@@ -72,7 +72,8 @@ public class AgreementService {
 		Map<String, AgreementProperties.Item> currentByType = currentItems().stream()
 			.collect(Collectors.toMap(AgreementProperties.Item::type, Function.identity()));
 
-		boolean outdated = answerByType.size() != currentByType.size()
+		boolean outdated = currentByType.values().stream()
+			.anyMatch(item -> item.required() && !answerByType.containsKey(item.type()))
 			|| answers.stream().anyMatch(answer -> {
 				AgreementProperties.Item current = currentByType.get(answer.type());
 				return current == null || !current.version().equals(answer.version());

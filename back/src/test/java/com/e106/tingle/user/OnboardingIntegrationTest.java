@@ -272,6 +272,8 @@ class OnboardingIntegrationTest extends IntegrationTestSupport {
 	void nullClearsOptionalFieldsOnly() throws Exception {
 		JsonNode tokens = agreedUser();
 		Map<String, Object> fields = fullProfile(uniqueNickname());
+		consentOptional(tokens, "PROFILE_RELIGION", true).andExpect(status().isOk());
+		consentOptional(tokens, "PROFILE_INTRODUCTION", true).andExpect(status().isOk());
 		fields.put("religion", "UNDISCLOSED");
 		fields.put("drinkingFrequency", "SPECIAL_OCCASIONS_ONLY");
 		fields.put("introduction", "산책을 좋아해요");
@@ -307,6 +309,7 @@ class OnboardingIntegrationTest extends IntegrationTestSupport {
 		// 미성년·미래 날짜로 바꾸려 해도 나이 검사보다 변경 금지가 먼저다
 		patchProfile(tokens, Map.of("birthDate", LocalDate.now(ZoneId.of("Asia/Seoul")).plusDays(1).toString()))
 			.andExpect(status().is(422));
+		consentOptional(tokens, "PROFILE_INTRODUCTION", true).andExpect(status().isOk());
 		patchProfile(tokens, Map.of("gender", "FEMALE", "introduction", "안녕하세요")).andExpect(status().isOk());
 	}
 
@@ -470,6 +473,7 @@ class OnboardingIntegrationTest extends IntegrationTestSupport {
 		JsonNode tokens = agreedUser();
 		String family = "👨‍👩‍👧";
 
+		consentOptional(tokens, "PROFILE_INTRODUCTION", true).andExpect(status().isOk());
 		patchProfile(tokens, Map.of("introduction", family.repeat(200))).andExpect(status().isOk());
 		patchProfile(tokens, Map.of("introduction", "가".repeat(201))).andExpect(status().isBadRequest())
 			.andExpect(jsonPath("$.code").value("INVALID_INTRODUCTION"));

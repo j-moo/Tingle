@@ -98,6 +98,17 @@ app:
       - type: ADULT
         version: "2026-10-19"
         required: true
+      # 선택 정보별 동의(기능 명세 PRO-01·V211). 거부해도 가입·기본 이용은 된다. 동의 없이는 그 정보를 저장하지 않고,
+      # 철회하면 저장한 값·사진을 바로 지운다. 가입 동의 요청에서는 빠져도 되고 /optional-consents 로 따로 바꾼다.
+      - type: PROFILE_PHOTO
+        version: "2026-11-02"
+        required: false
+      - type: PROFILE_INTRODUCTION
+        version: "2026-11-02"
+        required: false
+      - type: PROFILE_RELIGION
+        version: "2026-11-02"
+        required: false
 
   push:
     enabled: ${PUSH_ENABLED:false}

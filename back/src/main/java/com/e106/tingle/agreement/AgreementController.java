@@ -25,6 +25,7 @@ import lombok.RequiredArgsConstructor;
 public class AgreementController {
 
 	private final AgreementService agreementService;
+	private final OptionalConsentService optionalConsentService;
 	private final OnboardingService onboardingService;
 
 	@GetMapping("/api/agreements")
@@ -36,7 +37,7 @@ public class AgreementController {
 	@RequiresOnboarding(OnboardingStatus.AGREEMENT_REQUIRED)
 	public OnboardingResponse agree(@AuthenticationPrincipal Jwt jwt, @Valid @RequestBody AgreeRequest request) {
 		long userId = Long.parseLong(jwt.getSubject());
-		agreementService.agree(userId, request.agreements());
+		optionalConsentService.agree(userId, request.agreements());
 		return new OnboardingResponse(onboardingService.recordProgress(userId));
 	}
 }

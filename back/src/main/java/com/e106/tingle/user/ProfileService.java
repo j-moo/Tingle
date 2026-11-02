@@ -10,6 +10,8 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.e106.tingle.agreement.OptionalConsent;
+import com.e106.tingle.agreement.UserConsentRepository;
 import com.e106.tingle.global.error.BusinessException;
 import com.e106.tingle.global.error.ErrorCode;
 import com.e106.tingle.settings.snapshot.SettingsChangeCoordinator;
@@ -34,6 +36,7 @@ public class ProfileService {
 	private final UserRepository userRepository;
 	private final Clock clock;
 	private final SettingsChangeCoordinator changes;
+	private final UserConsentRepository consents;
 
 	@Transactional(readOnly = true)
 	public ProfileResponse get(long userId) {
@@ -82,10 +85,12 @@ public class ProfileService {
 		}
 		if (body.has("religion")) {
 			String religion = optionalText(body, "religion");
+			requireConsent(userId, religion, OptionalConsent.PROFILE_RELIGION);
 			profile.changeReligion(religion == null ? null : toEnum(Religion.class, religion));
 		}
 		if (body.has("introduction")) {
 			String introduction = optionalText(body, "introduction");
+			requireConsent(userId, introduction, OptionalConsent.PROFILE_INTRODUCTION);
 			profile.changeIntroduction(introduction == null ? null : ProfileRules.normalizeIntroduction(introduction));
 		}
 
@@ -149,6 +154,13 @@ public class ProfileService {
 			throw new BusinessException(ErrorCode.NICKNAME_DUPLICATED);
 		}
 		profile.changeNickname(nickname);
+	}
+
+	// 선택 정보는 동의한 회원만 저장할 수 있다. 비우기(null)는 동의와 상관없이 된다.
+	private void requireConsent(long userId, String value, OptionalConsent consent) {
+		if (value != null && !consents.isAgreed(userId, consent.name())) {
+			throw new BusinessException(ErrorCode.OPTIONAL_CONSENT_REQUIRED);
+		}
 	}
 
 	private static void rejectChangeAfterRegistration(boolean registered, Object current, Object requested) {

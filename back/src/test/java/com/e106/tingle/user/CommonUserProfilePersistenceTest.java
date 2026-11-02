@@ -32,6 +32,7 @@ import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 
+import com.e106.tingle.agreement.UserConsentRepository;
 import com.e106.tingle.auth.SocialProvider;
 import com.e106.tingle.global.error.BusinessException;
 import com.e106.tingle.profile.PublicProfile;
@@ -49,6 +50,8 @@ class CommonUserProfilePersistenceTest {
 
 	@MockitoBean
 	private SettingsChangeCoordinator settingsChanges;
+	@MockitoBean
+	private UserConsentRepository consents;
 	private static final Instant NOW = Instant.parse("2026-10-28T00:00:00Z");
 	private final JsonMapper jsonMapper = JsonMapper.builder().build();
 
