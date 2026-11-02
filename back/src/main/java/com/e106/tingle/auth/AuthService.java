@@ -6,6 +6,7 @@ import java.util.UUID;
 import org.springframework.stereotype.Service;
 
 import com.e106.tingle.agreement.AgreementService;
+import com.e106.tingle.auth.dto.LoginRequest;
 import com.e106.tingle.auth.dto.TokenResponse;
 import com.e106.tingle.preference.PreferenceProvisioningService;
 import com.e106.tingle.user.OnboardingService;
@@ -38,9 +39,9 @@ public class AuthService {
 	 * 그래서 처음 가입한 회원의 이메일은 약관 동의 뒤 다음 로그인 때 저장된다.
 	 * 소셜 서버 호출은 트랜잭션 밖에서 한다(외부 호출 동안 DB 연결을 잡고 있지 않기 위해).
 	 */
-	public TokenResponse login(String providerPath, String socialToken) {
+	public TokenResponse login(String providerPath, LoginRequest request) {
 		SocialProvider provider = SocialProvider.fromPath(providerPath);
-		SocialVerifier.SocialAccount account = socialVerifier.verify(provider, socialToken);
+		SocialVerifier.SocialAccount account = socialVerifier.verify(provider, request);
 		userRepository.insertIfAbsent(provider.name(), account.id(), clock.instant());
 		User user = userRepository.findByProviderAndProviderSubject(provider, account.id()).orElseThrow();
 		// 신규 가입·재로그인 모두 누락된 초기 행만 채운다. 기존 희망 조건·기기 설정은 보존한다.

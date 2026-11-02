@@ -2,6 +2,7 @@ package com.e106.tingle.user;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.nullValue;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -528,7 +529,8 @@ class OnboardingIntegrationTest extends IntegrationTestSupport {
 	}
 
 	private JsonNode loginWithEmail(String socialId, String email) throws Exception {
-		given(socialVerifier.verify(eq(SocialProvider.GOOGLE), eq("email-" + socialId)))
+		given(socialVerifier.verify(eq(SocialProvider.GOOGLE),
+			argThat(request -> ("email-" + socialId).equals(request.token()))))
 			.willReturn(new SocialAccount(socialId, email));
 		String response = mockMvc.perform(post("/api/auth/google")
 				.contentType(MediaType.APPLICATION_JSON)

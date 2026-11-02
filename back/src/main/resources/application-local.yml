@@ -10,3 +10,8 @@ spring:
   jpa:
     hibernate:
       ddl-auto: update
+
+app:
+  auth:
+    # 개발 앱(com.ssafy.tingle.dev)은 네이버 콜백을 /dev 경로로 받는다(운영 앱과 나눔).
+    naver-redirect-uri: ${NAVER_REDIRECT_URI:https://k15e106.p.ssafy.io/dev/auth/naver/callback}

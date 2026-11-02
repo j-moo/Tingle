@@ -4,7 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.emptyOrNullString;
 import static org.hamcrest.Matchers.everyItem;
 import static org.hamcrest.Matchers.not;
-import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -111,10 +111,11 @@ class AuthIntegrationTest extends IntegrationTestSupport {
 	@Test
 	@DisplayName("소셜 토큰 검증에 실패하면 401 INVALID_SOCIAL_TOKEN")
 	void socialTokenVerificationFailureReturns401() throws Exception {
-		given(socialVerifier.verify(eq(SocialProvider.NAVER), anyString()))
+		given(socialVerifier.verify(eq(SocialProvider.NAVER), any()))
 			.willThrow(new BusinessException(ErrorCode.INVALID_SOCIAL_TOKEN));
 
-		mockMvc.perform(post("/api/auth/naver").contentType(MediaType.APPLICATION_JSON).content("{\"token\":\"t\"}"))
+		mockMvc.perform(post("/api/auth/naver").contentType(MediaType.APPLICATION_JSON)
+				.content("{\"code\":\"c\",\"codeVerifier\":\"v\",\"redirectUri\":\"r\",\"nonce\":\"n\"}"))
 			.andExpect(status().isUnauthorized())
 			.andExpect(jsonPath("$.code").value("INVALID_SOCIAL_TOKEN"));
 	}
@@ -122,7 +123,7 @@ class AuthIntegrationTest extends IntegrationTestSupport {
 	@Test
 	@DisplayName("만료된 액세스 토큰이 헤더에 있어도 로그인은 막히지 않는다")
 	void loginIsNotBlockedByExpiredAccessTokenHeader() throws Exception {
-		given(socialVerifier.verify(eq(SocialProvider.KAKAO), anyString()))
+		given(socialVerifier.verify(eq(SocialProvider.KAKAO), any()))
 			.willReturn(new SocialAccount(newSocialId(), null));
 
 		mockMvc.perform(post("/api/auth/kakao")
@@ -406,7 +407,7 @@ class AuthIntegrationTest extends IntegrationTestSupport {
 	@Test
 	@DisplayName("세션 쿠키를 만들지 않는다")
 	void doesNotCreateSessionCookie() throws Exception {
-		given(socialVerifier.verify(eq(SocialProvider.KAKAO), anyString()))
+		given(socialVerifier.verify(eq(SocialProvider.KAKAO), any()))
 			.willReturn(new SocialAccount(newSocialId(), null));
 
 		mockMvc.perform(post("/api/auth/kakao").contentType(MediaType.APPLICATION_JSON).content("{\"token\":\"t\"}"))
