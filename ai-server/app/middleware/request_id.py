@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 import re
-from uuid import UUID, uuid4
+from uuid import uuid4
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
-from starlette.datastructures import MutableHeaders
+from starlette.datastructures import Headers, MutableHeaders
 from starlette.exceptions import HTTPException
 from starlette.responses import JSONResponse
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
@@ -16,17 +16,15 @@ from starlette.types import ASGIApp, Message, Receive, Scope, Send
 _UUID = re.compile(r"[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}\Z", re.ASCII)
 
 
-def _request_id(scope: Scope) -> str:
-    values = [value for name, value in scope.get("headers", []) if name.lower() == b"x-request-id"]
-    if len(values) == 1:
-        try:
-            supplied = values[0].decode("ascii")
-            if _UUID.fullmatch(supplied) is not None:
-                UUID(supplied)
-                return supplied
-        except (ValueError, UnicodeDecodeError):
-            pass
+def request_id_from_headers(headers: Headers) -> str:
+    values = headers.getlist("x-request-id")
+    if len(values) == 1 and _UUID.fullmatch(values[0]) is not None:
+        return values[0]
     return str(uuid4())
+
+
+def _request_id(scope: Scope) -> str:
+    return request_id_from_headers(Headers(scope=scope))
 
 
 class RequestIdMiddleware:
@@ -108,3 +106,7 @@ def _message(status: int) -> str:
     if status == 422:
         return "정책 확인 전에는 요청을 처리할 수 없습니다."
     return "요청을 처리할 수 없습니다."
+
+
+# Legacy spelling is an alias, never a second middleware implementation.
+RequestIDMiddleware = RequestIdMiddleware

@@ -1,0 +1,108 @@
+{
+  "status": "SUCCEEDED",
+  "surveyVersion": "SIS-Q-1.1-100",
+  "analysisVersion": "SIS-A-1.0",
+  "scores": {
+    "E": 50.0,
+    "A": 50.0,
+    "C": 50.0,
+    "N": 50.0,
+    "I": 75.0,
+    "avoidance": 66.66666666666666,
+    "anxiety": 0.0
+  },
+  "typeStatus": "ASSIGNED",
+  "primaryType": "EMBER",
+  "tiedTypes": [],
+  "readings": [
+    {
+      "key": "expression",
+      "templateId": "PA-R-EXPRESSION-01",
+      "text": "관계를 시작하는 행동과 말로 마음을 전하는 빈도가 다르게 나타났어요. 말 대신 어떤 행동으로 표현하는지 함께 이야기해볼 수 있어요.",
+      "evidenceQuestionIds": [
+        "Q030",
+        "Q032"
+      ],
+      "priority": 10
+    },
+    {
+      "key": "conflict",
+      "templateId": "PA-R-CONFLICT-02",
+      "text": "바로 말을 꺼내기보다 준비할 시간이 필요하고, 대화가 시작되면 계속 이야기하는 쪽을 골랐어요.",
+      "evidenceQuestionIds": [
+        "Q042",
+        "Q043"
+      ],
+      "priority": 9
+    },
+    {
+      "key": "experience",
+      "templateId": "PA-R-EXPERIENCE-03",
+      "text": "약속 준비는 ‘당일에 정해요’, 장소 선택은 ‘익숙한 곳’라고 답했어요.",
+      "evidenceQuestionIds": [
+        "Q038",
+        "Q039"
+      ],
+      "priority": 2
+    }
+  ],
+  "selfPreferenceDifferences": [
+    {
+      "key": "self-preference-Q044-Q079",
+      "templateId": "PA-D-SELF-WISH-FIT",
+      "text": "화해 행동: 나의 응답은 ‘이유 설명’이고, 상대에게 바라는 응답은 ‘사과 표현’입니다.",
+      "evidenceQuestionIds": [
+        "Q044",
+        "Q079"
+      ],
+      "priority": 2
+    },
+    {
+      "key": "self-preference-Q030-Q065",
+      "templateId": "PA-D-SELF-WISH-FIT",
+      "text": "먼저 표현: 나의 응답은 ‘내가 먼저 표현하는 편이에요’이고, 상대에게 바라는 응답은 ‘상대가 내가 먼저 표현하기를 기다림’입니다.",
+      "evidenceQuestionIds": [
+        "Q030",
+        "Q065",
+        "Q098"
+      ],
+      "priority": 1
+    }
+  ],
+  "typeRecommendations": [
+    {
+      "typeCode": "SOFTTIDE",
+      "score": 83.33333333333333,
+      "mode": "PREFERENCE_FIT",
+      "evidenceQuestionIds": [
+        "Q065",
+        "Q079",
+        "Q096",
+        "Q098"
+      ]
+    },
+    {
+      "typeCode": "WARMORBIT",
+      "score": 83.33333333333333,
+      "mode": "PREFERENCE_FIT",
+      "evidenceQuestionIds": [
+        "Q065",
+        "Q079",
+        "Q096",
+        "Q098"
+      ]
+    },
+    {
+      "typeCode": "DAYDREAM",
+      "score": 50.0,
+      "mode": "PREFERENCE_FIT",
+      "evidenceQuestionIds": [
+        "Q065",
+        "Q079",
+        "Q096",
+        "Q098"
+      ]
+    }
+  ],
+  "missingQuestionIds": []
+}
