@@ -33,6 +33,7 @@ public class EncounterEvaluationCompletion {
 	private final HistoricalEvaluationStore historical;
 	private final EntityManager entityManager;
 	private final StoredEncounterInputLookup inputs;
+	private final EncounterReceipts receipts;
 
 	@Transactional(propagation = Propagation.MANDATORY)
 	public Map<String, Object> complete(Input input, VerifiedResult result) {
@@ -41,6 +42,10 @@ public class EncounterEvaluationCompletion {
 			|| result.evaluation().containsKey(HistoricalEvaluationEvidence.STORAGE_KEY)
 			|| result.evaluation().containsKey("matchExplanations")) {
 			throw new BusinessException(ErrorCode.POLICY_UNRESOLVED);
+		}
+		if (input.generationId() == null || !input.generationId().equals(result.generationId())
+			|| !receipts.canonicalHash(input).equals(result.inputHash())) {
+			throw new BusinessException(ErrorCode.IDEMPOTENCY_CONFLICT);
 		}
 		HistoricalEvaluationEvidence evidence = result.historicalEvidence();
 		if (evidence.matchingId() != input.matchingId() || !evidence.metAt().equals(input.metAt())

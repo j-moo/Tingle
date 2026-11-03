@@ -3,6 +3,7 @@ package com.e106.tingle.encounter;
 import static org.assertj.core.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
+import java.math.BigDecimal;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.sql.Timestamp;
@@ -120,6 +121,8 @@ class EncounterProductionFlowPersistenceTest {
 	@Autowired
 	private SettingsSnapshotJson snapshotJson;
 	@Autowired
+	private StoredEncounterInputLookup storedInputs;
+	@Autowired
 	private MutableClock clock;
 	@Autowired
 	private PlatformTransactionManager transactions;
@@ -161,6 +164,47 @@ class EncounterProductionFlowPersistenceTest {
 		stored = new LinkedHashMap<>();
 		persistReceipts();
 		evidenceBefore = evidence();
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = {false, true})
+	void validatedGatewayAndStoredVerifierShareFrozenInputsAndRollBackRejectedStorage(boolean rejectStorage) {
+		HistoricalEvaluationEvidence expected = evidence(input);
+		var manifest = mapper.convertValue(expected.manifest(), MatchingEvaluationTypes.Manifest.class);
+		var evaluation = new MatchingEvaluationTypes.Evaluation(input.matchingId(), manifest,
+			input.left().settingsSnapshotId(), input.right().settingsSnapshotId(),
+			BigDecimal.valueOf(80), BigDecimal.valueOf(80), BigDecimal.ONE, BigDecimal.ONE,
+			BigDecimal.valueOf(80), true, List.of(), List.of(), List.of());
+		MatchingEvaluationTransport transport = mock(MatchingEvaluationTransport.class);
+		when(transport.evaluate(any(), eq(input.generationId()))).thenReturn(evaluation);
+		MatchingEvaluationRuntimeVerifier runtime = mock(MatchingEvaluationRuntimeVerifier.class);
+		AtomicInteger checks = new AtomicInteger();
+		when(runtime.verify(any(), anyString(), any(), any(), any())).thenAnswer(call -> {
+			if (rejectStorage && checks.incrementAndGet() > 1) {
+				return null;
+			}
+			return new MatchingEvaluationRuntimeVerifier.Verification(Outcome.QUALIFIED, expected);
+		});
+		GATEWAY.set(new ValidatingEncounterEvaluationGateway(receipts, storedInputs, transport, runtime, mapper));
+		var storage = new StoredEncounterEvaluationEvidenceVerifier(jdbc, mapper, receipts, storedInputs, runtime);
+		when(verifier.verify(any(), any())).thenAnswer(call ->
+			storage.verify(call.getArgument(0), call.getArgument(1)));
+		inTransaction(() -> {
+			worker.enqueue(input);
+			return null;
+		});
+		assertThat(worker.run(input.matchingId())).isEqualTo(rejectStorage ? State.RETRY : State.SUCCEEDED);
+		if (rejectStorage) {
+			assertNoPartialCompletion();
+		} else {
+			assertThat(jdbc.queryForObject("select status='PENDING' and proposed_at=? from matching where id=?",
+				Boolean.class, Timestamp.from(NOW), input.matchingId())).isTrue();
+			assertThat(proposalMarker()).isNotNull();
+			assertThat(historical.find(input.matchingId())).contains(expected);
+			assertThat(worker.run(input.matchingId())).isEqualTo(State.IDLE);
+		}
+		assertEvidencePreserved();
+		verify(transport, times(1)).evaluate(any(), eq(input.generationId()));
 	}
 
 	@Test

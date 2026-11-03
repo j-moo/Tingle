@@ -29,6 +29,7 @@ import com.e106.tingle.encounter.EncounterEvaluationGateway.Outcome;
 import com.e106.tingle.encounter.EncounterEvaluationGateway.ParticipantInput;
 import com.e106.tingle.encounter.EncounterEvaluationGateway.VerifiedResult;
 import com.e106.tingle.encounter.EncounterReceipts.FrozenEvidence;
+import com.e106.tingle.global.ai.AiCallException;
 import com.e106.tingle.global.error.BusinessException;
 import com.e106.tingle.global.error.ErrorCode;
 
@@ -107,6 +108,8 @@ public class EncounterEvaluationWorker {
 		VerifiedResult result;
 		try {
 			result = gateway.evaluate(claim.work().input(), claim.work().inputHash());
+		} catch (AiCallException exception) {
+			return transaction.execute(status -> exception.retryable() ? failed(claim) : blocked(claim));
 		} catch (BusinessException exception) {
 			if (!exception.getErrorCode().getStatus().is5xxServerError()) {
 				return transaction.execute(status -> blocked(claim));

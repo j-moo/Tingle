@@ -65,6 +65,21 @@ class AiServiceTokenProviderTest {
 	}
 
 	@Test
+	void matchingTokenUsesOnlyTheEvaluationScopeAndRetainsTheSignedServiceIdentity() throws Exception {
+		KeyPair pair = pair(2048);
+		String token = provider(properties(keyFile(pair))).issueMatchingEvaluation();
+		String[] parts = token.split("\\.");
+		var claims = json.readTree(Base64.getUrlDecoder().decode(parts[1]));
+		assertThat(claims.path("scope").asText()).isEqualTo("matching:evaluate");
+		assertThat(claims.path("aud").asText()).isEqualTo("urn:tingle:ai:test");
+		assertThat(claims.path("sub").asText()).isEqualTo("tingle-be");
+		Signature verifier = Signature.getInstance("SHA256withRSA");
+		verifier.initVerify(pair.getPublic());
+		verifier.update((parts[0] + "." + parts[1]).getBytes(StandardCharsets.US_ASCII));
+		assertThat(verifier.verify(Base64.getUrlDecoder().decode(parts[2]))).isTrue();
+	}
+
+	@Test
 	void missingOrInvalidEnabledConfigurationPreventsConstruction() throws Exception {
 		String key = keyFile(pair(2048));
 		List<AiServiceProperties> invalid = List.of(new AiServiceProperties(true, "other", "key", key, ""),
