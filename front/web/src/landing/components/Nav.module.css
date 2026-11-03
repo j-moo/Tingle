@@ -1,0 +1,113 @@
+/* 흰 80% 반투명 + 흐림, 인트로 동안 위로 숨김 */
+.nav {
+  position: fixed;
+  inset: 0 0 auto;
+  z-index: 50;
+  background: rgb(255 255 255 / 80%);
+  backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--border-subtle);
+  transition: transform 0.5s cubic-bezier(0.22, 1, 0.36, 1);
+}
+:global(html[data-intro='playing']) .nav {
+  transform: translateY(-100%);
+}
+
+.bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: min(1120px, 100% - 40px);
+  height: var(--nav-height);
+  margin-inline: auto;
+}
+
+.home {
+  display: flex;
+}
+.logo {
+  height: 26px;
+}
+
+.menu {
+  display: flex;
+  align-items: center;
+  gap: 32px;
+}
+.item {
+  color: var(--text-secondary);
+  font-size: 15px;
+  font-weight: 600;
+  text-decoration: none;
+}
+.item:hover {
+  color: var(--text-primary);
+}
+
+.cta {
+  display: inline-flex;
+  align-items: center;
+  height: 40px;
+  padding-inline: 18px;
+  border-radius: var(--radius-control);
+  background: var(--action-primary);
+  color: var(--action-on-primary);
+  font-size: 14px;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.mobile {
+  display: none;
+  align-items: center;
+  gap: 8px;
+}
+.burger {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text-primary);
+  cursor: pointer;
+}
+.burger svg {
+  width: 24px;
+  height: 24px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+
+.sheet {
+  display: none;
+}
+
+@media (max-width: 720px) {
+  .nav {
+    --nav-height: 60px;
+  }
+  .logo {
+    height: 22px;
+  }
+  .menu {
+    display: none;
+  }
+  .mobile {
+    display: flex;
+  }
+  .sheet {
+    display: flex;
+    flex-direction: column;
+    padding: 8px 20px 16px;
+  }
+  .sheet a {
+    padding-block: 12px;
+    color: var(--text-primary);
+    font-size: 16px;
+    font-weight: 600;
+    text-decoration: none;
+  }
+}

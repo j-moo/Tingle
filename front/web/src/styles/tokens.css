@@ -1,0 +1,89 @@
+/*
+ * Tingle Design Foundations v0.2 DRAFT — Figma "00 디자인 기초 v0.2" 변수와 같은 이름
+ * WHITE 기본, OS 다크 모드 또는 <html data-theme="dark"> 이면 BLACK
+ * 글꼴: Pretendard(index.html 에서 jsDelivr 동적 서브셋으로 받음), 없으면 시스템 글꼴
+ * 랜딩(index.html)은 <html data-theme="light"> 로 라이트 고정 — 다크 모드는 다른 웹 화면용으로 남겨 둠
+ */
+:root {
+  --neutral-0: #ffffff;
+  --neutral-100: #f5f5f5;
+  --neutral-150: #e7e7e7;
+  --neutral-300: #a5a5a5;
+  --neutral-400: #808080;
+  --neutral-500: #696969;
+  --neutral-700: #303030;
+  --neutral-800: #262626;
+  --neutral-850: #1c1c1c;
+  --neutral-900: #171717;
+  --neutral-950: #101010;
+
+  --bg-canvas: var(--neutral-0);
+  --bg-surface: var(--neutral-100);
+  --bg-elevated: var(--neutral-0);
+  --text-primary: var(--neutral-900);
+  --text-secondary: var(--neutral-500);
+  --border-subtle: var(--neutral-150);
+  --border-control: var(--neutral-400);
+  --action-primary: var(--neutral-900);
+  --action-on-primary: var(--neutral-0);
+  --action-disabled: var(--neutral-150);
+  --focus-ring: var(--neutral-900);
+
+  --font-sans: 'Pretendard Variable', 'Pretendard', 'SUIT', 'Wanted Sans', system-ui, -apple-system, 'Noto Sans KR', sans-serif;
+
+  --space-4: 4px;
+  --space-8: 8px;
+  --space-12: 12px;
+  --space-16: 16px;
+  --space-20: 20px;
+  --space-24: 24px;
+  --space-32: 32px;
+  --space-48: 48px;
+
+  --radius-control: 12px;
+  --radius-card: 20px;
+  --radius-sheet: 24px;
+  --size-button: 48px;
+
+  /* 브랜드(Figma 랜딩 · 인트로 Lottie 와 같은 값) */
+  --brand-ink: #333039;
+  --brand-pink: #ffe6eb;
+  --brand-pink-soft: #fff2f5;
+  --brand-lavender: #c7b5db;
+  --brand-mint: #a8ccb5;
+
+  /* 랜딩 */
+  --nav-height: 72px;
+
+  color-scheme: light;
+}
+
+:root[data-theme='dark'] {
+  --bg-canvas: var(--neutral-950);
+  --bg-surface: var(--neutral-850);
+  --bg-elevated: var(--neutral-800);
+  --text-primary: var(--neutral-100);
+  --text-secondary: var(--neutral-300);
+  --border-subtle: var(--neutral-700);
+  --action-primary: var(--neutral-100);
+  --action-on-primary: var(--neutral-950);
+  --action-disabled: var(--neutral-800);
+  --focus-ring: var(--neutral-100);
+  color-scheme: dark;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --bg-canvas: var(--neutral-950);
+    --bg-surface: var(--neutral-850);
+    --bg-elevated: var(--neutral-800);
+    --text-primary: var(--neutral-100);
+    --text-secondary: var(--neutral-300);
+    --border-subtle: var(--neutral-700);
+    --action-primary: var(--neutral-100);
+    --action-on-primary: var(--neutral-950);
+    --action-disabled: var(--neutral-800);
+    --focus-ring: var(--neutral-100);
+    color-scheme: dark;
+  }
+}
