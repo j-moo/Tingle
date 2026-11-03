@@ -182,12 +182,30 @@ class AuthRepositoryTest {
     }
 
     @Test
-    fun naverIsBlockedUntilServerVerifiesAppAndMissingKeysHidden() = runTest {
+    fun authCodeIsSentForServerToExchange() = runTest {
+        // 네이버는 막혀 있어 다른 공급자로 본문 모양만 확인한다(본문은 공급자와 무관하게 SocialToken 이 정한다)
+        val code = SocialToken.AuthCode(code = "c1", codeVerifier = "v1", redirectUri = "https://k15e106.p.ssafy.io/auth/naver/callback", nonce = "n1")
+        val h = AuthHarness(this, social = ScriptedSocial(code)) { req ->
+            when {
+                req.path.endsWith("auth/kakao") -> {
+                    assertEquals("""{"code":"c1","codeVerifier":"v1","redirectUri":"https://k15e106.p.ssafy.io/auth/naver/callback","nonce":"n1"}""",
+                        req.body.toByteArray().decodeToString(), "비밀값 없이 서버가 교환 · 검증할 값만")
+                    loginOk()
+                }
+                else -> onboarding("READY", signup = true)
+            }
+        }
+        h.session.restore().join()
+        assertIs<LoginResult.Success>(h.auth.login(Provider.KAKAO))
+    }
+
+    @Test
+    fun missingKeysHidden() = runTest {
         val h = AuthHarness(this, social = ScriptedSocial(keys = setOf(Provider.GOOGLE, Provider.NAVER))) { error(HttpStatusCode.InternalServerError, "X") }
         assertTrue(h.auth.available(Provider.GOOGLE))
+        assertTrue(h.auth.available(Provider.NAVER))   // 서버 OIDC(!148) 뒤로 연다
         assertFalse(h.auth.available(Provider.KAKAO), "키 없음")
-        assertFalse(h.auth.available(Provider.NAVER), "서버가 네이버 토큰의 발급 앱을 확인할 때까지 막는다")
-        assertIs<LoginResult.Failed>(h.auth.login(Provider.NAVER))
+        assertIs<LoginResult.Failed>(h.auth.login(Provider.KAKAO))
         assertEquals(0, h.social.asked, "SDK 창을 띄우지 않는다")
     }
 

@@ -9,6 +9,15 @@ plugins {
 // 소셜 로그인 키. Jenkins 는 tingle-app-env 에서 환경변수로, 로컬은 ~/.gradle/gradle.properties 에 둔다(저장소에 넣지 않는다). 없으면 그 공급자 버튼이 숨는다
 fun key(name: String) = providers.gradleProperty(name).orNull ?: System.getenv(name) ?: ""
 
+// 네이버 로그인 콜백(App Link). 매니페스트 App Link 와 앱이 보내는 redirect_uri 가 한 값에서 나온다.
+// 네이버 개발자센터(모바일 웹 환경)의 Callback URL · 서버 nginx 대체 페이지와 맞춘다. 운영 · 개발 앱이 주소를 나눠 한 폰에 둘 다 깔아도 서로 받지 않는다
+fun com.android.build.api.dsl.VariantDimension.naverCallback(path: String) {
+    val host = "k15e106.p.ssafy.io"
+    manifestPlaceholders["naverCallbackHost"] = host
+    manifestPlaceholders["naverCallbackPath"] = path
+    buildConfigField("String", "NAVER_REDIRECT_URI", "\"https://$host$path\"")
+}
+
 android {
     namespace = "com.ssafy.e106"
     compileSdk = libs.versions.compileSdk.get().toInt()
@@ -19,9 +28,11 @@ android {
         targetSdk = libs.versions.targetSdk.get().toInt()
         versionCode = 1
         versionName = "0.1.0"
-        listOf("GOOGLE_WEB_CLIENT_ID", "KAKAO_NATIVE_APP_KEY", "NAVER_CLIENT_ID", "NAVER_CLIENT_SECRET").forEach { buildConfigField("String", it, "\"${key(it)}\"") }
+        // 네이버는 Client ID 만. 비밀값(NAVER_CLIENT_SECRET)은 APK 에 넣지 않는다 — 네이버 OIDC 를 PKCE 로 쓴다
+        listOf("GOOGLE_WEB_CLIENT_ID", "KAKAO_NATIVE_APP_KEY", "NAVER_CLIENT_ID").forEach { buildConfigField("String", it, "\"${key(it)}\"") }
         manifestPlaceholders["kakaoScheme"] = "kakao" + key("KAKAO_NATIVE_APP_KEY").ifEmpty { "unconfigured" }   // 카카오 로그인 콜백 주소
         manifestPlaceholders["appLabel"] = "Tingle"
+        naverCallback("/auth/naver/callback")
     }
 
     // 팀 서명 키는 Jenkins Credentials(tingle-release-key · tingle-release-password)가 환경변수로 넘긴다 — 공개 APK 는 debug·release 모두 이 키로 찍는다.
@@ -51,6 +62,7 @@ android {
             manifestPlaceholders["kakaoScheme"] = "kakao" + devKakao.ifEmpty { "unconfigured" }
             buildConfigField("String", "API_BASE_URL", "\"https://k15e106.p.ssafy.io/dev/api/\"")
             buildConfigField("boolean", "HTTP_LOG", "true")
+            naverCallback("/dev/auth/naver/callback")
         }
         release {
             signingConfig = teamKey ?: signingConfigs.getByName("debug")

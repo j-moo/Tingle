@@ -4,5 +4,7 @@
     <application>
         <!-- 기기 테스트 APK 에는 카카오 콜백이 필요 없다. 남겨 두면 androidApp 이 채우는 ${kakaoScheme} 이 비어 매니페스트 병합이 실패한다 -->
         <activity android:name="com.kakao.sdk.auth.AuthCodeHandlerActivity" tools:node="remove" />
+        <!-- 네이버 콜백(App Link)도 같다. ${naverCallbackHost} · ${naverCallbackPath} 는 androidApp 이 채운다 -->
+        <activity android:name="com.ssafy.e106.core.auth.NaverAuthActivity" tools:node="remove" />
     </application>
 </manifest>

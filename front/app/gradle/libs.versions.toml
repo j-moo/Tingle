@@ -52,7 +52,7 @@ androidx-credentials = { module = "androidx.credentials:credentials", version.re
 androidx-credentials-play = { module = "androidx.credentials:credentials-play-services-auth", version.ref = "credentials" }
 googleid = { module = "com.google.android.libraries.identity.googleid:googleid", version = "1.2.1" }
 kakao-user = { module = "com.kakao.sdk:v2-user", version = "2.25.1" }
-naver-oauth = { module = "com.navercorp.nid:oauth", version = "5.12.0" }
+androidx-browser = { module = "androidx.browser:browser", version = "1.4.0" }   # 네이버 OIDC Custom Tab. 카카오 SDK 가 쓰는 것과 같은 버전
 datastore-preferences-core = { module = "androidx.datastore:datastore-preferences-core", version.ref = "datastore" }
 
 [plugins]
