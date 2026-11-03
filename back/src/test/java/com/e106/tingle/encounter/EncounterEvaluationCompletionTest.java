@@ -56,12 +56,14 @@ class EncounterEvaluationCompletionTest {
 
 	private final JsonMapper mapper = JsonMapper.builder().build();
 	private EncounterEvaluationCompletion completion;
+	private EncounterReceipts receipts;
 	private Input input;
 	private HistoricalEvaluationEvidence evidence;
 
 	@BeforeEach
 	void setUp() {
-		completion = new EncounterEvaluationCompletion(jdbc, mapper, historical, entityManager, inputs);
+		receipts = new EncounterReceipts(jdbc, mapper);
+		completion = new EncounterEvaluationCompletion(jdbc, mapper, historical, entityManager, inputs, receipts);
 		input = new Input(17, uuid(100), 11, 22, MET_AT, MET_AT.plusSeconds(60),
 			MET_AT.plusSeconds(120), "v1", uuid(700), "matching-1", participant(11, 31), participant(22, 32));
 		evidence = evidence(snapshot(input.left()), snapshot(input.right()), manifest());
@@ -71,6 +73,20 @@ class EncounterEvaluationCompletionTest {
 	void missingHistoricalEvidenceCannotWriteADecision() {
 		assertRejected(new VerifiedResult(input.generationId(), INPUT_HASH, Outcome.QUALIFIED, DECISION),
 			ErrorCode.POLICY_UNRESOLVED);
+	}
+
+	@Test
+	void anotherGenerationCannotWriteAnOtherwiseMatchingDecision() {
+		assertRejected(new VerifiedResult(uuid(999), receipts.canonicalHash(input), Outcome.QUALIFIED,
+			DECISION, evidence), ErrorCode.IDEMPOTENCY_CONFLICT);
+		verifyNoInteractions(inputs);
+	}
+
+	@Test
+	void changedInputHashCannotWriteAnOtherwiseMatchingDecision() {
+		assertRejected(new VerifiedResult(input.generationId(), "f".repeat(64), Outcome.QUALIFIED,
+			DECISION, evidence), ErrorCode.IDEMPOTENCY_CONFLICT);
+		verifyNoInteractions(inputs);
 	}
 
 	@ParameterizedTest
@@ -225,7 +241,8 @@ class EncounterEvaluationCompletionTest {
 	}
 
 	private VerifiedResult result(HistoricalEvaluationEvidence captured) {
-		return new VerifiedResult(input.generationId(), INPUT_HASH, Outcome.QUALIFIED, DECISION, captured);
+		return new VerifiedResult(input.generationId(), receipts.canonicalHash(input), Outcome.QUALIFIED,
+			DECISION, captured);
 	}
 
 	private HistoricalEvaluationEvidence evidence(Snapshot left, Snapshot right, Map<String, String> manifest) {

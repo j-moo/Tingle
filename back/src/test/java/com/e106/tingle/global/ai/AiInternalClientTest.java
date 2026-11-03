@@ -239,6 +239,40 @@ class AiInternalClientTest {
 		assertThat(calls.get()).isEqualTo(1);
 	}
 
+	@Test
+	void matchingEvaluationRefreshesOnlyItsScopedTokenAndPreservesTheIdempotencyKey() {
+		List<String> bodies = new CopyOnWriteArrayList<>();
+		List<String> keys = new CopyOnWriteArrayList<>();
+		List<String> auth = new CopyOnWriteArrayList<>();
+		when(tokens.issueMatchingEvaluation()).thenReturn("synthetic-match-first", "synthetic-match-second");
+		server.createContext("/internal/matching/evaluations", exchange -> {
+			int current = calls.incrementAndGet();
+			bodies.add(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
+			keys.add(exchange.getRequestHeaders().getFirst("Idempotency-Key"));
+			auth.add(exchange.getRequestHeaders().getFirst("Authorization"));
+			byte[] response = (current == 1 ? "{\"code\":\"ACCESS_TOKEN_EXPIRED\"}" : "{}").getBytes(
+				StandardCharsets.UTF_8);
+			exchange.sendResponseHeaders(current == 1 ? 401 : 200, response.length);
+			exchange.getResponseBody().write(response);
+			exchange.close();
+		});
+		UUID key = UUID.randomUUID();
+		Map<String, Object> body = Map.of("encounterId", 1);
+		client("test", base).postMatchingEvaluation(body, Map.class, key);
+		assertThat(keys).containsExactly(key.toString(), key.toString());
+		assertThat(bodies).containsExactly(json.writeValueAsString(body), json.writeValueAsString(body));
+		assertThat(auth).containsExactly("Bearer synthetic-match-first", "Bearer synthetic-match-second");
+		verify(tokens, org.mockito.Mockito.never()).issue();
+		verify(tokens, org.mockito.Mockito.times(2)).issueMatchingEvaluation();
+	}
+
+	@Test
+	void matchingRequiresACallerOwnedIdempotencyKeyBeforeIssuingAnyToken() {
+		assertUnavailable(() -> client("test", base).postMatchingEvaluation(Map.of(), Map.class, null));
+		verify(tokens, org.mockito.Mockito.never()).issueMatchingEvaluation();
+		assertThat(calls.get()).isZero();
+	}
+
 	private AiInternalClient client(String environment, String address) {
 		return new AiInternalClient(new AiServiceProperties(true, environment, "synthetic", "", address),
 			tokens, json);

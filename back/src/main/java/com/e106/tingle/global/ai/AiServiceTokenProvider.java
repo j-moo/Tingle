@@ -48,6 +48,14 @@ public class AiServiceTokenProvider {
 	}
 
 	public String issue() {
+		return issue("ai:execute");
+	}
+
+	public String issueMatchingEvaluation() {
+		return issue("matching:evaluate");
+	}
+
+	private String issue(String scope) {
 		requireAvailable();
 		try {
 			long issued = clock.instant().getEpochSecond();
@@ -56,7 +64,7 @@ public class AiServiceTokenProvider {
 			String claims = encode(json.writeValueAsBytes(Map.of("iss", "urn:tingle:be:" + properties.environment(),
 				"aud", "urn:tingle:ai:" + properties.environment(), "sub", "tingle-be", "iat", issued,
 				"nbf", issued, "exp", Math.addExact(issued, 300), "jti", UUID.randomUUID().toString(),
-				"scope", "ai:execute")));
+				"scope", scope)));
 			String unsigned = header + "." + claims;
 			Signature signer = Signature.getInstance("SHA256withRSA");
 			signer.initSign(key);

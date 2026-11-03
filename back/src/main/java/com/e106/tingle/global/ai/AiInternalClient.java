@@ -32,6 +32,7 @@ public class AiInternalClient {
 
 	private static final Set<String> PATHS = Set.of("/internal/ai/personal-analyses", "/internal/ai/explanations",
 		"/internal/ai/icebreakers", "/internal/ai/risk-detections");
+	private static final String MATCHING_PATH = "/internal/matching/evaluations";
 	private static final int MAX_RESPONSE_BYTES = 1_048_576;
 	private final AiServiceTokenProvider tokens;
 	private final JsonMapper json;
@@ -60,9 +61,24 @@ public class AiInternalClient {
 	/** 호출자의 남은 전체 기한을 인증 갱신과 본문 수신에도 동일하게 적용한다. */
 	public <T> T post(String path, Object body, Class<T> responseType, UUID requestId,
 		Duration budget, int maxResponseBytes) {
+		return execute(path, body, responseType, requestId, budget, maxResponseBytes, false);
+	}
+
+	/** 확정 평가 계약의 멱등 키와 최소 서비스 권한을 일반 AI 호출과 구분한다. */
+	public <T> T postMatchingEvaluation(Object body, Class<T> responseType, UUID idempotencyKey) {
+		if (idempotencyKey == null) {
+			throw new AiCallException(false);
+		}
+		return execute(MATCHING_PATH, body, responseType, idempotencyKey, Duration.ofSeconds(10),
+			MAX_RESPONSE_BYTES, true);
+	}
+
+	private <T> T execute(String path, Object body, Class<T> responseType, UUID requestId,
+		Duration budget, int maxResponseBytes, boolean matching) {
 		try {
 			requireAvailable();
-			if (path == null || !PATHS.contains(path) || body == null || responseType == null
+			if (path == null || !(matching ? MATCHING_PATH.equals(path) : PATHS.contains(path))
+				|| body == null || responseType == null
 				|| budget == null || budget.isNegative() || budget.isZero()
 				|| maxResponseBytes < 1 || maxResponseBytes > MAX_RESPONSE_BYTES) {
 				throw new AiCallException(false);
@@ -72,11 +88,12 @@ public class AiInternalClient {
 			UUID trace = requestId == null ? UUID.randomUUID() : requestId;
 			String serialized = json.writeValueAsString(body);
 			for (int attempt = 0; attempt < 2; attempt++) {
-				HttpResponse<byte[]> response = send(path, serialized, trace, deadline, maxResponseBytes);
+				HttpResponse<byte[]> response = send(path, serialized, trace, deadline, maxResponseBytes, matching);
 				if (attempt == 0 && expired(response)) {
 					continue;
 				}
-				if (response.statusCode() < 200 || response.statusCode() >= 300) {
+				if (response.statusCode() < 200 || response.statusCode() >= 300
+					|| (matching && response.statusCode() != 200)) {
 					throw new AiCallException(response.statusCode() >= 500 || response.statusCode() == 429,
 						response.statusCode());
 				}
@@ -108,14 +125,17 @@ public class AiInternalClient {
 	}
 
 	private HttpResponse<byte[]> send(String path, String body, UUID trace, long deadline,
-		int maxResponseBytes) throws Exception {
+		int maxResponseBytes, boolean matching) throws Exception {
 		remaining(deadline);
-		String token = tokens.issue();
-		HttpRequest request = HttpRequest.newBuilder(base.resolve(path))
+		String token = matching ? tokens.issueMatchingEvaluation() : tokens.issue();
+		HttpRequest.Builder builder = HttpRequest.newBuilder(base.resolve(path))
 			.timeout(Duration.ofNanos(remaining(deadline))).header("Content-Type", "application/json")
 			.header("Accept", "application/json").header("Authorization", "Bearer " + token)
-			.header("X-Request-Id", trace.toString())
-			.POST(HttpRequest.BodyPublishers.ofString(body, StandardCharsets.UTF_8)).build();
+			.header("X-Request-Id", trace.toString());
+		if (matching) {
+			builder.header("Idempotency-Key", trace.toString());
+		}
+		HttpRequest request = builder.POST(HttpRequest.BodyPublishers.ofString(body, StandardCharsets.UTF_8)).build();
 		var pending = http.sendAsync(request, info -> new BoundedBody(maxResponseBytes));
 		try {
 			return pending.get(remaining(deadline), TimeUnit.NANOSECONDS);

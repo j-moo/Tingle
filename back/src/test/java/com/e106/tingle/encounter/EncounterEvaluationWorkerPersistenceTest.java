@@ -45,6 +45,7 @@ import com.e106.tingle.encounter.EncounterEvaluationWorker.State;
 import com.e106.tingle.encounter.EncounterEvaluationWorker.Work;
 import com.e106.tingle.encounter.EncounterReceipts.FrozenEvidence;
 import com.e106.tingle.encounter.EncounterReceipts.StoredReceipt;
+import com.e106.tingle.global.ai.AiCallException;
 
 import tools.jackson.databind.json.JsonMapper;
 
@@ -155,6 +156,38 @@ class EncounterEvaluationWorkerPersistenceTest {
 		clock.set(NOW.plusSeconds(120));
 		assertThat(worker.run(input.matchingId())).isEqualTo(State.IDLE);
 		assertThat(calls).hasValue(1);
+	}
+
+	@Test
+	void terminalHttpContractFailureBlocksTheGenerationWithoutAutomaticRetry() {
+		AtomicInteger calls = new AtomicInteger();
+		GATEWAY.set((captured, hash) -> {
+			calls.incrementAndGet();
+			throw new AiCallException(false, 409);
+		});
+		enqueue(input);
+		assertThat(worker.run(input.matchingId())).isEqualTo(State.BLOCKED);
+		clock.set(NOW.plusSeconds(60));
+		worker.poll();
+		assertThat(worker.run(input.matchingId())).isEqualTo(State.IDLE);
+		assertThat(calls).hasValue(1);
+		assertThat(work().attempts()).isEqualTo(1);
+		assertThat(work().nextRetryAt()).isNull();
+		assertThat(jdbc.queryForObject("select evaluation is null from matching where id=?",
+			Boolean.class, input.matchingId())).isTrue();
+	}
+
+	@Test
+	void retryableHttpFailureKeepsTheDurableRetryScheduleWithoutSavingAnEvaluation() {
+		GATEWAY.set((captured, hash) -> {
+			throw new AiCallException(true, 503);
+		});
+		enqueue(input);
+		assertThat(worker.run(input.matchingId())).isEqualTo(State.RETRY);
+		assertThat(work().attempts()).isEqualTo(1);
+		assertThat(work().nextRetryAt()).isAfter(NOW);
+		assertThat(jdbc.queryForObject("select evaluation is null from matching where id=?",
+			Boolean.class, input.matchingId())).isTrue();
 	}
 
 	@Test
