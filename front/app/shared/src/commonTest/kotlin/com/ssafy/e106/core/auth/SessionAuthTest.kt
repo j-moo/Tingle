@@ -11,6 +11,10 @@ import com.ssafy.e106.core.network.REFRESH_TIMEOUT_MILLIS
 import com.ssafy.e106.core.network.AppError
 import com.ssafy.e106.core.network.call
 import com.ssafy.e106.core.network.createHttpClient
+import com.ssafy.e106.core.push.DefaultPushEvents
+import com.ssafy.e106.core.push.PushBinding
+import com.ssafy.e106.core.push.PushDevice
+import com.ssafy.e106.core.push.PushEvents
 import com.ssafy.e106.core.storage.AppPrefs
 import com.ssafy.e106.core.storage.DataStoreAppPrefs
 import com.ssafy.e106.core.storage.StoredTokens
@@ -34,10 +38,14 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
-import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.test.setMain
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withContext
@@ -544,26 +552,46 @@ class SessionAuthTest {
 
     @Test
     fun coreModuleWiresOneSessionAndClient() = runTest {
+        val refreshed = MutableSharedFlow<Unit>()
+        val noPush = object : PushDevice {
+            override val platform = "ANDROID"
+            override suspend fun installationId() = "i"
+            override suspend fun token(): String? = null
+            override val tokenRefreshed = refreshed
+            override suspend fun binding(): PushBinding? = null
+            override suspend fun saveBinding(binding: PushBinding?) = Unit
+        }
         val prefsFile = MemoryPrefsStore().apply { data.value = preferencesOf(stringPreferencesKey("7:profile") to "{}") }   // 지난 실행의 계정 캐시
-        val koin = koinApplication {
-            modules(
-                coreModule("https://test/api/", httpLog = false, SocialKeys()),
-                module {
-                    single<TokenStore> { MemoryTokenStore(null) }
-                    single<SocialLogin> { NoSocial }                 // 실제 SDK 는 Android Context 가 필요하다
-                    single<DataStore<Preferences>> { prefsFile }     // 실제 파일도 Android Context 가 필요하다
-                },
-            )
-        }.koin
-        val session = koin.get<DefaultSessionStore>()
-        assertTrue(koin.get<SessionStore>() === session)
-        assertTrue(koin.get<HttpClient>() === session.client)
-        assertTrue(koin.get<AuthRepository>() is DefaultAuthRepository)
-        withContext(Dispatchers.Default) { withTimeout(5_000) { session.state.first { it == Session.SignedOut } } }   // restore 가 시작됐다
-        // 아무도 AppPrefs 를 받지 않아도(앱 시작만으로) 남은 계정 캐시를 지운다
-        withContext(Dispatchers.Default) { withTimeout(5_000) { prefsFile.data.first { it.asMap().isEmpty() } } }
-        assertTrue(koin.get<AppPrefs>() is DataStoreAppPrefs)
-        koin.close()
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))   // 알림 탭 대기열은 메인 스레드에서 돈다. 실패해도 finally 가 되돌린다
+        try {
+            val koin = koinApplication {
+                modules(
+                    coreModule("https://test/api/", httpLog = false, SocialKeys()),
+                    module {
+                        single<TokenStore> { MemoryTokenStore(null) }
+                        single<SocialLogin> { NoSocial }                 // 실제 SDK 는 Android Context 가 필요하다
+                        single<DataStore<Preferences>> { prefsFile }     // 실제 파일도 Android Context 가 필요하다
+                        single<PushDevice> { noPush }                    // FCM 도
+                    },
+                )
+            }.koin
+            try {
+                val session = koin.get<DefaultSessionStore>()
+                assertTrue(koin.get<SessionStore>() === session)
+                assertTrue(koin.get<HttpClient>() === session.client)
+                assertTrue(koin.get<AuthRepository>() is DefaultAuthRepository)
+                assertTrue(koin.get<PushEvents>() === koin.get<DefaultPushEvents>())   // 탭 화면과 화면 쪽이 같은 대기열을 본다
+                withContext(Dispatchers.Default) { withTimeout(5_000) { session.state.first { it == Session.SignedOut } } }   // restore 가 시작됐다
+                withContext(Dispatchers.Default) { withTimeout(5_000) { refreshed.subscriptionCount.first { it > 0 } } }   // 푸시 등록기도 시작됐다
+                // 아무도 AppPrefs 를 받지 않아도(앱 시작만으로) 남은 계정 캐시를 지운다
+                withContext(Dispatchers.Default) { withTimeout(5_000) { prefsFile.data.first { it.asMap().isEmpty() } } }
+                assertTrue(koin.get<AppPrefs>() is DataStoreAppPrefs)
+            } finally {
+                koin.close()
+            }
+        } finally {
+            Dispatchers.resetMain()
+        }
     }
 
 
