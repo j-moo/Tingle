@@ -4,6 +4,8 @@
     <application>
         <!-- 회전/재생성을 검증하는 테스트 전용 호스트이며 개발·운영 앱에는 포함되지 않는다. -->
         <activity android:name="com.ssafy.e106.features.profile.ProfileLifecycleTestActivity" android:exported="true" />
+        <!-- 설문 저장·제출·전환 중 화면 재생성은 실제 Activity에서 검증한다. -->
+        <activity android:name="com.ssafy.e106.features.survey.SurveyLifecycleTestActivity" android:exported="true" />
         <!-- 기기 테스트 APK 에는 카카오 콜백이 필요 없다. 남겨 두면 androidApp 이 채우는 ${kakaoScheme} 이 비어 매니페스트 병합이 실패한다 -->
         <activity android:name="com.kakao.sdk.auth.AuthCodeHandlerActivity" tools:node="remove" />
         <!-- 네이버 콜백(App Link)도 같다. ${naverCallbackHost} · ${naverCallbackPath} 는 androidApp 이 채운다 -->

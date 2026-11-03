@@ -6,6 +6,7 @@ import com.ssafy.e106.di.coreModule
 import com.ssafy.e106.features.profile.profileModule
 import com.ssafy.e106.features.auth.authUiModule
 import com.ssafy.e106.features.onboarding.onboardingModule
+import com.ssafy.e106.features.survey.surveyModule
 import org.koin.android.ext.koin.androidContext
 import org.koin.core.context.startKoin
 
@@ -22,7 +23,8 @@ class TingleApplication : Application() {
                 BuildConfig.API_BASE_URL == "https://k15e106.p.ssafy.io/dev/api/"
             modules(coreModule(BuildConfig.API_BASE_URL, BuildConfig.HTTP_LOG, socialKeys), authUiModule,
                 onboardingModule(allowUnpublishedAgreements = developmentOnboarding),
-                profileModule(allowKeyringSkip = developmentOnboarding, allowUnpublishedAgreements = developmentOnboarding))
+                profileModule(allowKeyringSkip = developmentOnboarding, allowUnpublishedAgreements = developmentOnboarding),
+                surveyModule(development = developmentOnboarding))
         }
     }
 }

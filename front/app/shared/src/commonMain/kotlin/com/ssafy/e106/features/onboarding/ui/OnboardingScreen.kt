@@ -19,6 +19,8 @@ import com.ssafy.e106.resources.*
 import com.ssafy.e106.features.profile.ui.ProfileRoute
 import com.ssafy.e106.features.profile.ui.ProfileManagementRoute
 import com.ssafy.e106.features.profile.DevelopmentProfileAccess
+import com.ssafy.e106.features.survey.ui.SurveyAccess
+import com.ssafy.e106.features.survey.ui.SurveyRoute
 import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.viewmodel.koinViewModel
 import org.koin.compose.koinInject
@@ -28,14 +30,18 @@ fun OnboardingRoute(
     session: Session.SignedIn,
     model: OnboardingViewModel = koinViewModel(),
     profileAccess: DevelopmentProfileAccess = koinInject(),
+    surveyAccess: SurveyAccess = koinInject(),
 ) {
     val state by model.state.collectAsStateWithLifecycle()
     var developmentProfile by rememberSaveable(session.userId, session.status, session.isReady) { mutableStateOf(false) }
     val canSkip = profileAccess.canSkipKeyring(session)
     val canManage = profileAccess.canManageProfile(session)
     var manageProfile by rememberSaveable(session.userId, session.status, session.isReady) { mutableStateOf(false) }
+    var openSurvey by rememberSaveable(session.userId, session.status, session.isReady) { mutableStateOf(false) }
+    val canSurvey = surveyAccess.allowed(session)
     when {
         state.session != session -> OnboardingPanel(stringResource(Res.string.onboarding_title)) { Text(stringResource(Res.string.onboarding_loading)) }
+        canSurvey && openSurvey -> SurveyRoute(session, { openSurvey = false })
         canManage && manageProfile -> ProfileManagementRoute(session, { manageProfile = false })
         !session.isReady && session.status == OnboardingStatus.PROFILE_REQUIRED -> ProfileRoute(session)
         canSkip && developmentProfile -> Column(Modifier.fillMaxSize()) {
@@ -49,7 +55,8 @@ fun OnboardingRoute(
         }
         else -> OnboardingScreen(state, model::check, model::submit, model::load, model::refresh, model::logout,
             canSkipKeyring = canSkip, onSkipKeyring = { if (canSkip) developmentProfile = true },
-            canManageProfile = canManage, onManageProfile = { if (canManage) manageProfile = true })
+            canManageProfile = canManage, onManageProfile = { if (canManage) manageProfile = true },
+            canOpenSurvey = canSurvey, onOpenSurvey = { if (canSurvey) openSurvey = true })
     }
 }
 
@@ -67,6 +74,8 @@ fun OnboardingScreen(
     developmentNotice: String? = null,
     canManageProfile: Boolean = false,
     onManageProfile: () -> Unit = {},
+    canOpenSurvey: Boolean = false,
+    onOpenSurvey: () -> Unit = {},
 ) {
     val session = state.session ?: return
     val agreements = session.status == OnboardingStatus.AGREEMENT_REQUIRED
@@ -127,6 +136,8 @@ fun OnboardingScreen(
             }))
         }
         state.error?.let { OnboardingError(it.message) }
+        if (canOpenSurvey) AppButton(stringResource(if (keyring) Res.string.survey_api_dev_entry else Res.string.survey_api_entry),
+            enabled = !state.busy, onClick = onOpenSurvey)
         if (canManageProfile) AppButton(stringResource(if (session.isReady) Res.string.profile_manage_entry else Res.string.profile_manage_dev_entry),
             enabled = !state.busy, onClick = onManageProfile)
         if (linkFailed) OnboardingError(stringResource(Res.string.onboarding_link_failed))
