@@ -56,7 +56,7 @@ kotlin {
             implementation(libs.androidx.credentials.play)
             implementation(libs.googleid)
             implementation(libs.kakao.user)
-            implementation(libs.naver.oauth)
+            implementation(libs.androidx.browser)
         }
         getByName("androidDeviceTest").dependencies {
             implementation(libs.androidx.test.runner)

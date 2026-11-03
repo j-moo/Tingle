@@ -14,9 +14,6 @@ import com.kakao.sdk.common.KakaoSdk
 import com.kakao.sdk.common.model.ClientError
 import com.kakao.sdk.common.model.ClientErrorCause
 import com.kakao.sdk.user.UserApiClient
-import com.navercorp.nid.NidOAuth
-import com.navercorp.nid.core.data.datastore.NidOAuthInitializingCallback
-import com.navercorp.nid.oauth.util.NidOAuthCallback
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
@@ -25,13 +22,12 @@ import java.lang.ref.WeakReference
 import kotlin.coroutines.resume
 
 /**
- * 구글(Credential Manager) · 카카오 · 네이버 SDK. 179 브랜치 AndroidSocialLogin 을 가져와 결과를 [SocialToken] 으로 바꿨다.
+ * 구글(Credential Manager) · 카카오 SDK · 네이버 OIDC(Custom Tab, [NaverOidc]). 179 브랜치 AndroidSocialLogin 을 가져와 결과를 [SocialToken] 으로 바꿨다.
  * SDK 창은 Activity 가 있어야 띄울 수 있어, 지금 앞에 있는 Activity 를 기억한다(앱 시작 때 만들어져야 해서 Koin 에서 createdAtStart).
  */
 internal class AndroidSocialLogin(app: Application, private val keys: SocialKeys) : SocialLogin {
     private var current = WeakReference<Activity>(null)
     private val credentials = CredentialManager.create(app)
-    private var naverReady = false
 
     init {
         app.registerActivityLifecycleCallbacks(object : Application.ActivityLifecycleCallbacks {
@@ -49,7 +45,7 @@ internal class AndroidSocialLogin(app: Application, private val keys: SocialKeys
     override fun configured(provider: Provider) = when (provider) {
         Provider.GOOGLE -> keys.googleWebClientId.isNotBlank()
         Provider.KAKAO -> keys.kakaoNativeAppKey.isNotBlank()
-        Provider.NAVER -> keys.naverClientId.isNotBlank() && keys.naverClientSecret.isNotBlank()
+        Provider.NAVER -> keys.naverClientId.isNotBlank() && keys.naverRedirectUri.isNotBlank()
     }
 
     override suspend fun token(provider: Provider): SocialToken = withContext(Dispatchers.Main.immediate) {
@@ -93,38 +89,21 @@ internal class AndroidSocialLogin(app: Application, private val keys: SocialKeys
         }
     }
 
+    /** 네이버 OIDC: Custom Tab 인가 → 콜백 code(state 확인) → 서버로 code · verifier · nonce. 교환 · id_token 검증은 서버가 한다([NaverOidc]) */
     private suspend fun naver(activity: Activity): SocialToken {
-        if (!naverReady) {
-            val ok = suspendCancellableCoroutine { cont ->
-                NidOAuth.setLogEnabled(false)
-                NidOAuth.initialize(activity.applicationContext, keys.naverClientId, keys.naverClientSecret, "Tingle", object : NidOAuthInitializingCallback {
-                    override fun onSuccess() { if (cont.isActive) cont.resume(true) }
-                    override fun onFailure(e: Exception) { if (cont.isActive) cont.resume(false) }
-                })
-            }
-            if (!ok) return SocialToken.Failed
-            naverReady = true
-        }
-        return suspendCancellableCoroutine { cont ->
-            NidOAuth.requestLogin(activity, object : NidOAuthCallback {
-                override fun onSuccess() {
-                    if (cont.isActive) cont.resume(NidOAuth.getAccessToken()?.takeIf { it.isNotBlank() }?.let { SocialToken.Ok(it) } ?: SocialToken.Failed)
-                }
-
-                override fun onFailure(errorCode: String, errorDesc: String) {
-                    if (cont.isActive) cont.resume(if (errorCode == "user_cancel") SocialToken.Cancelled else SocialToken.Failed)
-                }
-            })
-        }
+        val attempt = NaverPkce.newAttempt()
+        return NaverOidc.login(
+            clientId = keys.naverClientId,
+            redirectUri = keys.naverRedirectUri,
+            attempt = attempt,
+            openBrowser = { url -> NaverAuthActivity.authorize(activity, url, keys.naverRedirectUri, attempt.state) },
+        )
     }
 
     override suspend fun clear() {
         // 각 SDK 의 로그인 상태만 지운다. 서비스 세션(refresh family)은 이미 서버 로그아웃으로 끝났다
         try { credentials.clearCredentialState(ClearCredentialStateRequest()) } catch (e: CancellationException) { throw e } catch (_: Exception) {}
         if (configured(Provider.KAKAO)) UserApiClient.instance.logout { }
-        if (naverReady) NidOAuth.logout(object : NidOAuthCallback {
-            override fun onSuccess() = Unit
-            override fun onFailure(errorCode: String, errorDesc: String) = Unit
-        })
+        // 네이버는 앱에 남는 로그인 상태가 없다(토큰을 저장하지 않는다). 브라우저의 네이버 로그인은 사용자 것이라 건드리지 않는다
     }
 }

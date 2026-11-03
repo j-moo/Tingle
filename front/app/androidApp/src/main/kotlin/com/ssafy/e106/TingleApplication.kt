@@ -14,7 +14,7 @@ class TingleApplication : Application() {
         super.onCreate()
         startKoin {
             androidContext(this@TingleApplication)
-            val socialKeys = SocialKeys(BuildConfig.GOOGLE_WEB_CLIENT_ID, BuildConfig.KAKAO_NATIVE_APP_KEY, BuildConfig.NAVER_CLIENT_ID, BuildConfig.NAVER_CLIENT_SECRET)
+            val socialKeys = SocialKeys(BuildConfig.GOOGLE_WEB_CLIENT_ID, BuildConfig.KAKAO_NATIVE_APP_KEY, BuildConfig.NAVER_CLIENT_ID, BuildConfig.NAVER_REDIRECT_URI)
             // 전문 미준비 상태의 동의 테스트는 개발 앱·개발 서버 조합에서만 허용한다.
             val developmentAgreements = BuildConfig.DEBUG &&
                 BuildConfig.APPLICATION_ID == "com.ssafy.tingle.dev" &&

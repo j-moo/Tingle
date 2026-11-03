@@ -4,6 +4,7 @@ import com.ssafy.e106.core.network.ApiResult
 import com.ssafy.e106.core.network.AppError
 import com.ssafy.e106.core.network.call
 import com.ssafy.e106.core.network.catchingNonCancel
+import io.ktor.client.request.HttpRequestBuilder
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
 import kotlinx.serialization.Serializable
@@ -13,6 +14,10 @@ internal const val SOCIAL_LOGIN_FAILED_MESSAGE = "로그인하지 못했어요. 
 
 @Serializable
 private class LoginRequest(val token: String)
+
+/** 네이버: 서버가 이 값으로 nid.naver.com/oauth2/token 을 부르고(client_secret 은 서버에만) id_token 을 검증한다 */
+@Serializable
+private class AuthCodeLoginRequest(val code: String, val codeVerifier: String, val redirectUri: String, val nonce: String)
 
 @Serializable
 internal class LogoutRequest(val refreshToken: String)
@@ -26,23 +31,24 @@ internal fun ApiResult<*>.shouldRetryLogout() = this is ApiResult.Fail && error 
 
 /**
  * 로그인 · 로그아웃(기반_인터페이스.md §3). 토큰 저장 · 세션 전이는 [session] 이 한다.
- * 네이버는 서버가 토큰의 발급 앱을 확인하지 않아(다른 앱 토큰으로 로그인 가능) 서버가 고칠 때까지 막는다 — 10-30/나중에_할_일.md
+ * 네이버는 인가 코드를 넘기고 서버가 교환 · ID 토큰을 검증한다(OIDC, 서버 MR !148)
  */
 internal class DefaultAuthRepository(
     private val social: SocialLogin,
     private val session: DefaultSessionStore,
 ) : AuthRepository {
-    override fun available(provider: Provider) = provider != Provider.NAVER && social.configured(provider)
+    override fun available(provider: Provider) = social.configured(provider)
 
     override suspend fun login(provider: Provider): LoginResult {
         if (!available(provider)) return LoginResult.Failed(AppError.Server(0, "SOCIAL_NOT_CONFIGURED", SOCIAL_LOGIN_FAILED_MESSAGE))
         session.flushPendingLogoutLater()                // 이전에 못 보낸 로그아웃. 다른 계정으로 로그인해도 이전 세션이 서버에 남지 않게
-        val token = when (val t = social.token(provider)) {
-            is SocialToken.Ok -> t.token
+        val body: HttpRequestBuilder.() -> Unit = when (val t = social.token(provider)) {
+            is SocialToken.Ok -> { { setBody(LoginRequest(t.token)) } }
+            is SocialToken.AuthCode -> { { setBody(AuthCodeLoginRequest(t.code, t.codeVerifier, t.redirectUri, t.nonce)) } }
             SocialToken.Cancelled -> return LoginResult.Cancelled
             SocialToken.Failed -> return LoginResult.Failed(AppError.Server(0, "SOCIAL_LOGIN_FAILED", SOCIAL_LOGIN_FAILED_MESSAGE))
         }
-        return when (val r = session.client.call<TokenResponse> { post("auth/${provider.wire}") { setBody(LoginRequest(token)) } }) {
+        return when (val r = session.client.call<TokenResponse> { post("auth/${provider.wire}", body) }) {
             is ApiResult.Fail -> LoginResult.Failed(r.error)   // 401 INVALID_SOCIAL_TOKEN · 502 SOCIAL_PROVIDER_ERROR 등 서버 문구 그대로
             // 토큰 저장(Keystore) 오류도 예외 대신 결과로. 화면이 로딩을 풀고 문구를 보여야 한다
             is ApiResult.Ok -> catchingNonCancel { session.signIn(r.value) }.fold(

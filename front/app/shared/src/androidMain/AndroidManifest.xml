@@ -12,5 +12,20 @@
                 <data android:host="oauth" android:scheme="${kakaoScheme}" />
             </intent-filter>
         </activity>
+
+        <!-- 네이버 로그인(OIDC) 창. 콜백 https://{host}{path} 를 App Link(autoVerify)로 받는다 — 서버 /.well-known/assetlinks.json 에 이 앱 서명이 있어야 한다.
+             host · path 는 androidApp 이 manifestPlaceholders 로 채운다(운영 /auth/naver/callback, 개발 /dev/auth/naver/callback) -->
+        <activity
+            android:name="com.ssafy.e106.core.auth.NaverAuthActivity"
+            android:exported="true"
+            android:launchMode="singleTask"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar">
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" android:host="${naverCallbackHost}" android:path="${naverCallbackPath}" />
+            </intent-filter>
+        </activity>
     </application>
 </manifest>
