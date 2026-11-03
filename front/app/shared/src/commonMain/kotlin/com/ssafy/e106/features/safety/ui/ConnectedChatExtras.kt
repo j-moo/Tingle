@@ -17,12 +17,11 @@ import org.koin.compose.viewmodel.koinViewModel
 
 /** 질문 선택은 초안 교체만 한다. 전송과 동의는 각각 사용자의 별도 행동이다. */
 @Composable fun ConnectedChatExtras(room: Long, readable: Boolean, editable: Boolean, insert: (String) -> Unit,
-    model: ChatExtrasViewModel = koinViewModel()) {
+    model: ChatExtrasViewModel = koinViewModel(), draft: String = "") {
     val state by model.state.collectAsStateWithLifecycle()
-    var candidate by remember(room) { mutableStateOf<String?>(null) }
     LaunchedEffect(room, readable) { model.bind(room, readable) }
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { model.bind(room, readable) }
-    LifecycleEventEffect(Lifecycle.Event.ON_STOP) { candidate = null; model.clear() }
+    LifecycleEventEffect(Lifecycle.Event.ON_STOP) { model.clear() }
     DisposableEffect(room) { onDispose { model.clear() } }
     if(state.room != room || !readable) return
     Column(verticalArrangement = Arrangement.spacedBy(AppSpacing.Small)) {
@@ -32,23 +31,7 @@ import org.koin.compose.viewmodel.koinViewModel
             // LazyColumn은 화면 밖 항목도 미리 구성할 수 있어 실제 표시 좌표를 확인한다.
             LaunchedEffect(notice.noticeId, visible) { if(visible) { withFrameNanos { }; model.displayedNotice(notice.noticeId) } }
         }
-        Text(stringResource(Res.string.chat_extras_questions), style = MaterialTheme.typography.titleMedium)
-        if(state.busy) LinearProgressIndicator(Modifier.fillMaxWidth())
-        state.questions.forEach { question -> AppButton(question, Modifier.fillMaxWidth(), variant = AppButtonVariant.Secondary,
-            enabled = editable, onClick = { candidate = question }) }
-        if(state.status == "FAILED") Text(stringResource(Res.string.chat_extras_failed))
-        state.error?.let { Text(it.message, color = MaterialTheme.colorScheme.error) }
-        // 오류 복구는 생성 POST를 반복하지 않고 기존 결과 조회부터 재시도한다.
-        if(state.accessRetryRequired) AppButton(stringResource(Res.string.chat_extras_retry),
-            enabled = !state.busy, onClick = model::check)
-        else if(state.questions.isEmpty()) AppButton(stringResource(if(state.status == null) Res.string.chat_extras_generate else Res.string.chat_extras_check),
-            enabled = !state.busy, onClick = { if(state.status == null) model.generate() else model.check() })
+        // 패널을 접어도 연결 컴포넌트는 유지한다. 여닫기는 POST/GET을 새로 시작하지 않는다.
+        ChatQuestionCards(state, editable, draft, insert, model::generate, model::check)
     }
-    if(candidate != null) AlertDialog(onDismissRequest = { candidate = null },
-        title = { Text(stringResource(Res.string.chat_extras_insert_title)) },
-        text = { Text(stringResource(Res.string.chat_extras_insert_help)) },
-        confirmButton = { TextButton(enabled = editable && candidate in state.questions, onClick = {
-            candidate?.takeIf { it in state.questions }?.let(insert); candidate = null
-        }) { Text(stringResource(Res.string.chat_extras_insert)) } },
-        dismissButton = { TextButton(onClick = { candidate = null }) { Text(stringResource(Res.string.chat_extras_cancel)) } })
 }

@@ -82,47 +82,58 @@ fun ChatConversationScreen(
             } else {
                 // 입력창을 먼저 측정하고 남은 높이를 안내/대화에 나눈다. 큰 글자나 IME 때문에
                 // 안내가 길어져도 전송 버튼을 화면 밖으로 밀지 않고 안내 영역에서 스크롤한다.
-                Column(Modifier.weight(1f).fillMaxWidth()) {
-                    Column(Modifier.weight(1f, fill = false).fillMaxWidth().verticalScroll(rememberScrollState())) {
-                        TextButton(onClick = { onAction(ConversationAction.OpenPartner) },
-                            modifier = Modifier.align(Alignment.End).padding(horizontal = AppSpacing.Large)) {
-                            Text(stringResource(Res.string.chat_partner_open))
-                        }
-                        ConversationNotice(state, onAction)
-                    }
-                    Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.TopCenter) {
-                        LazyColumn(Modifier.widthIn(max = 640.dp).fillMaxWidth(), state = listState, reverseLayout = true,
-                            contentPadding = screenPaddingValues(), verticalArrangement = Arrangement.spacedBy(AppSpacing.Medium)) {
-                            if (state.messages.isEmpty()) item(key = "empty") {
-                                StatusCard(stringResource(if (state.nextCursor.isNullOrBlank()) Res.string.chat_conversation_empty else Res.string.chat_history_empty),
-                                    stringResource(if (state.nextCursor.isNullOrBlank()) Res.string.chat_conversation_empty_help else Res.string.chat_history_empty_help))
+                BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
+                    // 여백을 남기는 가중치 대신 안내/추천 높이만 제한하고, 남는 높이는 대화 목록에 준다.
+                    val noticeHeight = maxHeight * 0.35f
+                    val supportHeight = minOf(240.dp, maxHeight * 0.5f)
+                    Column(Modifier.fillMaxSize()) {
+                        Column(Modifier.heightIn(max = noticeHeight).fillMaxWidth().verticalScroll(rememberScrollState())) {
+                            TextButton(onClick = { onAction(ConversationAction.OpenPartner) },
+                                modifier = Modifier.align(Alignment.End).padding(horizontal = AppSpacing.Large)) {
+                                Text(stringResource(Res.string.chat_partner_open))
                             }
-                            items(state.messages.distinctBy { it.id }.asReversed(), key = { "message-${it.id}" }) { message ->
-                                Row(Modifier.fillMaxWidth(), horizontalArrangement = if (message.mine) Arrangement.End else Arrangement.Start) {
-                                    val who = stringResource(if (message.mine) Res.string.chat_conversation_me else Res.string.chat_conversation_other)
-                                    val time = message.timeLabel?.takeIf { it.isNotBlank() }
-                                        ?: stringResource(Res.string.chat_conversation_time_unknown)
-                                    Column(horizontalAlignment = if (message.mine) Alignment.End else Alignment.Start) {
-                                        MessageBubble(message.text,
-                                            if (message.mine && message.delivery != MessageDelivery.Sent) who
-                                            else stringResource(Res.string.chat_conversation_message_meta, who, time))
-                                        if (message.mine) MessageDeliveryStatus(message,
-                                            enabled = state.inputEnabled,
-                                            onRecovery = { action -> if (state.inputEnabled) onMessageRecovery(message.id, action) })
+                            ConversationNotice(state, onAction)
+                        }
+                        Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.TopCenter) {
+                            LazyColumn(Modifier.widthIn(max = 640.dp).fillMaxWidth(), state = listState, reverseLayout = true,
+                                contentPadding = screenPaddingValues(), verticalArrangement = Arrangement.spacedBy(AppSpacing.Medium)) {
+                                if (state.messages.isEmpty()) item(key = "empty") {
+                                    StatusCard(stringResource(if (state.nextCursor.isNullOrBlank()) Res.string.chat_conversation_empty else Res.string.chat_history_empty),
+                                        stringResource(if (state.nextCursor.isNullOrBlank()) Res.string.chat_conversation_empty_help else Res.string.chat_history_empty_help))
+                                }
+                                items(state.messages.distinctBy { it.id }.asReversed(), key = { "message-${it.id}" }) { message ->
+                                    Row(Modifier.fillMaxWidth(), horizontalArrangement = if (message.mine) Arrangement.End else Arrangement.Start) {
+                                        val who = stringResource(if (message.mine) Res.string.chat_conversation_me else Res.string.chat_conversation_other)
+                                        val time = message.timeLabel?.takeIf { it.isNotBlank() }
+                                            ?: stringResource(Res.string.chat_conversation_time_unknown)
+                                        Column(horizontalAlignment = if (message.mine) Alignment.End else Alignment.Start) {
+                                            MessageBubble(message.text,
+                                                if (message.mine && message.delivery != MessageDelivery.Sent) who
+                                                else stringResource(Res.string.chat_conversation_message_meta, who, time))
+                                            if (message.mine) MessageDeliveryStatus(message,
+                                                enabled = state.inputEnabled,
+                                                onRecovery = { action -> if (state.inputEnabled) onMessageRecovery(message.id, action) })
+                                        }
                                     }
                                 }
-                            }
-                            if (conversationSupport != null) item(key = "conversation-support") { conversationSupport() }
-                            if (!state.nextCursor.isNullOrBlank()) item(key = "older-messages") {
-                                if (state.historyLoad == HistoryLoad.Failed) Text(stringResource(Res.string.chat_history_failed),
-                                    style = MaterialTheme.typography.bodySmall, color = AppColors.Error)
-                                AppButton(stringResource(if (state.historyLoad == HistoryLoad.Failed) Res.string.chat_history_retry else Res.string.chat_history_more),
-                                    Modifier.fillMaxWidth(), variant = AppButtonVariant.Secondary,
-                                    enabled = state.canLoadOlder, loading = state.historyLoad == HistoryLoad.Loading,
-                                    loadingText = stringResource(Res.string.chat_history_loading),
-                                    onClick = { if (state.canLoadOlder) onAction(ConversationAction.LoadOlder) })
+                                if (!state.nextCursor.isNullOrBlank()) item(key = "older-messages") {
+                                    if (state.historyLoad == HistoryLoad.Failed) Text(stringResource(Res.string.chat_history_failed),
+                                        style = MaterialTheme.typography.bodySmall, color = AppColors.Error)
+                                    AppButton(stringResource(if (state.historyLoad == HistoryLoad.Failed) Res.string.chat_history_retry else Res.string.chat_history_more),
+                                        Modifier.fillMaxWidth(), variant = AppButtonVariant.Secondary,
+                                        enabled = state.canLoadOlder, loading = state.historyLoad == HistoryLoad.Loading,
+                                        loadingText = stringResource(Res.string.chat_history_loading),
+                                        onClick = { if (state.canLoadOlder) onAction(ConversationAction.LoadOlder) })
+                                }
                             }
                         }
+                        // 추천은 말풍선 목록과 분리해 입력창 바로 위에 둔다. 작은 화면/키보드에서도
+                        // 입력창 높이를 먼저 확보하고, 펼친 추천은 남은 영역 안에서 스크롤한다.
+                        if (conversationSupport != null) Column(
+                            Modifier.fillMaxWidth().heightIn(max = supportHeight)
+                                .verticalScroll(rememberScrollState())
+                                .padding(horizontal = AppSpacing.Large),
+                        ) { conversationSupport() }
                     }
                 }
                 ConversationComposer(state, onDraftChange, onAction)

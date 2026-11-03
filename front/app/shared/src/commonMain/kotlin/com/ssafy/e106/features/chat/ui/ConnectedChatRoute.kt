@@ -22,7 +22,8 @@ import kotlinx.coroutines.delay
 @Composable fun ConnectedChatRoute(session: Session.SignedIn, initialRoom: Long? = null,
     onHome: () -> Unit, onProposals: () -> Unit, onProfile: () -> Unit,
     onSafety: (Long, String) -> Unit, onConsent: () -> Unit,
-    support: (@Composable (Long, Boolean, Boolean, (String) -> Unit) -> Unit)? = null,
+    // 현재 초안을 추천 영역에 전달해 비어 있을 때만 확인 없이 채운다.
+    support: (@Composable (Long, Boolean, Boolean, String, (String) -> Unit) -> Unit)? = null,
     listModel: ChatListViewModel = koinViewModel(), roomModel: ChatRoomViewModel = koinViewModel(),
     partnerModel: ChatPartnerViewModel = koinViewModel()) {
     var room by rememberSaveable(session.userId, initialRoom) { mutableStateOf(initialRoom) }
@@ -110,6 +111,6 @@ import kotlinx.coroutines.delay
             ConversationAction.OpenAiNotice, ConversationAction.OpenConsent -> { roomModel.pause(); onConsent() }
         } }, onMessageRecovery = { _, _ -> roomModel.retry() },
             onMessagesDisplayed = { displayed = it; roomModel.displayed(it) },
-            conversationSupport = support?.let { block -> { block(room!!, conversation.ui.readable, conversation.ui.inputEnabled, roomModel::draft) } })
+            conversationSupport = support?.let { block -> { block(room!!, conversation.ui.readable, conversation.ui.inputEnabled, conversation.ui.draft, roomModel::draft) } })
     }
 }
