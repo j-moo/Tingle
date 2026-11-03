@@ -8,10 +8,15 @@ import static org.mockito.Mockito.when;
 
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -35,11 +40,14 @@ class AiInternalClientTest {
 	private final JsonMapper json = JsonMapper.builder().build();
 	private final AtomicInteger calls = new AtomicInteger();
 	private HttpServer server;
+	private ExecutorService handlers;
 	private String base;
 
 	@BeforeEach
 	void loopbackOnly() throws Exception {
 		server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+		handlers = Executors.newVirtualThreadPerTaskExecutor();
+		server.setExecutor(handlers);
 		server.start();
 		base = "http://127.0.0.1:" + server.getAddress().getPort();
 		when(tokens.issue()).thenReturn("synthetic-service-jwt");
@@ -48,6 +56,7 @@ class AiInternalClientTest {
 	@AfterEach
 	void stopLoopback() {
 		server.stop(0);
+		handlers.shutdownNow();
 	}
 
 	@Test
@@ -276,6 +285,47 @@ class AiInternalClientTest {
 	private AiInternalClient client(String environment, String address) {
 		return new AiInternalClient(new AiServiceProperties(true, environment, "synthetic", "", address),
 			tokens, json);
+	}
+
+	@Test
+	void eachAiPathBoundsAStalledSuccessfulBodyAndMarksItRetryable() {
+		CountDownLatch release = new CountDownLatch(1);
+		try {
+			for (String path : List.of("/internal/ai/explanations", "/internal/ai/icebreakers",
+				"/internal/ai/risk-detections")) {
+				server.createContext(path, exchange -> {
+					calls.incrementAndGet();
+					try (exchange) {
+						exchange.sendResponseHeaders(200, 0);
+						exchange.getResponseBody().write('{');
+						exchange.getResponseBody().flush();
+						try {
+							release.await(5, TimeUnit.SECONDS);
+						} catch (InterruptedException exception) {
+							Thread.currentThread().interrupt();
+						}
+					}
+				});
+				assertThatThrownBy(() -> client("test", base).post(path, Map.of("synthetic", true),
+					Map.class, UUID.randomUUID(), Duration.ofMillis(200), 1024))
+					.isInstanceOfSatisfying(AiCallException.class, failure -> assertThat(failure.retryable()).isTrue());
+			}
+			assertThat(calls.get()).isEqualTo(3);
+		} finally {
+			release.countDown();
+		}
+	}
+
+	@Test
+	void refusedConnectionsStayRetryableWithoutInventingAProviderResponse() {
+		server.stop(0);
+		for (String path : List.of("/internal/ai/explanations", "/internal/ai/icebreakers",
+			"/internal/ai/risk-detections")) {
+			assertThatThrownBy(() -> client("test", base).post(path, Map.of("synthetic", true),
+				Map.class, UUID.randomUUID(), Duration.ofMillis(500), 1024))
+				.isInstanceOfSatisfying(AiCallException.class, failure -> assertThat(failure.retryable()).isTrue());
+		}
+		assertThat(calls.get()).isZero();
 	}
 
 	private void assertUnavailable(Runnable operation) {

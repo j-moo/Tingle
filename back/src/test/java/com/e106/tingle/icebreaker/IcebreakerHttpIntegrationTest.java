@@ -20,6 +20,8 @@ import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -67,6 +69,9 @@ class IcebreakerHttpIntegrationTest extends IntegrationTestSupport {
 	private static int responseStatus;
 	private static String responseBody;
 	private static boolean closeDuringResponse;
+	private static volatile boolean dropResponse;
+	private static volatile boolean stallResponse;
+	private static CountDownLatch responseRelease = new CountDownLatch(0);
 	private static java.util.function.LongConsumer closeRoom;
 
 	@Autowired
@@ -101,6 +106,8 @@ class IcebreakerHttpIntegrationTest extends IntegrationTestSupport {
 		server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
 		server.createContext("/internal/ai/icebreakers", exchange -> {
 			REQUESTS.incrementAndGet();
+			boolean stalled = stallResponse;
+			CountDownLatch release = responseRelease;
 			try (exchange) {
 				String bearer = exchange.getRequestHeaders().getFirst("Authorization");
 				String[] jwt = bearer.substring(7).split("\\.");
@@ -120,10 +127,23 @@ class IcebreakerHttpIntegrationTest extends IntegrationTestSupport {
 				if (closeDuringResponse) {
 					closeRoom.accept(body.path("contextId").asLong());
 				}
+				if (dropResponse) {
+					return;
+				}
+				if (stalled) {
+					exchange.sendResponseHeaders(200, 0);
+					exchange.getResponseBody().write('{');
+					exchange.getResponseBody().flush();
+					release.await(5, TimeUnit.SECONDS);
+					return;
+				}
 				byte[] result = responseBody.getBytes(StandardCharsets.UTF_8);
 				exchange.sendResponseHeaders(responseStatus, result.length);
 				exchange.getResponseBody().write(result);
 			} catch (Throwable exception) {
+				if (stalled && exception instanceof IOException) {
+					return;
+				}
 				SERVER_FAILURE.set(exception);
 				throw new IOException(exception);
 			}
@@ -175,6 +195,9 @@ class IcebreakerHttpIntegrationTest extends IntegrationTestSupport {
 		responseBody = "{\"questions\":[\"첫 질문\",\"두 번째 질문\",\"세 번째 질문\"],"
 			+ "\"source\":\"GENERATED\",\"promptVersion\":\"synthetic-v1\"}";
 		closeDuringResponse = false;
+		dropResponse = false;
+		stallResponse = false;
+		responseRelease = new CountDownLatch(0);
 		closeRoom = roomId -> jdbc.update("update chat set closed_at=now(),close_reason='LEFT' where id=?", roomId);
 	}
 
@@ -204,6 +227,40 @@ class IcebreakerHttpIntegrationTest extends IntegrationTestSupport {
 		responseStatus = 502;
 		responseBody = "{\"code\":\"SERVICE_UNAVAILABLE\"}";
 		executeAndAssert("GENERAL_FALLBACK", 3);
+	}
+
+	@Test
+	void interruptedHttpConnectionsConsumeOnlyThreeAttemptsBeforePersistingFallback() throws Exception {
+		dropResponse = true;
+		executeAndAssert("GENERAL_FALLBACK", 3);
+	}
+
+	@Test
+	void stalledBodyCannotExtendTheOriginalFiveMinuteBudgetOrStoreALateSuccess() throws Exception {
+		stallResponse = true;
+		responseRelease = new CountDownLatch(1);
+		try {
+			JsonNode first = newReadyUser();
+			JsonNode second = newReadyUser();
+			ChatRoom room = createRoom(userIdOf(first), userIdOf(second));
+			String path = "/api/chat-rooms/" + room.getId() + "/icebreakers";
+			perform(post(path).header("Idempotency-Key", UUID.randomUUID()), first, null)
+				.andExpect(status().isAccepted());
+			String deadline = jdbc.queryForObject("select icebreakers->>'deadlineAt' from chat where id=?",
+				String.class, room.getId());
+			timeShift.set(Duration.ofMillis(299000));
+			assertThat(processor.process(room.getId())).isTrue();
+			timeShift.set(Duration.ofSeconds(301));
+			assertThat(processor.process(room.getId())).isFalse();
+			perform(get(path), second, null).andExpect(status().isOk())
+				.andExpect(jsonPath("$.source").value("GENERAL_FALLBACK"))
+				.andExpect(jsonPath("$.questions.length()").value(3));
+			assertThat(REQUESTS.get()).isEqualTo(1);
+			assertThat(jdbc.queryForObject("select icebreakers->>'deadlineAt' from chat where id=?",
+				String.class, room.getId())).isEqualTo(deadline);
+		} finally {
+			responseRelease.countDown();
+		}
 	}
 
 	@Test
