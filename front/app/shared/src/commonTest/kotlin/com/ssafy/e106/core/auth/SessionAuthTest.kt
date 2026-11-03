@@ -1,12 +1,20 @@
 package com.ssafy.e106.core.auth
 
+import androidx.datastore.core.DataStore
+import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.emptyPreferences
+import androidx.datastore.preferences.core.preferencesOf
+import androidx.datastore.preferences.core.stringPreferencesKey
 import com.ssafy.e106.core.network.ApiResult
 import com.ssafy.e106.core.network.REFRESH_RETRY_DELAYS
 import com.ssafy.e106.core.network.REFRESH_TIMEOUT_MILLIS
 import com.ssafy.e106.core.network.AppError
 import com.ssafy.e106.core.network.call
 import com.ssafy.e106.core.network.createHttpClient
+import com.ssafy.e106.core.storage.AppPrefs
+import com.ssafy.e106.core.storage.DataStoreAppPrefs
 import com.ssafy.e106.core.storage.StoredTokens
+import com.ssafy.e106.core.storage.MAX_PENDING_LOGOUTS
 import com.ssafy.e106.core.storage.TokenStore
 import com.ssafy.e106.di.coreModule
 import io.ktor.client.HttpClient
@@ -26,17 +34,18 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.yield
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 import org.koin.dsl.koinApplication
 import org.koin.dsl.module
 import kotlinx.io.IOException
@@ -66,6 +75,10 @@ private class MemoryTokenStore(var saved: StoredTokens?) : TokenStore {
     var clearStarted = false
     override suspend fun load() = saved
     override suspend fun save(tokens: StoredTokens) { saved = tokens }
+    val pending = mutableListOf<String>()               // 실제 저장소처럼 매번 멈췄다 간다(취소된 코루틴이면 여기서 끝난다)
+    override suspend fun pendingLogouts(): List<String> { yield(); return pending.toList() }
+    override suspend fun addPendingLogout(refreshToken: String) { yield(); pending -= refreshToken; pending += refreshToken; while (pending.size > MAX_PENDING_LOGOUTS) pending.removeAt(0) }
+    override suspend fun removePendingLogout(refreshToken: String) { yield(); pending -= refreshToken }
     override suspend fun clear() {
         clearStarted = true
         clearGate?.await()
@@ -87,13 +100,14 @@ private val HttpRequestData.path get() = url.encodedPath
 
 /** 서버 흉내. 경로별 응답은 각 테스트가 정한다 */
 private class Harness(scope: TestScope, saved: StoredTokens?, handler: suspend MockRequestHandleScope.(HttpRequestData) -> HttpResponseData) {
-    private val requestsLock = Mutex()                   // MockEngine 핸들러는 여러 실제 스레드에서 동시에 돈다
-    val requests = mutableListOf<HttpRequestData>()
+    // MockEngine 핸들러는 여러 실제 스레드에서 동시에 돈다. 읽는 쪽(eventually 등)도 안전하게 매번 새 목록으로 바꾼다
+    private val requestsFlow = MutableStateFlow(emptyList<HttpRequestData>())
+    val requests get() = requestsFlow.value
     val store = MemoryTokenStore(saved)
     val session = DefaultSessionStore(store, scope.backgroundScope, now = { Instant.parse("2026-10-30T00:00:00Z") })
     val client = createHttpClient(
         BASE, httpLog = false, session = session, refreshRetryDelays = listOf(1, 1),
-        engine = MockEngine { req -> requestsLock.withLock { requests += req }; handler(req) },
+        engine = MockEngine { req -> requestsFlow.update { it + req }; handler(req) },
     ).also { session.client = it }
     val refreshCount get() = requests.count { it.path.endsWith("auth/token/refresh") }
     val onboardingCount get() = requests.count { it.path.endsWith("/onboarding") }
@@ -530,12 +544,14 @@ class SessionAuthTest {
 
     @Test
     fun coreModuleWiresOneSessionAndClient() = runTest {
+        val prefsFile = MemoryPrefsStore().apply { data.value = preferencesOf(stringPreferencesKey("7:profile") to "{}") }   // 지난 실행의 계정 캐시
         val koin = koinApplication {
             modules(
                 coreModule("https://test/api/", httpLog = false, SocialKeys()),
                 module {
                     single<TokenStore> { MemoryTokenStore(null) }
                     single<SocialLogin> { NoSocial }                 // 실제 SDK 는 Android Context 가 필요하다
+                    single<DataStore<Preferences>> { prefsFile }     // 실제 파일도 Android Context 가 필요하다
                 },
             )
         }.koin
@@ -544,6 +560,9 @@ class SessionAuthTest {
         assertTrue(koin.get<HttpClient>() === session.client)
         assertTrue(koin.get<AuthRepository>() is DefaultAuthRepository)
         withContext(Dispatchers.Default) { withTimeout(5_000) { session.state.first { it == Session.SignedOut } } }   // restore 가 시작됐다
+        // 아무도 AppPrefs 를 받지 않아도(앱 시작만으로) 남은 계정 캐시를 지운다
+        withContext(Dispatchers.Default) { withTimeout(5_000) { prefsFile.data.first { it.asMap().isEmpty() } } }
+        assertTrue(koin.get<AppPrefs>() is DataStoreAppPrefs)
         koin.close()
     }
 
@@ -681,6 +700,11 @@ private suspend fun Harness.awaitEvent(): SessionEvent = withContext(Dispatchers
 private suspend fun eventually(check: () -> Boolean) = withContext(Dispatchers.Default) { withTimeout(5_000) { while (!check()) delay(10) } }
 
 private suspend fun delay300() = withContext(Dispatchers.Default) { delay(300) }
+
+private class MemoryPrefsStore : DataStore<Preferences> {
+    override val data = MutableStateFlow(emptyPreferences())
+    override suspend fun updateData(transform: suspend (t: Preferences) -> Preferences) = transform(data.value).also { data.value = it }
+}
 
 private object NoSocial : SocialLogin {
     override fun configured(provider: Provider) = false

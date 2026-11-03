@@ -16,7 +16,23 @@ internal interface TokenStore {
     suspend fun save(tokens: StoredTokens)
 
     suspend fun clear()
+
+    /**
+     * 오프라인 · 서버 오류로 못 보낸 로그아웃의 refreshToken 들. 안 보내면 서버 세션과 이 기기의 푸시 연결이 남는다(기반_인터페이스.md §6).
+     * 계정마다 하나씩 쌓여 서로 덮지 않고, [clear] 와 상관없이 남는다. 깨졌으면 빈 목록(값만 버린다).
+     * 그래서 전송이 실패한 동안에는 로그아웃 뒤에도 유효한 refreshToken 이 토큰과 같은 보호(Keystore 암호화)로 기기에 남는다
+     */
+    suspend fun pendingLogouts(): List<String>
+
+    /** 목록에 더한다. 오래된 것부터 [MAX_PENDING_LOGOUTS] 개만 남긴다 */
+    suspend fun addPendingLogout(refreshToken: String)
+
+    /** 보낸 것만 뺀다. 그 사이 더해진 것은 남는다 */
+    suspend fun removePendingLogout(refreshToken: String)
 }
+
+/** 보관하는 로그아웃 수. 그보다 오래된 세션은 서버 리프레시 만료로 끝난다 */
+internal const val MAX_PENDING_LOGOUTS = 5
 
 /** 서버 토큰 응답 6필드 + userId(액세스 토큰 sub) + 마지막으로 본 signupCompleted */
 @Serializable

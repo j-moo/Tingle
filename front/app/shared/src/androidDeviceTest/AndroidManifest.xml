@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+    <application>
+        <!-- 기기 테스트 APK 에는 카카오 콜백이 필요 없다. 남겨 두면 androidApp 이 채우는 ${kakaoScheme} 이 비어 매니페스트 병합이 실패한다 -->
+        <activity android:name="com.kakao.sdk.auth.AuthCodeHandlerActivity" tools:node="remove" />
+    </application>
+</manifest>

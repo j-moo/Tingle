@@ -36,7 +36,7 @@ class AndroidTokenStoreTest {
     private fun prefs() = context.getSharedPreferences(store.alias, Context.MODE_PRIVATE)
 
     @After
-    fun tearDown() = runTest { store.clear() }
+    fun tearDown() = runTest { store.clear(); store.pendingLogouts().forEach { store.removePendingLogout(it) } }
 
     @Test
     fun saveLoadClear() = runTest {
@@ -96,6 +96,48 @@ class AndroidTokenStoreTest {
         assertTrue(AndroidTokenStore.isBroken(SerializationException("shape")))      // StoredTokens 모양이 바뀜
         assertFalse(AndroidTokenStore.isBroken(KeyStoreException("busy")))           // 부팅 직후 등 일시적 오류: 토큰 유지
         assertFalse(AndroidTokenStore.isBroken(ProviderException("busy")))
+    }
+
+    @Test
+    fun pendingLogoutsEncryptedAndSurviveClear() = runTest {
+        store.save(tokens)
+        store.addPendingLogout("PENDING-A")
+        store.addPendingLogout("PENDING-B")
+        store.clear()                                                                       // 로그아웃: 토큰은 지워도 보낼 로그아웃은 남는다
+        assertNull(store.load())
+        assertEquals(listOf("PENDING-A", "PENDING-B"), AndroidTokenStore(context, apiBase).pendingLogouts())
+        assertFalse("PENDING" in context.getSharedPreferencesFiles().joinToString { it.readText() })
+        store.removePendingLogout("PENDING-A")
+        assertEquals(listOf("PENDING-B"), store.pendingLogouts(), "보낸 것만 뺀다")
+    }
+
+    @Test
+    fun brokenPendingLogoutDroppedWithoutLosingTokens() = runTest {
+        store.save(tokens)
+        prefs().edit().putString("pendingLogout", "AAAA.BBBB").commit()
+        assertEquals(emptyList(), store.pendingLogouts())
+        assertNull(prefs().getString("pendingLogout", null))
+        assertEquals(tokens, store.load(), "로그아웃 값이 깨져도 Keystore 키를 지우지 않아 토큰은 그대로")
+    }
+
+    @Test
+    fun pendingLogoutsCappedNewestKeptNoDuplicates() = runTest {
+        (0..6).forEach { store.addPendingLogout("r$it") }
+        store.addPendingLogout("r3")                                                        // 이미 있는 것을 다시 — 맨 뒤로
+        assertEquals(listOf("r2", "r4", "r5", "r6", "r3"), AndroidTokenStore(context, apiBase).pendingLogouts())
+    }
+
+    @Test
+    fun transientKeystoreErrorDoesNotWipePendingLogouts() = runTest {
+        store.addPendingLogout("rA")
+        store.addPendingLogout("rB")
+        var fail = true
+        val flaky = AndroidTokenStore(context, apiBase, beforeDecrypt = { if (fail) throw KeyStoreException("busy") })   // 부팅 직후 같은 일시 오류
+        assertTrue(runCatching { flaky.removePendingLogout("rA") }.isFailure, "읽지 못했으면 쓰지 않는다")
+        assertTrue(runCatching { flaky.addPendingLogout("rC") }.isFailure)
+        assertEquals(emptyList(), flaky.pendingLogouts(), "조회는 빈 목록으로 보이지만")
+        fail = false
+        assertEquals(listOf("rA", "rB"), store.pendingLogouts(), "디스크의 목록은 그대로")
     }
 }
 

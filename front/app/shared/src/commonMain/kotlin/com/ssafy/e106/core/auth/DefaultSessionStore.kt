@@ -12,8 +12,11 @@ import io.ktor.client.plugins.auth.authProvider
 import io.ktor.client.plugins.auth.providers.BearerAuthProvider
 import io.ktor.client.plugins.auth.providers.BearerTokens
 import io.ktor.client.request.get
+import io.ktor.client.request.post
+import io.ktor.client.request.setBody
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.async
 import kotlinx.coroutines.channels.Channel
@@ -28,6 +31,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
+import kotlin.concurrent.Volatile
 import kotlin.time.Clock
 import kotlin.time.Instant
 
@@ -57,13 +61,14 @@ internal class DefaultSessionStore(
     private var onboardingSent = 0L                      // 단계 조회 순번. 늦게 온 옛 조회가 더 최근 결과를 덮지 않게
     private var onboardingApplied = 0L
     private var announceStep = false
-    private var generation = 0L                          // 세션 세대. 로그인 · 로그아웃(만료 포함)마다 오른다. 재발급은 같은 세션이라 그대로                     // 403 을 받아 단계를 다시 읽는 중. 그동안 단계가 바뀌면 OnboardingRequired 1회
+    @Volatile private var generation = 0L                          // 세션 세대. 로그인 · 로그아웃(만료 포함)마다 오른다. 재발급은 같은 세션이라 그대로                     // 403 을 받아 단계를 다시 읽는 중. 그동안 단계가 바뀌면 OnboardingRequired 1회
 
     private val onboardingLock = Mutex()
     private var onboarding: Deferred<ApiResult<Unit>>? = null
 
     /** 앱 시작 때 한 번. 오프라인 · 서버 오류면 리프레시 토큰이 살아 있는 동안 마지막 단계로 들어간다(기반_인터페이스.md §2) */
     fun restore() = scope.launch {
+        flushPendingLogoutLater()                        // 복원과 따로(복원 Job 에 묶지 않는다). 이전 세션 정리가 첫 화면을 늦추지 않게
         val saved = tokenStore.load()
         if (saved == null) {
             _state.compareAndSet(Session.Restoring, Session.SignedOut)
@@ -159,15 +164,23 @@ internal class DefaultSessionStore(
         }
     }
 
-    /** 로그아웃 시작: 지금 토큰(서버 로그아웃 요청용)과 세션 세대. 세대는 [signOut] 에 그대로 넘긴다 */
-    suspend fun beginSignOut(): Pair<StoredTokens?, Long> = lock.withLock { tokenStore.load() to generation }
+    /** 지금 세션 세대. 로그아웃은 잠금을 기다리기 전에 이것부터 잡는다 — 취소 정리 때도 "로그아웃을 누른 그 세션"인지 비교할 수 있게 */
+    val currentGeneration: Long get() = generation
+
+    /** 로그아웃 시작: 지금 토큰(서버 로그아웃 요청용). 잠금을 기다리는 사이 [startedAt] 세대가 끝났으면(만료 · 다른 로그인) null — 할 일이 없다 */
+    suspend fun beginSignOut(startedAt: Long): StoredTokens? = lock.withLock { if (generation == startedAt) tokenStore.load() else null }
 
     /**
      * 사용자가 직접 로그아웃: 토큰 · 메모리 토큰 삭제 → SignedOut. 안내(Expired)는 내지 않는다. 부른 쪽이 취소돼도 끝까지 한다.
-     * [startedAt] 세대가 지금과 다르면(로그아웃 응답을 기다리는 사이 만료 · 다른 로그인) 새 세션을 지우지 않는다. null 이면 시작 전 취소 — 그냥 정리한다
+     * [startedAt] 세대가 지금과 다르면(잠금 대기 · 로그아웃 응답 대기 사이 만료 · 다른 로그인) 새 세션은 보관도 삭제도 하지 않는다.
+     * [unsent] 는 토큰을 읽기 전 · 읽는 중 취소 — 서버에 로그아웃을 못 보냈으니 지우기 전에 그 refreshToken 을 재전송 목록에 보관한다
      */
-    suspend fun signOut(startedAt: Long?) = withContext(NonCancellable) {
-        lock.withLock { if (startedAt == null || startedAt == generation) signOutLocked(announce = false) }
+    suspend fun signOut(startedAt: Long, unsent: Boolean) = withContext(NonCancellable) {
+        lock.withLock {
+            if (startedAt != generation) return@withLock
+            if (unsent) catchingNonCancel { tokenStore.load() }.getOrNull()?.let { keepPendingLogout(it.refreshToken) }
+            signOutLocked(announce = false)
+        }
     }
 
     override suspend fun expireIfCurrent(sentAccessToken: String) = lock.withLock {
@@ -190,6 +203,31 @@ internal class DefaultSessionStore(
         // 잠금을 잡은 채 기다리지 않는다. 버퍼(64)가 찰 만큼 아무도 안 받았으면 안내 하나는 버려도 된다
         if (announce && before != Session.SignedOut) _events.trySend(SessionEvent.Expired)
     }
+
+    private val logoutLock = Mutex()
+
+    /** 로그아웃 요청을 못 보냈을 때(연결 실패 · 5xx · 도중 취소) 보관한다. 서버 로그아웃은 멱등이라 두 번 가도 된다 */
+    suspend fun keepPendingLogout(refreshToken: String) = withContext(NonCancellable) {
+        catchingNonCancel { tokenStore.addPendingLogout(refreshToken) }
+    }
+
+    /**
+     * 보관한 로그아웃을 다시 보낸다(앱 시작 · 로그인 때, 기다리지 않고). 서버가 받았거나(2xx) 그 토큰을 거절했으면(400 · 401) 그 항목만 빼고, 그 밖은 남겨 둔다.
+     * 만료 판단은 서버에 맡긴다(기기 시계를 믿지 않는다 — 서버는 만료된 토큰의 로그아웃도 받는다). 잠금은 같은 항목을 두 번 보내지 않으려는 것
+     */
+    suspend fun flushPendingLogout() = logoutLock.withLock {
+        for (token in catchingNonCancel { tokenStore.pendingLogouts() }.getOrDefault(emptyList())) {
+            val r = client.call<Unit> { post("auth/logout") { setBody(LogoutRequest(token)) } }
+            if (!r.shouldRetryLogout()) catchingNonCancel { tokenStore.removePendingLogout(token) }
+        }
+    }
+
+    /** 마지막으로 띄운 재전송. 끝나기를 기다려야 하는 쪽(푸시 등록 S15P31E106-195, 테스트)이 join 한다 */
+    var pendingLogoutFlush: Job? = null
+        private set
+
+    /** 로그인 화면을 기다리게 하지 않고 보낸다. 계정마다 서버 세션(family)이 따로라 로그인과 순서를 맞출 필요가 없다 */
+    fun flushPendingLogoutLater() = scope.launch { flushPendingLogout() }.also { pendingLogoutFlush = it }
 
     override fun onboardingRequired() {
         scope.launch {
