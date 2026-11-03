@@ -57,6 +57,9 @@ kotlin {
             implementation(libs.googleid)
             implementation(libs.kakao.user)
             implementation(libs.androidx.browser)
+            implementation(project.dependencies.platform(libs.firebase.bom))   // 푸시(core/push)
+            implementation(libs.firebase.messaging)
+            implementation(libs.androidx.activity.compose)   // 알림 권한 요청(rememberLauncherForActivityResult)
         }
         getByName("androidDeviceTest").dependencies {
             implementation(libs.androidx.test.runner)

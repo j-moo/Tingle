@@ -4,6 +4,7 @@ import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import com.ssafy.e106.core.auth.SocialKeys
 import com.ssafy.e106.core.auth.SocialLogin
+import com.ssafy.e106.core.push.PushDevice
 import com.ssafy.e106.core.storage.TokenStore
 import org.koin.core.scope.Scope
 
@@ -11,5 +12,7 @@ import org.koin.core.scope.Scope
 internal actual fun Scope.platformTokenStore(baseUrl: String): TokenStore = TODO("iOS TokenStore — S15P31E106-197")
 
 internal actual fun Scope.platformSocialLogin(keys: SocialKeys): SocialLogin = TODO("iOS 소셜 로그인 — S15P31E106-197")
+
+internal actual fun Scope.platformPushDevice(): PushDevice = TODO("iOS 푸시(APNs) — S15P31E106-197")
 
 internal actual fun Scope.platformPrefsStore(): DataStore<Preferences> = TODO("iOS AppPrefs 파일 — S15P31E106-197")
