@@ -16,6 +16,6 @@ internal actual fun Scope.platformSocialLogin(keys: SocialKeys): SocialLogin = T
 
 internal actual fun Scope.platformPushDevice(): PushDevice = TODO("iOS 푸시(APNs) — S15P31E106-197")
 
-internal actual fun Scope.platformPrefsStore(): DataStore<Preferences> = TODO("iOS AppPrefs 파일 — S15P31E106-197")
+internal actual fun Scope.platformPrefsStore(fileName: String, resetOnCorruption: Boolean): DataStore<Preferences> = TODO("iOS AppPrefs 파일 — S15P31E106-197")
 
 internal actual fun Scope.platformForeground(): StateFlow<Boolean> = TODO("iOS 앱 앞/뒤 상태 — S15P31E106-197")

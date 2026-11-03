@@ -20,6 +20,8 @@ internal open class ChatMemoryPrefs : AppPrefs {
     override suspend fun <T> set(key: PrefKey<T>, value: T?, forUser: Long) {
         if (!refuseWrites) values.value = values.value + (key.name to value)
     }
+    @Suppress("UNCHECKED_CAST") override suspend fun <T> read(key: PrefKey<T>, forUser: Long): PrefRead<T> =
+        (values.value[key.name] as T?)?.let { PrefRead.Found(it) } ?: PrefRead.Missing
 }
 internal open class ChatTestServer : ChatRepository {
     val now = "2026-11-03T00:00:00Z"

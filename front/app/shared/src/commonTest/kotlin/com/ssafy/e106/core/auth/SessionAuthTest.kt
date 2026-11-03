@@ -3,6 +3,8 @@ package com.ssafy.e106.core.auth
 import org.koin.core.qualifier.named
 import kotlinx.coroutines.flow.StateFlow
 import com.ssafy.e106.di.APP_FOREGROUND
+import com.ssafy.e106.di.CACHE_PREFS_FILE
+import com.ssafy.e106.di.DURABLE_PREFS_FILE
 import com.ssafy.e106.core.realtime.DefaultChatEvents
 import com.ssafy.e106.core.realtime.ChatEvents
 import androidx.datastore.core.DataStore
@@ -567,6 +569,7 @@ class SessionAuthTest {
             override suspend fun saveBinding(binding: PushBinding?) = Unit
         }
         val prefsFile = MemoryPrefsStore().apply { data.value = preferencesOf(stringPreferencesKey("7:profile") to "{}") }   // 지난 실행의 계정 캐시
+        val durableFile = MemoryPrefsStore().apply { data.value = preferencesOf(stringPreferencesKey("7:report") to "{}") }   // 지난 실행의 계정 복구용 기록
         Dispatchers.setMain(StandardTestDispatcher(testScheduler))   // 알림 탭 대기열은 메인 스레드에서 돈다. 실패해도 finally 가 되돌린다
         try {
             val koin = koinApplication {
@@ -575,7 +578,8 @@ class SessionAuthTest {
                     module {
                         single<TokenStore> { MemoryTokenStore(null) }
                         single<SocialLogin> { NoSocial }                 // 실제 SDK 는 Android Context 가 필요하다
-                        single<DataStore<Preferences>> { prefsFile }     // 실제 파일도 Android Context 가 필요하다
+                        single<DataStore<Preferences>>(named(CACHE_PREFS_FILE)) { prefsFile }          // 실제 파일도 Android Context 가 필요하다
+                        single<DataStore<Preferences>>(named(DURABLE_PREFS_FILE)) { durableFile }
                         single<PushDevice> { noPush }                    // FCM 도
                         single<StateFlow<Boolean>>(named(APP_FOREGROUND)) { MutableStateFlow(true) }   // 앞/뒤 상태는 Application 이 필요하다
                     },
@@ -592,6 +596,7 @@ class SessionAuthTest {
                 withContext(Dispatchers.Default) { withTimeout(5_000) { refreshed.subscriptionCount.first { it > 0 } } }   // 푸시 등록기도 시작됐다
                 // 아무도 AppPrefs 를 받지 않아도(앱 시작만으로) 남은 계정 캐시를 지운다
                 withContext(Dispatchers.Default) { withTimeout(5_000) { prefsFile.data.first { it.asMap().isEmpty() } } }
+                withContext(Dispatchers.Default) { withTimeout(5_000) { durableFile.data.first { it.asMap().isEmpty() } } }
                 assertTrue(koin.get<AppPrefs>() is DataStoreAppPrefs)
             } finally {
                 koin.close()
