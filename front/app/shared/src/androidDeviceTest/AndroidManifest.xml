@@ -2,6 +2,10 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
     <application>
+        <!-- 저장 요청 복구 도중 실제 Activity 중단·복귀를 검사하는 테스트 전용 호스트. -->
+        <activity android:name="com.ssafy.e106.features.report.ReportRestoreTestActivity" android:exported="true" />
+        <!-- 종료된 방의 신고 결과 확인·접수 완료 표시를 검사하는 테스트 전용 호스트. -->
+        <activity android:name="com.ssafy.e106.features.report.ReportRecoveryTestActivity" android:exported="true" />
         <!-- 추천 카드와 실제 채팅 초안 연결을 검증하는 테스트 전용 호스트. -->
         <activity android:name="com.ssafy.e106.features.safety.QuestionCardsTestActivity" android:exported="true" />
         <!-- 동의 고지의 통신 실패 후 화면 내 재조회만 수행하는 테스트 전용 호스트. -->
