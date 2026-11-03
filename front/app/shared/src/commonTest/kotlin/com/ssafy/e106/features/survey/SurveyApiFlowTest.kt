@@ -41,6 +41,8 @@ internal class CursorMemory : SurveyCursorStore {
     override suspend fun write(userId: Long, sessionId: Long?) { if (sessionId == null) values.remove(userId) else values[userId] = sessionId }
 }
 internal class SurveyServer : SurveyRepository {
+    var recoveryResponse: ApiResult<SurveyAccountRecovery> = ApiResult.Ok(SurveyAccountRecovery(null, null, null, null))
+    override suspend fun recovery(userId: Long) = recoveryResponse
     override suspend fun migrationPlan(id: Long, target: String): ApiResult<SurveyMigrationPlan> = error("not used")
     override suspend fun migrate(id: Long, target: String, policyHash: String): ApiResult<SurveySession> = error("not used")
     var definition = surveyDefinition

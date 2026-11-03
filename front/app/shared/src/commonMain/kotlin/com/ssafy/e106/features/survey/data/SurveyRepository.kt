@@ -23,6 +23,7 @@ import kotlinx.serialization.json.*
 )
 
 interface SurveyRepository {
+    suspend fun recovery(userId: Long): ApiResult<SurveyAccountRecovery>
     suspend fun migrationPlan(id: Long, target: String): ApiResult<SurveyMigrationPlan>
     suspend fun migrate(id: Long, target: String, policyHash: String): ApiResult<SurveySession>
     suspend fun complete(id: Long): ApiResult<SurveySession>
@@ -37,6 +38,16 @@ interface SurveyRepository {
 }
 
 class HttpSurveyRepository(private val client: HttpClient) : SurveyRepository {
+    // 기존 인증 HttpClient를 사용해 토큰 회원의 가입 단계에서 복구용 식별자만 읽는다.
+    override suspend fun recovery(userId: Long): ApiResult<SurveyAccountRecovery> =
+        when (val result = client.call<JsonObject> { get("users/$userId/onboarding") }) {
+            is ApiResult.Fail -> result
+            is ApiResult.Ok -> try {
+                // 공통 JSON 설정은 누락된 nullable 필드를 null로 읽으므로, 신규 계약의 키 존재를 먼저 검사한다.
+                require(result.value.keys.containsAll(listOf("surveySessionId", "latestCompletedSessionId", "latestAnalysis", "activeResultId")))
+                ApiResult.Ok(ApiJson.decodeFromJsonElement<SurveyAccountRecovery>(result.value).checked())
+            } catch (e: IllegalArgumentException) { ApiResult.Fail(AppError.Unknown(e)) }
+        }
     override suspend fun migrationPlan(id: Long, target: String) = client.call<SurveyMigrationPlan> {
         get("survey-sessions/$id/migration-plan") { parameter("targetSurveyVersion", target) }
     }

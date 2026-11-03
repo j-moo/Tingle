@@ -31,6 +31,9 @@ data class SurveyUiState(
     val changingSession: Boolean = false,
     val exitRequested: Boolean = false,
     val returnedToMissing: Boolean = false,
+    val serverDraftId: Long? = null,
+    // null은 적용 여부 미확인이다. 분석 성공만 보고 매칭에 적용됐다고 표시하지 않는다.
+    val analysisApplied: Boolean? = null,
 
 ) {
     val inputBlocked get() = busy || changingSession || exitRequested
@@ -108,6 +111,19 @@ class SurveyViewModel(
             if (!valid(stamp)) return@launch
             mutable.update { it.copy(pendingChange = pending != null, pendingSourceId = pending?.sourceSessionId,
                 previousBookmark = previous) }
+            // 결과가 불명확한 전환은 기존 복구 흐름에서 먼저 확인한다. 서버 조회 실패를 새 가입으로 취급하지 않는다.
+            if (pending != null) return@launch
+            when (val response = repository.recovery(userId)) {
+                is ApiResult.Fail -> { fail(response.error, stamp); return@launch }
+                is ApiResult.Ok -> if (valid(stamp)) {
+                    val recovery = response.value.checked()
+                    mutable.update { it.copy(serverDraftId = recovery.surveySessionId) }
+                    recovery.preferredSessionId()?.let { target ->
+                        restoreAccountSession(userId, target, recovery, stamp)
+                        return@launch
+                    }
+                } else return@launch
+            }
             when (val result = repository.current()) {
                 is ApiResult.Ok -> if (valid(stamp)) mutable.update {
                     it.copy(definition = result.value.checked(), page = SurveyPage.Intro, recoveryRequired = false)
@@ -130,8 +146,45 @@ class SurveyViewModel(
             }
         }
     }
+    /** 로컬 기록이 사라졌을 때 서버가 확인한 회차·분석 ID를 저장하고 기존 설문 화면으로 복원한다. */
+    private suspend fun restoreAccountSession(userId: Long, id: Long, recovery: SurveyAccountRecovery, stamp: Int) {
+        when (val response = repository.get(id)) {
+            is ApiResult.Fail -> fail(response.error, stamp)
+            is ApiResult.Ok -> if (valid(stamp)) {
+                require(response.value.sessionId == id)
+                require(response.value.status == if (id == recovery.surveySessionId) "DRAFT" else "COMPLETED")
+                cursor.write(userId, id)
+                if (!valid(stamp)) return
+                val receipt = recovery.latestAnalysis?.takeIf { it.sessionId == id }
+                if (receipt != null) cursor.writeAnalysis(userId, AnalysisReference(id, receipt.resultId, receipt.analysisVersion))
+                if (!valid(stamp)) return
+                restore(response.value, stamp, id, recovery)
+                // 제출까지 끝났고 아직 분석 요청 전일 때만 같은 회차로 접수한다. FAILED는 사용자가 재시도한다.
+                if (valid(stamp) && !mutable.value.recoveryRequired && id == recovery.latestCompletedSessionId && receipt == null) {
+                    requestAnalysisInside(userId, stamp)
+                }
+            }
+        }
+    }
+    fun openServerDraft() {
+        val s = mutable.value
+        if (s.pendingChange || s.recoveryRequired || s.page != SurveyPage.Completed) return
+        val draftId = s.serverDraftId ?: return
+        launch { userId, stamp ->
+            // 버튼을 보여준 뒤 다른 기기에서 제출했을 수 있으므로 서버의 최신 회차를 확인한다.
+            when (val response = repository.recovery(userId)) {
+                is ApiResult.Fail -> fail(response.error, stamp)
+                is ApiResult.Ok -> if (valid(stamp)) {
+                    val recovery = response.value.checked()
+                    mutable.update { it.copy(serverDraftId = recovery.surveySessionId) }
+                    if (recovery.surveySessionId == draftId) restoreAccountSession(userId, draftId, recovery, stamp)
+                    else fail(AppError.Unknown(IllegalStateException("작성 중 회차가 변경됐어요. 서버 상태를 다시 확인해 주세요.")), stamp)
+                }
+            }
+        }
+    }
     fun start() {
-        if (mutable.value.page != SurveyPage.Intro) return
+        if (mutable.value.page != SurveyPage.Intro || mutable.value.recoveryRequired || mutable.value.error != null) return
         val version = mutable.value.definition?.manifest?.surveyVersion ?: return
         launch { userId, stamp ->
             when (val result = repository.start(version)) {
@@ -144,7 +197,7 @@ class SurveyViewModel(
             }
         }
     }
-    private suspend fun restore(rawSession: SurveySession, stamp: Int, expectedId: Long) {
+    private suspend fun restore(rawSession: SurveySession, stamp: Int, expectedId: Long, accountRecovery: SurveyAccountRecovery? = null) {
         if (!valid(stamp)) return
         require(rawSession.sessionId == expectedId)
         val before = mutable.value
@@ -169,7 +222,7 @@ class SurveyViewModel(
                         else -> SurveyPage.Question
                     },
                     draft = null, saveState = SurveySaveState.Unanswered, recoveryRequired = false, error = null,
-                    analysisReference = null, analysisResult = null) }
+                    analysisReference = null, analysisResult = null, analysisApplied = null) }
                 val owner = mutable.value.owner!!.userId
                 val previous = cursor.readPrevious(owner)
                 val pending = cursor.readChange(owner)
@@ -177,8 +230,21 @@ class SurveyViewModel(
                 mutable.update { it.copy(previousBookmark = previous, pendingChange = pending != null, pendingSourceId = pending?.sourceSessionId) }
                 if (mutable.value.page == SurveyPage.Question) select(index)
                 if (session.status == "COMPLETED") {
-                    val ref = cursor.readAnalysis(mutable.value.owner!!.userId)
+                    // 앱 재실행 뒤에도 공존하는 DRAFT와 최신 분석 버전을 다시 찾는다. 직전 회차의 선택은 바꾸지 않는다.
+                    val recovery = accountRecovery ?: when (val response = repository.recovery(owner)) {
+                        is ApiResult.Ok -> response.value.checked()
+                        is ApiResult.Fail -> { fail(response.error, stamp); return }
+                    }
+                    if (!valid(stamp)) return
+                    mutable.update { it.copy(serverDraftId = recovery.surveySessionId) }
+                    val receipt = recovery.latestAnalysis?.takeIf { it.sessionId == session.sessionId }
+                    val ref = if (recovery.latestCompletedSessionId == session.sessionId)
+                        receipt?.let { AnalysisReference(it.sessionId, it.resultId, it.analysisVersion) }
+                    else cursor.readAnalysis(owner)
+                    if (!valid(stamp)) return
                     if (valid(stamp) && ref?.sessionId == session.sessionId) {
+                        cursor.writeAnalysis(owner, ref)
+                        if (!valid(stamp)) return
                         mutable.update { it.copy(analysisReference = ref) }
                         readAnalysis(ref, stamp)
                     }
@@ -290,6 +356,20 @@ class SurveyViewModel(
     }
     private suspend fun refreshStageInside(stamp: Int) {
         mutable.update { it.copy(stageError = null, stageUnchanged = false) }
+        if (mutable.value.analysisResult?.status == AnalysisStatus.SUCCEEDED) {
+            val userId = mutable.value.owner?.userId ?: return
+            when (val response = repository.recovery(userId)) {
+                is ApiResult.Ok -> if (valid(stamp)) {
+                    val recovery = response.value.checked()
+                    mutable.update { it.copy(serverDraftId = recovery.surveySessionId,
+                        analysisApplied = recovery.activeResultId == it.analysisResult?.resultId) }
+                } else return
+                is ApiResult.Fail -> {
+                    if (valid(stamp)) mutable.update { it.copy(analysisApplied = null, stageError = response.error) }
+                    return
+                }
+            }
+        }
         when (val result = sessions.refreshOnboarding()) {
             is ApiResult.Ok -> if (valid(stamp)) mutable.update { it.copy(stageUnchanged = true) }
             // 단계 조회 실패는 이미 저장된 답변·분석 성공을 실패 상태로 되돌리지 않는다.

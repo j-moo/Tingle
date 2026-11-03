@@ -57,6 +57,7 @@ internal class SurveyLifecycleFixture {
 /** 취소 가능한 대기로 요청을 멈춰 두어 잘못된 leave 호출을 실제로 드러낸다. */
 internal class LifecycleSurveyServer : SurveyRepository by SurveyServer() {
     val base = SurveyServer()
+    override suspend fun recovery(userId: Long) = base.recovery(userId)
     var saveGate: CompletableDeferred<Unit>? = null
     var completeGate: CompletableDeferred<Unit>? = null
     var changeGate: CompletableDeferred<Unit>? = null
@@ -92,6 +93,27 @@ internal class LifecycleSurveyServer : SurveyRepository by SurveyServer() {
 
 class SurveyLifecycleDeviceTest {
     @get:Rule val compose = createEmptyComposeRule()
+    @Test fun submittedRecoveryShowsHeldResultAndSurvivesActivityRecreation() {
+        val f = SurveyLifecycleFixture()
+        f.server.base.apply {
+            persist("Q001", JsonPrimitive(4)); persist("Q002", JsonPrimitive("any"))
+            data = data.copy(status = "COMPLETED", completedAt = "2026-11-03T01:00:00Z")
+            analysisStatus = AnalysisStatus.SUCCEEDED
+            recoveryResponse = ApiResult.Ok(SurveyAccountRecovery(12, 11, AnalysisReceipt(21, 11, "a1", AnalysisStatus.SUCCEEDED), 20))
+        }
+        // 실제 Route에서 서버 복구 안내를 표시하며, 회전해도 새 회차/분석을 생성하지 않는다.
+        launch(f).use { s ->
+            ready(s, SurveyPage.Completed)
+            compose.onNodeWithText("분석은 완료됐지만 이 결과는 아직 매칭에 적용되지 않았어요. 필요한 답변 확인이나 재검사가 남아 있을 수 있어요.").assertExists()
+            compose.onNodeWithText("작성 중인 설문 이어하기").assertExists()
+            s.recreate(); ready(s, SurveyPage.Completed)
+            s.onActivity {
+                assertEquals(false, it.model.state.value.analysisApplied)
+                assertEquals(11L, it.model.state.value.session?.sessionId)
+                assertEquals(0, f.server.base.starts); assertEquals(0, f.server.base.analysisRequests)
+            }
+        }
+    }
     private fun launch(f: SurveyLifecycleFixture): ActivityScenario<SurveyLifecycleTestActivity> {
         SurveyLifecycleTestActivity.fixture = f
         return ActivityScenario.launch(Intent(InstrumentationRegistry.getInstrumentation().context, SurveyLifecycleTestActivity::class.java))
