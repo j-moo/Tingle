@@ -22,4 +22,7 @@ public interface SurveyResponseRepository extends JpaRepository<SurveyResponse, 
 	boolean existsByUserIdAndCompletedAtAfter(Long userId, Instant completedAt);
 
 	Optional<SurveyResponse> findByUserIdAndVersionCodeAndCompletedAtIsNull(Long userId, String versionCode);
+
+	// 재설치·다른 기기에서 제출한 회차를 다시 찾을 때 쓴다(가장 늦게 완료한 회차).
+	Optional<SurveyResponse> findFirstByUserIdAndCompletedAtIsNotNullOrderByCompletedAtDescIdDesc(Long userId);
 }

@@ -982,6 +982,9 @@
                   "answeredCount": 0,
                   "questionCount": 0,
                   "nextQuestionId": null,
+                  "latestCompletedSessionId": null,
+                  "latestAnalysis": null,
+                  "activeResultId": null,
                   "requiredSettingsVersion": 0,
                   "acknowledgedSettingsVersion": 0,
                   "serverTime": "2026-10-20T06:00:00Z"
@@ -7271,7 +7274,7 @@
       "post": {
         "operationId": "requestAnalysis",
         "summary": "개인 성향·유형·분석 요청",
-        "description": "본인 완료 survey에 대해 서버가 analysis/{버전}.json을 선택한다. (survey_id,analysis_version) 결과를 생성 또는 재사용하고 202 AnalysisReceipt를 반환한다. Job/jobId나 releaseId·sessionRevision 요청은 쓰지 않는다. 상태는 GET /api/analysis-results/{resultId}로 조회한다. 유효 최신 SUCCEEDED 결과만 결과 저장·profile.active_personality_id 전환·user_setting.settings_version 증가를 원자 반영한다. 대기·부족·실패는 기존 유효 분석을 유지한다.",
+        "description": "본인 완료 survey에 대해 서버가 analysis/{버전}.json을 선택한다. (survey_id,analysis_version) 결과를 생성 또는 재사용하고 202 AnalysisReceipt를 반환한다. Job/jobId나 releaseId·sessionRevision 요청은 쓰지 않는다. 상태는 GET /api/analysis-results/{resultId}로 조회한다. 유효 최신 SUCCEEDED 결과만 결과 저장·profile.active_personality_id 전환·user_setting.settings_version 증가를 원자 반영한다. 대기·부족·실패는 기존 유효 분석을 유지한다. 이미 SUCCEEDED인 결과를 다시 요청하면 적용(profile.active_personality_id)을 한 번 더 시도한다. 최신 완료 회차가 아니거나 Q97·Q98 재확인이 필요하면 적용하지 않는다.",
         "tags": [
           "SUR"
         ],
@@ -17386,14 +17389,15 @@
           "surveySessionId": {
             "anyOf": [
               {
-                "type": "string",
-                "format": "uuid"
+                "type": "integer",
+                "format": "int64",
+                "minimum": 1
               },
               {
                 "type": "null"
               }
             ],
-            "description": "진행 중인 설문 응답 회차 식별자"
+            "description": "현재 버전 설문의 작성 중 회차 번호(survey.id). 없으면 null"
           },
           "answeredCount": {
             "type": "integer",
@@ -17415,6 +17419,43 @@
               }
             ],
             "description": "다음 미응답 문항 식별자"
+          },
+          "latestCompletedSessionId": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "format": "int64",
+                "minimum": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "가장 최근에 제출(완료)한 설문 회차 번호(survey.id). 설문 버전과 상관없이 찾고, 없으면 null. 재설치·다른 기기에서 제출 회차를 복구할 때 쓴다"
+          },
+          "latestAnalysis": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AnalysisReceipt"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "latestCompletedSessionId 회차의 현재 분석 버전 결과(분석 요청 응답과 같은 모양). 완료 회차가 없거나 아직 분석 요청 전이면 null이며, 완료 회차가 있는데 null이면 같은 회차로 분석을 요청한다(중복 결과는 생기지 않음). INSUFFICIENT는 새 회차로 다시 답한다. SUCCEEDED인데 activeResultId와 다르면 적용 대기(서버 재시도) 또는 Q97·Q98 재확인 보류이므로, 이것만으로 새 검사를 요구하지 않고 같은 회차로 분석을 다시 요청한다(서버가 적용을 다시 시도, AI 재호출 없음). 그 뒤 가입 단계를 다시 조회한다. 분석 요청이 409 ANALYSIS_VERSION_UNSUPPORTED이면 그 회차의 분석 복구만 그만두고, 그 회차를 원본으로 버전 이관하거나 작성 중 회차(surveySessionId) 이어하기·새 회차 시작으로 간다. 앱 복구 순서는 auth.md 가입 단계 조회 절 참고"
+          },
+          "activeResultId": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "format": "int64",
+                "minimum": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "지금 매칭에 쓰는 적용 결과(profile.active_personality_id). 재검사 계산 중에는 이전 결과이며, latestAnalysis가 SUCCEEDED여도 이 값과 다르면 아직 적용되지 않은 결과다. 없으면 null"
           },
           "requiredSettingsVersion": {
             "type": "integer",
@@ -17448,6 +17489,9 @@
           "answeredCount",
           "questionCount",
           "nextQuestionId",
+          "latestCompletedSessionId",
+          "latestAnalysis",
+          "activeResultId",
           "requiredSettingsVersion",
           "acknowledgedSettingsVersion",
           "serverTime"
@@ -17462,6 +17506,9 @@
             "answeredCount": 0,
             "questionCount": 0,
             "nextQuestionId": null,
+            "latestCompletedSessionId": null,
+            "latestAnalysis": null,
+            "activeResultId": null,
             "requiredSettingsVersion": 7,
             "acknowledgedSettingsVersion": 7,
             "serverTime": "2026-10-20T06:00:00Z"

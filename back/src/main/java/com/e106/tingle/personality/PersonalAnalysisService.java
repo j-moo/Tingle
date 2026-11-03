@@ -52,6 +52,24 @@ public class PersonalAnalysisService {
 		return new AnalysisRequestResponse(personality.getId(), sessionId, version, personality.getStatus().name());
 	}
 
+	/**
+	 * 가입 단계 조회에 넣을 복구 정보. 가장 최근 완료 회차와, 그 회차의 지금 분석 버전 결과(아직 요청 전이면 null).
+	 * 결과가 null 이면 같은 회차로 분석 요청을 다시 보내면 된다(중복 줄은 생기지 않음).
+	 */
+	@Transactional(readOnly = true)
+	public Recovery recovery(long userId) {
+		return surveys.findFirstByUserIdAndCompletedAtIsNotNullOrderByCompletedAtDescIdDesc(userId)
+			.map(survey -> new Recovery(survey.getId(), personalities
+				.findBySurveyIdAndAnalysisVersion(survey.getId(), properties.analysisVersion())
+				.map(p -> new AnalysisRequestResponse(p.getId(), p.getSurveyId(), p.getAnalysisVersion(),
+					p.getStatus().name()))
+				.orElse(null)))
+			.orElse(new Recovery(null, null));
+	}
+
+	public record Recovery(Long sessionId, AnalysisRequestResponse analysis) {
+	}
+
 	/** 본인 결과만 돌려준다. 남의 결과와 없는 결과는 같은 404. */
 	@Transactional(readOnly = true)
 	public AnalysisResultResponse get(long userId, long resultId) {

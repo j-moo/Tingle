@@ -2,6 +2,7 @@ package com.e106.tingle.user.dto;
 
 import java.time.Instant;
 
+import com.e106.tingle.personality.dto.AnalysisRequestResponse;
 import com.e106.tingle.user.OnboardingStatus;
 
 /**
@@ -17,6 +18,9 @@ import com.e106.tingle.user.OnboardingStatus;
  * @param answeredCount 응답을 저장한 문항 수
  * @param questionCount 현재 버전 설문의 전체 문항 수
  * @param nextQuestionId 다음 미응답 문항. 회차가 없으면 첫 문항, 모두 응답했으면 null
+ * @param latestCompletedSessionId 가장 최근에 제출(완료)한 회차. 버전과 상관없이 찾고, 없으면 null
+ * @param latestAnalysis 그 회차의 지금 분석 버전 결과(분석 요청 응답과 같은 모양). 회차가 없거나 요청 전이면 null
+ * @param activeResultId 지금 매칭에 쓰는 적용 결과(profile.active_personality_id). 재검사 계산 중엔 이전 결과, 없으면 null
  * @param requiredSettingsVersion 서버의 실제 설정 변경 번호. 유실·음수이면 안전값 0
  * @param acknowledgedSettingsVersion 본인 등록 기기의 가장 높은 확인 버전. 미확인·현재보다 큰 값은 제외, 없으면 null
  * @param serverTime 서버의 현재 시각. 기기 시계 보정용
@@ -30,6 +34,9 @@ public record OnboardingDetailResponse(
 	int answeredCount,
 	int questionCount,
 	String nextQuestionId,
+	Long latestCompletedSessionId,
+	AnalysisRequestResponse latestAnalysis,
+	Long activeResultId,
 	long requiredSettingsVersion,
 	Long acknowledgedSettingsVersion,
 	Instant serverTime

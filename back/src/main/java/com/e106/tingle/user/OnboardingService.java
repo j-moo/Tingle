@@ -9,6 +9,7 @@ import com.e106.tingle.agreement.AgreementService;
 import com.e106.tingle.auth.MemberAccessRepository;
 import com.e106.tingle.global.error.BusinessException;
 import com.e106.tingle.global.error.ErrorCode;
+import com.e106.tingle.personality.PersonalAnalysisService;
 import com.e106.tingle.settings.snapshot.SettingsChangeCoordinator;
 import com.e106.tingle.survey.SurveyService;
 import com.e106.tingle.user.dto.OnboardingDetailResponse;
@@ -28,6 +29,7 @@ public class OnboardingService {
 	private final ProfileRepository profileRepository;
 	private final UserRepository userRepository;
 	private final SurveyService surveyService;
+	private final PersonalAnalysisService analysisService;
 	private final Clock clock;
 	private final SettingsChangeCoordinator settingsChanges;
 
@@ -65,11 +67,14 @@ public class OnboardingService {
 		OnboardingStatus status = recordProgress(userId);
 		boolean ready = status == OnboardingStatus.READY;
 		SurveyService.Progress survey = surveyService.progress(userId);
+		PersonalAnalysisService.Recovery submitted = analysisService.recovery(userId);
+		Long activeResultId = profileRepository.findById(userId).map(Profile::getActivePersonalityId).orElse(null);
 		MemberAccessRepository.SettingsVersions versions = members.settingsVersions(userId);
 		// 가입 완료 bulk 갱신 직후이므로 잠글 때 읽은 엔티티의 이전 값 대신 실제 DB 값을 사용한다.
 		return new OnboardingDetailResponse(status, members.signupCompleted(userId), ready,
 			ready && members.matchingEnabled(userId),
 			survey.sessionId(), survey.answeredCount(), survey.questionCount(), survey.nextQuestionId(),
+			submitted.sessionId(), submitted.analysis(), activeResultId,
 			versions.required(), versions.acknowledged(), clock.instant());
 	}
 
