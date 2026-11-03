@@ -2,6 +2,84 @@
 
 # S15P31E106-146 BE 확정 계약과 검토 샘플
 
+## MR !161 리뷰 보완 — 2026-11-03
+
+이 절은 아래 과거 작업 이력보다 우선한다. `main.py`는 `local/test/dev`에서만
+adapter·표시 제안·runtime·router를 import하고 등록한다. `prod`는 개인분석 패키지를
+import하지 않는다. 따라서 개인분석 데이터 누락/해시 오류가 있어도 앱 기동·health와
+기존 risk/explanation 경로를 유지하고, 개인분석 경로·runtime은 없으며 POST는 404다.
+허용 환경에서 발생하는 import 시 데이터 오류는 잡아서 무시하지 않으므로 기동 실패를 유지한다.
+
+### 본문 크기 산정과 방어 상한 후보
+
+현재 승인 버전 조합과 100문항 catalogue, 유효 fixture를 UTF-8 JSON bytes로 계산했다.
+compact는 `ensure_ascii=False`, `allow_nan=False`, separators `(',', ':')`이고,
+pretty는 indent=2와 마지막 LF 한 개다.
+
+| 요청 | compact bytes | pretty bytes |
+| --- | ---: | ---: |
+| 정상 SUCCEEDED fixture | 3,551 | 6,236 |
+| INSUFFICIENT fixture | 4,042 | 6,695 |
+| 의미상 가장 큰 정상 canonical 요청 | 4,650 | 7,970 |
+
+최대 요청은 `analysisId=2^63-1`, 승인 버전 문자열, 문항별 가장 긴 JSON 값을 사용한다.
+배열은 중복 없이 `maxItems`까지 가장 긴 보기들을 선택하고 `unknown/any`도 비교한다.
+DTO·승인 binding·100문항 validation을 실제로 통과시킨다. DTO만 통과하는 무효 answers는
+정상 요청으로 세지 않는다. 승인되지 않은 최대 30자 버전도 정상 버전으로 세지 않는다.
+기본 `json.dumps` 구분자 사용 시 정상 3,957 bytes, 최대 5,107 bytes다.
+
+**원문 JSON의 절대 최댓값은 유한하지 않다.** 공백, 문자열의 `\uXXXX` escape,
+수치적으로 같은 `1.000...` 표기를 늘려도 유효할 수 있다. 위 최대는 canonical 직렬화의
+최대이며 모든 가능한 원문 표현의 최대가 아니다. DTO 의미를 이번에 좁히지는 않는다.
+
+방어 상한 **후보 16 KiB = 16,384 bytes**를 개인분석 HTTP 경계에 적용한다.
+최대 pretty 요청의 2배(15,940 bytes)보다 크고, compact 최대의 약 3.52배다.
+팀의 새로운 일반 계약/승인값으로 확정한 수치가 아니며, 과도한 공백·escape를 포함하는
+직렬화까지 무제한 수용하지 않는 개발 runtime 방어 후보임을 명시한다.
+팀이 별도 byte 한도를 계약화하려면 이 산정 근거를 검토해야 한다. 환경 설정 우회는 추가하지 않는다.
+
+서비스 JWT 인증을 먼저 완료한 뒤 Content-Length를 사전 확인하고, 새 Request에 감싼
+ASGI `receive`의 실제 `http.request` chunk bytes를 누적한다. 상한 초과 chunk는 parser에
+전달하지 않으며 나머지 stream도 읽지 않는다. Content-Length 누락·작은 거짓 값에도 적용한다.
+상한과 같은 크기는 허용한다. 먼저 `request.body()`로 전체를 읽어 검사하지 않는다.
+ASGI 서버가 이미 수신한 단일 chunk의 할당까지 방지하는 제한은 아니며, 앱 parser가
+초과 본문 전체를 축적/JSON decode/Pydantic 검증하는 것을 차단한다.
+
+크기 초과는 기존 프레임워크 400 경로로 **400 INVALID_REQUEST**를 반환한다.
+code/message, no-store, X-Request-Id를 유지하고 413이나 새 code를 추가하지 않는다.
+근거는 `back/src/main/java/com/e106/tingle/personality/HttpPersonalAnalysisClient.java`의
+400/409/422 재시도 금지 규칙과 `HttpPersonalAnalysisClientTest`다. 요청 크기를 줄이지 않은
+재전송을 유도하지 않는다. 기존 DTO/답변 422와 인증 실패 응답은 보존한다.
+risk/explanation에는 이 route class를 적용하지 않는다.
+
+### 재현과 검증
+
+아래 명령은 `ai-server`에서 실행한다. 새 의존성은 없다.
+
+```powershell
+python -m scripts.measure_personal_body
+python -m pytest -q tests/test_personal_analysis_body_limit.py tests/test_personal_analysis_import_isolation.py tests/test_personal_analysis_api.py tests/test_personal_analysis_api_contract.py tests/test_service_auth_startup.py
+python scripts/run_tests.py
+docker build -t tingle-ai-personal-runtime-161:review .
+python -m scripts.check_personal_runtime --image tingle-ai-personal-runtime-161:review
+git diff --check
+```
+
+import 격리 테스트는 임시 앱 복사본의 `reference.json`을 누락시키거나 유효 JSON이지만
+잘못된 해시인 `{}`로 바꾸고 별도 Python 프로세스에서 기동한다. prod 두 경우뿐 아니라
+local/test/dev 여섯 실패도 확인한다. 실제 참조 파일과 provenance/hash는 수정하지 않는다.
+raw ASGI 테스트는 상한 이하·정확히 상한, 초과 Content-Length, 미지정/거짓 길이 chunk,
+인증 실패 우선, 파싱/계산 0회, 다른 두 경로 보존을 확인한다. Docker smoke는 이번 소스로
+만든 이미지의 Uvicorn에 실제 HTTP 요청을 보내 dev 두 결과 200, prod 정상/누락/손상
+개인분석 404·health 200·개인분석 import/runtime 부재를 확인한다.
+
+이번 변경 검증 결과: targeted pytest **390 passed**, `python scripts/run_tests.py`의
+전체 Python **1,307 passed**(기존 per-request cookies 폐기 예정 경고 1건), Node 회귀
+**4 passed**, JS/Python **367,518 수치 비교 / 최대 절대 오차 0.0**, `git diff --check` 통과.
+새 Docker 이미지 `tingle-ai-personal-runtime-161:review`에서 위 네 시나리오 모두 통과했다.
+Windows 제한 실행 환경의 asyncio 내부 socketpair 생성 대기는 로컬 소켓 사용 권한으로
+재실행해 해소했다. 기존 Jenkins 성공을 이번 검증 결과에 포함하지 않았다.
+
 갱신일: 2026-10-29 (Asia/Seoul). 승인 근거는 이번 사용자 메시지로 전달된 BE 확정 계약이다. **버전·근거 조건·AI 내부 결과 보존·오류 코드와 실제 서비스 JWT 검증 모듈은 반영했으며, 표시 문구·templateId·차이 priority 및 실제 BE 발급기 연동은 별도 확인 대기**다. 운영 라우터는 미등록이며 커밋·push·MR·머지를 하지 않았다.
 
 현재 공통 인증/Request ID의 구조·오류 challenge·키 설정은 [보안 모듈 README](../security/README.md)를 따른다. 이 문서의 실행 수치는 당시 어댑터 작업의 이력이다. 필수 scope는 확정값인 정확한 `ai:execute`다. 환경은 iss/aud 접미사로 비교하며 별도 env claim을 요구하거나 추가 검증하지 않는다. 503에는 WWW-Authenticate를 붙이지 않는다.

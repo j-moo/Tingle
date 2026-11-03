@@ -28,6 +28,37 @@ MESSAGES = {
     "INTERNAL_ERROR": "개인 분석 처리 중 오류가 발생했습니다.",
 }
 
+# Defensive transport ceiling candidate, not a new DTO/version contract.
+# Largest canonical 100-answer JSON: 4,650 B; pretty JSON: 7,970 B.
+# 16 KiB leaves >2x the latter. See scripts/measure_personal_body.py and README.
+PERSONAL_ANALYSIS_BODY_LIMIT = 16 * 1024
+
+
+def limited_body_request(request: Request) -> Request:
+    """Bound each receive before FastAPI accumulates it; called only after auth."""
+    for length in request.headers.getlist("content-length"):
+        try:
+            declared = int(length)
+        except ValueError:
+            raise HTTPException(status_code=400) from None
+        if declared < 0 or declared > PERSONAL_ANALYSIS_BODY_LIMIT:
+            raise HTTPException(status_code=400)
+
+    received = 0
+
+    async def receive():
+        nonlocal received
+        message = await request.receive()
+        if message["type"] == "http.request":
+            received += len(message.get("body", b""))
+            if received > PERSONAL_ANALYSIS_BODY_LIMIT:
+                # Never pass the overflowing chunk to the body parser.
+                raise HTTPException(status_code=400)
+        return message
+
+    # Share scope/state (including request ID), without mutating Request internals.
+    return Request(request.scope, receive=receive)
+
 
 class InternalAPIError(Exception):
     """Existing service verifiers may distinguish 401 from 403 using fixed codes."""
@@ -94,7 +125,7 @@ class PersonalAnalysisRoute(APIRoute):
             except Exception:
                 return error_response(503, "SERVICE_UNAVAILABLE")
             try:
-                response = await original_handler(request)
+                response = await original_handler(limited_body_request(request))
             except RequestValidationError as error:
                 # Never return errors(): it can contain input values and the body.
                 status = 400 if any(e["type"] == "json_invalid" for e in error.errors()) else 422

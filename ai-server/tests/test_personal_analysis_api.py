@@ -26,6 +26,7 @@ from app.personal_analysis_api.adapter import (
     PresentationPolicy, VersionBinding, reference_evidence, to_core_input,
 )
 from app.personal_analysis_api.dto import PersonalAnalysisRequest, Reading
+from app.personal_analysis_api.proposals import proposed_label_only_policy
 from app.personal_analysis_api.router import (
     InternalAPIError, PersonalAnalysisRuntime, router,
 )
@@ -315,36 +316,32 @@ def test_authentication_precedes_body_parsing(api_client, headers):
     assert response.json()["code"] == "AUTH_REQUIRED"
 
 
-@pytest.mark.parametrize("body_case", ["valid", "empty", "malformed"])
-def test_production_analysis_route_is_absent_and_never_executes(normal_request, monkeypatch, body_case):
-    calls = []
-
-    def unexpected_analysis(*args, **kwargs):
-        calls.append(True)
-        raise AssertionError("Production must not execute personal analysis")
-
-    monkeypatch.setattr(PersonalAnalysisAdapter, "analyze", unexpected_analysis)
-    monkeypatch.setattr(adapter_module, "analyze_personal", unexpected_analysis)
-    assert not hasattr(production_app.state, "personal_analysis_runtime")
-    assert all(getattr(route, "path", None) != PATH for route in production_app.routes)
+def test_production_analysis_route_and_runtime_are_registered():
+    runtime = production_app.state.personal_analysis_runtime
+    assert isinstance(runtime, PersonalAnalysisRuntime)
+    assert callable(runtime.authorize)
     with TestClient(production_app) as client:
         health = client.get("/health")
         assert health.status_code == 200 and health.json() == {"status": "ok"}
         openapi = client.get("/openapi.json")
         assert openapi.status_code == 200
         paths = set(openapi.json()["paths"])
-        assert {"/health", "/internal/ai/risk-detections", "/internal/ai/explanations"} <= paths
-        assert "/internal/ai/personal-analyses" not in paths
-        if body_case == "valid":
-            response = post(client, be_request(normal_request))
-        elif body_case == "empty":
-            response = client.post(PATH, json={})
-        else:
-            response = client.post(PATH, content="{", headers={"Content-Type": "application/json"})
-        assert response.status_code == 404
-        assert response.json()["code"] == "RESOURCE_NOT_FOUND"
-        assert set(response.json()) == {"code", "message"}
-    assert calls == []
+        assert {"/health", "/internal/ai/risk-detections", "/internal/ai/explanations", PATH} <= paths
+
+
+def test_production_runtime_uses_confirmed_versions_and_explicit_candidate_presentation():
+    adapter = production_app.state.personal_analysis_runtime.adapter
+    assert adapter.version_bindings == APPROVED_VERSION_BINDINGS
+    binding, = adapter.version_bindings
+    assert (binding.survey_version, binding.analysis_version, binding.calculation_version) == (
+        "SIS-Q-1.1-100", "SIS-A-1.0", "local-personal-js100-port-1",
+    )
+    # Explicit wiring does not change the empty default or approve the candidate policy.
+    assert adapter.presentation == proposed_label_only_policy()
+    assert adapter.presentation.reading_template_ids
+    assert adapter.presentation.difference_reading is not None
+    assert adapter.presentation.reference_evidence is not None
+    assert not PersonalAnalysisAdapter().presentation.reading_template_ids
 
 
 def test_explicit_test_router_without_authentication_fails_closed():

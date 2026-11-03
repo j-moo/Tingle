@@ -27,13 +27,22 @@ except Exception as error:
     print(json.dumps({"error": type(error).__name__, "message": str(error)}))
     raise SystemExit(7)
 from fastapi.testclient import TestClient
+from starlette.requests import Request
+from unittest.mock import patch
+from app.personal_analysis import core
+from app.personal_analysis_api.adapter import PersonalAnalysisAdapter
+from app.personal_analysis_api.review_samples import synthetic_request
 with TestClient(app) as client:
+    paths = client.get('/openapi.json').json()['paths']
     health = client.get('/health')
     denied = client.post('/internal/ai/risk-detections', json={})
     guarded = client.post('/internal/ai/risk-detections', json={}, headers={
         'Authorization': 'Bearer ' + os.environ['STARTUP_TEST_TOKEN'],
     })
-    unregistered = client.post('/internal/ai/personal-analyses', json={})
+    personal = client.post('/internal/ai/personal-analyses', json={})
+    personal_guarded = client.post('/internal/ai/personal-analyses', json={}, headers={
+        'Authorization': 'Bearer ' + os.environ['STARTUP_TEST_TOKEN'],
+    })
     result = {
         'ready': app.state.service_auth.is_ready,
         'health': health.json(), 'healthStatus': health.status_code,
@@ -42,8 +51,56 @@ with TestClient(app) as client:
         'deniedStatus': denied.status_code, 'denied': denied.json(),
         'guardedStatus': guarded.status_code, 'guarded': guarded.json(),
         'guardedCache': guarded.headers.get('cache-control'),
-        'unregisteredStatus': unregistered.status_code,
+        'personalStatus': personal.status_code, 'personal': personal.json(),
+        'personalGuardedStatus': personal_guarded.status_code,
+        'personalGuarded': personal_guarded.json(),
+        'personalRuntime': hasattr(app.state, 'personal_analysis_runtime'),
+        'personalPath': '/internal/ai/personal-analyses' in paths,
+        'paths': list(paths), 'environment': os.environ['APP_ENV'],
     }
+    with (
+        patch.object(PersonalAnalysisAdapter, 'analyze', autospec=True,
+                     side_effect=PersonalAnalysisAdapter.analyze) as adapter_call,
+        patch.object(core, 'classify_answers', wraps=core.classify_answers) as core_call,
+    ):
+        outcomes = {}
+        for kind in ('succeeded', 'insufficient'):
+            response = client.post('/internal/ai/personal-analyses', json=synthetic_request(kind), headers={
+                'Authorization': 'Bearer ' + os.environ['STARTUP_TEST_TOKEN'],
+            })
+            body = response.json()
+            outcomes[kind] = {
+                'http': response.status_code, 'status': body.get('status'),
+                'surveyVersion': body.get('surveyVersion'), 'analysisVersion': body.get('analysisVersion'),
+            }
+        result['personalOutcomes'] = outcomes
+        result['analysisCalls'] = {'adapter': adapter_call.call_count, 'core': core_call.call_count}
+    with (
+        patch.object(Request, 'body', side_effect=AssertionError('Authentication read the body')) as body_call,
+        patch.object(Request, 'json', side_effect=AssertionError('Authentication parsed JSON')) as json_call,
+        patch.object(PersonalAnalysisAdapter, 'analyze', side_effect=AssertionError('Authentication ran analysis')) as adapter_call,
+        patch.object(core, 'classify_answers', side_effect=AssertionError('Authentication ran calculation')) as core_call,
+    ):
+        failures = {}
+        for case, headers in (
+            ('missing', {}),
+            ('invalid', {'Authorization': 'Bearer not.a.jwt'}),
+            ('scope', {'Authorization': 'Bearer ' + os.environ['STARTUP_TEST_FORBIDDEN_TOKEN']}),
+        ):
+            response = client.post('/internal/ai/personal-analyses', content='{synthetic-sensitive-sentinel', headers={
+                **headers, 'Content-Type': 'application/json',
+            })
+            failures[case] = {'http': response.status_code, 'code': response.json()['code']}
+        with patch.object(app.state.service_auth, '_verifier', None):
+            response = client.post('/internal/ai/personal-analyses', content='{synthetic-sensitive-sentinel', headers={
+                'Authorization': 'Bearer ' + os.environ['STARTUP_TEST_TOKEN'], 'Content-Type': 'application/json',
+            })
+            failures['unavailable'] = {'http': response.status_code, 'code': response.json()['code']}
+        result['authFailures'] = failures
+        result['authGuardCalls'] = {
+            'body': body_call.call_count, 'json': json_call.call_count,
+            'adapter': adapter_call.call_count, 'core': core_call.call_count,
+        }
     if os.environ.get('STARTUP_TEST_RELOAD') == '1':
         configured = json.loads(os.environ['AI_SERVICE_PUBLIC_KEYS'])
         Path(next(iter(configured.values()))).write_text('broken-synthetic-key')
@@ -53,6 +110,9 @@ with TestClient(app) as client:
         result['after'] = after.json()
         result['afterCache'] = after.headers.get('cache-control')
         result['afterHealthStatus'] = client.get('/health').status_code
+        after_personal = client.post('/internal/ai/personal-analyses', json={})
+        result['afterPersonalStatus'] = after_personal.status_code
+        result['afterPersonal'] = after_personal.json()
     print(json.dumps(result))
 """
 
@@ -74,6 +134,11 @@ def probe(tmp_path, private, keys, *, environment="test", reload=False):
     env = {key: value for key, value in os.environ.items()
            if key.upper() in {"SYSTEMROOT", "WINDIR", "PATH", "TEMP", "TMP"}}
     now = int(time.time())
+    claims = {
+        "iss": f"urn:tingle:be:{environment}", "aud": f"urn:tingle:ai:{environment}", "sub": "tingle-be",
+        "iat": now, "nbf": now, "exp": now + 300,
+        "jti": str(uuid4()), "scope": "ai:execute",
+    }
     env.update({
         "APP_ENV": environment,
         "AI_SERVICE_PUBLIC_KEYS": json.dumps(keys),
@@ -82,11 +147,13 @@ def probe(tmp_path, private, keys, *, environment="test", reload=False):
         "PYTHONIOENCODING": "utf-8",
         "PYTHONDONTWRITEBYTECODE": "1",
         "STARTUP_TEST_RELOAD": "1" if reload else "0",
-        "STARTUP_TEST_TOKEN": jwt.encode({
-            "iss": "urn:tingle:be:test", "aud": "urn:tingle:ai:test", "sub": "tingle-be",
-            "iat": now, "nbf": now, "exp": now + 300,
-            "jti": str(uuid4()), "scope": "ai:execute",
-        }, private, algorithm="RS256", headers={"typ": "tingle-service+jwt", "kid": KID}),
+        "STARTUP_TEST_TOKEN": jwt.encode(
+            claims, private, algorithm="RS256", headers={"typ": "tingle-service+jwt", "kid": KID},
+        ),
+        "STARTUP_TEST_FORBIDDEN_TOKEN": jwt.encode(
+            {**claims, "scope": "other"}, private, algorithm="RS256",
+            headers={"typ": "tingle-service+jwt", "kid": KID},
+        ),
     })
     completed = subprocess.run(
         [sys.executable, "-c", PROBE], cwd=tmp_path, env=env,
@@ -96,13 +163,49 @@ def probe(tmp_path, private, keys, *, environment="test", reload=False):
     return completed.returncode, json.loads(completed.stdout)
 
 
-def assert_live(result):
+def assert_live(result, *, personal_enabled=True):
     assert result["healthStatus"] == 200
     assert result["health"] == {"status": "ok"}
     assert result["cache"] == "no-store"
     assert str(UUID(result["requestId"])) == result["requestId"]
     assert result["guardedCache"] == "no-store"
-    assert result["unregisteredStatus"] == 404
+    assert {"/health", "/internal/ai/risk-detections", "/internal/ai/explanations"} <= set(result["paths"])
+    assert result["personalRuntime"] is personal_enabled
+    assert result["personalPath"] is personal_enabled
+    if personal_enabled:
+        assert result["personalStatus"] == (401 if result["ready"] else 503)
+        assert result["personal"]["code"] == ("AUTH_REQUIRED" if result["ready"] else "SERVICE_UNAVAILABLE")
+    else:
+        assert result["personalStatus"] == result["personalGuardedStatus"] == 404
+        assert result["personal"]["code"] == result["personalGuarded"]["code"] == "RESOURCE_NOT_FOUND"
+
+
+@pytest.mark.parametrize("environment", ["local", "test", "dev", "prod"])
+def test_personal_analysis_environment_boundary_with_real_service_jwt(tmp_path, synthetic_private, environment):
+    public = write_public(tmp_path / "synthetic-public.pem", synthetic_private)
+    code, result = probe(tmp_path, synthetic_private, {KID: public}, environment=environment)
+    assert code == 0
+    assert result["environment"] == environment
+    assert result["ready"]
+    assert_live(result, personal_enabled=environment != "prod")
+    assert result["authGuardCalls"] == {"body": 0, "json": 0, "adapter": 0, "core": 0}
+    if environment == "prod":
+        assert result["analysisCalls"] == {"adapter": 0, "core": 0}
+        assert all(outcome["http"] == 404 for outcome in result["personalOutcomes"].values())
+        assert all(failure == {"http": 404, "code": "RESOURCE_NOT_FOUND"}
+                   for failure in result["authFailures"].values())
+    else:
+        assert result["analysisCalls"] == {"adapter": 2, "core": 2}
+        for kind, status in (("succeeded", "SUCCEEDED"), ("insufficient", "INSUFFICIENT")):
+            assert result["personalOutcomes"][kind] == {
+                "http": 200, "status": status, "surveyVersion": "SIS-Q-1.1-100", "analysisVersion": "SIS-A-1.0",
+            }
+        assert result["authFailures"] == {
+            "missing": {"http": 401, "code": "AUTH_REQUIRED"},
+            "invalid": {"http": 401, "code": "ACCESS_TOKEN_INVALID"},
+            "scope": {"http": 403, "code": "FORBIDDEN"},
+            "unavailable": {"http": 503, "code": "SERVICE_UNAVAILABLE"},
+        }
 
 
 def test_default_empty_keys_preserve_health_and_guarded_analysis(tmp_path, synthetic_private):
@@ -112,6 +215,8 @@ def test_default_empty_keys_preserve_health_and_guarded_analysis(tmp_path, synth
     assert not result["ready"]
     assert result["deniedStatus"] == result["guardedStatus"] == 503
     assert result["guarded"]["code"] == "SERVICE_UNAVAILABLE"
+    assert result["personalGuardedStatus"] == 503
+    assert result["personalGuarded"]["code"] == "SERVICE_UNAVAILABLE"
 
 
 def test_valid_synthetic_keys_start_without_enabling_model(tmp_path, synthetic_private):
@@ -124,6 +229,8 @@ def test_valid_synthetic_keys_start_without_enabling_model(tmp_path, synthetic_p
     assert result["denied"]["code"] == "AUTH_REQUIRED"
     assert result["guardedStatus"] == 422
     assert result["guarded"]["code"] == "POLICY_UNRESOLVED"
+    assert result["personalGuardedStatus"] == 422
+    assert result["personalGuarded"]["code"] == "INVALID_REQUEST"
 
 
 @pytest.mark.parametrize("case", ["missing", "malformed", "weak", "kid", "environment", "partial"])
@@ -162,3 +269,5 @@ def test_runtime_key_loss_remains_fail_closed_without_breaking_health(tmp_path, 
     assert result["after"]["code"] == "SERVICE_UNAVAILABLE"
     assert result["afterCache"] == "no-store"
     assert result["afterHealthStatus"] == 200
+    assert result["afterPersonalStatus"] == 503
+    assert result["afterPersonal"]["code"] == "SERVICE_UNAVAILABLE"
