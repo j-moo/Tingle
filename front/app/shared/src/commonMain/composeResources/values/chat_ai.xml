@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="chat_ai_questions_title">대화를 시작해 볼까요?</string>
+    <string name="chat_ai_pick_help">질문을 선택하면 입력창에 들어가요. 수정하고 직접 보내 주세요.</string>
+    <string name="chat_ai_general">가볍게 나눌 수 있는 일반 질문이에요. 선택 후 직접 보내 주세요.</string>
+    <string name="chat_ai_questions_pending">질문을 준비하고 있어요. 먼저 대화를 시작해도 좋아요.</string>
+    <string name="chat_ai_questions_failed">지금은 추천 질문을 보여드릴 수 없어요. 대화는 계속할 수 있어요.</string>
+    <string name="chat_ai_replace_title">작성 중인 메시지를 바꿀까요?</string>
+    <string name="chat_ai_replace_help">지금 입력한 내용이 선택한 질문으로 바뀌어요. 자동으로 전송되지는 않아요.</string>
+    <string name="chat_ai_replace">질문으로 바꾸기</string>
+    <string name="chat_ai_keep">작성 내용 유지</string>
+    <string name="chat_ai_protect">나를 위한 주의 안내</string>
+    <string name="chat_ai_respect">서로 존중하는 대화를 나눠 주세요</string>
+    <string name="chat_ai_notice_help">나에게만 보이는 AI 안내예요. AI가 문맥을 잘못 이해할 수 있어요.</string>
+    <string name="chat_ai_block">상대 차단하기</string>
+    <string name="chat_ai_close">안내 닫기</string>
+</resources>

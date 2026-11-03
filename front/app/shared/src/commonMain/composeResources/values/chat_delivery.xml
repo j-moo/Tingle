@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="chat_delivery_sending">전송 중…</string>
+    <string name="chat_delivery_failed">메시지를 보내지 못했어요.</string>
+    <string name="chat_delivery_unknown">전송 결과를 확인하지 못했어요.</string>
+    <string name="chat_delivery_checking">전송 결과를 확인하고 있어요…</string>
+    <string name="chat_delivery_rejected">이 메시지를 다시 보낼 수 없어요.</string>
+    <string name="chat_delivery_retry">다시 보내기</string>
+    <string name="chat_delivery_check">전송 결과 확인</string>
+</resources>

@@ -2,6 +2,8 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
     <application>
+        <!-- 실제 채팅 Route의 주기 조회를 검사하는 테스트 전용 화면. 배포 APK에는 포함되지 않는다. -->
+        <activity android:name="com.ssafy.e106.features.chat.ChatPollingTestActivity" android:exported="true" />
         <!-- 회전/재생성을 검증하는 테스트 전용 호스트이며 개발·운영 앱에는 포함되지 않는다. -->
         <activity android:name="com.ssafy.e106.features.profile.ProfileLifecycleTestActivity" android:exported="true" />
         <!-- 설문 저장·제출·전환 중 화면 재생성은 실제 Activity에서 검증한다. -->
