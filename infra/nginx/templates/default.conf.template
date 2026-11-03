@@ -143,6 +143,13 @@ server {
         set $up grafana:3000;
         proxy_pass http://$up;
     }
+
+    # 코드리뷰봇 — GitLab MR 웹훅 수신(POST 만). 봇 컨테이너(review-bot)가 꺼져 있어도 nginx 는 뜬다(변수 upstream)
+    location = /review-bot/hook {
+        limit_except POST { deny all; }
+        set $up review-bot:8090;
+        proxy_pass http://$up;
+    }
 }
 
 # 내부망 전용 — back 이 http://ai:8000 으로 부르면(ai 는 nginx 의 네트워크 별칭) 운영 색 ai-blue · ai-green 으로 넘긴다. 호스트에 열지 않는다.
