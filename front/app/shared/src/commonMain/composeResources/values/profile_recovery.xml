@@ -1,0 +1,5 @@
+<resources>
+    <string name="profile_unknown_exit_title">결과를 확인하지 못했어요. 그래도 나갈까요?</string>
+    <string name="profile_unknown_exit_body">요청이 서버에 반영됐을 수 있어요. 나가도 저장이 취소되거나 되돌려지지는 않아요. 다시 들어오면 저장 상태를 확인해 주세요.</string>
+    <string name="profile_unknown_exit_confirm">나가기</string>
+</resources>

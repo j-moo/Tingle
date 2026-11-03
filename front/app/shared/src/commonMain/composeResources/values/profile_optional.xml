@@ -1,0 +1,32 @@
+<resources>
+    <string name="optional_loading">선택 동의와 저장된 정보를 확인하고 있어요.</string>
+    <string name="optional_unavailable">선택 동의 상태를 확인하지 못했어요. 정보를 입력하려면 다시 조회해 주세요. 선택 정보 저장 없이 가입을 계속할 수 있어요.</string>
+    <string name="optional_unknown">요청 결과를 아직 확인하지 못했어요. 다시 조회한 뒤 계속해 주세요.</string>
+    <string name="optional_version_changed">동의 문서가 변경됐어요. 최신 내용을 확인하고 다시 선택해 주세요.</string>
+    <string name="optional_consent_required">동의 상태가 바뀌었어요. 현재 동의를 확인하고 다시 입력해 주세요.</string>
+    <string name="optional_changed">동의 변경을 저장했어요.</string>
+    <string name="optional_saved">정보를 저장했어요.</string>
+    <string name="optional_checked">현재 저장 상태를 확인했어요.</string>
+    <string name="optional_refresh">현재 상태 다시 조회</string>
+    <string name="optional_retry_consent">같은 동의 변경 다시 요청</string>
+    <string name="optional_skip">선택 정보 저장 없이 계속</string>
+    <string name="optional_skip_title">입력한 내용을 저장하지 않고 계속할까요?</string>
+    <string name="optional_skip_body">아직 저장하지 않은 자기소개와 종교 선택은 반영되지 않아요. 이미 저장한 동의와 사진은 유지돼요.</string>
+    <string name="optional_document">동의 내용 보기</string>
+    <string name="optional_document_missing">동의 전문이 준비되지 않았어요. 새 동의는 전문이 준비된 뒤 가능해요.</string>
+    <string name="optional_development_document">개발 앱: 전문이 준비되기 전에도 동의 저장을 시험할 수 있어요.</string>
+    <string name="optional_document_failed">동의 내용을 열지 못했어요. 잠시 후 다시 시도해 주세요.</string>
+    <string name="optional_grant_title">선택 동의를 저장할까요?</string>
+    <string name="optional_grant_body">동의 내용을 확인했다면 저장해 주세요. 해당 정보의 수집·이용과 상대 공개에 동의한 뒤 입력할 수 있어요.</string>
+    <string name="optional_withdraw_title">이 항목의 동의를 철회할까요?</string>
+    <string name="optional_withdraw_photo">철회하면 등록한 프로필 사진이 삭제돼요. 다시 동의해도 사진은 복구되지 않아요.</string>
+    <string name="optional_withdraw_introduction">철회하면 저장된 자기소개와 입력 중인 내용이 삭제돼요. 다시 동의해도 복구되지 않아요.</string>
+    <string name="optional_withdraw_religion">철회하면 저장된 종교와 선택 중인 값이 삭제돼요. 다시 동의해도 복구되지 않아요.</string>
+    <string name="optional_confirm">확인하고 저장</string>
+    <string name="optional_withdraw">철회하고 삭제</string>
+    <string name="optional_cancel">취소</string>
+    <string name="optional_photo_unavailable">등록한 사진을 불러오지 못했어요. 사진 등록 상태는 유지돼요.</string>
+    <string name="optional_photo_delete_body">등록한 사진을 삭제할까요? 사진 동의는 유지돼요.</string>
+    <string name="optional_platform_unavailable">현재 기기에서는 사진 선택을 지원하지 않아요.</string>
+    <string name="optional_religion_help">종교를 선택하지 않으면 정보가 저장되지 않아요. ‘공개하지 않음’도 저장되는 선택 값이므로 동의 후 선택할 수 있어요.</string>
+</resources>

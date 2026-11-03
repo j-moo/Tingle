@@ -5,9 +5,12 @@ import com.ssafy.e106.core.auth.*
 import com.ssafy.e106.core.network.*
 import com.ssafy.e106.features.onboarding.data.*
 import com.ssafy.e106.features.onboarding.ui.*
+import io.ktor.client.engine.mock.*
+import io.ktor.http.*
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.test.*
+import kotlinx.serialization.json.*
 import kotlin.test.*
 
 internal class TestSession(status: OnboardingStatus) : SessionStore {
@@ -42,11 +45,11 @@ class OnboardingTest {
     private fun vm(repo: TestAgreements, session: TestSession, allowUnpublishedAgreements: Boolean = false) =
         OnboardingViewModel(repo, session, TestAuth(session), allowUnpublishedAgreements).also { store.put("onboard", it) }
 
-    @Test fun requiredOnlyConsentSendsOptionalFalseAndUsesExactVersions() = runTest(dispatcher) {
+    @Test fun requiredOnlyConsentOmitsOptionalAndUsesExactVersions() = runTest(dispatcher) {
         val repo = TestAgreements(); val session = TestSession(OnboardingStatus.AGREEMENT_REQUIRED); val m = vm(repo, session)
         runCurrent(); assertFalse(m.state.value.canSubmit)
         m.check("TERMS", true); m.submit(); m.submit(); runCurrent()
-        assertEquals(listOf(listOf(AgreementAnswer("TERMS", "v1", true), AgreementAnswer("OPTIONAL", "v1", false))), repo.submitted)
+        assertEquals(listOf(listOf(AgreementAnswer("TERMS", "v1", true))), repo.submitted)
         assertTrue(m.state.value.submitted)
         assertEquals(1, session.refreshes)
         assertEquals(OnboardingStatus.AGREEMENT_REQUIRED, m.state.value.session?.status)
@@ -59,6 +62,56 @@ class OnboardingTest {
         m.submit(); m.load(); runCurrent()
         assertEquals(1, repo.submitted.size); assertEquals(2, session.refreshes)
     }
+    @Test fun optionalActionsAreIgnoredAndOptionalOnlyResponseCannotSubmit() = runTest(dispatcher) {
+        val repo = TestAgreements()
+        repo.items = repo.items.filterNot { it.required }
+        val m = vm(repo, TestSession(OnboardingStatus.AGREEMENT_REQUIRED), allowUnpublishedAgreements = true)
+        runCurrent()
+        m.check("OPTIONAL", true); m.submit(); runCurrent()
+        assertTrue(m.state.value.checked.isEmpty())
+        assertTrue(m.state.value.requiredAgreements.isEmpty())
+        assertFalse(m.state.value.canSubmit)
+        assertTrue(repo.submitted.isEmpty())
+    }
+    @Test fun requiredReconsentWirePayloadOmitsAllProfileChoices() = runTest(dispatcher) {
+        val optionalTypes = setOf("PROFILE_PHOTO", "PROFILE_INTRODUCTION", "PROFILE_RELIGION")
+        val bodies = mutableListOf<JsonArray>()
+        val client = createHttpClient("https://test/dev/api/", httpLog = false, engine = MockEngine { request ->
+            val response = when (request.method) {
+                HttpMethod.Get -> """{"agreements":[
+                    {"type":"TERMS","version":"v2","title":"terms","required":true,"contentUrl":"https://tingle.test/terms"},
+                    {"type":"ADULT","version":"v1","title":"adult","required":true},
+                    {"type":"PROFILE_PHOTO","version":"v3","title":"photo","required":false},
+                    {"type":"PROFILE_INTRODUCTION","version":"v4","title":"introduction","required":false},
+                    {"type":"PROFILE_RELIGION","version":"v5","title":"religion","required":false}]}"""
+                HttpMethod.Post -> {
+                    assertEquals("/dev/api/users/1/agreements", request.url.encodedPath)
+                    bodies += Json.parseToJsonElement(request.body.toByteArray().decodeToString())
+                        .jsonObject.getValue("agreements").jsonArray
+                    "{}"
+                }
+                else -> error("Unexpected request: ${request.method}")
+            }
+            respond(response, HttpStatusCode.OK, headersOf(HttpHeaders.ContentType, "application/json"))
+        })
+        try {
+            val session = TestSession(OnboardingStatus.AGREEMENT_REQUIRED)
+            val m = OnboardingViewModel(HttpOnboardingRepository(client), session, TestAuth(session))
+            store.put("onboard", m)
+            m.state.first { !it.busy }
+            assertNull(m.state.value.error)
+            assertEquals(5, m.state.value.agreements.size)
+            optionalTypes.forEach { m.check(it, true); m.check(it, false) }
+            assertTrue(m.state.value.checked.isEmpty())
+            m.check("TERMS", true); m.check("ADULT", true); m.submit()
+            m.state.first { !it.busy }
+            assertTrue(m.state.value.submitted, "Consent failed: ${m.state.value.error}")
+            val answers = bodies.single().map { it.jsonObject }
+            assertEquals(listOf("TERMS", "ADULT"), answers.map { it.getValue("type").jsonPrimitive.content })
+            assertEquals(listOf("v2", "v1"), answers.map { it.getValue("version").jsonPrimitive.content })
+            assertTrue(answers.all { it.getValue("agreed").jsonPrimitive.boolean })
+        } finally { client.close() }
+    }
     @Test fun outdatedVersionRequiresFreshChecksAndNeverCopiesOldConsent() = runTest(dispatcher) {
         val repo = TestAgreements(); val m = vm(repo, TestSession(OnboardingStatus.AGREEMENT_REQUIRED)); runCurrent()
         repo.onAgree = {
@@ -68,6 +121,9 @@ class OnboardingTest {
         m.check("TERMS", true); m.submit(); runCurrent()
         assertEquals("v2", m.state.value.agreements.first().version)
         assertTrue(m.state.value.checked.isEmpty()); assertFalse(m.state.value.canSubmit)
+        repo.onAgree = { ApiResult.Ok(Unit) }
+        m.check("TERMS", true); m.submit(); runCurrent()
+        assertEquals(listOf(AgreementAnswer("TERMS", "v2", true)), repo.submitted.last())
     }
     @Test fun unresolvedTermsCannotBeConsentedTo() = runTest(dispatcher) {
         val repo = TestAgreements(); repo.items = listOf(AgreementItem("TERMS", "v1", "terms", true, "https://example.com/terms"))
@@ -93,7 +149,7 @@ class OnboardingTest {
         assertTrue(m.state.value.canSubmit)
         m.submit(); m.submit(); runCurrent()
         assertEquals(listOf(listOf(AgreementAnswer("TERMS", "v1", true),
-            AgreementAnswer("PRIVACY", "v2", true), AgreementAnswer("OPTIONAL", "v3", false))), repo.submitted)
+            AgreementAnswer("PRIVACY", "v2", true))), repo.submitted)
         assertTrue(m.state.value.submitted)
         assertEquals(AppError.Offline, m.state.value.error)
         assertEquals(OnboardingStatus.AGREEMENT_REQUIRED, m.state.value.session?.status)

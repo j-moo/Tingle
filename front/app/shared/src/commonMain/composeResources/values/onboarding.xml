@@ -1,7 +1,8 @@
 <resources>
     <string name="onboarding_title">가입 준비</string>
     <string name="onboarding_agreements_title">Tingle을 시작하기 전에</string>
-    <string name="onboarding_agreements_body">각 항목을 확인하고 동의해 주세요. 선택 항목에 동의하지 않아도 가입할 수 있어요.</string>
+    <string name="onboarding_agreements_body">서비스 이용에 필요한 필수 항목을 확인하고 동의해 주세요.</string>
+    <string name="onboarding_optional_separate">사진·자기소개·종교의 선택 동의는 프로필에서 별도로 관리해요. 이 화면에서는 기존 선택 동의를 변경하지 않아요.</string>
     <string name="onboarding_required">[필수] %1$s</string>
     <string name="onboarding_optional">[선택] %1$s</string>
     <string name="onboarding_read_terms">내용 보기</string>
