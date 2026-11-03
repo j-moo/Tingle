@@ -1,5 +1,10 @@
 package com.ssafy.e106.core.auth
 
+import org.koin.core.qualifier.named
+import kotlinx.coroutines.flow.StateFlow
+import com.ssafy.e106.di.APP_FOREGROUND
+import com.ssafy.e106.core.realtime.DefaultChatEvents
+import com.ssafy.e106.core.realtime.ChatEvents
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.emptyPreferences
@@ -572,6 +577,7 @@ class SessionAuthTest {
                         single<SocialLogin> { NoSocial }                 // 실제 SDK 는 Android Context 가 필요하다
                         single<DataStore<Preferences>> { prefsFile }     // 실제 파일도 Android Context 가 필요하다
                         single<PushDevice> { noPush }                    // FCM 도
+                        single<StateFlow<Boolean>>(named(APP_FOREGROUND)) { MutableStateFlow(true) }   // 앞/뒤 상태는 Application 이 필요하다
                     },
                 )
             }.koin
@@ -580,6 +586,7 @@ class SessionAuthTest {
                 assertTrue(koin.get<SessionStore>() === session)
                 assertTrue(koin.get<HttpClient>() === session.client)
                 assertTrue(koin.get<AuthRepository>() is DefaultAuthRepository)
+                assertTrue(koin.get<ChatEvents>() is DefaultChatEvents)
                 assertTrue(koin.get<PushEvents>() === koin.get<DefaultPushEvents>())   // 탭 화면과 화면 쪽이 같은 대기열을 본다
                 withContext(Dispatchers.Default) { withTimeout(5_000) { session.state.first { it == Session.SignedOut } } }   // restore 가 시작됐다
                 withContext(Dispatchers.Default) { withTimeout(5_000) { refreshed.subscriptionCount.first { it > 0 } } }   // 푸시 등록기도 시작됐다

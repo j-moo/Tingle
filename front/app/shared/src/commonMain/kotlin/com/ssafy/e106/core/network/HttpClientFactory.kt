@@ -10,6 +10,7 @@ import io.ktor.client.plugins.logging.LogLevel
 import io.ktor.client.plugins.logging.Logger
 import io.ktor.client.plugins.logging.Logging
 import io.ktor.client.plugins.logging.SIMPLE
+import io.ktor.client.plugins.websocket.WebSockets
 import io.ktor.client.request.header
 import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
@@ -36,6 +37,7 @@ internal fun createHttpClient(
         expectSuccess = false                            // 4xx·5xx 도 예외 대신 응답으로 받아 call 이 AppError 로 바꾼다
         install(ContentNegotiation) { json(ApiJson) }
         install(HttpTimeout) { connectTimeoutMillis = 10_000; requestTimeoutMillis = 15_000 }
+        install(WebSockets)                              // 채팅 실시간 수신(core/realtime). ping 은 엔진 설정([platformEngine])
         if (httpLog) install(Logging) {                  // debug 빌드만. release 는 URL 도 남기지 않는다
             logger = Logger.SIMPLE
             level = LogLevel.INFO                        // URL·상태만. 본문 로그 금지(로그인·재발급 본문에 토큰이 있다)
@@ -48,6 +50,10 @@ internal fun createHttpClient(
         }
         if (session != null) installSessionAuth(baseUrl, session, refreshRetryDelays)
     }
-    // 엔진을 안 넘기면 Ktor 가 의존성에 있는 엔진(androidMain 의 OkHttp)을 고른다
-    return if (engine != null) HttpClient(engine, config) else HttpClient(config)
+    // 엔진을 안 넘기면 플랫폼 엔진(Android 는 WebSocket ping 을 켠 OkHttp), 없으면 Ktor 가 의존성에서 고른다
+    val chosen = engine ?: platformEngine()
+    return if (chosen != null) HttpClient(chosen, config) else HttpClient(config)
 }
+
+/** 플랫폼 HTTP 엔진. null 이면 Ktor 가 의존성에 있는 엔진을 고른다 */
+internal expect fun platformEngine(): HttpClientEngine?
