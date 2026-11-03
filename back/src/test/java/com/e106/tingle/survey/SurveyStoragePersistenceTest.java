@@ -87,7 +87,7 @@ class SurveyStoragePersistenceTest {
 		assertThat(session.answers()).isEmpty();
 		assertThat(session.questionCount()).isEqualTo(100);
 		assertThat(jdbc.queryForObject("select count(*) from information_schema.tables where table_schema='public' "
-			+ "and table_type='BASE TABLE'", Integer.class)).isEqualTo(25);
+			+ "and table_type='BASE TABLE'", Integer.class)).isEqualTo(26);
 		assertThat(jdbc.queryForObject("select to_regclass('public.survey_responses')::text", String.class))
 			.isNull();
 		assertThat(jdbc.queryForMap("select legacy_public_id,client_request_id,response_context,definition_snapshot,"

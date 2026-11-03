@@ -72,6 +72,117 @@ class SafetyIntegrationTest extends IntegrationTestSupport {
 	}
 
 	@Test
+	void blockPersistsStableOwnedUuidSeparatelyFromHistoricalEvidence() throws Exception {
+		UUID key = UUID.randomUUID();
+		Map<String, Object> body = Map.of("chatRoomId", room.getId());
+		read(block(first, key, body));
+		Map<String, Object> stored = jdbc.queryForMap("select * from user_block where owner_id=?", firstId);
+		assertThat(stored.get("id")).isInstanceOf(UUID.class);
+		assertThat(stored.get("target_id")).isEqualTo(secondId);
+		assertThat(stored.get("matching_id")).isEqualTo(room.getMatchingId());
+		read(block(first, key, body));
+		read(block(first, UUID.randomUUID(), body));
+		assertThat(jdbc.queryForMap("select * from user_block where owner_id=?", firstId)).isEqualTo(stored);
+		assertThat(jdbc.queryForObject("select count(*) from user_block where owner_id=?",
+			Long.class, secondId)).isZero();
+	}
+
+	@Test
+	void legacyBlockIsImportedOnceAndNeverRecreatedAfterRelationRemoval() throws Exception {
+		UUID key = UUID.randomUUID();
+		Map<String, Object> body = Map.of("chatRoomId", room.getId());
+		read(block(first, key, body));
+		jdbc.update("delete from user_block where owner_id=?", firstId);
+		jdbc.update("update matching_participant set request_state=request_state-'blockRelationTracked' "
+			+ "where matching_id=? and user_id=?", room.getMatchingId(), firstId);
+		JsonNode replayed = read(block(first, key, body));
+		assertThat(replayed.path("proposalId").asLong()).isEqualTo(room.getMatchingId());
+		assertThat(jdbc.queryForObject("select count(*) from user_block where owner_id=?",
+			Long.class, firstId)).isEqualTo(1);
+		jdbc.update("delete from user_block where owner_id=?", firstId);
+		read(block(first, key, body));
+		assertThat(jdbc.queryForObject("select count(*) from user_block where owner_id=?",
+			Long.class, firstId)).isZero();
+		assertThat(jdbc.queryForObject("select blocked_at is not null from matching_participant "
+			+ "where matching_id=? and user_id=?", Boolean.class, room.getMatchingId(), firstId)).isTrue();
+	}
+
+	@Test
+	void unblockEnforcesOwnershipAndReplayAndNeverRestoresHistoricalRooms() throws Exception {
+		UUID blockKey = UUID.randomUUID();
+		Map<String, Object> body = Map.of("chatRoomId", room.getId());
+		read(block(first, blockKey, body));
+		JsonNode page = read(perform(get("/api/blocks"), first, null));
+		assertThat(page.path("items").size()).isEqualTo(1);
+		String id = page.path("items").get(0).path("blockId").asString();
+		assertThat(UUID.fromString(id)).isNotNull();
+		assertThat(read(perform(get("/api/blocks"), second, null)).path("items").size()).isZero();
+		unblock(second, UUID.randomUUID(), id).andExpect(status().isNotFound());
+		long version = settingsVersion(firstId);
+		UUID key = UUID.randomUUID();
+		unblock(first, key, id).andExpect(status().isNoContent());
+		unblock(first, key, id).andExpect(status().isNoContent());
+		assertThat(settingsVersion(firstId)).isEqualTo(version + 1);
+		unblock(first, UUID.randomUUID(), id).andExpect(status().isNotFound());
+		unblock(first, key, UUID.randomUUID().toString()).andExpect(status().isConflict());
+		read(block(first, blockKey, body));
+		assertThat(read(perform(get("/api/blocks"), first, null)).path("items").size()).isZero();
+		for (JsonNode actor : List.of(first, second)) {
+			perform(get(roomPath() + "/messages"), actor, null).andExpect(status().isGone());
+			perform(get(roomPath()), actor, null).andExpect(status().isOk())
+				.andExpect(jsonPath("$.canRead").value(false));
+		}
+	}
+
+	@Test
+	void bilateralBlocksAndConcurrentUnblockRetriesRemainIndependent() throws Exception {
+		read(block(first, UUID.randomUUID(), Map.of("chatRoomId", room.getId())));
+		read(block(second, UUID.randomUUID(), Map.of("chatRoomId", room.getId())));
+		String id = read(perform(get("/api/blocks"), first, null)).path("items").get(0).path("blockId").asString();
+		UUID key = UUID.randomUUID();
+		long version = settingsVersion(firstId);
+		runConcurrently(() -> unblock(first, key, id).andExpect(status().isNoContent()),
+			() -> unblock(first, key, id).andExpect(status().isNoContent()));
+		assertThat(settingsVersion(firstId)).isEqualTo(version + 1);
+		assertThat(read(perform(get("/api/blocks"), first, null)).path("items").size()).isZero();
+		assertThat(read(perform(get("/api/blocks"), second, null)).path("items").size()).isEqualTo(1);
+	}
+
+	@Test
+	void listBackfillCursorAndInvalidInputsRespectOwnerBoundary() throws Exception {
+		read(block(first, UUID.randomUUID(), Map.of("chatRoomId", room.getId())));
+		jdbc.update("delete from user_block where owner_id=?", firstId);
+		jdbc.update("update matching_participant set request_state=request_state-'blockRelationTracked' "
+			+ "where matching_id=? and user_id=?", room.getMatchingId(), firstId);
+		assertThat(read(perform(get("/api/blocks"), first, null)).path("items").size()).isEqualTo(1);
+		jdbc.update("insert into user_block values (?,?,?,?,?)", UUID.randomUUID(), firstId, 99999999L,
+			room.getMatchingId(), Timestamp.from(clock.instant()));
+		JsonNode page = read(perform(get("/api/blocks").param("limit", "1"), first, null));
+		String cursor = page.path("nextCursor").asString();
+		JsonNode next = read(perform(get("/api/blocks").param("limit", "1").param("cursor", cursor), first, null));
+		assertThat(next.path("items").size()).isEqualTo(1);
+		assertThat(next.path("items").get(0).path("blockId").asString())
+			.isNotEqualTo(page.path("items").get(0).path("blockId").asString());
+		assertThat(next.path("nextCursor").isNull()).isTrue();
+		perform(get("/api/blocks").param("cursor", cursor), second, null).andExpect(status().isBadRequest());
+		perform(get("/api/blocks").param("cursor", "bad"), first, null).andExpect(status().isBadRequest());
+		perform(get("/api/blocks").param("limit", "0"), first, null).andExpect(status().isBadRequest());
+		String id = page.path("items").get(0).path("blockId").asString();
+		perform(delete("/api/blocks/" + id), first, null).andExpect(status().isBadRequest());
+		perform(delete("/api/blocks/" + id).header("Idempotency-Key", UUID.randomUUID()), first, "{}")
+			.andExpect(status().isBadRequest());
+		UUID key = UUID.randomUUID();
+		unblock(first, key, id).andExpect(status().isNoContent());
+		logout(first.path("refreshToken").asString()).andExpect(status().isNoContent());
+		unblock(first, key, id).andExpect(status().isUnauthorized());
+		perform(get("/api/blocks"), first, null).andExpect(status().isUnauthorized());
+	}
+
+	private ResultActions unblock(JsonNode actor, UUID key, String id) throws Exception {
+		return perform(delete("/api/blocks/" + id).header("Idempotency-Key", key), actor, null);
+	}
+
+	@Test
 	void reportPersistsBothSendersEvidenceAndFirstNinetyDayRetention() throws Exception {
 		long ownMessage = send(firstId, "own evidence");
 		long partnerMessage = send(secondId, "partner evidence");

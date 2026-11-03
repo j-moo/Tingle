@@ -30,7 +30,7 @@ class JpaWholeStorageIntegrationTest {
 	private JsonMapper mapper;
 
 	@Test
-	@DisplayName("실제 전체 앱의 JPA 생성은 승인한 25표·226칼럼만 만들고 구 테이블을 추가하지 않는다")
+	@DisplayName("실제 전체 앱의 JPA 생성은 승인한 26표·231칼럼만 만들고 구 테이블을 추가하지 않는다")
 	void generatesExactlyCanonicalTablesAndColumnsWithoutBootstrapSql() throws Exception {
 		JsonNode design = mapper.readTree(new ClassPathResource("database/tables.json")
 			.getContentAsString(StandardCharsets.UTF_8));
@@ -55,13 +55,13 @@ class JpaWholeStorageIntegrationTest {
 				}
 				return rs.getString(1) + "." + rs.getString(2) + ":" + type + ":" + rs.getString(5);
 			});
-		assertThat(actual).containsExactlyInAnyOrderElementsOf(expected).hasSize(226)
+		assertThat(actual).containsExactlyInAnyOrderElementsOf(expected).hasSize(231)
 			.contains("chat_message.push_state:jsonb:NO");
 		assertThat(jdbc.queryForObject("select column_default from information_schema.columns "
 			+ "where table_schema='public' and table_name='chat_message' and column_name='push_state'",
 			String.class)).isEqualTo("'{}'::jsonb");
 		assertThat(jdbc.queryForObject("select count(*) from information_schema.tables "
-			+ "where table_schema='public' and table_type='BASE TABLE'", Integer.class)).isEqualTo(25);
+			+ "where table_schema='public' and table_type='BASE TABLE'", Integer.class)).isEqualTo(26);
 		assertThat(jdbc.queryForObject("select count(*) from information_schema.table_constraints "
 			+ "where constraint_schema='public' and constraint_type='FOREIGN KEY'", Integer.class)).isZero();
 	}
