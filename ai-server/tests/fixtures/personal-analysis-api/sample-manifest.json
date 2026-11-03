@@ -1,0 +1,30 @@
+{
+  "purpose": "BE review only; synthetic inputs; no HTTP authentication or production activation",
+  "confirmed": {
+    "surveyVersion": "SIS-Q-1.1-100",
+    "analysisVersion": "SIS-A-1.0",
+    "calculationVersion": "local-personal-js100-port-1",
+    "evidence": "Participating score inputs plus explicitly consumed Q096/Q098 conditions (rule B)",
+    "insufficient": "AI result fields preserved; public filtering belongs to BE"
+  },
+  "presentation": {
+    "approval": "UNAPPROVED",
+    "policy": "label-only-gap-priority-2-1",
+    "templateIds": "15 fixed reading IDs and PA-D-SELF-WISH-FIT remain candidates",
+    "gapText": "label/self/wish only; fit remains in core selection/order, omitted from display text",
+    "priority": "First gap 2, second gap 1; proposal, not a production severity score"
+  },
+  "source": {
+    "coreSha256": "c5eb1fb52f64dc782852d85dc177d79cd26500256da11d26383fc69041cf86b2",
+    "packagedSha256": {
+      "reference.json": "9f4d0c762a713c8c8bb8f69eb45c9e6206a33857ff482a4988d74db383585658",
+      "questionnaire-SIS-Q-1.1-100.json": "d1199ef59596e78e2c2d3df8884a72a2b97c63099e443da7b9103f3d1e7bcb6e"
+    }
+  },
+  "files": {
+    "succeeded.request.json": "fde0a769f2b8521c890cd23de3a1fad6d854f3cddbe5f1ded6adbc0bef165038",
+    "succeeded.response.proposal.json": "6df91f2fe13f744974fc05f74858140eb35466059078fd11f905d9fb9d581b2f",
+    "insufficient.request.json": "ed45b0c61b6014b855d40b8d7ea63d2c4960ec6153d255fe443056d5fb0df47c",
+    "insufficient.response.proposal.json": "c4c006c80c179e9d4427db37caa064d7ca89a52b5e74415d01b66b185155280d"
+  }
+}
