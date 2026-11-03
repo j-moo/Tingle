@@ -23,16 +23,25 @@ SENTINEL = "synthetic-sensitive-sentinel"
 CONTRACT_REALM = 'Bearer realm="tingle-ai"'
 
 
-@pytest.fixture
-def secured_client(verifier):
-    host = FastAPI()
-    host.state.personal_analysis_runtime = PersonalAnalysisRuntime(
-        authorize=verifier,
-        # Explicitly UNAPPROVED policy in this test app only.
-        adapter=PersonalAnalysisAdapter(presentation=proposed_label_only_policy()),
-    )
-    host.include_router(router)
-    with TestClient(RequestIDMiddleware(host)) as client:
+@pytest.fixture(params=["isolated", "production"])
+def secured_client(request, verifier, monkeypatch):
+    if request.param == "production":
+        host = production_app
+        # Keep the shared ServiceAuthenticator and production authorize wrapper.
+        # Only its loaded keys/clock are replaced with the real in-memory test verifier.
+        monkeypatch.setattr(host.state.service_auth, "_verifier", verifier)
+        # Restore the production runtime after tests that replace its adapter.
+        monkeypatch.setattr(host.state, "personal_analysis_runtime", host.state.personal_analysis_runtime)
+        app = host
+    else:
+        host = FastAPI()
+        host.state.personal_analysis_runtime = PersonalAnalysisRuntime(
+            authorize=verifier,
+            adapter=PersonalAnalysisAdapter(presentation=proposed_label_only_policy()),
+        )
+        host.include_router(router)
+        app = RequestIDMiddleware(host)
+    with TestClient(app) as client:
         yield client, host
 
 
@@ -132,6 +141,22 @@ def test_auth_success_preserves_sanitized_body_errors(secured_client,token_facto
     assert UUID(response.headers["X-Request-Id"]).version == 4
 
 
+@pytest.mark.parametrize("field", ["surveyVersion", "analysisVersion"])
+def test_authenticated_unsupported_version_precedes_calculation(secured_client, token_factory, monkeypatch, field):
+    payload = synthetic_request("succeeded")
+    payload[field] = "unsupported"
+
+    def no_calculation(*_args, **_kwargs):
+        pytest.fail("Unsupported versions executed the calculator")
+
+    monkeypatch.setattr(core, "classify_answers", no_calculation)
+    response = secured_client[0].post(PATH, json=payload, headers={
+        "Authorization": f"Bearer {token_factory()}",
+    })
+    assert response.status_code == 409
+    assert response.json()["code"] == "ANALYSIS_VERSION_UNSUPPORTED"
+
+
 def test_presentation_remains_unapproved_by_default(secured_client,token_factory):
     client,host=secured_client
     runtime=host.state.personal_analysis_runtime
@@ -141,14 +166,26 @@ def test_presentation_remains_unapproved_by_default(secured_client,token_factory
 
 
 @pytest.mark.parametrize("body", ["{}","{",None])
-def test_production_routes_still_closed(body,monkeypatch):
-    monkeypatch.setattr(PersonalAnalysisAdapter,"analyze",lambda *_:pytest.fail("Production route executed"))
+def test_production_unconfigured_auth_precedes_body_read_and_calculation(body,monkeypatch):
+    monkeypatch.setattr(production_app.state.service_auth, "_verifier", None)
+    async def no_body(*_args, **_kwargs):
+        pytest.fail("Unconfigured authentication read the body")
+    def no_calculation(*_args, **_kwargs):
+        pytest.fail("Unconfigured authentication executed the calculator")
+    monkeypatch.setattr(Request, "body", no_body)
+    monkeypatch.setattr(Request, "json", no_body)
+    monkeypatch.setattr(PersonalAnalysisAdapter, "analyze", no_calculation)
+    monkeypatch.setattr(core, "classify_answers", no_calculation)
     with TestClient(production_app) as client:
         assert client.get("/health").json() == {"status":"ok"}
         paths = set(client.get("/openapi.json").json()["paths"])
-        assert {"/health", "/internal/ai/risk-detections", "/internal/ai/explanations"} <= paths
-        assert "/internal/ai/personal-analyses" not in paths
-        assert client.post(PATH,content=body).status_code == 404
+        assert {"/health", "/internal/ai/risk-detections", "/internal/ai/explanations", PATH} <= paths
+        assert hasattr(production_app.state, "personal_analysis_runtime")
+        response = client.post(PATH,content=body)
+        assert response.status_code == 503
+        assert response.json()["code"] == "SERVICE_UNAVAILABLE"
+        assert response.headers["Cache-Control"] == "no-store"
+        assert "WWW-Authenticate" not in response.headers
 
 
 @pytest.mark.parametrize("changes,code", [({},None),({"scope":"other"},"FORBIDDEN"),({"sub":"user"},"ACCESS_TOKEN_INVALID")])

@@ -1,10 +1,10 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException, Request
 
 from app.config import settings
 from app.match_explanation.runtime import create_runtime_router
 from app.middleware.request_id import RequestIdMiddleware, install_error_handlers
 from app.risk_detection.http_api import ReleaseCatalog, create_router
-from app.security.service_auth import ServiceAuthenticator, ServiceAuthSettings
+from app.security.service_auth import ServiceAuthenticator, ServiceAuthError, ServiceAuthSettings
 
 app = FastAPI(
     title="Suddenly I See AI Server",
@@ -25,6 +25,32 @@ app.include_router(create_router(
 app.include_router(create_runtime_router(
     service_auth, settings.explanation_release_descriptor_files,
 ))
+
+
+def authorize_personal_analysis(request: Request) -> bool:
+    # The personal route expects exact True and ServiceAuthError, not claims/HTTPException.
+    try:
+        service_auth(request)
+    except HTTPException as error:
+        raise ServiceAuthError(error.detail["code"]) from None
+    return True
+
+
+if settings.app_env in {"local", "test", "dev"}:
+    # Importing the adapter loads and verifies personal-only reference data.
+    # Disabled environments must not depend on those files, even at app import.
+    from app.personal_analysis_api.adapter import PersonalAnalysisAdapter
+    from app.personal_analysis_api.proposals import proposed_label_only_policy
+    from app.personal_analysis_api.router import PersonalAnalysisRuntime, router as personal_analysis_router
+
+    app.state.personal_analysis_runtime = PersonalAnalysisRuntime(
+        authorize=authorize_personal_analysis,
+        adapter=PersonalAnalysisAdapter(
+            # Explicit candidate for development E2E; wording/template approval is still pending.
+            presentation=proposed_label_only_policy(),
+        ),
+    )
+    app.include_router(personal_analysis_router)
 
 
 @app.get("/health", tags=["health"])

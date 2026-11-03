@@ -1,4 +1,4 @@
-"""HTTP wiring exists only in this test app, pending BE path/auth agreement."""
+"""Core DTO HTTP tests use a local host; production exposes the BE adapter."""
 
 import pytest
 from fastapi import FastAPI, Request
@@ -83,6 +83,6 @@ def test_calculation_failure_is_not_insufficient(local_client, normal_request, m
     assert "synthetic-private-token" not in caplog.text
 
 
-def test_no_production_analysis_route_is_published():
+def test_production_publishes_internal_adapter_without_test_route():
     assert "/_test/personal-analysis" not in production_app.openapi()["paths"]
-    assert "/internal/ai/personal-analyses" not in production_app.openapi()["paths"]
+    assert "/internal/ai/personal-analyses" in production_app.openapi()["paths"]
