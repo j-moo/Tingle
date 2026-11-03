@@ -18,9 +18,10 @@ data class OnboardingState(
     val purchaseUrl: String? = null,
     val allowUnpublishedAgreements: Boolean = false,
 ) {
-    fun canCheck(item: AgreementItem) = item.canReview || allowUnpublishedAgreements
-    val canSubmit get() = !busy && !submitted && agreements.isNotEmpty() &&
-        agreements.all { !it.required || (canCheck(it) && it.type in checked) }
+    val requiredAgreements get() = agreements.filter { it.required }
+    fun canCheck(item: AgreementItem) = item.required && (item.canReview || allowUnpublishedAgreements)
+    val canSubmit get() = !busy && !submitted && requiredAgreements.isNotEmpty() &&
+        requiredAgreements.all { canCheck(it) && it.type in checked }
 }
 
 /** Activity survives rotation; session changes cancel work and erase the previous account's state. */
@@ -87,7 +88,8 @@ class OnboardingViewModel(
         val session = s.session ?: return
         if (!s.canSubmit || session != sessions.state.value) return
         launchWork { stamp ->
-            when (val result = repository.agree(session.userId, s.agreements.map { AgreementAnswer(it.type, it.version, it.type in s.checked) })) {
+            // Omission preserves optional consent. Sending false would withdraw it and delete profile data.
+            when (val result = repository.agree(session.userId, s.requiredAgreements.map { AgreementAnswer(it.type, it.version, true) })) {
                 is ApiResult.Ok -> if (valid(stamp)) {
                     mutable.update { it.copy(submitted = true) }
                     refreshInside(stamp)

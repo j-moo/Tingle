@@ -1,0 +1,16 @@
+<resources>
+    <string name="profile_manage_title">내 프로필</string>
+    <string name="profile_manage_entry">내 프로필 확인·수정</string>
+    <string name="profile_manage_dev_entry">저장된 프로필 수정 · 개발용</string>
+    <string name="profile_manage_dev_notice">개발용 테스트 · 실제 개발 서버의 프로필을 수정해요. 가입 단계를 완료한 것으로 처리하지 않아요.</string>
+    <string name="profile_manage_load">프로필을 불러오고 있어요.</string>
+    <string name="profile_manage_invalid">수정할 프로필을 확인하지 못했어요. 기본 정보와 흡연·음주 입력을 먼저 저장해 주세요.</string>
+    <string name="profile_manage_reload">프로필 다시 조회</string>
+    <string name="profile_manage_saved">프로필을 저장했어요.</string>
+    <string name="profile_manage_unknown">저장 결과를 확인하지 못했어요. 입력은 유지했으니 서버 상태를 다시 조회해 주세요. 자동으로 다시 저장하지 않아요.</string>
+    <string name="profile_manage_optional">사진·자기소개·종교 관리</string>
+    <string name="profile_manage_optional_help">사진·자기소개·종교를 바꾸려면 화면 위쪽의 ‘사진·자기소개·종교 관리’를 눌러 주세요. 수정 중인 닉네임·흡연·음주는 그대로 유지돼요.</string>
+    <string name="profile_manage_none">등록하지 않음</string>
+    <string name="profile_manage_optional_save">선택 정보 저장</string>
+    <string name="profile_manage_optional_back">저장 없이 돌아가기</string>
+</resources>

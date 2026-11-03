@@ -5,6 +5,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalUriHandler
@@ -15,15 +16,40 @@ import com.ssafy.e106.core.auth.*
 import com.ssafy.e106.core.ui.components.*
 import com.ssafy.e106.core.ui.theme.*
 import com.ssafy.e106.resources.*
+import com.ssafy.e106.features.profile.ui.ProfileRoute
+import com.ssafy.e106.features.profile.ui.ProfileManagementRoute
+import com.ssafy.e106.features.profile.DevelopmentProfileAccess
 import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.viewmodel.koinViewModel
+import org.koin.compose.koinInject
 
 @Composable
-fun OnboardingRoute(session: Session.SignedIn, model: OnboardingViewModel = koinViewModel()) {
+fun OnboardingRoute(
+    session: Session.SignedIn,
+    model: OnboardingViewModel = koinViewModel(),
+    profileAccess: DevelopmentProfileAccess = koinInject(),
+) {
     val state by model.state.collectAsStateWithLifecycle()
+    var developmentProfile by rememberSaveable(session.userId, session.status, session.isReady) { mutableStateOf(false) }
+    val canSkip = profileAccess.canSkipKeyring(session)
+    val canManage = profileAccess.canManageProfile(session)
+    var manageProfile by rememberSaveable(session.userId, session.status, session.isReady) { mutableStateOf(false) }
     when {
         state.session != session -> OnboardingPanel(stringResource(Res.string.onboarding_title)) { Text(stringResource(Res.string.onboarding_loading)) }
-        else -> OnboardingScreen(state, model::check, model::submit, model::load, model::refresh, model::logout)
+        canManage && manageProfile -> ProfileManagementRoute(session, { manageProfile = false })
+        !session.isReady && session.status == OnboardingStatus.PROFILE_REQUIRED -> ProfileRoute(session)
+        canSkip && developmentProfile -> Column(Modifier.fillMaxSize()) {
+            Column(Modifier.statusBarsPadding().padding(horizontal = AppSpacing.Large)) {
+                Text(stringResource(Res.string.profile_development_keyring_notice), style = MaterialTheme.typography.bodySmall)
+                TextButton(onClick = { developmentProfile = false }) {
+                    Text(stringResource(Res.string.profile_return_keyring))
+                }
+            }
+            Box(Modifier.weight(1f)) { ProfileRoute(session) }
+        }
+        else -> OnboardingScreen(state, model::check, model::submit, model::load, model::refresh, model::logout,
+            canSkipKeyring = canSkip, onSkipKeyring = { if (canSkip) developmentProfile = true },
+            canManageProfile = canManage, onManageProfile = { if (canManage) manageProfile = true })
     }
 }
 
@@ -36,6 +62,11 @@ fun OnboardingScreen(
     onReload: () -> Unit,
     onRefresh: () -> Unit,
     onLogout: () -> Unit,
+    canSkipKeyring: Boolean = false,
+    onSkipKeyring: () -> Unit = {},
+    developmentNotice: String? = null,
+    canManageProfile: Boolean = false,
+    onManageProfile: () -> Unit = {},
 ) {
     val session = state.session ?: return
     val agreements = session.status == OnboardingStatus.AGREEMENT_REQUIRED
@@ -52,12 +83,15 @@ fun OnboardingScreen(
             state.submitted -> Text(stringResource(Res.string.onboarding_saved))
             agreements -> {
                 Text(stringResource(Res.string.onboarding_agreements_body))
-                if (state.allowUnpublishedAgreements && state.agreements.any { !it.canReview }) {
-                    Text(stringResource(Res.string.onboarding_development_agreements), style = MaterialTheme.typography.bodySmall)
+                if (state.agreements.any { !it.required }) {
+                    Text(stringResource(Res.string.onboarding_optional_separate), style = MaterialTheme.typography.bodySmall)
                 }
-                state.agreements.forEach { item ->
+                if (state.allowUnpublishedAgreements && state.requiredAgreements.any { !it.canReview }) {
+                    Text(developmentNotice ?: stringResource(Res.string.onboarding_development_agreements), style = MaterialTheme.typography.bodySmall)
+                }
+                state.requiredAgreements.forEach { item ->
                     AppCheckbox(item.type in state.checked, { onCheck(item.type, it) },
-                        stringResource(if (item.required) Res.string.onboarding_required else Res.string.onboarding_optional, item.title),
+                        stringResource(Res.string.onboarding_required, item.title),
                         enabled = !state.busy && state.canCheck(item))
                     if (item.reviewUrl != null) TextButton(onClick = { open(item.reviewUrl!!) }) {
                         Text(stringResource(Res.string.onboarding_read_terms))
@@ -65,7 +99,7 @@ fun OnboardingScreen(
                         Text(stringResource(Res.string.onboarding_terms_missing), style = MaterialTheme.typography.bodySmall)
                     }
                 }
-                if (!state.busy && state.agreements.isEmpty()) Text(stringResource(Res.string.onboarding_terms_empty))
+                if (!state.busy && state.requiredAgreements.isEmpty()) Text(stringResource(Res.string.onboarding_terms_empty))
                 AppButton(stringResource(Res.string.onboarding_agree), enabled = state.canSubmit, loading = state.busy,
                     modifier = Modifier.fillMaxWidth(), onClick = onSubmit)
                 AppButton(stringResource(Res.string.onboarding_retry), variant = AppButtonVariant.Secondary,
@@ -73,6 +107,10 @@ fun OnboardingScreen(
             }
             keyring -> {
                 Text(stringResource(Res.string.onboarding_keyring_wait))
+                if (canSkipKeyring) {
+                    Text(stringResource(Res.string.profile_development_keyring_entry), style = MaterialTheme.typography.bodySmall)
+                    AppButton(stringResource(Res.string.profile_skip_keyring), enabled = !state.busy, onClick = onSkipKeyring)
+                }
                 AppButton(stringResource(Res.string.onboarding_keyring_search), enabled = false, onClick = {})
                 state.purchaseUrl?.let { url -> AppButton(stringResource(Res.string.onboarding_purchase),
                     variant = AppButtonVariant.Secondary, onClick = { open(url) }) }
@@ -89,6 +127,8 @@ fun OnboardingScreen(
             }))
         }
         state.error?.let { OnboardingError(it.message) }
+        if (canManageProfile) AppButton(stringResource(if (session.isReady) Res.string.profile_manage_entry else Res.string.profile_manage_dev_entry),
+            enabled = !state.busy, onClick = onManageProfile)
         if (linkFailed) OnboardingError(stringResource(Res.string.onboarding_link_failed))
         if (!agreements || state.submitted) AppButton(stringResource(Res.string.onboarding_refresh),
             loading = state.busy, enabled = !state.busy, onClick = onRefresh)

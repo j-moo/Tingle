@@ -50,6 +50,7 @@ kotlin {
             implementation(libs.datastore.preferences.core)   // AppPrefs(§5) 캐시
         }
         androidMain.dependencies {
+            implementation(libs.androidx.activity.compose)
             implementation(libs.ktor.client.okhttp)
             implementation(libs.koin.android)   // androidContext() — TokenStore 가 Context 를 쓴다
             implementation(libs.androidx.credentials)   // 소셜 로그인 SDK (AndroidSocialLogin)
@@ -66,6 +67,10 @@ kotlin {
             implementation(libs.androidx.test.core)
             implementation(libs.androidx.test.junit)
             implementation(libs.kotlinx.coroutines.test)
+            // 화면 재생성·사진 선택 결과 복원 회귀 검증에만 사용한다. 앱 배포 의존성에는 포함하지 않는다.
+            implementation("androidx.compose.ui:ui-test-junit4:1.11.2")
+            // Compose의 구형 전이 의존성 대신 API 37 입력 주입을 지원하는 테스트 라이브러리를 사용한다.
+            implementation("androidx.test.espresso:espresso-core:3.7.0")
         }
         commonTest.dependencies {
             implementation(kotlin("test"))

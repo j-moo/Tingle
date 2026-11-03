@@ -1,0 +1,7 @@
+<resources>
+    <string name="profile_development_keyring_entry">개발용 앱에서는 키링 없이 프로필 입력을 테스트할 수 있어요.</string>
+    <string name="profile_skip_keyring">키링 없이 프로필 입력하기 · 개발용</string>
+    <string name="profile_development_keyring_notice">개발용 테스트 · 키링 등록을 건너뛰었어요. 프로필은 실제 개발 서버에 저장돼요.</string>
+    <string name="profile_return_keyring">키링 등록 화면으로 돌아가기</string>
+    <string name="profile_saved_without_keyring">프로필을 저장했어요. 키링 등록은 아직 필요해요.</string>
+</resources>
