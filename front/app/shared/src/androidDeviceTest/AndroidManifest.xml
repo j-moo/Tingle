@@ -2,6 +2,10 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
     <application>
+        <!-- 동의 고지의 통신 실패 후 화면 내 재조회만 수행하는 테스트 전용 호스트. -->
+        <activity android:name="com.ssafy.e106.features.safety.AiConsentRecoveryTestActivity" android:exported="true" />
+        <!-- 일시 오류 뒤 같은 화면의 재시도 버튼으로 질문을 복구하는 테스트 전용 화면. -->
+        <activity android:name="com.ssafy.e106.features.safety.ChatExtrasRecoveryTestActivity" android:exported="true" />
         <!-- 실제 채팅 Route의 주기 조회를 검사하는 테스트 전용 화면. 배포 APK에는 포함되지 않는다. -->
         <activity android:name="com.ssafy.e106.features.chat.ChatPollingTestActivity" android:exported="true" />
         <!-- 회전/재생성을 검증하는 테스트 전용 호스트이며 개발·운영 앱에는 포함되지 않는다. -->
