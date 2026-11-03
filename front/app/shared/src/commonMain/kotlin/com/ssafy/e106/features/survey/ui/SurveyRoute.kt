@@ -48,7 +48,7 @@ import org.koin.compose.viewmodel.koinViewModel
         onVersion = { state.session?.let {
             if (model.beginChange()) { changeKind = SurveyChangeKind.MIGRATION; changeId = it.sessionId }
         } },
-        onPreviousSession = model::openPrevious)
+        onPreviousSession = model::openPrevious, onServerDraft = model::openServerDraft)
 }
 
 @Composable fun SurveyConnectedScreen(
@@ -58,6 +58,7 @@ import org.koin.compose.viewmodel.koinViewModel
     onSubmit: () -> Unit = {}, onRequestAnalysis: () -> Unit = {},
     onRefreshAnalysis: () -> Unit = {}, onRefreshStage: () -> Unit = {},
     onRetest: () -> Unit = {}, onVersion: () -> Unit = {}, onPreviousSession: () -> Unit = {},
+    onServerDraft: () -> Unit = {},
 ) {
     if (state.pendingChange && !state.busy) {
         SurveyFrame(footer = {
@@ -103,6 +104,9 @@ import org.koin.compose.viewmodel.koinViewModel
                 else -> Unit
             }
             if (!state.busy && state.session != null) {
+                // 계산 중인 제출 회차를 복구하더라도 서버에 남아 있는 작성 중 회차로 이동할 수 있다.
+                if (state.page == SurveyPage.Completed && state.serverDraftId != null && !state.recoveryRequired)
+                    AppButton(stringResource(Res.string.survey_api_server_draft), variant = AppButtonVariant.Secondary, onClick = onServerDraft)
                 if (state.page == SurveyPage.Completed) AppButton(stringResource(Res.string.survey_change_retest),
                     variant = AppButtonVariant.Secondary, onClick = onRetest)
                 AppButton(stringResource(Res.string.survey_change_version), variant = AppButtonVariant.Secondary, onClick = onVersion)
@@ -134,6 +138,8 @@ import org.koin.compose.viewmodel.koinViewModel
             if (ordinals.isNotEmpty()) Text(stringResource(Res.string.survey_api_missing, ordinals.joinToString(", ")))
         }
         if (state.analysisResult?.status == AnalysisStatus.SUCCEEDED) Text(stringResource(Res.string.survey_api_stage_notice))
+        if (state.analysisResult?.status == AnalysisStatus.SUCCEEDED && state.analysisApplied == false)
+            Text(stringResource(Res.string.survey_api_application_pending))
         if (state.stageUnchanged) Text(stringResource(Res.string.survey_api_stage_unchanged))
         if (state.exitRequested) Text(stringResource(Res.string.survey_api_leaving))
         state.stageError?.let { Text(it.message) }
