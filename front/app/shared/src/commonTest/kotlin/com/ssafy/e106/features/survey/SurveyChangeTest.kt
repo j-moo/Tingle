@@ -59,6 +59,8 @@ private class JsonPrefs : AppPrefs {
         beforeSet()
         if (forUser == 1L) encoded.value = value?.let { ApiJson.encodeToString(key.serializer, it) }
     }
+    override suspend fun <T> read(key: PrefKey<T>, forUser: Long): PrefRead<T> =
+        encoded.value?.let { PrefRead.Found(ApiJson.decodeFromString(key.serializer, it)) } ?: PrefRead.Missing
 }
 @OptIn(ExperimentalCoroutinesApi::class)
 class SurveyChangeTest {

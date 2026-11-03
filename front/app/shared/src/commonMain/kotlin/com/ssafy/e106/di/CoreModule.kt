@@ -55,8 +55,11 @@ fun coreModule(baseUrl: String, httpLog: Boolean, socialKeys: SocialKeys) = modu
     single { DefaultPushEvents(get(), CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)) }   // 메인 스레드 전용
     single<PushEvents> { get<DefaultPushEvents>() }
     // 세션 상태를 지켜보며 계정 데이터를 지우므로 앱 시작부터 만든다
-    single<DataStore<Preferences>> { platformPrefsStore() }
-    single<AppPrefs>(createdAtStart = true) { DataStoreAppPrefs(get(), get<SessionStore>().state, CoroutineScope(SupervisorJob() + Dispatchers.Default)) }
+    single<DataStore<Preferences>>(named(CACHE_PREFS_FILE)) { platformPrefsStore(CACHE_PREFS_FILE, resetOnCorruption = true) }
+    single<DataStore<Preferences>>(named(DURABLE_PREFS_FILE)) { platformPrefsStore(DURABLE_PREFS_FILE, resetOnCorruption = false) }
+    single<AppPrefs>(createdAtStart = true) {
+        DataStoreAppPrefs(get(named(CACHE_PREFS_FILE)), get(named(DURABLE_PREFS_FILE)), get<SessionStore>().state, CoroutineScope(SupervisorJob() + Dispatchers.Default))
+    }
     // 채팅 실시간 수신. 앞/뒤 상태는 첫 Activity 를 놓치지 않게 앱 시작부터 센다
     single<StateFlow<Boolean>>(named(APP_FOREGROUND), createdAtStart = true) { platformForeground() }
     single<ChatEvents> {
@@ -70,8 +73,14 @@ internal const val APP_FOREGROUND = "appForeground"
 /** 토큰 저장소는 플랫폼마다. 서버 주소별로 따로 저장한다 */
 internal expect fun Scope.platformTokenStore(baseUrl: String): TokenStore
 
-/** AppPrefs 파일(DataStore). 파일 하나에 인스턴스 하나여야 해서 coreModule 의 single 안에서만 부른다 */
-internal expect fun Scope.platformPrefsStore(): DataStore<Preferences>
+/**
+ * AppPrefs 파일(DataStore). 파일 하나에 인스턴스 하나여야 해서 coreModule 의 이름 붙은 single 안에서만 부른다.
+ * [resetOnCorruption] = 깨지면 비우고 시작(캐시). false 면 깨진 파일을 그대로 두고 읽기에서 CorruptionException(서버에서 다시 받을 수 없는 기록)
+ */
+internal expect fun Scope.platformPrefsStore(fileName: String, resetOnCorruption: Boolean): DataStore<Preferences>
+
+internal const val CACHE_PREFS_FILE = "app_prefs.preferences_pb"           // 기존 파일 이름 그대로(업데이트해도 캐시 유지)
+internal const val DURABLE_PREFS_FILE = "app_prefs_durable.preferences_pb"
 
 /** 소셜 SDK 래퍼는 플랫폼마다 */
 internal expect fun Scope.platformSocialLogin(keys: SocialKeys): SocialLogin
