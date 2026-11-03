@@ -193,6 +193,9 @@ class PersonalAnalysisIntegrationTest extends IntegrationTestSupport {
 				resultId)).as(answers[1]).isEqualTo("SUCCEEDED");
 			assertThat(activePersonality(userId)).as(answers[1]).isNull();
 			assertThat(settingsVersion(userId)).as(answers[1]).isEqualTo(versionBefore);
+			// 다시 요청해도 재확인 전이면 적용하지 않는다.
+			analyze(tokens, sessionId).andExpect(status().isAccepted());
+			assertThat(activePersonality(userId)).as(answers[1]).isNull();
 		}
 	}
 
@@ -242,7 +245,8 @@ class PersonalAnalysisIntegrationTest extends IntegrationTestSupport {
 		// 기한(stuckAfter)이 지나면 다시 시도하지 않는다.
 		JsonNode expired = member();
 		long expiredUserId = userIdOf(expired);
-		requestAnalysis(expired, survey(expiredUserId, "SIS-Q-1.1-100", Instant.now()));
+		long expiredSession = survey(expiredUserId, "SIS-Q-1.1-100", Instant.now());
+		long expiredResult = requestAnalysis(expired, expiredSession);
 		willThrow(new TransientDataAccessResourceException("일시 오류")).given(profileAnalysisApplications)
 			.apply(anyLong(), anyLong(), any());
 		worker.runDue();
@@ -250,6 +254,16 @@ class PersonalAnalysisIntegrationTest extends IntegrationTestSupport {
 		willCallRealMethod().given(profileAnalysisApplications).apply(anyLong(), anyLong(), any());
 		worker.runDue();
 		assertThat(activePersonality(expiredUserId)).isNull();
+
+		// 기한이 지나도(재시작 포함) 같은 회차로 분석을 다시 요청하면 적용을 다시 시도한다. AI는 다시 부르지 않는다.
+		analyze(expired, expiredSession).andExpect(status().isAccepted())
+			.andExpect(jsonPath("$.resultId").value(expiredResult))
+			.andExpect(jsonPath("$.status").value("SUCCEEDED"));
+		assertThat(activePersonality(expiredUserId)).isEqualTo(expiredResult);
+		long versionAfter = settingsVersion(expiredUserId);
+		analyze(expired, expiredSession).andExpect(status().isAccepted());
+		assertThat(settingsVersion(expiredUserId)).as("이미 적용된 결과는 다시 적용하지 않음").isEqualTo(versionAfter);
+		verify(personalAnalysisClient, times(3)).analyze(any(), anyString());
 	}
 
 	@Test
@@ -377,6 +391,38 @@ class PersonalAnalysisIntegrationTest extends IntegrationTestSupport {
 		assertThat(statusOf(olderResult)).isEqualTo("SUCCEEDED");
 		assertThat(activePersonality(userId)).isEqualTo(newerResult);
 		assertThat(settingsVersion(userId)).isEqualTo(versionBefore + 1);
+	}
+
+	@Test
+	@DisplayName("가입 단계 조회로 제출한 회차·분석 결과·적용 결과를 다시 찾는다(재설치·다른 기기 복구)")
+	void onboardingRecovery() throws Exception {
+		JsonNode tokens = member();
+		long userId = userIdOf(tokens);
+		perform(get(me(tokens, "/onboarding")), tokens, null)
+			.andExpect(jsonPath("$.latestCompletedSessionId").value(nullValue()))
+			.andExpect(jsonPath("$.latestAnalysis").value(nullValue()))
+			.andExpect(jsonPath("$.activeResultId").value(nullValue()));
+
+		long first = survey(userId, "SIS-Q-1.1-100", Instant.now().minus(Duration.ofHours(1)));
+		perform(get(me(tokens, "/onboarding")), tokens, null)
+			.andExpect(jsonPath("$.latestCompletedSessionId").value(first))
+			.andExpect(jsonPath("$.latestAnalysis").value(nullValue()));
+		long firstResult = requestAnalysis(tokens, first);
+		aiReturns(SUCCEEDED);
+		worker.runDue();
+
+		// 재검사: 새로 제출한 회차는 계산 중이고, 그 뒤에 또 작성 중 회차가 있다.
+		long retest = survey(userId, "SIS-Q-1.1-100", Instant.now());
+		long retestResult = requestAnalysis(tokens, retest);
+		long draft = survey(userId, "SIS-Q-1.1-100", null);
+		perform(get(me(tokens, "/onboarding")), tokens, null)
+			.andExpect(jsonPath("$.surveySessionId").value(draft))
+			.andExpect(jsonPath("$.latestCompletedSessionId").value(retest))
+			.andExpect(jsonPath("$.latestAnalysis.resultId").value(retestResult))
+			.andExpect(jsonPath("$.latestAnalysis.sessionId").value(retest))
+			.andExpect(jsonPath("$.latestAnalysis.analysisVersion").value("SIS-A-1.0"))
+			.andExpect(jsonPath("$.latestAnalysis.status").value("PENDING"))
+			.andExpect(jsonPath("$.activeResultId").value(firstResult));
 	}
 
 	// 약관 동의·키링·프로필 등록까지 마친 회원(설문 단계)

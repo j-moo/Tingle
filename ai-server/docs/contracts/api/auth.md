@@ -238,6 +238,9 @@ GET /api/users/{userId}/onboarding
 | answeredCount | Number | O | 응답을 저장한 문항 수 |
 | questionCount | Number | O | 설문 전체 문항 수 |
 | nextQuestionId | String \| null | O | 다음 미응답 문항 ID. 없으면 `null` |
+| latestCompletedSessionId | Number \| null | O | 가장 최근에 제출(완료)한 설문 회차 번호(`survey.id`). 설문 버전과 상관없이 찾고, 없으면 `null` |
+| latestAnalysis | Object \| null | O | 그 회차의 현재 분석 버전 결과. 분석 요청 응답과 같은 `{resultId, sessionId, analysisVersion, status}`. 회차가 없거나 분석 요청 전이면 `null` |
+| activeResultId | Number \| null | O | 지금 매칭에 쓰는 적용 결과(`profile.active_personality_id`). 재검사 계산 중에는 이전 결과. 없으면 `null` |
 | requiredSettingsVersion | Number | O | 실제 최신 설정 번호(`user_setting.settings_version`). 행 유실·음수이면 안전값 `0`이며 임의로 복원하지 않음 |
 | acknowledgedSettingsVersion | Number \| null | O | 본인 소유 `REGISTERED` 기기들의 확인된 양수 `keyring.synced_settings_version` 중 최댓값. 현재 설정보다 큰 무효 값은 제외하고 확인 값이 없으면 `null` |
 | serverTime | String | O | 서버의 현재 시각 (ISO-8601, UTC). 기기 시계 보정용 |
@@ -252,6 +255,9 @@ GET /api/users/{userId}/onboarding
   "answeredCount": 0,
   "questionCount": 0,
   "nextQuestionId": null,
+  "latestCompletedSessionId": null,
+  "latestAnalysis": null,
+  "activeResultId": null,
   "requiredSettingsVersion": 0,
   "acknowledgedSettingsVersion": null,
   "serverTime": "2026-10-21T03:00:00Z"
@@ -259,8 +265,18 @@ GET /api/users/{userId}/onboarding
 ```
 
 - 2026-10-28 사용자 확정: 기기가 여러 개면 하나라도 현재 설정을 확인했을 때 준비 완료로 판단하고, 표시에는 가장 높은 확인 버전을 사용한다. 예를 들어 현재 설정 7·기기 확인 2/4이면 `requiredSettingsVersion:7`, `acknowledgedSettingsVersion:4`이며 동기화 대기다. 하나가 7을 확인하면 표시도 7이다. 다른 가입 조건도 충족해야 `READY`다. 타인·해제 기기·미확인 값과 기기 시각에서 확인 버전을 추정하지 않는다.
+- 2026-11-03 제출 회차 복구(FE !156 요청): 로그아웃·재설치·다른 기기에서도 `latestCompletedSessionId`·`latestAnalysis`·`activeResultId`로 제출한 회차와 분석 상태를 다시 찾는다. `nextStep`이 먼저이고(예: 약관 재동의), 설문 단계에서는 아래 순서로 복구한다.
+  1. `latestCompletedSessionId`가 `null`이면 분석 복구는 없다. 3번으로 간다.
+  2. 완료 회차가 있으면 `latestAnalysis`로 분기한다.
+     - `null`: 같은 회차로 분석을 요청한다(중복 결과 없음).
+     - `PENDING`: 계산 대기. 결과 조회로 상태를 다시 본다.
+     - `FAILED`: 사용자의 ‘다시 시도’로 같은 회차를 재요청한다(설문 재작성 없음).
+     - `INSUFFICIENT`: 결과 조회의 `missingQuestionIds`를 보여 주고 새 검사(새 회차)로 다시 답하게 한다. 같은 회차 재요청은 같은 결과를 돌려준다.
+     - `SUCCEEDED`: `resultId`가 `activeResultId`와 같으면 적용 완료. 다르면 적용 대기(결과 저장 뒤 적용을 서버가 다시 시도하는 중)이거나 Q97·Q98 재확인으로 보류된 것이다. 이것만으로 새 검사를 요구하지 않고 같은 회차로 분석을 다시 요청한다. 서버가 적용을 다시 시도하고(이미 적용됐으면 그대로, AI는 다시 부르지 않음) 그 뒤 가입 단계를 다시 조회한다. 회차 답(`GET /api/survey-sessions/{sessionId}`)에 재확인 사유가 있을 때만 새 검사(새 회차)를 안내한다(SUR-02).
+     - 분석 요청이 `409 ANALYSIS_VERSION_UNSUPPORTED`이면(위 어느 상태에서든) 그 회차의 분석 복구만 그만둔다. `latestCompletedSessionId`는 버리지 않고, 이 회차를 원본으로 버전 이관(`migration-plan`→`migrations`)하거나 3번으로 간다.
+  3. `surveySessionId`(현재 버전의 작성 중 회차)가 있으면 이어하기, 없으면 새 회차를 시작한다(`POST /api/survey-sessions`).
 - 설문 진행도는 현재 버전의 작성 중 설문 기준이며 키는 항상 있다. 설정 반영 번호도 위 실제 저장 조회를 사용하고 미확인 값은 `null`로 구분한다.
-- 처음 로그인했을 때는 이 API를 따로 부를 필요가 없다. 로그인 응답의 `onboardingStatus`가 서버가 그 순간 DB를 확인한 같은 결과다.
+- 처음 로그인했을 때 단계만 필요하면 이 API를 따로 부를 필요가 없다. 로그인 응답의 `onboardingStatus`가 서버가 그 순간 DB를 확인한 같은 결과다. 설문 진행도·제출 회차 복구 필드는 로그인 응답에 없으므로 재설치·다른 기기 로그인 뒤 복구할 때는 이 API를 부른다.
 
 ### 오류
 
@@ -869,6 +885,7 @@ A151의 인증·약관·프로필·가입 단계와 숫자 설문 회차 조회�
 | v0.1.3 | 2026-10-27 | ERD 21개 테이블 수정본 대조: 경로에서 `/v1` 제거·`/users/me`를 `/users/{userId}`로(토큰 회원과 다르면 403 FORBIDDEN), 가입 단계 조회 `surveySessionId` 숫자, 설정 번호 저장 위치(`user_setting`·`keyring`), [ERD 차이](#erd-22개-테이블-기준-저장-위치와-차이) 절 추가(동의·복수 키링·키링 소유 변경·탈퇴 연동) | 경로 변경은 FE 영향 있음 |
 
 | v0.1.4 | 2026-10-28 | A151 공통 저장 매핑: 22표 보존 보완, 회원 상태·생성 시각과 항목별 동의 이력, 실제 복수 키링 확인 버전, OpenAPI /api·본인 userId·403 및 설문 revision/metadata·ETag 정합화 | 기존 /v1·/users/me 호출자와 숫자 회차 계약 반영 필요 |
+| v0.1.5 | 2026-11-03 | 가입 단계 조회에 제출 회차 복구 필드 `latestCompletedSessionId`·`latestAnalysis`·`activeResultId` 추가(FE !156 요청), OpenAPI `surveySessionId`를 숫자로 정정 | FE 가입 단계 조회 모델에 세 필드 추가 필요 |
 
 ## 로그아웃의 설치 연결 정리 · 2026-10-28
 

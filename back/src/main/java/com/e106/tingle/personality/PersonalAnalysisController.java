@@ -27,12 +27,19 @@ import lombok.RequiredArgsConstructor;
 public class PersonalAnalysisController {
 
 	private final PersonalAnalysisService service;
+	private final PersonalityActivation activation;
 
 	@RequiresOnboarding(OnboardingStatus.KEYRING_REQUIRED)
 	@PostMapping("/survey-sessions/{sessionId}/analyses")
 	@ResponseStatus(HttpStatus.ACCEPTED)
 	public AnalysisRequestResponse request(@AuthenticationPrincipal Jwt jwt, @PathVariable @Positive long sessionId) {
-		return service.request(Long.parseLong(jwt.getSubject()), sessionId);
+		AnalysisRequestResponse receipt = service.request(Long.parseLong(jwt.getSubject()), sessionId);
+		// 이미 성공한 결과면 적용을 한 번 더 시도한다(작업기의 적용 재시도는 서버 메모리라 재시작하면 빠진다).
+		// 요청 트랜잭션(회차 잠금)이 끝난 뒤 따로 해서, 회원→회차 순으로 잠그는 설문 완료와 잠금 순서가 엇갈리지 않게 한다.
+		if (Personality.AnalysisStatus.SUCCEEDED.name().equals(receipt.status())) {
+			activation.tryActivate(receipt.resultId());
+		}
+		return receipt;
 	}
 
 	@RequiresOnboarding(OnboardingStatus.KEYRING_REQUIRED)
