@@ -155,7 +155,10 @@ public class ChatService {
 		}
 		List<ChatRoom> page = visible.stream().limit(limit).toList();
 		String next = visible.size() > limit ? encode("r|" + userId + "|" + page.getLast().getPublicId()) : null;
-		return new ChatPage(page.stream().map(r -> roomView(r, userId, true)).toList(), next, clock.instant());
+		Set<Long> newMessages = page.isEmpty() ? Set.of() : new HashSet<>(
+			messages.roomsWithUnacknowledgedPartnerMessage(page.stream().map(ChatRoom::getId).toList(), userId));
+		return new ChatPage(page.stream().map(r -> roomView(r, userId, true, newMessages.contains(r.getId())))
+			.toList(), next, clock.instant());
 	}
 
 	@Transactional(readOnly = true)
@@ -391,6 +394,10 @@ public class ChatService {
 	}
 
 	private ChatRoomView roomView(ChatRoom room, long userId, boolean allowed) {
+		return roomView(room, userId, allowed, null);
+	}
+
+	private ChatRoomView roomView(ChatRoom room, long userId, boolean allowed, Boolean hasNewMessage) {
 		Instant now = clock.instant();
 		boolean active = room.active(now);
 		Instant closed = room.getClosedAt() != null ? room.getClosedAt() : active ? null : room.getExpiresAt();
@@ -401,7 +408,8 @@ public class ChatService {
 		}
 		return new ChatRoomView(room.getPublicId(), active ? "ACTIVE" : "CLOSED", room.getCreatedAt(),
 			room.getExpiresAt(), closed, deletion, now, active && allowed, active && allowed,
-			active && allowed && messages.hasUnacknowledgedPartnerMessage(room.getId(), userId));
+			active && allowed && (hasNewMessage != null ? hasNewMessage
+				: messages.hasUnacknowledgedPartnerMessage(room.getId(), userId)));
 	}
 
 	private String encode(String value) {
