@@ -1,0 +1,204 @@
+/* 데스크톱: 패널 1120(화면이 좁으면 양옆 80 남김) · 간격 48 → 양옆에 이웃 패널이 걸쳐 보임
+   모바일: 패널 = 화면 - 64 · 간격 12 → 양옆 20px 만큼 이웃 이미지만 보임(글은 24px 들여 안 보이게) */
+.section {
+  --panel-w: min(1120px, 100vw - 160px);
+  --gap: 48px;
+  --k: 0;
+  position: relative;
+  height: calc(var(--steps) * 100svh);
+}
+
+.sticky {
+  position: sticky;
+  top: 0;
+  display: flex;
+  height: 100svh;
+  flex-direction: column;
+  justify-content: center;
+  gap: 14px;
+  padding-top: var(--nav-height);
+  overflow: hidden;
+}
+
+.label {
+  width: var(--panel-w);
+  margin: 0 auto;
+  color: var(--brand-ink);
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1.4;
+}
+
+.track {
+  display: flex;
+  gap: var(--gap);
+  margin: 0;
+  padding: 0 calc((100vw - var(--panel-w)) / 2);
+  list-style: none;
+  transform: translateX(calc(var(--k) * -1 * (var(--panel-w) + var(--gap))));
+  will-change: transform;
+}
+
+/* 데스크톱 패널 = 회색 박스 안에 이미지 + 글 */
+.panel {
+  display: flex;
+  flex: none;
+  width: var(--panel-w);
+  height: min(600px, 100svh - var(--nav-height) - 120px);
+  align-items: center;
+  gap: 48px;
+  padding: 48px 32px;
+  border-radius: 32px;
+  background: var(--bg-surface);
+}
+
+.visual {
+  flex: none;
+  height: 100%;
+  max-width: 50%;                        /* 이미지가 커져도 글 칸이 남게 */
+  aspect-ratio: 1;
+  border-radius: 20px;
+  background: var(--neutral-150);
+  object-fit: cover;
+}
+
+.text {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 20px;
+}
+.step {
+  color: var(--text-secondary);
+  font-size: 18px;
+  font-weight: 700;
+}
+.title {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: clamp(32px, 3.4vw, 48px);
+  font-weight: 900;
+  line-height: 1.25;
+  letter-spacing: -0.02em;
+}
+.body {
+  color: #4d4d4d;
+  font-size: 22px;
+  line-height: 1.5;
+}
+
+/* 진행 막대: 패널 폭을 3등분, 현재 단계만 진하게 */
+.bars {
+  display: flex;
+  width: var(--panel-w);
+  gap: 15px;
+  margin: 6px auto 0;
+}
+.bars span {
+  flex: 1;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--neutral-150);
+  transition: background 0.3s;
+}
+.bars .on {
+  background: var(--brand-ink);
+}
+
+/* 태블릿(721~1023): 박스는 두고 이미지 위 · 글 아래로 쌓음(가로로 두면 글 칸이 0 이 됨) */
+@media (min-width: 721px) and (max-width: 1023px) {
+  .section {
+    --panel-w: calc(100vw - 96px);
+    --gap: 24px;
+  }
+  .panel {
+    height: auto;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 24px;
+    padding: 32px;
+  }
+  .visual {
+    width: 100%;
+    height: auto;
+    max-width: none;
+    max-height: 40svh;
+    aspect-ratio: 16 / 10;
+  }
+  .title {
+    font-size: 36px;
+  }
+  .body {
+    font-size: 18px;
+  }
+}
+
+/* 모바일: 박스 없음, 이미지 위 · 글 아래 */
+@media (max-width: 720px) {
+  .section {
+    --panel-w: calc(100vw - 64px);
+    --gap: 12px;
+  }
+  .label {
+    font-size: 14px;
+  }
+  .panel {
+    height: auto;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 20px;
+    padding: 0;
+    border-radius: 0;
+    background: none;
+  }
+  .visual {
+    width: 100%;
+    height: auto;
+    max-width: none;
+    aspect-ratio: 326 / 300;
+    border-radius: 16px;
+  }
+  .text {
+    gap: 12px;
+    padding-inline: 24px;
+  }
+  .step {
+    font-size: 14px;
+  }
+  .title {
+    font-size: 28px;
+  }
+  .body {
+    font-size: 16px;
+  }
+}
+
+/* 동작 줄이기, 또는 높이가 낮은 화면(휴대폰 가로 등 — 고정하면 설명이 화면 아래로 잘림): 고정 · 가로 이동 없이 세로로 */
+@media (prefers-reduced-motion: reduce), (max-height: 600px) {
+  .section {
+    height: auto;
+    padding-block: calc(var(--nav-height) + 48px) 48px;
+  }
+  .sticky {
+    position: static;
+    height: auto;
+    padding-top: 0;
+  }
+  .track {
+    flex-direction: column;
+    align-items: center;
+    padding: 0;
+    transform: none;
+  }
+  .bars {
+    display: none;
+  }
+}
+@media (max-height: 600px) {
+  .track {
+    gap: 40px;
+  }
+  .visual {
+    max-height: 50svh;                   /* 낮은 화면: 이미지 바로 아래 설명이 보이게 */
+  }
+}
