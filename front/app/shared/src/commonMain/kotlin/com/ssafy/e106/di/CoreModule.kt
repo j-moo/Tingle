@@ -11,6 +11,10 @@ import com.ssafy.e106.core.push.DefaultPushEvents
 import com.ssafy.e106.core.push.PushDevice
 import com.ssafy.e106.core.push.PushEvents
 import com.ssafy.e106.core.push.PushRegistrar
+import com.ssafy.e106.core.realtime.ChatEvents
+import com.ssafy.e106.core.realtime.DefaultChatEvents
+import com.ssafy.e106.core.realtime.HttpChatRoomProbe
+import com.ssafy.e106.core.realtime.KtorChatSocket
 import com.ssafy.e106.core.storage.AppPrefs
 import com.ssafy.e106.core.storage.DataStoreAppPrefs
 import com.ssafy.e106.core.storage.TokenStore
@@ -20,6 +24,8 @@ import io.ktor.client.HttpClient
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.StateFlow
+import org.koin.core.qualifier.named
 import org.koin.core.scope.Scope
 import org.koin.dsl.module
 
@@ -51,7 +57,15 @@ fun coreModule(baseUrl: String, httpLog: Boolean, socialKeys: SocialKeys) = modu
     // 세션 상태를 지켜보며 계정 데이터를 지우므로 앱 시작부터 만든다
     single<DataStore<Preferences>> { platformPrefsStore() }
     single<AppPrefs>(createdAtStart = true) { DataStoreAppPrefs(get(), get<SessionStore>().state, CoroutineScope(SupervisorJob() + Dispatchers.Default)) }
+    // 채팅 실시간 수신. 앞/뒤 상태는 첫 Activity 를 놓치지 않게 앱 시작부터 센다
+    single<StateFlow<Boolean>>(named(APP_FOREGROUND), createdAtStart = true) { platformForeground() }
+    single<ChatEvents> {
+        val session = get<DefaultSessionStore>()
+        DefaultChatEvents(session, { session.accessTokens()?.accessToken }, get(named(APP_FOREGROUND)), KtorChatSocket(session.client, baseUrl), HttpChatRoomProbe(session.client))
+    }
 }
+
+internal const val APP_FOREGROUND = "appForeground"
 
 /** 토큰 저장소는 플랫폼마다. 서버 주소별로 따로 저장한다 */
 internal expect fun Scope.platformTokenStore(baseUrl: String): TokenStore
@@ -64,3 +78,6 @@ internal expect fun Scope.platformSocialLogin(keys: SocialKeys): SocialLogin
 
 /** 푸시 토큰 · 설치 ID 는 플랫폼마다 */
 internal expect fun Scope.platformPushDevice(): PushDevice
+
+/** 앱 화면이 하나라도 보이는지. 채팅 실시간 연결을 백그라운드에서 끊는 데 쓴다 */
+internal expect fun Scope.platformForeground(): StateFlow<Boolean>

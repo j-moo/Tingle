@@ -11,9 +11,11 @@ import com.ssafy.e106.core.auth.SocialKeys
 import com.ssafy.e106.core.auth.SocialLogin
 import com.ssafy.e106.core.push.AndroidPushDevice
 import com.ssafy.e106.core.push.PushDevice
+import com.ssafy.e106.core.realtime.appForeground
 import com.ssafy.e106.core.storage.AndroidTokenStore
 import com.ssafy.e106.core.storage.TokenStore
 import org.koin.android.ext.koin.androidContext
+import kotlinx.coroutines.flow.StateFlow
 import okio.Path.Companion.toPath
 import org.koin.core.scope.Scope
 
@@ -28,3 +30,5 @@ internal actual fun Scope.platformPrefsStore(): DataStore<Preferences> {
     val file = androidContext().filesDir.resolve("app_prefs.preferences_pb")
     return PreferenceDataStoreFactory.createWithPath(corruptionHandler = ReplaceFileCorruptionHandler { emptyPreferences() }, produceFile = { file.absolutePath.toPath() })
 }
+
+internal actual fun Scope.platformForeground(): StateFlow<Boolean> = appForeground(androidContext() as Application)
