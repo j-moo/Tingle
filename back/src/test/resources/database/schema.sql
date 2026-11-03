@@ -718,3 +718,15 @@ CREATE UNIQUE INDEX "uq_settings_snapshot_user_version" ON "settings_snapshot" (
 -- keyring_sync_run.keyring_id > keyring.id
 -- keyring_sync_run.owner_user_id > users.id
 -- settings_snapshot.user_id > users.id
+
+-- Current owner-scoped block relations; historical blocked_at remains immutable access evidence.
+CREATE TABLE user_block (
+    id uuid PRIMARY KEY,
+    owner_id bigint NOT NULL,
+    target_id bigint NOT NULL,
+    matching_id bigint NOT NULL,
+    created_at timestamptz NOT NULL,
+    CONSTRAINT uq_user_block_owner_target UNIQUE (owner_id, target_id),
+    CONSTRAINT ck_user_block_distinct CHECK (owner_id <> target_id)
+);
+CREATE INDEX ix_user_block_owner_created ON user_block(owner_id, created_at, id);

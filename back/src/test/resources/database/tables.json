@@ -1,7 +1,7 @@
 {
-  "version": "1.6.0-chat-message-push",
-  "total_tables": 25,
-  "total_columns": 226,
+  "version": "1.7.0-owned-block-relations",
+  "total_tables": 26,
+  "total_columns": 231,
   "physical_foreign_keys": false,
   "tables": {
     "personality": {
@@ -3392,6 +3392,95 @@
           "unique": true,
           "name": "uq_settings_snapshot_user_version",
           "meaning": "사용자·세대 유일성"
+        }
+      ]
+    },
+    "user_block": {
+      "name": "user_block",
+      "purpose": "현재 본인 소유 차단 관계; 해제 시 삭제하고 과거 종료 기록은 보존",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "meaning": "본인 차단 관계의 영속 공개 UUID",
+          "nullable": false,
+          "pk": true,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "owner_id",
+          "type": "bigint",
+          "meaning": "차단한 본인",
+          "nullable": false,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "target_id",
+          "type": "bigint",
+          "meaning": "차단된 상대",
+          "nullable": false,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "matching_id",
+          "type": "bigint",
+          "meaning": "기존 제안 종료 증거 소유 관계",
+          "nullable": false,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "created_at",
+          "type": "timestamptz",
+          "meaning": "현재 차단 생성 시각",
+          "nullable": false,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        }
+      ],
+      "indexes": [
+        {
+          "columns": [
+            "owner_id",
+            "target_id"
+          ],
+          "primary_key": false,
+          "unique": true,
+          "name": "uq_user_block_owner_target",
+          "meaning": "본인 상대별 현재 차단 하나"
+        },
+        {
+          "columns": [
+            "owner_id",
+            "created_at",
+            "id"
+          ],
+          "primary_key": false,
+          "unique": false,
+          "name": "ix_user_block_owner_created",
+          "meaning": "본인 목록 페이지"
         }
       ]
     }

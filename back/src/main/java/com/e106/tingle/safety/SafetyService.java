@@ -1,5 +1,6 @@
 package com.e106.tingle.safety;
 
+import java.nio.charset.StandardCharsets;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Timestamp;
@@ -7,6 +8,7 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.Base64;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -18,6 +20,7 @@ import org.springframework.transaction.annotation.Transactional;
 import com.e106.tingle.auth.MemberAccessRepository;
 import com.e106.tingle.global.error.BusinessException;
 import com.e106.tingle.global.error.ErrorCode;
+import com.e106.tingle.safety.dto.BlockPage;
 import com.e106.tingle.safety.dto.BlockRequest;
 import com.e106.tingle.safety.dto.BlockResult;
 import com.e106.tingle.safety.dto.LeaveResult;
@@ -34,6 +37,7 @@ public class SafetyService {
 	private final JdbcTemplate jdbc;
 	private final MemberAccessRepository members;
 	private final SafetyReceipts receipts;
+	private final BlockRelations blockRelations;
 	private final Clock clock;
 
 	@Transactional
@@ -79,6 +83,7 @@ public class SafetyService {
 		lockAccount(userId, key);
 		Scope scope = lockScope(userId, request.proposalId(), request.chatRoomId());
 		String hash = receipts.hash(request);
+		blockRelations.importLegacy(scope.id(), userId);
 		Optional<BlockResult> previous = receipts.find(userId, key, "BLOCK", hash, BlockResult.class);
 		if (previous.isPresent()) {
 			return previous.get();
@@ -96,9 +101,94 @@ public class SafetyService {
 				closeRoom(room, blockedAt, "BLOCKED");
 			}
 		}
+		blockRelations.importLegacy(scope.id(), userId);
 		BlockResult result = new BlockResult(scope.id(), blockedAt);
 		receipts.save(scope.id(), userId, key, "BLOCK", hash, result);
 		return result;
+	}
+
+	@Transactional
+	public BlockPage blocks(long userId, String cursor, int limit) {
+		if (limit < 1 || limit > 100) {
+			throw new BusinessException(ErrorCode.INVALID_REQUEST);
+		}
+		BlockCursor after = decodeBlockCursor(userId, cursor);
+		lockAccount(userId, UUID.randomUUID());
+		// 회원 잠금 뒤 관계를 오름차순으로 잠가 기존 차단을 한 번만 이관한다.
+		List<Long> legacy = jdbc.queryForList("select m.id from matching m join matching_participant p "
+			+ "on p.matching_id=m.id where p.user_id=? and p.blocked_at is not null "
+			+ "and p.request_state->>'blockRelationTracked' is distinct from '1' order by m.id for update of m",
+			Long.class, userId);
+		legacy.forEach(id -> blockRelations.importLegacy(id, userId));
+		String filter = after == null ? "" : "and (b.created_at,b.id)<(?,?) ";
+		String sql = "select b.id,b.created_at,case when u.status='ACTIVE' then p.nickname end as nickname "
+			+ "from user_block b left join users u on u.id=b.target_id "
+			+ "left join profile p on p.user_id=b.target_id where b.owner_id=? " + filter
+			+ "order by b.created_at desc,b.id desc limit ?";
+		Object[] args = after == null ? new Object[] {userId, limit + 1}
+			: new Object[] {userId, timestamp(after.at()), after.id(), limit + 1};
+		List<BlockPage.Item> found = jdbc.query(sql, (rs, row) -> new BlockPage.Item(
+			rs.getObject("id", UUID.class), rs.getString("nickname"), instant(rs, "created_at")), args);
+		List<BlockPage.Item> items = List.copyOf(found.subList(0, Math.min(limit, found.size())));
+		String next = null;
+		if (found.size() > limit) {
+			BlockPage.Item last = items.getLast();
+			String value = "blocks-v1|" + userId + "|" + last.createdAt() + "|" + last.blockId();
+			next = Base64.getUrlEncoder().withoutPadding().encodeToString(value.getBytes(StandardCharsets.UTF_8));
+		}
+		return new BlockPage(items, next);
+	}
+
+	@Transactional
+	public void unblock(long userId, UUID key, UUID blockId) {
+		lockAccount(userId, key);
+		String hash = receipts.hash(blockId);
+		if (receipts.find(userId, key, "UNBLOCK", hash, UnblockReceipt.class).isPresent()) {
+			return;
+		}
+		List<Long> owners = jdbc.queryForList("select matching_id from user_block where id=? and owner_id=?",
+			Long.class, blockId, userId);
+		if (owners.size() != 1) {
+			throw notFound();
+		}
+		List<Scope> scopes = jdbc.query("select id,user_low_id,user_high_id from matching where id=? "
+			+ "and ? in (user_low_id,user_high_id) for update", (rs, row) -> new Scope(rs.getLong("id"),
+				rs.getLong("user_low_id"), rs.getLong("user_high_id")), owners.getFirst(), userId);
+		if (scopes.size() != 1) {
+			throw new BusinessException(ErrorCode.SERVICE_UNAVAILABLE);
+		}
+		Scope scope = scopes.getFirst();
+		advanceSettings(scope);
+		if (jdbc.update("delete from user_block where id=? and owner_id=? and matching_id=?",
+			blockId, userId, scope.id()) != 1) {
+			throw new BusinessException(ErrorCode.SERVICE_UNAVAILABLE);
+		}
+		// blocked_at은 과거 제안 종료의 증거다. 응답·방·기존 재매칭 금지는 초기화하지 않는다.
+		receipts.save(scope.id(), userId, key, "UNBLOCK", hash, new UnblockReceipt(blockId));
+	}
+
+	private BlockCursor decodeBlockCursor(long userId, String cursor) {
+		if (cursor == null) {
+			return null;
+		}
+		try {
+			if (cursor.length() > 256) {
+				throw new IllegalArgumentException();
+			}
+			String[] parts = new String(Base64.getUrlDecoder().decode(cursor), StandardCharsets.UTF_8).split("\\|", -1);
+			if (parts.length != 4 || !"blocks-v1".equals(parts[0]) || Long.parseLong(parts[1]) != userId) {
+				throw new IllegalArgumentException();
+			}
+			return new BlockCursor(Instant.parse(parts[2]), UUID.fromString(parts[3]));
+		} catch (RuntimeException exception) {
+			throw new BusinessException(ErrorCode.INVALID_REQUEST);
+		}
+	}
+
+	private record BlockCursor(Instant at, UUID id) {
+	}
+
+	private record UnblockReceipt(UUID blockId) {
 	}
 
 	@Transactional
