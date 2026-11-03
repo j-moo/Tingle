@@ -5,6 +5,8 @@ spring:
       ddl-auto: create-drop
 
 app:
+  async-observation:
+    enabled: false
   auth:
     jwt-secret: only-for-automated-tests-not-a-production-secret-123456
 
