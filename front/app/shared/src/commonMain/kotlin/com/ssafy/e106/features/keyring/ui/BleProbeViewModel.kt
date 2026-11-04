@@ -136,6 +136,50 @@ class BleProbeViewModel(private val ble: KeyringBle, private val sessions: Sessi
         } finally { if (stamp == generation) mutable.value = mutable.value.copy(busy = false) }
     }
 
+    /** 등록 시 보관한 기기의 연결로 설정을 보낸다. 실패한 부분 프레임은 다음 요청에 재사용하지 않는다. */
+    @OptIn(ExperimentalUuidApi::class)
+    suspend fun syncChallenge(expectedSerial: String): String {
+        val channel = connection ?: throw BleException(BleFailure.Disconnected)
+        check(!mutable.value.busy && mutable.value.info?.serial == expectedSerial)
+        val stamp = generation
+        mutable.update { it.copy(busy = true) }
+        try {
+            val id = Uuid.random().toString()
+            val response = channel.exchange(KeyringSyncProtocol.challengeRequest(id))
+            check(stamp == generation && channel === connection)
+            return KeyringSyncProtocol.challengeResponse(response, id)
+        } catch (failure: Exception) {
+            if (stamp == generation && failure !is BleCommandException) {
+                watcher?.cancel(); channel.close(); connection = null
+                mutable.update { it.copy(connected = false, info = null, error = BleFailure.Disconnected) }
+            }
+            throw failure
+        } finally { if (stamp == generation) mutable.update { it.copy(busy = false) } }
+    }
+
+    /** 서버가 이번 보드 challenge에 서명한 설정만 전송한다. 서명은 앱이 생성하지 않는다. */
+    @OptIn(ExperimentalUuidApi::class)
+    suspend fun syncSettings(run: KeyringSyncRun, expectedSerial: String): KeyringStoredResult {
+        val channel = connection ?: throw BleException(BleFailure.Disconnected)
+        check(!mutable.value.busy && mutable.value.info?.serial == expectedSerial)
+        val stamp = generation
+        mutable.update { it.copy(busy = true) }
+        try {
+            val requestId = Uuid.random().toString()
+            // NUS 기반이 Notify 구독 및 20바이트 순차 Write with Response를 보장한다.
+            // 전송 재시도는 조정 모델이 새 보드 challenge/서명을 발급받은 뒤에만 진입한다.
+            val bytes = channel.exchange(KeyringSyncProtocol.request(run, requestId))
+            check(stamp == generation && connection === channel)
+            return KeyringSyncProtocol.response(bytes, requestId, run)
+        } catch (failure: Exception) {
+            if (stamp == generation && failure !is BleCommandException) {
+                watcher?.cancel(); channel.close(); connection = null
+                mutable.update { it.copy(connected = false, info = null, error = BleFailure.Disconnected) }
+            }
+            throw failure
+        } finally { if (stamp == generation) mutable.update { it.copy(busy = false) } }
+    }
+
     /** 화면 이탈/권한 상실/계정 변경 시 같은 정리 경로를 사용해 뒤늦은 응답을 차단한다. */
     fun leave() {
         generation++

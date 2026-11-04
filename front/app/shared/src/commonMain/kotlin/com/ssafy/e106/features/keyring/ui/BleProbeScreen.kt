@@ -16,15 +16,17 @@ import org.koin.compose.viewmodel.koinViewModel
 
 /** 읽기 진단은 단독 사용 가능하다. 개발 등록 경로에서만 별도 등록 모델을 받아 실제 귀속 확인 UI를 제공한다. */
 @Composable fun ConnectedBleProbeRoute(onBack: () -> Unit, model: BleProbeViewModel = koinViewModel(),
-    registration: KeyringRegistrationViewModel? = null) {
+    registration: KeyringRegistrationViewModel? = null, sync: KeyringSyncViewModel? = null) {
     val permission = rememberBlePermission()
     val state by model.state.collectAsStateWithLifecycle()
-    val registering = registration?.state?.collectAsStateWithLifecycle()?.value?.busy == true
+    val registrationBusy = registration?.state?.collectAsStateWithLifecycle()?.value?.busy == true
+    val syncBusy = sync?.state?.collectAsStateWithLifecycle()?.value?.busy == true
+    val registering = registrationBusy || syncBusy
     var settingsFailed by remember { mutableStateOf(false) }
     // 회전도 종료 정책이다. 복귀 후 자동으로 주변 기기를 연결하지 않고 사용자 재시도를 기다린다.
-    LifecycleEventEffect(Lifecycle.Event.ON_START) { registration?.restore() }
-    LifecycleEventEffect(Lifecycle.Event.ON_STOP) { registration?.pause(); model.leave() }
-    DisposableEffect(model, registration) { onDispose { registration?.pause(); model.leave() } }
+    LifecycleEventEffect(Lifecycle.Event.ON_START) { registration?.restore(); sync?.resume() }
+    LifecycleEventEffect(Lifecycle.Event.ON_STOP) { sync?.detach(); registration?.pause(); model.leave() }
+    DisposableEffect(model, registration) { onDispose { sync?.detach(); registration?.pause(); model.leave() } }
     LaunchedEffect(permission.availability) { if (permission.availability != BleAvailability.Ready) model.leave() }
     ProfileBackHandler(true) { registration?.pause(); model.leave(); onBack() }
     OnboardingPanel(stringResource(Res.string.ble_probe_title)) {
@@ -50,7 +52,7 @@ import org.koin.compose.viewmodel.koinViewModel
         if (settingsFailed) Text(stringResource(Res.string.ble_settings_failed), color = MaterialTheme.colorScheme.error)
         state.error?.let { Text(stringResource(Res.string.ble_failed, it.name), color = MaterialTheme.colorScheme.error) }
         state.commandError?.let { Text(stringResource(Res.string.ble_command_failed, it), color = MaterialTheme.colorScheme.error) }
-        if (state.busy) { CircularProgressIndicator(); Text(stringResource(Res.string.ble_connecting)) }
+        if (state.busy) { CircularProgressIndicator(); Text(stringResource(if (syncBusy) Res.string.sync_live_sending else Res.string.ble_connecting)) }
         if (permission.availability == BleAvailability.Ready && !state.connected) {
             AppButton(stringResource(if (state.scanning) Res.string.ble_stop_scan else Res.string.ble_start_scan),
                 enabled = !state.busy && !registering, onClick = { if (state.scanning) model.stopScan() else model.scan() })
@@ -77,6 +79,8 @@ import org.koin.compose.viewmodel.koinViewModel
         }
         if (state.connected || state.busy) AppButton(stringResource(Res.string.ble_disconnect),
             variant = AppButtonVariant.Secondary, enabled = !registering, onClick = model::leave)
-        registration?.let { KeyringRegistrationPanel(it, model, state) }
+        // 동기화 중 다른 명령을 막고 등록 결과와 설정 상태를 같은 화면에 표시한다.
+        registration?.let { KeyringRegistrationPanel(it, model, state, syncBusy) }
+        sync?.let { KeyringSyncPanel(it, model, state, registrationBusy) }
     }
 }
