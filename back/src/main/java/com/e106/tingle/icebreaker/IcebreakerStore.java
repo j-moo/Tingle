@@ -213,6 +213,21 @@ public class IcebreakerStore {
 		}));
 	}
 
+	/** 공용 작업 조회(GET /api/jobs)용 상태. 시작 질문 GET과 같은 열람 검사를 거치고, 실행을 선점한 동안은 RUNNING 이다. */
+	public String jobStatus(long roomId, long userId) {
+		return transaction.execute(status -> {
+			Map<String, Object> state = locked(roomId);
+			access(roomId, userId);
+			if (!state.containsKey("status")) {
+				throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND);
+			}
+			String current = stateStatus(state);
+			boolean leased = state.get("leaseUntil") instanceof String lease
+				&& clock.instant().isBefore(Instant.parse(lease));
+			return "PENDING".equals(current) && leased ? "RUNNING" : current;
+		});
+	}
+
 	private void access(long roomId, long userId) {
 		chats.noticeAccess(roomId, userId, false, false);
 		if (!activeParticipants(roomId)) {

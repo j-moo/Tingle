@@ -1,5 +1,8 @@
 package com.e106.tingle.personality;
 
+import java.time.Clock;
+import java.time.Instant;
+
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -11,6 +14,7 @@ import com.e106.tingle.survey.SurveyResponse;
 import com.e106.tingle.survey.SurveyResponseRepository;
 
 import lombok.RequiredArgsConstructor;
+import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
 
 /**
@@ -26,6 +30,7 @@ public class PersonalAnalysisService {
 	private final SurveyResponseRepository surveys;
 	private final PersonalAnalysisProperties properties;
 	private final JsonMapper jsonMapper;
+	private final Clock clock;
 
 	/**
 	 * 본인 완료 회차의 분석을 요청한다. 같은 회차·분석 규칙 버전의 줄이 있으면 상태와 상관없이 그 줄을 돌려준다.
@@ -68,6 +73,32 @@ public class PersonalAnalysisService {
 	}
 
 	public record Recovery(Long sessionId, AnalysisRequestResponse analysis) {
+	}
+
+	/**
+	 * 공용 작업 조회(GET /api/jobs)용 상태. 본인 결과가 아니면 없는 결과와 같은 404.
+	 * 작업기가 선점해 기한 안에 실행 중이면 RUNNING, 자동 재시도를 기다리는 FAILED 는 아직 끝나지 않았으므로 PENDING 이다.
+	 */
+	@Transactional(readOnly = true)
+	public String jobStatus(long userId, long resultId) {
+		Personality personality = personalities.findById(resultId)
+			.orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
+		surveys.findByIdAndUserId(personality.getSurveyId(), userId)
+			.orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
+		Personality.AnalysisStatus status = personality.getStatus();
+		if (status != Personality.AnalysisStatus.PENDING && status != Personality.AnalysisStatus.FAILED) {
+			return status.name();
+		}
+		// PENDING·FAILED 의 result 는 재시도 정보다(attempts·nextRetryAt·lastErrorCode).
+		JsonNode retryAt = personality.getResult() == null ? null
+			: jsonMapper.readTree(personality.getResult()).get("nextRetryAt");
+		if (status == Personality.AnalysisStatus.FAILED) {
+			return retryAt == null ? "FAILED" : "PENDING";
+		}
+		// PENDING 의 nextRetryAt 은 선점 기한이다. 기한이 지난 줄은 멈춤 복구로 다시 실행되기를 기다린다.
+		boolean running = retryAt != null && retryAt.isString() && clock.instant().isBefore(
+			Instant.parse(retryAt.asString()));
+		return running ? "RUNNING" : "PENDING";
 	}
 
 	/** 본인 결과만 돌려준다. 남의 결과와 없는 결과는 같은 404. */
