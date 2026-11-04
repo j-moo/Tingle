@@ -2,10 +2,12 @@
 
 import re
 import unicodedata
-from typing import Annotated, Literal
+from typing import Annotated, Literal, Self
 from uuid import UUID
 
-from pydantic import AfterValidator, BaseModel, ConfigDict, Field, field_validator
+from pydantic import AfterValidator, BaseModel, ConfigDict, Field, field_validator, model_validator
+
+from . import templates
 
 
 # Java String.strip()/isBlank() use Character.isWhitespace, excluding NBSPs.
@@ -65,16 +67,35 @@ class Manifest(StrictModel):
     contentHash: str = Field(min_length=64, max_length=64, pattern=r"^[0-9a-f]{64}$")
 
 
+CommonTopicKey = Literal["rest", "talk", "culture", "walk", "active"]
+
+
 class IcebreakerRequest(StrictModel):
     attemptId: UuidText
     contextId: int = Field(ge=1, le=2**63 - 1)
     manifest: Manifest
+    commonTopicKey: CommonTopicKey | None = None
+
+    @field_validator("commonTopicKey")
+    @classmethod
+    def reject_explicit_null(cls, key: CommonTopicKey | None) -> CommonTopicKey:
+        # Pydantic skips field validators for the omitted default.
+        if key is None:
+            raise ValueError("Omit commonTopicKey when unavailable")
+        return key
 
 
 class IcebreakerResponse(StrictModel):
     questions: list[str] = Field(min_length=3, max_length=3)
-    source: Literal["GENERAL_FALLBACK"]
+    source: Literal["COMMON_TOPIC_TEMPLATE", "GENERAL_FALLBACK"]
     promptVersion: VersionText
+
+    @model_validator(mode="after")
+    def check_source_version(self) -> Self:
+        expected = templates.Q040_VERSION if self.source == "COMMON_TOPIC_TEMPLATE" else templates.GENERAL_VERSION
+        if self.promptVersion != expected:
+            raise ValueError("Unexpected icebreaker prompt version")
+        return self
 
     @field_validator("questions")
     @classmethod

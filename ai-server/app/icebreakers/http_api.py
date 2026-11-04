@@ -1,4 +1,4 @@
-"""Authenticate first, then serve the fixed fallback for a registered release."""
+"""Authenticate first, then serve fixed questions for a registered release."""
 
 import json
 from pathlib import Path
@@ -11,10 +11,17 @@ from app.match_explanation.releases import ReleaseError, ReleaseRegistry
 from app.security.service_auth import ServiceAuthenticator
 
 from . import templates
-from .contract import IcebreakerRequest, IcebreakerResponse
+from .contract import CommonTopicKey, IcebreakerRequest, IcebreakerResponse
 
 
 _MAX_BODY_BYTES = 16 * 1024
+_DATE_TOPIC_KEYS: dict[CommonTopicKey, str] = {
+    "rest": "DATE_REST",
+    "talk": "DATE_TALK",
+    "culture": "DATE_CULTURE",
+    "walk": "DATE_WALK",
+    "active": "DATE_ACTIVE",
+}
 
 
 def _unique_object(pairs: list[tuple[str, object]]) -> dict[str, object]:
@@ -48,11 +55,35 @@ async def _parse_request(request: Request) -> IcebreakerRequest:
         raise HTTPException(400, detail={"code": "INVALID_REQUEST"}) from None
 
 
-def create_router(authenticate: ServiceAuthenticator, descriptor_file: str = "") -> APIRouter:
+def _select_questions(topic_key: CommonTopicKey | None) -> IcebreakerResponse:
+    if topic_key is not None:
+        # BE supplies the selected code after checking survey and consent eligibility.
+        questions = templates.suggest_date_questions(_DATE_TOPIC_KEYS[topic_key])
+        if questions != templates.GENERAL:
+            try:
+                return IcebreakerResponse(
+                    questions=list(questions),
+                    source="COMMON_TOPIC_TEMPLATE",
+                    promptVersion=templates.Q040_VERSION,
+                )
+            except ValidationError:
+                # Apply the BE question policy even after the template's own validation.
+                pass
+    return IcebreakerResponse(
+        questions=list(templates.GENERAL),
+        source="GENERAL_FALLBACK",
+        promptVersion=templates.GENERAL_VERSION,
+    )
+
+
+def create_router(
+    authenticate: ServiceAuthenticator, descriptor_file: str = "", *, dev_enabled: bool = False,
+) -> APIRouter:
     router = APIRouter()
     releases = None
-    # This transport is for local synthetic verification until the integration is approved.
-    if authenticate.settings.environment in {"local", "test"} and descriptor_file:
+    environment = authenticate.settings.environment
+    enabled = environment in {"local", "test"} or (environment == "dev" and dev_enabled)
+    if enabled and descriptor_file:
         try:
             releases = ReleaseRegistry([Path(descriptor_file)])
         except (ReleaseError, RecursionError):
@@ -67,11 +98,7 @@ def create_router(authenticate: ServiceAuthenticator, descriptor_file: str = "")
         payload = await _parse_request(request)
         try:
             await run_in_threadpool(releases.verify, payload.manifest.model_dump())
-            return IcebreakerResponse(
-                questions=list(templates.GENERAL),
-                source="GENERAL_FALLBACK",
-                promptVersion=templates.GENERAL_VERSION,
-            )
+            return _select_questions(payload.commonTopicKey)
         except (ReleaseError, ValidationError):
             raise _unavailable() from None
 

@@ -20,7 +20,7 @@ if settings.ai_service_public_keys and not service_auth.is_ready:
     raise RuntimeError("Invalid service authentication configuration") from None
 app.state.service_auth = service_auth
 app.include_router(create_icebreaker_router(
-    service_auth, settings.icebreaker_release_descriptor_file,
+    service_auth, settings.icebreaker_release_descriptor_file, dev_enabled=settings.icebreaker_dev_enabled,
 ))
 app.include_router(create_router(
     authenticate=service_auth,

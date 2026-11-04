@@ -9,6 +9,7 @@ class Settings(BaseSettings):
     port: int = 8000
     ai_service_public_keys: dict[str, str] = {}
     icebreaker_release_descriptor_file: str = ""
+    icebreaker_dev_enabled: bool = False
     risk_release_descriptor_file: str = ""
     explanation_release_descriptor_files: list[str] = []
 
