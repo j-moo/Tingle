@@ -22,8 +22,9 @@ class ChatAdditionalReviewTest {
     @BeforeTest fun setup() { Dispatchers.setMain(dispatcher) }
     @AfterTest fun teardown() { models.clear(); Dispatchers.resetMain() }
     private fun test(block: suspend TestScope.() -> Unit) = runTest(dispatcher) { try { block() } finally { models.clear() } }
+    // 실시간 입력은 별도 검사로 분리하고 이 검사는 기존 조회/저장 복구 전제를 유지한다.
     private fun room(api: ChatTestServer) = ChatRoomViewModel(api, TestSession(OnboardingStatus.READY),
-        ChatLocalStorage(ChatMemoryPrefs()), now = { dispatcher.scheduler.currentTime.milliseconds })
+        ChatLocalStorage(ChatMemoryPrefs()), IdleChatEvents, now = { dispatcher.scheduler.currentTime.milliseconds })
         .also { models.put("room", it); it.open(20) }
 
     @Test fun delayedInitialMessagesDoNotOverwriteNewDraft() = test {
@@ -153,14 +154,14 @@ class ChatAdditionalReviewTest {
             }
         }
         val api = ChatTestServer(); val local = ChatLocalStorage(prefs)
-        val m = ChatRoomViewModel(api, TestSession(OnboardingStatus.READY), local).also { models.put("room", it); it.open(20) }
+        val m = ChatRoomViewModel(api, TestSession(OnboardingStatus.READY), local, IdleChatEvents).also { models.put("room", it); it.open(20) }
         runCurrent(); m.draft("중복되면 안 되는 본문"); advanceTimeBy(201); runCurrent()
         prefs.rejectClear = true; m.send(); runCurrent()
         assertTrue(api.writes.isEmpty()); val pending = assertNotNull(m.state.value.pending)
         assertEquals(pending, prefs.flow(pendingChatKey).first())
         prefs.rejectClear = false; m.retry(); runCurrent()
         assertEquals(listOf(pending.key to pending.body), api.writes)
-        val reopened = ChatRoomViewModel(api, TestSession(OnboardingStatus.READY), ChatLocalStorage(prefs))
+        val reopened = ChatRoomViewModel(api, TestSession(OnboardingStatus.READY), ChatLocalStorage(prefs), IdleChatEvents)
             .also { models.put("room", it); it.open(20) }
         runCurrent(); assertEquals("", reopened.state.value.ui.draft); assertNull(reopened.state.value.pending)
     }

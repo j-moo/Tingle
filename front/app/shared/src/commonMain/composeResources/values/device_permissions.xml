@@ -1,0 +1,31 @@
+<resources>
+    <string name="permissions_notification_fallback">요청 창이 열리지 않으면 앱 설정에서 알림을 켜 주세요.</string>
+    <string name="permissions_keyring_pending">키링 연결 기능을 준비하고 있어요. 준비되면 여기에서 연결 권한과 블루투스 상태를 확인할 수 있어요.</string>
+    <string name="permissions_heading">알림과 키링 연결을\n편하게 준비해요</string>
+    <string name="permissions_intro">필요한 권한과 휴대폰 상태를 확인해 주세요. 각 항목을 눌러 설정할 수 있어요.</string>
+    <string name="permissions_notifications">알림</string>
+    <string name="permissions_notifications_body">새로운 매칭과 채팅 소식을 휴대폰 알림으로 받는 데 사용해요.</string>
+    <string name="permissions_nearby">키링 연결 권한</string>
+    <string name="permissions_nearby_body">주변 키링을 찾고 통신하기 위해 필요해요. 휴대폰 버전에 따라 요청되는 권한 이름이 다를 수 있어요.</string>
+    <string name="permissions_bluetooth">블루투스</string>
+    <string name="permissions_bluetooth_body">키링과 통신하려면 휴대폰의 블루투스가 켜져 있어야 해요. 앱 권한과는 별도로 확인해요.</string>
+    <string name="permissions_unknown">확인 필요</string>
+    <string name="permissions_granted">허용됨</string>
+    <string name="permissions_requestable">권한 요청 필요</string>
+    <string name="permissions_settings_required">휴대폰 설정에서 확인 필요</string>
+    <string name="permissions_not_required">별도 권한 요청 없음</string>
+    <string name="permissions_unsupported">이 기기에서 지원하지 않아요</string>
+    <string name="permissions_on">켜짐</string>
+    <string name="permissions_off">꺼짐</string>
+    <string name="permissions_request">권한 요청하기</string>
+    <string name="permissions_settings">앱 설정 열기</string>
+    <string name="permissions_bluetooth_settings">블루투스 설정 열기</string>
+    <string name="permissions_refresh">상태 다시 확인</string>
+    <string name="permissions_checking">권한 상태 확인 중</string>
+    <string name="permissions_failed">현재 상태를 확인하지 못했어요</string>
+    <string name="permissions_failed_body">잠시 후 상태를 다시 확인해 주세요.</string>
+    <string name="permissions_action_failed">요청 화면을 열지 못했어요</string>
+    <string name="permissions_action_failed_body">상태를 다시 확인한 후 필요한 항목을 눌러 주세요.</string>
+    <string name="permissions_separate">권한 허용은 키링 연결 완료를 뜻하지 않아요. 알림 허용만으로 모든 알림의 도착이 보장되지는 않아요.</string>
+    <string name="permissions_return">휴대폰 설정에서 돌아오면 현재 상태를 다시 확인해요. 이 화면에서는 약관·AI 분석 동의를 변경하지 않아요.</string>
+</resources>

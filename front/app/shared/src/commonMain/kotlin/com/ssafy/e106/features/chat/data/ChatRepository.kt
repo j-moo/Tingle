@@ -68,4 +68,5 @@ internal fun AppError.chatCode() = when (this) {
     else -> "UNAVAILABLE"
 }
 internal fun AppError.revokesChat() = this is AppError.OnboardingRequired || this == AppError.SessionExpired ||
-    this is AppError.Server && (status in listOf(401, 403, 404, 410))
+    // 공통 WebSocket은 HTTP 상태가 없는 CHAT_CLOSED(status=0)로 종료를 알릴 수 있다.
+    this is AppError.Server && (status in listOf(401, 403, 404, 410) || code == "CHAT_CLOSED")

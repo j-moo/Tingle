@@ -21,6 +21,8 @@ import com.ssafy.e106.features.profile.ui.ProfileManagementRoute
 import com.ssafy.e106.features.profile.DevelopmentProfileAccess
 import com.ssafy.e106.features.survey.ui.SurveyAccess
 import com.ssafy.e106.features.survey.ui.SurveyRoute
+import com.ssafy.e106.features.settings.SettingsAccess
+import com.ssafy.e106.features.settings.ui.ConnectedSettingsRoute
 import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.viewmodel.koinViewModel
 import org.koin.compose.koinInject
@@ -31,6 +33,7 @@ fun OnboardingRoute(
     model: OnboardingViewModel = koinViewModel(),
     profileAccess: DevelopmentProfileAccess = koinInject(),
     surveyAccess: SurveyAccess = koinInject(),
+    settingsAccess: SettingsAccess = koinInject(),
 ) {
     val state by model.state.collectAsStateWithLifecycle()
     var developmentProfile by rememberSaveable(session.userId, session.status, session.isReady) { mutableStateOf(false) }
@@ -39,8 +42,12 @@ fun OnboardingRoute(
     var manageProfile by rememberSaveable(session.userId, session.status, session.isReady) { mutableStateOf(false) }
     var openSurvey by rememberSaveable(session.userId, session.status, session.isReady) { mutableStateOf(false) }
     val canSurvey = surveyAccess.allowed(session)
+    // 개발 메뉴에서도 실제 API 권한을 사용하며 가입 상태를 바꾸지 않는다.
+    var openSettings by rememberSaveable(session) { mutableStateOf(false) }
+    val canSettings = settingsAccess.allowed(session)
     when {
         state.session != session -> OnboardingPanel(stringResource(Res.string.onboarding_title)) { Text(stringResource(Res.string.onboarding_loading)) }
+        canSettings && openSettings -> ConnectedSettingsRoute(session, { openSettings = false })
         canSurvey && openSurvey -> SurveyRoute(session, { openSurvey = false })
         canManage && manageProfile -> ProfileManagementRoute(session, { manageProfile = false })
         !session.isReady && session.status == OnboardingStatus.PROFILE_REQUIRED -> ProfileRoute(session)
@@ -56,7 +63,8 @@ fun OnboardingRoute(
         else -> OnboardingScreen(state, model::check, model::submit, model::load, model::refresh, model::logout,
             canSkipKeyring = canSkip, onSkipKeyring = { if (canSkip) developmentProfile = true },
             canManageProfile = canManage, onManageProfile = { if (canManage) manageProfile = true },
-            canOpenSurvey = canSurvey, onOpenSurvey = { if (canSurvey) openSurvey = true })
+            canOpenSurvey = canSurvey, onOpenSurvey = { if (canSurvey) openSurvey = true },
+            canOpenSettings = canSettings, onOpenSettings = { if (canSettings) openSettings = true })
     }
 }
 
@@ -76,6 +84,8 @@ fun OnboardingScreen(
     onManageProfile: () -> Unit = {},
     canOpenSurvey: Boolean = false,
     onOpenSurvey: () -> Unit = {},
+    canOpenSettings: Boolean = false,
+    onOpenSettings: () -> Unit = {},
 ) {
     val session = state.session ?: return
     val agreements = session.status == OnboardingStatus.AGREEMENT_REQUIRED
@@ -136,6 +146,7 @@ fun OnboardingScreen(
             }))
         }
         state.error?.let { OnboardingError(it.message) }
+        if (canOpenSettings) AppButton(stringResource(Res.string.settings_api_entry), enabled = !state.busy, onClick = onOpenSettings)
         if (canOpenSurvey) AppButton(stringResource(if (keyring) Res.string.survey_api_dev_entry else Res.string.survey_api_entry),
             enabled = !state.busy, onClick = onOpenSurvey)
         if (canManageProfile) AppButton(stringResource(if (session.isReady) Res.string.profile_manage_entry else Res.string.profile_manage_dev_entry),

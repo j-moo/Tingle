@@ -56,7 +56,8 @@ class ChatFlowTest {
     @AfterTest fun teardown() { store.clear(); Dispatchers.resetMain() }
     private fun chatTest(block: suspend TestScope.() -> Unit) = runTest(dispatcher) { try { block() } finally { store.clear() } }
     private fun vm(server: ChatTestServer, prefs: ChatMemoryPrefs = ChatMemoryPrefs(), session: TestSession = TestSession(OnboardingStatus.READY)) =
-        ChatRoomViewModel(server, session, ChatLocalStorage(prefs)).also { store.put("chat", it); it.open(20) }
+        // 전송/복원 검사는 유휴 이벤트로 격리하고 방별 저장소는 실제 기능 객체를 사용한다.
+        ChatRoomViewModel(server, session, ChatLocalStorage(prefs), IdleChatEvents).also { store.put("chat", it); it.open(20) }
 
     @Test fun fastExitPersistsDraftBeforeDebounce() = chatTest {
         val prefs = ChatMemoryPrefs(); val api = ChatTestServer(); val m = vm(api, prefs)

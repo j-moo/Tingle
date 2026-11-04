@@ -46,7 +46,7 @@ class ChatPollingTestActivity : ComponentActivity() {
         val session = TestSession(OnboardingStatus.READY); val local = ChatLocalStorage(ChatMemoryPrefs())
         val provider = ViewModelProvider(this, object : ViewModelProvider.Factory {
             @Suppress("UNCHECKED_CAST") override fun <T : ViewModel> create(modelClass: Class<T>): T = when (modelClass) {
-                ChatRoomViewModel::class.java -> ChatRoomViewModel(server, session, local)
+                ChatRoomViewModel::class.java -> ChatRoomViewModel(server, session, local, IdleChatEvents)
                 ChatPartnerViewModel::class.java -> ChatPartnerViewModel(server, session)
                 else -> ChatListViewModel(server, session, local)
             } as T

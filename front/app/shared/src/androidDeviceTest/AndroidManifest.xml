@@ -2,6 +2,8 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
     <application>
+        <!-- 설정 회전 중 입력 보존과 저장 완료를 검증하는 테스트 전용 호스트. -->
+        <activity android:name="com.ssafy.e106.features.settings.SettingsLifecycleActivity" android:exported="true" />
         <!-- 저장 요청 복구 도중 실제 Activity 중단·복귀를 검사하는 테스트 전용 호스트. -->
         <activity android:name="com.ssafy.e106.features.report.ReportRestoreTestActivity" android:exported="true" />
         <!-- 종료된 방의 신고 결과 확인·접수 완료 표시를 검사하는 테스트 전용 호스트. -->
@@ -22,5 +24,12 @@
         <activity android:name="com.kakao.sdk.auth.AuthCodeHandlerActivity" tools:node="remove" />
         <!-- 네이버 콜백(App Link)도 같다. ${naverCallbackHost} · ${naverCallbackPath} 는 androidApp 이 채운다 -->
         <activity android:name="com.ssafy.e106.core.auth.NaverAuthActivity" tools:node="remove" />
+        <!-- 로컬 화면 검사와 병합된 기능 검사를 모두 보존한다. -->
+        <activity android:name="com.ssafy.e106.features.home.RecoveryUiTestActivity" android:exported="true"
+            android:theme="@android:style/Theme.Material.Light.NoActionBar" />
+        <activity android:name="com.ssafy.e106.features.home.CompactLayoutTestActivity" android:exported="true"
+            android:theme="@android:style/Theme.Material.Light.NoActionBar" android:windowSoftInputMode="adjustResize" />
+        <activity android:name="com.ssafy.e106.features.chat.ChatScreenTestActivity" android:exported="true" />
+        <activity android:name="com.ssafy.e106.features.home.HomeNavigationTestActivity" android:exported="true" />
     </application>
 </manifest>

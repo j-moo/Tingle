@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="proposal_list_title">받은 제안</string>
+    <string name="proposal_list_heading">스쳐 간 인연을\n다시 만나보세요</string>
+    <string name="proposal_list_intro">프로필을 확인하고 만남을 이어갈지 결정해 주세요. 제안은 생성된 시각부터 24시간 동안 유효해요.</string>
+    <string name="proposal_list_loading">제안을 불러오고 있어요</string>
+    <string name="proposal_list_loading_help">현재 확인할 수 있는 제안을 조회하고 있어요.</string>
+    <string name="proposal_list_failed">제안을 불러오지 못했어요</string>
+    <string name="proposal_list_failed_help">인터넷 연결을 확인하고 다시 시도해 주세요.</string>
+    <string name="proposal_list_retry">다시 불러오기</string>
+    <string name="proposal_list_refresh">새로고침</string>
+    <string name="proposal_list_refreshing">목록 확인 중…</string>
+    <string name="proposal_list_refresh_failed">최신 목록을 확인하지 못했어요. 표시된 제안은 이전에 불러온 정보예요.</string>
+    <string name="proposal_list_empty">아직 받은 제안이 없어요</string>
+    <string name="proposal_list_empty_help">새로운 제안이 도착하면 이곳에서 확인할 수 있어요.</string>
+    <string name="proposal_list_partial_empty">확인할 제안이 더 있을 수 있어요</string>
+    <string name="proposal_list_partial_empty_help">이번 페이지에는 표시할 제안이 없어요. 다음 페이지를 확인해 주세요.</string>
+    <string name="proposal_list_no_verified_title">확인할 수 있는 목록이 없어요</string>
+    <string name="proposal_list_no_verified_help">최신 제안이 있는지 다시 불러와 주세요.</string>
+    <string name="proposal_list_end">더 불러올 제안이 없어요.</string>
+    <string name="proposal_list_more">제안 더 보기</string>
+    <string name="proposal_list_more_retry">추가 제안 다시 불러오기</string>
+    <string name="proposal_list_more_loading">추가 제안 확인 중…</string>
+    <string name="proposal_list_home">홈</string>
+    <string name="proposal_list_tab">제안</string>
+    <string name="proposal_list_chats">채팅</string>
+    <string name="proposal_list_profile">마이</string>
+    <string name="proposal_list_no_photo">사진\n없음</string>
+    <string name="proposal_list_photo_loading">사진\n확인 중</string>
+    <string name="proposal_list_photo_failed">사진\n오류</string>
+    <string name="proposal_list_name_unknown">프로필 확인 필요</string>
+    <string name="proposal_list_age">만 %1$d세</string>
+    <string name="proposal_list_age_unknown">나이 확인 필요</string>
+    <string name="proposal_list_not_responded">내 응답 전</string>
+    <string name="proposal_list_accepted">내 수락 완료 · 결과 대기</string>
+    <string name="proposal_list_deadline">제안 마감 · %1$s</string>
+    <string name="proposal_list_deadline_unknown">제안 마감 시간을 확인해야 해요.</string>
+    <string name="proposal_list_waiting_help">수락했어요. 결과가 확인되면 안내해 드릴게요.</string>
+    <string name="proposal_list_open_profile">프로필 확인</string>
+</resources>

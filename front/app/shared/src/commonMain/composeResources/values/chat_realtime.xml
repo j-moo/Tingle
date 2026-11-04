@@ -1,0 +1,7 @@
+<resources>
+    <string name="chat_realtime_connecting">실시간 수신에 연결하고 있어요.</string>
+    <string name="chat_realtime_connected">실시간 수신 연결됨</string>
+    <string name="chat_realtime_reconnecting">연결이 끊겨 다시 연결하고 있어요.</string>
+    <string name="chat_realtime_stopped">실시간 수신이 멈췄어요. 다시 연결해 최신 메시지를 확인해 주세요.</string>
+    <string name="chat_realtime_retry">실시간 수신 다시 연결</string>
+</resources>
