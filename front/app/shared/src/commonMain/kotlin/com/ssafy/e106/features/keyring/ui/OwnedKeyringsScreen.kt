@@ -18,7 +18,7 @@ import org.koin.compose.viewmodel.koinViewModel
 
 /** 실행 화면은 실제 API만 사용한다. 회전/복귀 시 다시 읽고 화면 이탈 시 민감 목록을 제거한다. */
 @Composable fun ConnectedOwnedKeyringsRoute(session: Session.SignedIn, onBack: () -> Unit,
-    model: OwnedKeyringsViewModel = koinViewModel()) {
+    model: OwnedKeyringsViewModel = koinViewModel(), onBleProbe: (() -> Unit)? = null) {
     val state by model.state.collectAsStateWithLifecycle()
     // 진입과 복귀를 한 곳에서 처리해 첫 화면에서 GET 두 개가 동시에 시작되지 않게 한다.
     LifecycleResumeEffect(session, state.owner) {
@@ -26,14 +26,16 @@ import org.koin.compose.viewmodel.koinViewModel
         onPauseOrDispose { model.leave() }
     }
     ProfileBackHandler(true, onBack)
-    if (state.owner == session) OwnedKeyringsScreen(state, model::load, onBack)
+    if (state.owner == session) OwnedKeyringsScreen(state, model::load, onBack, onBleProbe)
 }
 
 /** 순수 표시 함수. Preview 예시와 실제 조회를 분리하고 등록·초기화·동기화 실행을 흉내 내지 않는다. */
-@Composable fun OwnedKeyringsScreen(state: OwnedKeyringsState, onRefresh: () -> Unit, onBack: () -> Unit) {
+@Composable fun OwnedKeyringsScreen(state: OwnedKeyringsState, onRefresh: () -> Unit, onBack: () -> Unit, onBleProbe: (() -> Unit)? = null) {
     OnboardingPanel(stringResource(Res.string.owned_keyrings_title)) {
         TextButton(onClick = onBack) { Text(stringResource(Res.string.owned_keyrings_back)) }
         Text(stringResource(Res.string.owned_keyrings_description))
+        // 개발 환경에서만 실제 무선 읽기 시험을 제공한다. 서버 소유 목록과 결과를 합치지 않는다.
+        if (onBleProbe != null) AppButton(stringResource(Res.string.ble_probe_entry), onClick = onBleProbe)
         when {
             state.loading -> {
                 CircularProgressIndicator()
