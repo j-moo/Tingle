@@ -1,0 +1,13 @@
+/* Preserve stock UF2/internal Bluetooth settings and lab records 0..0x40000. */
+&p25q16h {
+	zephyr,deferred-init;
+	partitions {
+		compatible = "fixed-partitions";
+		#address-cells = <1>;
+		#size-cells = <1>;
+		registration_store: partition@40000 {
+			label = "registration-store";
+			reg = <0x00040000 0x00020000>;
+		};
+	};
+};
