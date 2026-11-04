@@ -1,26 +1,101 @@
-/* 영상 앞뒤로 검은 구간(--lead-top · --lead-bottom)을 두고, 가운데 track(1.5625 화면)에서 영상 화면이 고정된 채 0.5625 화면만큼 머문 뒤 위로 빠짐
-   영상이 화면을 꽉 덮는 동안 네비 · 스크롤바 숨김(BrandFilm/index.tsx) */
+/* 검은 구간(--lead-top) → 화면 고정(track) 동안: ① 나타남 → ② 멈춤 → ③ 커짐 → ④ 머묾 → ⑤ 다음 섹션이 덮음(일상 영상 margin-top: -100svh)
+   단계 길이(svh 숫자)는 index.tsx 가 읽음. 진행 값(--shown · --full · --cover · --blur)은 index.tsx 가 .sticky 에 닮 */
 .film {
-  --lead-top: 120svh;                    /* 영상 위 검은 구간 길이 */
-  --lead-bottom: 60svh;                  /* 영상 아래 검은 구간 길이 */
-  padding-block: var(--lead-top) var(--lead-bottom);
+  --lead-top: 60svh;                     /* 영상 앞 검은 구간 */
+  padding-top: var(--lead-top);
   background: #000;
 }
 
 .track {
-  height: 156.25svh;
+  --fade-length: 60;                     /* ① 작은 영상이 떠오르며 나타나는 길이 */
+  --center-hold: 40;                     /* ② 작은 영상으로 멈춰 있는 길이 */
+  --grow-length: 60;                     /* ③ 전체 화면까지 커지는 길이 */
+  --full-hold: 150;                      /* ④ 전체 화면으로 머무는 길이(다음 섹션이 올라오기 전 정지) */
+  height: calc((100 + var(--fade-length) + var(--center-hold) + var(--grow-length) + var(--full-hold) + 100) * 1svh);   /* 화면 하나 + ①~④ + ⑤ 덮이는 한 화면(끝의 100 = DailyClips.module.css 의 margin-top: -100svh 와 짝) */
 }
 
 .sticky {
-  --miss: 1;
+  --shown: 0;
+  --full: 0;
+  --cover: 0;
+  --blur: 24px;
   position: sticky;
   top: 0;
   height: 100svh;
   overflow: hidden;
 }
 
+/* 영상: 75% 로 100px 아래에서 떠오르며 나타나고(①), 커지며 전체 화면(③). 흐림(--blur)은 작을 때 · 덮일 때만 */
+.frame {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  opacity: var(--shown);
+  filter: blur(var(--blur));
+  translate: 0 calc((1 - var(--shown)) * 100px);
+  transform: scale(calc(0.75 + var(--full) * 0.25));
+}
 .video {
   position: absolute;
   inset: 0;
-  filter: blur(calc(var(--miss) * 28px));   /* 영상 화면이 화면과 어긋난 정도(--miss, index.tsx)만큼 흐림, 딱 맞으면 선명 */
+}
+
+/* 영상 위 문구(흐리지 않음, 크기 고정): 나타남을 따라 보이고, 커지며 사라짐(전체 화면에서는 영상만) */
+.title {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: calc(100% - 48px);
+  margin: 0;
+  color: #fff;
+  font-size: clamp(32px, 5.5vw, 80px);
+  font-weight: 900;
+  line-height: 1.2;
+  letter-spacing: -0.03em;
+  text-align: center;
+  text-shadow: 0 4px 24px rgb(0 0 0 / 25%);
+  opacity: calc(var(--shown) * (1 - var(--full)));
+  pointer-events: none;
+  translate: -50% -50%;
+}
+
+/* 전체 화면이 되면 가운데 흰 재생 버튼(누르면 소리와 함께 재생, 썸네일이 걷히고 유튜브 컨트롤) */
+.play {
+  position: absolute;
+  z-index: 3;
+  top: 50%;
+  left: 50%;
+  display: grid;
+  width: 96px;
+  height: 96px;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: rgb(255 255 255 / 92%);
+  box-shadow: 0 12px 40px rgb(0 0 0 / 35%);
+  color: var(--neutral-900);
+  cursor: pointer;
+  translate: -50% -50%;
+  opacity: calc(1 - var(--cover) * 2);
+  transition: scale 0.2s ease;
+}
+.play:hover {
+  scale: 1.06;
+}
+.play svg {
+  width: 40px;
+  height: 40px;
+  margin-left: 4px;                      /* 삼각형 무게중심 보정 */
+  fill: currentColor;
+}
+@media (max-width: 720px) {
+  .play {
+    width: 72px;
+    height: 72px;
+  }
+  .play svg {
+    width: 30px;
+    height: 30px;
+  }
 }

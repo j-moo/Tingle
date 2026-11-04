@@ -26,8 +26,9 @@ export default function LetsDoIt() {
     const update = () => {
       frame = 0
       const r = el.getBoundingClientRect()
-      const travel = r.height - innerHeight                                // 고정된 채 스크롤되는 거리
-      const progress = travel > 0 ? Math.min(1, Math.max(0, -r.top / travel)) : 0
+      const gap = parseFloat(getComputedStyle(el).paddingTop)               // 위 여백(--rise-gap)은 지나간 뒤부터 고정
+      const travel = r.height - gap - innerHeight                          // 고정된 채 스크롤되는 거리
+      const progress = travel > 0 ? Math.min(1, Math.max(0, (-r.top - gap) / travel)) : 0
       setActive(Math.min(LAST, Math.floor(progress * STEPS.length)))       // 고정 구간을 단계 수로 똑같이 나눠 각 패널이 --hold 화면씩 머묾
     }
 
@@ -41,6 +42,16 @@ export default function LetsDoIt() {
       cancelAnimationFrame(frame)
     }
   }, [])
+
+  // 진행 막대를 누르면 그 단계 구간의 가운데로 부드럽게 스크롤(시작 지점으로 가면 앞으로 갈 때 감속 끝에야 경계를 넘어 늦게 바뀜)
+  const goTo = (i: number) => {
+    const el = section.current
+    if (!el) return
+    const r = el.getBoundingClientRect()
+    const gap = parseFloat(getComputedStyle(el).paddingTop)
+    const travel = r.height - gap - innerHeight
+    scrollTo({ top: r.top + scrollY + gap + travel * ((i + 0.5) / STEPS.length) })
+  }
 
   return (
     <section id='how-it-works' ref={section} className={styles.section} style={{ '--steps': STEPS.length, '--i': active } as CSSProperties} aria-labelledby='how-it-works-title'>
@@ -58,9 +69,9 @@ export default function LetsDoIt() {
             </li>
           ))}
         </ol>
-        <div className={styles.bars} aria-hidden>
+        <div className={styles.bars}>
           {STEPS.map((s, i) => (
-            <span key={s.step} className={i === active ? styles.on : undefined} />
+            <button key={s.step} type='button' data-label={s.step} className={i === active ? styles.on : undefined} aria-label={`${s.step} 보기`} aria-current={i === active ? 'step' : undefined} onClick={() => goTo(i)} />
           ))}
         </div>
       </div>
