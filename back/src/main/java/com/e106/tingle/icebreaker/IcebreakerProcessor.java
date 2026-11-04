@@ -40,9 +40,14 @@ public class IcebreakerProcessor {
 		IcebreakerGateway.Generated result = null;
 		boolean retryable = false;
 		try {
-			result = claim.external()
-				? gateway.generate(roomId, claim.attemptId(), claim.manifest(), claim.deadlineAt())
-				: questions.fallback();
+			if (!claim.external()) {
+				result = questions.fallback();
+			} else if (claim.commonTopicKey() == null) {
+				result = gateway.generate(roomId, claim.attemptId(), claim.manifest(), claim.deadlineAt());
+			} else {
+				result = gateway.generate(roomId, claim.attemptId(), claim.manifest(), claim.deadlineAt(),
+					claim.commonTopicKey());
+			}
 		} catch (IcebreakerGateway.GatewayException exception) {
 			retryable = exception.retryable();
 		} catch (RuntimeException exception) {

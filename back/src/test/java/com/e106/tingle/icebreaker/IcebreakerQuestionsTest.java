@@ -89,6 +89,45 @@ class IcebreakerQuestionsTest {
 			.containsExactly("하나", "둘", "셋");
 	}
 
+	@Test
+	void commonTopicRequiresAnApprovedRequestKeyAndExactTemplateVersion() {
+		IcebreakerGateway.Generated common = new IcebreakerGateway.Generated(List.of("하나", "둘", "셋"),
+			"COMMON_TOPIC_TEMPLATE", "q040-template-v1");
+		for (String key : List.of("rest", "talk", "culture", "walk", "active")) {
+			assertThat(questions.validate(common, key)).isEqualTo(common);
+		}
+		assertThat(questions.validate(common)).isNull();
+		for (String key : List.of("", " ", "unknown", "REST", "DATE_REST", "rest,talk")) {
+			assertThat(questions.validate(common, key)).isNull();
+		}
+		for (String version : List.of("q040-template-v2", "icebreakers-general-ko-v1", " q040-template-v1")) {
+			assertThat(questions.validate(new IcebreakerGateway.Generated(common.questions(), common.source(), version),
+				"rest")).isNull();
+		}
+	}
+
+	@Test
+	void commonTopicKeepsQuestionCountAndSafetyValidation() {
+		for (List<String> values : List.of(List.of("하나", "둘"), List.of("하나", "둘", "셋", "넷"),
+			List.of("하나", "하나", "셋"), List.of("하나", " ", "셋"), List.of("하나", "종교가 같나요?", "셋"))) {
+			assertThat(questions.validate(new IcebreakerGateway.Generated(values,
+				"COMMON_TOPIC_TEMPLATE", "q040-template-v1"), "rest")).isNull();
+		}
+	}
+
+	@Test
+	void topicRequestMayReturnTheExistingGeneralFallback() {
+		IcebreakerGateway.Generated fallback = questions.fallback();
+		assertThat(questions.validate(fallback, "rest")).isEqualTo(fallback);
+	}
+
+	@Test
+	void topicRequestRejectsLegacyGeneratedSourceButOrdinaryRequestsRemainCompatible() {
+		IcebreakerGateway.Generated result = generated(List.of("하나", "둘", "셋"));
+		assertThat(questions.validate(result, "rest")).isNull();
+		assertThat(questions.validate(result)).isEqualTo(result);
+	}
+
 	private IcebreakerGateway.Generated generated(List<String> values) {
 		return new IcebreakerGateway.Generated(values, "GENERATED", "v1");
 	}

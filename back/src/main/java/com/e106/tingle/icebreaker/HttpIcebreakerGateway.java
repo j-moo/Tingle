@@ -8,6 +8,7 @@ import java.security.NoSuchAlgorithmException;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.HashMap;
 import java.util.HexFormat;
 import java.util.Map;
 import java.util.Set;
@@ -112,6 +113,15 @@ public class HttpIcebreakerGateway implements IcebreakerGateway {
 
 	@Override
 	public Generated generate(long contextId, UUID attemptId, Map<String, Object> manifest, Instant deadlineAt) {
+		return generate(contextId, attemptId, manifest, deadlineAt, null);
+	}
+
+	@Override
+	public Generated generate(long contextId, UUID attemptId, Map<String, Object> manifest, Instant deadlineAt,
+		String commonTopicKey) {
+		if (commonTopicKey != null && !IcebreakerTopics.supportedKey(commonTopicKey)) {
+			throw new GatewayException(false);
+		}
 		if (contextId <= 0 || attemptId == null || deadlineAt == null || !enabled()
 			|| manifest == null || manifest.isEmpty() || !manifest.equals(manifest())) {
 			throw new GatewayException(false);
@@ -122,8 +132,13 @@ public class HttpIcebreakerGateway implements IcebreakerGateway {
 			throw new GatewayException(true);
 		}
 		try {
+			Map<String, Object> request = new HashMap<>(Map.of("contextId", contextId, "attemptId", attemptId,
+				"manifest", manifest));
+			if (commonTopicKey != null) {
+				request.put("commonTopicKey", commonTopicKey);
+			}
 			Generated result = client.post("/internal/ai/icebreakers",
-				Map.of("contextId", contextId, "attemptId", attemptId, "manifest", manifest),
+				request,
 				Generated.class, attemptId, budget, 16 * 1024);
 			if (!clock.instant().isBefore(deadlineAt)) {
 				throw new GatewayException(true);

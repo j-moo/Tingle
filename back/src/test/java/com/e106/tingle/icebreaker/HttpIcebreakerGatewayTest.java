@@ -14,6 +14,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.HashMap;
 import java.util.HexFormat;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -106,6 +107,49 @@ class HttpIcebreakerGatewayTest {
 		assertThat(response.source()).isEqualTo("GENERATED");
 		assertThat(response.promptVersion()).isEqualTo("synthetic-prompt-v1");
 		assertThat(requests.get()).isEqualTo(1);
+	}
+
+	@Test
+	void sendsOnlyOneOfficialCommonTopicAlongsideTheExistingContract() throws Exception {
+		startServer(200, "{\"questions\":[\"첫 질문\",\"두 번째 질문\",\"세 번째 질문\"],"
+			+ "\"source\":\"COMMON_TOPIC_TEMPLATE\",\"promptVersion\":\"q040-template-v1\"}");
+		HttpIcebreakerGateway gateway = gateway(true, validDescriptor().toUri().toString(), endpoint());
+		Map<String, Object> manifest = gateway.manifest();
+		for (String key : List.of("rest", "talk", "culture", "walk", "active")) {
+			UUID attempt = UUID.randomUUID();
+			IcebreakerGateway.Generated result = gateway.generate(2048, attempt, manifest, deadline(), key);
+			JsonNode body = captured.get().body();
+			assertThat(body.size()).isEqualTo(4);
+			assertThat(body.path("contextId").asLong()).isEqualTo(2048);
+			assertThat(body.path("attemptId").asString()).isEqualTo(attempt.toString());
+			assertThat(body.path("manifest")).isEqualTo(mapper.valueToTree(manifest));
+			assertThat(body.path("commonTopicKey").asString()).isEqualTo(key);
+			assertThat(result.source()).isEqualTo("COMMON_TOPIC_TEMPLATE");
+			assertThat(result.promptVersion()).isEqualTo("q040-template-v1");
+		}
+		assertThat(requests.get()).isEqualTo(5);
+	}
+
+	@Test
+	void absentTopicIsOmittedRatherThanSerializedAsNullOrBlank() throws Exception {
+		startServer(200, successfulResponse());
+		HttpIcebreakerGateway gateway = gateway(true, validDescriptor().toUri().toString(), endpoint());
+		gateway.generate(2048, UUID.randomUUID(), gateway.manifest(), deadline(), null);
+		assertThat(captured.get().body().size()).isEqualTo(3);
+		assertThat(captured.get().body().has("commonTopicKey")).isFalse();
+	}
+
+	@Test
+	void unofficialOrEmptyTopicsNeverReachTheProvider() throws Exception {
+		startServer(200, successfulResponse());
+		HttpIcebreakerGateway gateway = gateway(true, validDescriptor().toUri().toString(), endpoint());
+		Map<String, Object> manifest = gateway.manifest();
+		for (String key : List.of("", " ", "unknown", "REST", "DATE_REST", "rest,talk", " rest")) {
+			assertThatThrownBy(() -> gateway.generate(2048, UUID.randomUUID(), manifest, deadline(), key))
+				.isInstanceOfSatisfying(IcebreakerGateway.GatewayException.class,
+					exception -> assertThat(exception.retryable()).isFalse());
+		}
+		assertThat(requests.get()).isZero();
 	}
 
 	@Test
