@@ -44,10 +44,25 @@ public class IcebreakerQuestions {
 	}
 
 	public IcebreakerGateway.Generated validate(IcebreakerGateway.Generated value) {
+		return validate(value, null);
+	}
+
+	public IcebreakerGateway.Generated validate(IcebreakerGateway.Generated value, String commonTopicKey) {
+		if (commonTopicKey != null && !IcebreakerTopics.supportedKey(commonTopicKey)) {
+			return null;
+		}
 		if (value == null || value.questions() == null || value.questions().size() != 3
-			|| value.source() == null || !Set.of("GENERATED", "GENERAL_FALLBACK").contains(value.source())
+			|| value.source() == null
+			|| !Set.of("GENERATED", "GENERAL_FALLBACK", "COMMON_TOPIC_TEMPLATE").contains(value.source())
 			|| value.promptVersion() == null || value.promptVersion().isBlank()
 			|| value.promptVersion().length() > 100) {
+			return null;
+		}
+		if ("COMMON_TOPIC_TEMPLATE".equals(value.source())
+			&& (commonTopicKey == null || !"q040-template-v1".equals(value.promptVersion()))) {
+			return null;
+		}
+		if (commonTopicKey != null && "GENERATED".equals(value.source())) {
 			return null;
 		}
 		Set<String> normalized = new HashSet<>();

@@ -13,6 +13,7 @@ import java.security.KeyPair;
 import java.security.KeyPairGenerator;
 import java.security.MessageDigest;
 import java.security.Signature;
+import java.sql.Timestamp;
 import java.time.Duration;
 import java.util.Base64;
 import java.util.HashMap;
@@ -73,6 +74,8 @@ class IcebreakerHttpIntegrationTest extends IntegrationTestSupport {
 	private static volatile boolean stallResponse;
 	private static CountDownLatch responseRelease = new CountDownLatch(0);
 	private static java.util.function.LongConsumer closeRoom;
+	private static String expectedCommonTopic;
+	private static Runnable withdrawDuringResponse;
 
 	@Autowired
 	private IcebreakerGateway gateway;
@@ -86,6 +89,8 @@ class IcebreakerHttpIntegrationTest extends IntegrationTestSupport {
 	private MatchingParticipantRepository participants;
 	@Autowired
 	private ChatRoomRepository rooms;
+	@Autowired
+	private IcebreakerTopicConsentService topicConsents;
 
 	@DynamicPropertySource
 	static void configureSyntheticServiceAuthentication(DynamicPropertyRegistry registry) throws Exception {
@@ -120,12 +125,20 @@ class IcebreakerHttpIntegrationTest extends IntegrationTestSupport {
 				assertThat(claims.path("scope").asString()).isEqualTo("ai:execute");
 				assertThat(claims.path("aud").asString()).isEqualTo("urn:tingle:ai:test");
 				JsonNode body = mapper.readTree(exchange.getRequestBody());
-				assertThat(body.size()).isEqualTo(3);
+				assertThat(body.size()).isEqualTo(expectedCommonTopic == null ? 3 : 4);
+				if (expectedCommonTopic == null) {
+					assertThat(body.has("commonTopicKey")).isFalse();
+				} else {
+					assertThat(body.path("commonTopicKey").asString()).isEqualTo(expectedCommonTopic);
+				}
 				assertThat(body.has("messages")).isFalse();
 				assertThat(body.path("attemptId").asString())
 					.isEqualTo(exchange.getRequestHeaders().getFirst("X-Request-Id"));
 				if (closeDuringResponse) {
 					closeRoom.accept(body.path("contextId").asLong());
+				}
+				if (withdrawDuringResponse != null) {
+					withdrawDuringResponse.run();
 				}
 				if (dropResponse) {
 					return;
@@ -197,6 +210,8 @@ class IcebreakerHttpIntegrationTest extends IntegrationTestSupport {
 		closeDuringResponse = false;
 		dropResponse = false;
 		stallResponse = false;
+		expectedCommonTopic = null;
+		withdrawDuringResponse = null;
 		responseRelease = new CountDownLatch(0);
 		closeRoom = roomId -> jdbc.update("update chat set closed_at=now(),close_reason='LEFT' where id=?", roomId);
 	}
@@ -212,6 +227,64 @@ class IcebreakerHttpIntegrationTest extends IntegrationTestSupport {
 	void invalidSuccessfulOutputFallsBackImmediatelyWithoutRetry() throws Exception {
 		responseBody = "{\"questions\":[\"중복\",\"중복\",\"중복\"],"
 			+ "\"source\":\"GENERATED\",\"promptVersion\":\"synthetic-v1\"}";
+		executeAndAssert("GENERAL_FALLBACK", 1);
+	}
+
+	@Test
+	void sharedTopicTraversesAuthenticatedHttpAndStoredQuestionsAreErasedOnWithdrawal() throws Exception {
+		expectedCommonTopic = "rest";
+		responseBody = commonResponse();
+		JsonNode first = newReadyUser();
+		JsonNode second = newReadyUser();
+		prepareSharedTopic(userIdOf(first));
+		prepareSharedTopic(userIdOf(second));
+		ChatRoom room = createRoom(userIdOf(first), userIdOf(second));
+		String path = "/api/chat-rooms/" + room.getId() + "/icebreakers";
+		perform(post(path).header("Idempotency-Key", UUID.randomUUID()), first, null)
+			.andExpect(status().isAccepted());
+		assertThat(processor.process(room.getId())).isTrue();
+		perform(get(path), second, null).andExpect(status().isOk())
+			.andExpect(jsonPath("$.source").value("COMMON_TOPIC_TEMPLATE"))
+			.andExpect(jsonPath("$.promptVersion").value("q040-template-v1"))
+			.andExpect(jsonPath("$.questions[0]").value("공통 휴식 질문"))
+			.andExpect(jsonPath("$.questions.length()").value(3));
+		topicConsents.update(userIdOf(second), false, IcebreakerTopics.CONSENT_VERSION);
+		perform(get(path), first, null).andExpect(status().isOk())
+			.andExpect(jsonPath("$.source").value("GENERAL_FALLBACK"))
+			.andExpect(jsonPath("$.questions.length()").value(3));
+		assertThat(jdbc.queryForObject("select icebreakers::text from chat where id=?", String.class, room.getId()))
+			.doesNotContain("공통 휴식 질문", "commonTopicKey", "topicSelection");
+		assertThat(SERVER_FAILURE.get()).isNull();
+		assertThat(REQUESTS.get()).isEqualTo(1);
+	}
+
+	@Test
+	void withdrawalWhileAuthenticatedHttpRunsPreventsLateCommonQuestionsFromBeingStored() throws Exception {
+		expectedCommonTopic = "rest";
+		responseBody = commonResponse();
+		JsonNode first = newReadyUser();
+		JsonNode second = newReadyUser();
+		prepareSharedTopic(userIdOf(first));
+		prepareSharedTopic(userIdOf(second));
+		ChatRoom room = createRoom(userIdOf(first), userIdOf(second));
+		long withdrawingUserId = userIdOf(second);
+		withdrawDuringResponse = () -> topicConsents.update(withdrawingUserId, false, IcebreakerTopics.CONSENT_VERSION);
+		String path = "/api/chat-rooms/" + room.getId() + "/icebreakers";
+		perform(post(path).header("Idempotency-Key", UUID.randomUUID()), first, null)
+			.andExpect(status().isAccepted());
+		assertThat(processor.process(room.getId())).isFalse();
+		perform(get(path), first, null).andExpect(status().isOk())
+			.andExpect(jsonPath("$.source").value("GENERAL_FALLBACK"))
+			.andExpect(jsonPath("$.questions.length()").value(3));
+		assertThat(jdbc.queryForObject("select icebreakers::text from chat where id=?", String.class, room.getId()))
+			.doesNotContain("공통 휴식 질문", "commonTopicKey", "topicSelection");
+		assertThat(SERVER_FAILURE.get()).isNull();
+		assertThat(REQUESTS.get()).isEqualTo(1);
+	}
+
+	@Test
+	void commonHttpResponseWithoutARequestedTopicFallsBackImmediately() throws Exception {
+		responseBody = commonResponse();
 		executeAndAssert("GENERAL_FALLBACK", 1);
 	}
 
@@ -318,6 +391,19 @@ class IcebreakerHttpIntegrationTest extends IntegrationTestSupport {
 		JsonNode tokens = login("google", newSocialId());
 		completeOnboarding(tokens);
 		return tokens;
+	}
+
+	private void prepareSharedTopic(long userId) {
+		topicConsents.update(userId, true, IcebreakerTopics.CONSENT_VERSION);
+		Long surveyId = jdbc.queryForObject("insert into survey(user_id,survey_version,completed_at,revision) "
+			+ "values (?,'SIS-Q-1.1-100',?,0) returning id", Long.class, userId, Timestamp.from(clock.instant()));
+		jdbc.update("insert into survey_answer(survey_id,question_id,answer_type,answer_value,answered_at) "
+			+ "values (?,'Q040','ARRAY',?,?)", surveyId, "[\"talk\",\"rest\"]", Timestamp.from(clock.instant()));
+	}
+
+	private String commonResponse() {
+		return "{\"questions\":[\"공통 휴식 질문\",\"두 번째 질문\",\"세 번째 질문\"],"
+			+ "\"source\":\"COMMON_TOPIC_TEMPLATE\",\"promptVersion\":\"q040-template-v1\"}";
 	}
 
 	private ChatRoom createRoom(long firstUser, long secondUser) {

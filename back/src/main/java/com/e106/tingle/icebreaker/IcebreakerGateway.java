@@ -12,6 +12,14 @@ public interface IcebreakerGateway {
 
 	Generated generate(long contextId, UUID attemptId, Map<String, Object> manifest, Instant deadlineAt);
 
+	default Generated generate(long contextId, UUID attemptId, Map<String, Object> manifest, Instant deadlineAt,
+		String commonTopicKey) {
+		if (commonTopicKey != null) {
+			throw new GatewayException(false);
+		}
+		return generate(contextId, attemptId, manifest, deadlineAt);
+	}
+
 	record Generated(List<String> questions, String source, String promptVersion) {
 	}
 
