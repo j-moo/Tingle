@@ -1,0 +1,14 @@
+/* Keep the stock UF2 bootloader/code/internal settings partitions unchanged. */
+&p25q16h {
+	/* Bring up USB diagnostics before probing the external flash chip. */
+	zephyr,deferred-init;
+	partitions {
+		compatible = "fixed-partitions";
+		#address-cells = <1>;
+		#size-cells = <1>;
+		keyring_store: partition@0 {
+			label = "keyring-store";
+			reg = <0x00000000 0x00040000>;
+		};
+	};
+};
