@@ -14,6 +14,7 @@ import com.ssafy.e106.features.proposals.reason.matchReasonModule
 import com.ssafy.e106.features.chat.chatModule
 import com.ssafy.e106.features.safety.safetyModule
 import com.ssafy.e106.features.report.reportModule
+import com.ssafy.e106.features.keyring.keyringModule
 import org.koin.android.ext.koin.androidContext
 import org.koin.core.context.startKoin
 
@@ -33,7 +34,8 @@ class TingleApplication : Application() {
                 profileModule(allowKeyringSkip = developmentOnboarding, allowUnpublishedAgreements = developmentOnboarding),
                 surveyModule(development = developmentOnboarding),
                 settingsModule(development = developmentOnboarding),
-                proposalModule(developmentOnboarding), matchReasonModule, homeModule, chatModule, safetyModule, reportModule)
+                // 키링 소유 조회는 실제 서버 모듈을 사용하며 BLE 연결 성공을 대체하지 않는다.
+                proposalModule(developmentOnboarding), matchReasonModule, homeModule, chatModule, safetyModule, reportModule, keyringModule)
         }
     }
 }

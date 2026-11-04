@@ -23,12 +23,14 @@ import com.ssafy.e106.features.proposals.ProposalAccess
 import com.ssafy.e106.features.proposals.ui.ConnectedProposalRoute
 import com.ssafy.e106.features.settings.ui.ConnectedSettingsRoute
 import com.ssafy.e106.features.survey.ui.SurveyRoute
+import com.ssafy.e106.features.keyring.ui.ConnectedOwnedKeyringsRoute
 import com.ssafy.e106.resources.*
 import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.koinInject
 import org.koin.compose.viewmodel.koinViewModel
 
-internal enum class ServicePage { Home, Proposals, Menu, Chats, Safety, Report, AiConsent, Profile, Survey, Settings, Help, Permissions, Preparing }
+// Keyrings는 서버의 등록 목록을 확인하는 경로이며 BLE 등록/초기화 경로와 구분한다.
+internal enum class ServicePage { Home, Proposals, Menu, Chats, Safety, Report, AiConsent, Profile, Survey, Settings, Help, Permissions, Keyrings, Preparing }
 
 /** 서버의 가입 완료 여부와 개발 화면 진입을 분리한다. 개발 진입으로 Session을 READY로 바꾸지 않는다. */
 @Composable fun SignedInServiceHost(session: Session.SignedIn, access: ProposalAccess = koinInject(),
@@ -41,6 +43,8 @@ internal enum class ServicePage { Home, Proposals, Menu, Chats, Safety, Report, 
     var consentFromChat by rememberSaveable(session.userId) { mutableStateOf(false) }
     val pendingPush by pushes.pending.collectAsStateWithLifecycle()
     var help by rememberSaveable { mutableStateOf(HelpGuideKind.Terms) }
+    // 키링 정보를 홈/마이 어느 쪽에서 열었는지 보존해 같은 메뉴로 돌아간다.
+    var keyringFromMenu by rememberSaveable(session.userId) { mutableStateOf(false) }
     var logoutPrompt by rememberSaveable { mutableStateOf(false) }
     val state by model.state.collectAsStateWithLifecycle()
     val uri = LocalUriHandler.current
@@ -97,7 +101,7 @@ internal enum class ServicePage { Home, Proposals, Menu, Chats, Safety, Report, 
                     HomeAction.Profile -> go(ServicePage.Menu)
                     HomeAction.Preferences -> go(ServicePage.Settings)
                     HomeAction.Chats -> chats()
-                    HomeAction.Keyring -> go(ServicePage.Preparing)
+                    HomeAction.Keyring -> { keyringFromMenu = false; go(ServicePage.Keyrings) }
                 } }, onOpenMatchingSettings = { go(ServicePage.Settings) })
                 ServicePage.Proposals -> ConnectedProposalRoute(session, { go(ServicePage.Home) }, { go(ServicePage.Menu) },
                     { chats() }, { chats(it) }, initialProposalId = proposalId)
@@ -120,6 +124,8 @@ internal enum class ServicePage { Home, Proposals, Menu, Chats, Safety, Report, 
                 ServicePage.Profile -> ProfileManagementRoute(session, { go(ServicePage.Menu) })
                 ServicePage.Survey -> SurveyRoute(session, { go(ServicePage.Menu) })
                 ServicePage.Settings -> ConnectedSettingsRoute(session, { go(ServicePage.Menu) })
+                // 소유 정보 확인만 수행하므로 메뉴를 열었다고 등록/동기화를 요청하지 않는다.
+                ServicePage.Keyrings -> ConnectedOwnedKeyringsRoute(session, { go(if (keyringFromMenu) ServicePage.Menu else ServicePage.Home) })
                 ServicePage.Menu -> AccountMenuScreen(state.account, onAction = { action -> when (action) {
                     AccountMenuAction.Refresh -> model.account()
                     AccountMenuAction.Home -> go(ServicePage.Home)
@@ -130,6 +136,7 @@ internal enum class ServicePage { Home, Proposals, Menu, Chats, Safety, Report, 
                     AccountMenuAction.Survey -> go(ServicePage.Survey)
                     AccountMenuAction.Matching -> go(ServicePage.Settings)
                     AccountMenuAction.Permissions -> go(ServicePage.Permissions)
+                    AccountMenuAction.Keyring -> { keyringFromMenu = true; go(ServicePage.Keyrings) }
                     AccountMenuAction.Logout -> logoutPrompt = true
                     AccountMenuAction.Terms, AccountMenuAction.Privacy, AccountMenuAction.Support, AccountMenuAction.Correction -> {
                         help = when (action) {

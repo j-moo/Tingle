@@ -31,5 +31,7 @@
             android:theme="@android:style/Theme.Material.Light.NoActionBar" android:windowSoftInputMode="adjustResize" />
         <activity android:name="com.ssafy.e106.features.chat.ChatScreenTestActivity" android:exported="true" />
         <activity android:name="com.ssafy.e106.features.home.HomeNavigationTestActivity" android:exported="true" />
+        <!-- 서버 소유 목록의 회전/복귀 재조회를 검증하는 테스트 전용 화면. -->
+        <activity android:name="com.ssafy.e106.features.keyring.OwnedKeyringsTestActivity" android:exported="true" />
     </application>
 </manifest>
