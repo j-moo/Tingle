@@ -78,13 +78,16 @@ def make_headers(signing_key):
 
 @pytest.fixture
 def make_client(monkeypatch, tmp_path, signing_key, release):
-    def client(*, configure_keys=True, configure_release=True, environment="test"):
+    def client(*, configure_keys=True, configure_release=True, environment="test", enable_dev=False):
         public = tmp_path / "synthetic-public.pem"
         public.write_bytes(signing_key.public_key().public_bytes(
             serialization.Encoding.PEM, serialization.PublicFormat.SubjectPublicKeyInfo,
         ))
         # Load the real app registration without replacing the module shared by other tests.
         monkeypatch.delenv("ICEBREAKER_RELEASE_DESCRIPTOR_FILE", raising=False)
+        monkeypatch.delenv("ICEBREAKER_DEV_ENABLED", raising=False)
+        if enable_dev:
+            monkeypatch.setenv("ICEBREAKER_DEV_ENABLED", "true")
         settings = Settings(
             _env_file=None,
             app_env=environment,
@@ -125,6 +128,48 @@ def test_registered_route_returns_exact_be_fallback(client, make_headers, payloa
     assert response.headers["Cache-Control"] == "no-store"
 
 
+@pytest.mark.parametrize(("key", "first_question"), [
+    ("rest", "쉬는 날에는 주로 어떻게 휴식을 취하세요?"),
+    ("talk", "식사하면서 가장 즐겁게 이야기하는 주제가 있나요?"),
+    ("culture", "전시와 공연 중에는 어느 쪽에 더 관심이 가세요?"),
+    ("walk", "산책과 여행 중에 요즘 더 끌리는 활동이 있나요?"),
+    ("active", "요즘 새롭게 해보고 싶은 활동이 있나요?"),
+])
+def test_registered_route_returns_q040_template(client, make_headers, payload, key, first_question):
+    payload["commonTopicKey"] = key
+    response = client.post(PATH, json=payload, headers=make_headers())
+
+    assert response.status_code == 200
+    general = json.loads(BE_FALLBACK.read_bytes())
+    assert response.json() == {
+        "questions": [first_question, *general["questions"][1:]],
+        "source": "COMMON_TOPIC_TEMPLATE",
+        "promptVersion": "q040-template-v1",
+    }
+    assert response.headers["Cache-Control"] == "no-store"
+
+
+@pytest.mark.parametrize("key", [None, "", "unknown", "REST", " rest ", "DATE_WALK", 1, True, ["rest"], {"key": "rest"}])
+def test_only_omission_or_exact_q040_codes_are_accepted(client, make_headers, payload, key):
+    payload["commonTopicKey"] = key
+    response = client.post(PATH, json=payload, headers=make_headers())
+    assert_error(response, 400, "INVALID_REQUEST")
+
+
+@pytest.mark.parametrize("policy", ["template", "response"])
+def test_rejected_q040_question_returns_exact_be_fallback(client, make_headers, payload, monkeypatch, policy):
+    if policy == "template":
+        monkeypatch.setitem(templates.DATE_TOPICS, "DATE_REST", "계좌를 알려주시겠어요?")
+    else:
+        monkeypatch.setattr(templates, "suggest_date_questions",
+                            lambda _: ("https://example.test", *templates.GENERAL[1:]))
+    payload["commonTopicKey"] = "rest"
+    response = client.post(PATH, json=payload, headers=make_headers())
+
+    assert response.status_code == 200
+    assert response.json() == json.loads(BE_FALLBACK.read_bytes())
+
+
 @pytest.mark.parametrize(("auth", "status", "code"), [
     ("missing", 401, "AUTH_REQUIRED"),
     ("invalid", 401, "ACCESS_TOKEN_INVALID"),
@@ -153,7 +198,7 @@ def test_service_auth_rejects_before_parsing_body(client, make_headers, auth, st
     ("contextId", "42"),
     ("contextId", 42.0),
     ("contextId", 2**63),
-    ("commonTopicKey", "DATE_WALK"),
+    ("unexpected", "not-in-the-contract"),
 ])
 def test_request_has_exact_strict_fields(client, make_headers, payload, field, value):
     payload[field] = value
@@ -182,7 +227,7 @@ def test_missing_fields(client, make_headers, payload, missing):
 
 
 @pytest.mark.parametrize("kind", ["malformed", "array", "duplicate-request", "duplicate-manifest",
-                                  "nan", "bad-encoding", "oversized", "too-deep"])
+                                  "duplicate-topic", "nan", "bad-encoding", "oversized", "too-deep"])
 def test_invalid_json_is_rejected(client, make_headers, payload, kind):
     serialized = json.dumps(payload).encode()
     bad = {
@@ -190,6 +235,7 @@ def test_invalid_json_is_rejected(client, make_headers, payload, kind):
         "array": b"[" + serialized + b"]",
         "duplicate-request": b'{"contextId": 42, ' + serialized[1:],
         "duplicate-manifest": serialized.replace(b'"releaseId":', b'"engineVersion": "synthetic-engine", "releaseId":'),
+        "duplicate-topic": b'{"commonTopicKey": "rest", "commonTopicKey": "walk", ' + serialized[1:],
         "nan": serialized.replace(b'"contextId": 42', b'"contextId": NaN'),
         "bad-encoding": serialized + b"\xff",
         "oversized": serialized + b" " * (16 * 1024),
@@ -204,12 +250,14 @@ def test_invalid_json_is_rejected(client, make_headers, payload, kind):
     ("contentHash", "f" * 64),
 ])
 def test_unregistered_or_mismatched_release(client, make_headers, payload, field, value):
+    payload["commonTopicKey"] = "rest"
     payload["manifest"][field] = value
     assert_error(client.post(PATH, json=payload, headers=make_headers()), 503, "SERVICE_UNAVAILABLE")
 
 
 @pytest.mark.parametrize("changed", ["descriptor", "artifact"])
 def test_registered_files_are_rechecked(client, make_headers, payload, release, changed):
+    payload["commonTopicKey"] = "rest"
     target = release[0 if changed == "descriptor" else 1]
     target.write_bytes(target.read_bytes() + b"\n")
     assert_error(client.post(PATH, json=payload, headers=make_headers()), 503, "SERVICE_UNAVAILABLE")
@@ -227,13 +275,34 @@ def test_unexpected_verification_failure_uses_common_error(client, make_headers,
     assert payload["manifest"]["surveyVersion"] not in response.text + caplog.text
 
 
-@pytest.mark.parametrize("disabled", ["default-no-release", "invalid-descriptor", "missing-keys", "dev", "prod"])
-def test_icebreakers_is_unavailable_without_local_registration(make_client, make_headers, payload, release, disabled):
-    if disabled == "invalid-descriptor":
+def test_dev_opt_in_serves_q040_with_registered_release(make_client, make_headers, payload):
+    payload["commonTopicKey"] = "rest"
+    with make_client(environment="dev", enable_dev=True) as client:
+        response = client.post(PATH, json=payload, headers=make_headers(environment="dev"))
+
+    assert response.status_code == 200
+    assert response.json()["source"] == "COMMON_TOPIC_TEMPLATE"
+    assert response.json()["promptVersion"] == "q040-template-v1"
+
+
+@pytest.mark.parametrize(("environment", "enable_dev", "release_state", "configure_keys"), [
+    ("test", False, "absent", True),
+    ("test", False, "invalid", True),
+    ("test", False, "registered", False),
+    ("dev", False, "registered", True),
+    ("dev", True, "absent", True),
+    ("dev", True, "invalid", True),
+    ("dev", True, "registered", False),
+    ("prod", True, "registered", True),
+])
+def test_icebreakers_is_unavailable_without_allowed_registration(
+    make_client, make_headers, payload, release, environment, enable_dev, release_state, configure_keys,
+):
+    if release_state == "invalid":
         release[0].write_text("invalid descriptor", encoding="utf-8")
-    environment = disabled if disabled in {"dev", "prod"} else "test"
-    with make_client(configure_keys=disabled != "missing-keys",
-                     configure_release=disabled != "default-no-release", environment=environment) as client:
+    payload["commonTopicKey"] = "rest"
+    with make_client(configure_keys=configure_keys, configure_release=release_state != "absent",
+                     environment=environment, enable_dev=enable_dev) as client:
         response = client.post(PATH, json=payload, headers=make_headers(environment=environment))
         assert_error(response, 503, "SERVICE_UNAVAILABLE")
         assert client.get("/health").json() == {"status": "ok"}
