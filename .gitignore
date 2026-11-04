@@ -21,6 +21,7 @@ CLAUDE.md
 __pycache__/
 *.py[cod]
 .pytest_cache/
+.vscode
 
 # 빌드 결과·실행 로그
 build/
