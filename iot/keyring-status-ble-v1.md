@@ -2,14 +2,14 @@
 
 | 항목 | 내용 |
 | --- | --- |
-| 버전·작성일 | v1 초안 / 2026-11-02 |
+| 버전·변경일 | v1 초안 / 2026-11-04 · 등록 시험 펌웨어 대조 |
 | 작성자 | 김종무(IoT) |
 | 영향·검토 파트 | FE·IoT, 서버 저장 확인 부분은 BE |
 | 관련 기능 | KEY-02, DES06·DES07·DES13 |
-| 관련 Story | 상태 조회 계약용 Story 연결 필요 |
-| 상태 | 구현·실기기 검증 전. FE·IoT 검토 및 합의 필요 |
+| 관련 Story | [S15P31E106-227](https://ssafy.atlassian.net/browse/S15P31E106-227) |
+| 상태 | 시험 빌드에 상태 조회와 전압·충전 신호 응답 구현. 실기기 측정·FE 검증 필요 |
 
-현재 펌웨어는 BLE 문자 송수신 실습 단계다. 아래 `GET_STATUS`·`STATUS` 메시지와 배터리·저장 공간·미전송 기록 수 조회는 추가 구현이 필요하다. 지원 펌웨어를 적용하고 실제 응답을 받기 전에는 앱에서 미확인 상태를 유지한다.
+이 문서는 `0.1.0-registration`(`ec51e05`)의 `GET_STATUS`·`STATUS` 응답을 기준으로 한다. 배터리 전압·충전 신호를 읽어 전달하며 잔량 비율과 만남 기록 집계는 미확인 값을 반환한다. 시험 보드·등록 진입·서버 흐름은 [BLE 연동 계약 초안](keyring-app-ble-contract-v1.md)을 참조한다. [등록 시험 펌웨어 MR !172](https://lab.ssafy.com/s15-final/S15P31E106/-/merge_requests/172)
 
 ## 1. 조회 범위
 
@@ -28,15 +28,16 @@ BLE 연결 성공이나 상태 조회 성공만으로 설정 동기화·사용 �
 
 ## 2. BLE 서비스와 특성
 
-현재 사용하는 BLE UART를 기준으로 제안한다. 앱은 Central, 키링은 Peripheral이다. 아래 RX·TX 명칭은 키링 기준이다.
+시험 빌드의 NUS를 기준으로 한다. 앱은 Central, 키링은 Peripheral이다. 아래 RX·TX 명칭은 키링 기준이다.
 
 | 용도 | UUID | 앱에서 사용하는 방식 |
 | --- | --- | --- |
 | UART 서비스 | `6E400001-B5A3-F393-E0A9-E50E24DCCA9E` | 서비스 탐색 |
 | RX — 앱 → 키링 | `6E400002-B5A3-F393-E0A9-E50E24DCCA9E` | Write with response |
 | TX — 키링 → 앱 | `6E400003-B5A3-F393-E0A9-E50E24DCCA9E` | Notify 구독 |
+| TX CCCD | `0x2902` | 연결마다 Notify 활성화 |
 
-UUID와 송수신 방향은 설치된 Bluefruit 라이브러리 및 [Adafruit 공식 UART 안내](https://learn.adafruit.com/introducing-adafruit-ble-bluetooth-low-energy-friend/uart-service)와 대조했다. BLE UART 사용 예시는 [현재 실습 코드](firmware/arduino-onboarding/ble_uart_practice/ble_uart_practice.ino)를 참고한다. 이 코드의 문자 송수신 기능과 아래 상태 조회 메시지의 구현 여부는 구분한다.
+앱은 TX를 구독한 뒤 RX에 `GET_STATUS`를 쓰고 TX Notify로 응답을 받는다. 상태 조회용 GATT Read는 지원하지 않는다. [시험 펌웨어 GATT 정의](https://lab.ssafy.com/s15-final/S15P31E106/-/blob/ec51e0573ae739fe038040a7c9c1778595702225/iot/xiao-registration/src/main.c)
 
 GATT Write 성공은 BLE 전송 결과다. 상태 조회 성공은 해당 요청에 대응하는 완전한 `STATUS` 응답을 받아 확인한다.
 
@@ -46,17 +47,19 @@ GATT Write 성공은 BLE 전송 결과다. 상태 조회 성공은 해당 요청
 | --- | --- | --- | --- |
 | 연결 상태 | `connectionState` | `UNKNOWN`, `CONNECTING`, `CONNECTED`, `DISCONNECTED` | 앱에서 관리. BLE 연결 이벤트 기준이며 기기 응답에는 넣지 않음 |
 | 배터리 | `batteryPercent` | 정수 `0~100` 또는 `null` | 키링이 측정·산출한 잔량. 측정 미지원·미확인이면 `null` |
+| 배터리 전압 | `batteryMillivolts` | 정수 또는 `null` | 시험 빌드의 측정 전압, 단위 mV |
+| 충전 신호 | `charging` | boolean 또는 `null` | 시험 빌드의 충전 신호. `true`는 충전 감지, `false`는 충전 미감지, `null`은 미확인 |
 | 기록 저장 용량 | `storageTotalBytes` | 양의 정수 또는 `null` | 만남 기록 저장 영역의 사용 가능한 전체 용량. 단위 byte |
 | 기록 사용 공간 | `storageUsedBytes` | 0 이상 정수 또는 `null` | 같은 저장 영역에서 현재 사용 중인 공간. 단위 byte |
 | 저장 상태 | `storageState` | `AVAILABLE`, `FULL`, `ERROR`, `UNKNOWN` | 새 만남 기록 저장 가능 / 공간 부족 / 저장소 오류 / 미확인 |
 | 미전송 기록 수 | `pendingRecordCount` | 0 이상 정수 또는 `null` | 키링이 서버 저장 완료를 아직 확인하지 못한 확정 만남 기록 수 |
 | 상태 수신 시각 | `statusReceivedAt` | UTC 시각 또는 `null` | 앱에서 관리. 유효한 상태 응답을 받은 시각이며 설정 동기화 완료 시각과는 별개 |
 
-기기 응답에는 기기 측 다섯 필드를 항상 포함한다. 확인할 수 없는 숫자는 `null`, 미확인 저장 상태는 `UNKNOWN`으로 전달한다. 앱에서 관리하는 `connectionState`·`statusReceivedAt`은 BLE 응답 본문에 넣지 않는다.
+현재 시험 응답에는 기기 측 일곱 필드를 포함한다. 확인할 수 없는 값은 `null`, 미확인 기록 저장 상태는 `UNKNOWN`으로 전달한다. `connectionState`·`statusReceivedAt`은 앱에서 관리한다. 설정 저장소 상태와 버전은 `DEVICE_INFO`에서 확인한다.
 
 ### 배터리·저장 공간
 
-- 배터리 잔량 산출 방식은 아직 미정이다. 임의의 퍼센트나 잔여 사용 시간을 생성하지 않는다.
+- 배터리 잔량 산출 방식은 미정이며 시험 빌드의 `batteryPercent`는 항상 `null`이다. `batteryMillivolts`만으로 잔량을 환산하거나 `charging=false`를 완충으로 해석하지 않는다.
 - 저장 용량은 보드 전체 Flash 용량을 그대로 사용하지 않고 실제 만남 기록 저장 영역을 기준으로 한다.
 - 전체 용량과 사용 공간은 같은 시점·같은 영역을 기준으로 조회한다. 두 값이 확인됐다면 `0 ≤ storageUsedBytes ≤ storageTotalBytes`여야 한다.
 - `FULL`은 새 만남 한 건을 안전하게 저장할 공간이 부족한 상태다. 예약 공간 등이 필요하므로 단순히 사용률이 100%인지로 판단하지 않는다.
@@ -74,7 +77,7 @@ GATT Write 성공은 BLE 전송 결과다. 상태 조회 성공은 해당 요청
 
 ### 상태 조회 요청
 
-앱은 요청마다 새로운 `requestId`를 만든다. `protocolVersion`은 정수 `1`, `type`은 `GET_STATUS`, `requestId`는 1~36자의 문자열이다. 키링은 응답에 같은 `requestId`를 반환한다.
+앱은 요청마다 새로운 `requestId`를 만든다. `protocolVersion`은 정수 `1`, `type`은 `GET_STATUS`, `requestId`는 UTF-8 1~36바이트 문자열이다. 키링은 응답에 같은 `requestId`를 반환한다.
 
 ```json
 {
@@ -84,20 +87,22 @@ GATT Write 성공은 BLE 전송 결과다. 상태 조회 성공은 해당 요청
 }
 ```
 
-### 정상 응답 형식 예시
+### 시험 빌드 정상 응답 예시
 
-아래 숫자는 명세 설명용이며 실제 기기 측정값이 아니다. 앱의 기본값이나 실측 결과로 사용하지 않는다.
+전압과 충전 신호를 읽은 경우의 응답 형태다. `4020`은 설명용 값이다.
 
 ```json
 {
   "protocolVersion": 1,
   "type": "STATUS",
   "requestId": "s-001",
-  "batteryPercent": 82,
-  "storageTotalBytes": 65536,
-  "storageUsedBytes": 8192,
-  "storageState": "AVAILABLE",
-  "pendingRecordCount": 2
+  "batteryPercent": null,
+  "batteryMillivolts": 4020,
+  "charging": true,
+  "storageTotalBytes": null,
+  "storageUsedBytes": null,
+  "storageState": "UNKNOWN",
+  "pendingRecordCount": null
 }
 ```
 
@@ -111,6 +116,8 @@ GATT Write 성공은 BLE 전송 결과다. 상태 조회 성공은 해당 요청
   "type": "STATUS",
   "requestId": "s-001",
   "batteryPercent": null,
+  "batteryMillivolts": null,
+  "charging": null,
   "storageTotalBytes": null,
   "storageUsedBytes": null,
   "storageState": "UNKNOWN",
@@ -118,7 +125,7 @@ GATT Write 성공은 BLE 전송 결과다. 상태 조회 성공은 해당 요청
 }
 ```
 
-이 응답도 현재 실습 펌웨어에 자동으로 구현되어 있는 것은 아니다. `GET_STATUS`를 지원하지 않는 펌웨어에서 응답이 없으면 앱은 조회 실패·미확인으로 처리한다.
+`GET_STATUS`를 지원하지 않는 펌웨어에서 응답이 없으면 앱은 조회 실패·미확인으로 처리한다.
 
 ### 오류 응답
 
@@ -129,16 +136,17 @@ GATT Write 성공은 BLE 전송 결과다. 상태 조회 성공은 해당 요청
   "protocolVersion": 1,
   "type": "ERROR",
   "requestId": "s-001",
-  "code": "STATUS_UNAVAILABLE"
+  "code": "UNSUPPORTED_PROTOCOL"
 }
 ```
 
 | 오류 코드 | 의미 |
 | --- | --- |
-| `INVALID_REQUEST` | 요청 형식·필수값 오류 |
-| `UNSUPPORTED_VERSION` | 지원하지 않는 프로토콜 버전 |
+| `INVALID_MESSAGE` | 요청 형식 오류. 요청 ID를 해석하지 못하면 `requestId=null` |
+| `UNSUPPORTED_PROTOCOL` | 지원하지 않는 프로토콜 버전 |
 | `UNSUPPORTED_TYPE` | 지원하지 않는 메시지 종류 |
-| `STATUS_UNAVAILABLE` | 현재 상태 조회 요청을 처리할 수 없음 |
+
+위 코드는 현재 시험 빌드의 값이다. 개별 측정 실패는 정상 `STATUS` 안의 `null` 또는 `UNKNOWN`으로 표시한다.
 
 ## 5. 메시지 경계·실패 처리
 
@@ -150,7 +158,7 @@ GATT Write 성공은 BLE 전송 결과다. 상태 조회 성공은 해당 요청
 - 현재 연결·현재 요청에 대응하는 응답만 반영한다. 지원하지 않는 버전이나 이전 요청의 늦은 응답으로 현재 값을 갱신하지 않는다.
 - 연결이 끊기면 수신 중이던 조각을 버리고 재연결 후 다시 조회한다. 이때 버리는 것은 통신 수신 조각이며 키링에 저장된 만남 기록이 아니다.
 
-512바이트 한도와 10초 타임아웃은 초기 제안값이며 실기기 시험 후 FE·IoT가 함께 조정할 수 있다.
+512바이트와 10초는 상태 조회용 앱 기준 초안이다. 시험 펌웨어 공통 수신 프레임은 최대 4,096바이트(LF 포함)이며, 펌웨어 내부의 10초는 Notify 버퍼 부족 재시도 예산이다. 다른 기능의 한도와 시간은 [BLE 계약 §7](keyring-app-ble-contract-v1.md#7-공통-ble-메시지전송오류)을 참조한다.
 
 ## 6. 앱 표시 기준
 
@@ -169,17 +177,15 @@ GATT Write 성공은 BLE 전송 결과다. 상태 조회 성공은 해당 요청
 
 ## 7. 적용·호환성과 남은 확인
 
-현재 문자 송수신 실습 펌웨어에는 상태 조회 메시지가 없다. 앱은 이 초안을 기준으로 파서·미확인 표시를 준비할 수 있으나, 실제 값 표시는 지원 펌웨어 적용과 실기기 검증 후 연결한다. 가상 응답 검증과 실물 측정·BLE 검증은 별도로 기록한다.
-
-적용 순서는 FE·IoT의 필드·메시지 검토 → 상태 조회 펌웨어 구현 → 실제 응답과 끊김·재연결 검증 → 앱의 실제 값 표시 연결이다. 서버 저장 확인과 미전송 집계 기준은 BE와 함께 확인한다. 필드 의미나 타입을 호환되지 않게 바꾸면 버전을 올리고 관련 파트의 적용 순서를 다시 맞춘다.
+적용 순서는 FE·IoT의 파서·표시 대조 → 시험 보드의 실제 응답·충전 신호·재연결 확인 → 앱 표시 연결이다. 가상 응답과 실물 측정 결과는 구분해 기록한다. 서버 저장 확인과 미전송 집계 기준은 BE와 함께 확인한다. 필드 의미나 타입을 호환되지 않게 바꾸면 버전과 관련 파트의 적용 순서를 맞춘다.
 
 남은 항목은 다음과 같다.
 
-- 배터리 측정·잔량 산출 방식과 검증.
+- 배터리 전압·충전 신호의 실물 검증과 잔량 산출 방식.
 - 실제 기록 저장 영역 크기·용량 집계·공간 부족 판정.
 - 서버 저장 확인 반영·원본 삭제 실패·만료 정리에 따른 미전송 집계.
 - 본인 기기 식별·인증 절차.
 - 메시지 길이·타임아웃·분할 송수신·조회 주기의 실기기 확인.
-- 상태 조회 계약용 Story 연결 및 FE·IoT·BE 검토 기록.
+- FE·IoT·BE 검토 기록.
 
 지원 펌웨어 적용과 실제 응답 확인 전에는 앱에서 임의 값을 생성하지 않고 미확인 상태를 유지한다.

@@ -2,7 +2,7 @@
 
 | 항목 | 내용 |
 | --- | --- |
-| 버전·변경일 | v0.1.1-draft / 2026-11-03 — 기존 명세·서버 코드 재대조 |
+| 버전·변경일 | v0.1.2-draft / 2026-11-04 · 등록·동기화 시험 펌웨어 대조 |
 | 작성자 | 김종무(IoT) |
 | 관련 Story | [S15P31E106-224](https://ssafy.atlassian.net/browse/S15P31E106-224) — 앱·키링 연동 계약 정리 |
 | 구현 후속 | 등록·동기화 225, 매칭 226, 상태 조회 227, 기록 전달 228, 실물 통합 검증 230 |
@@ -11,14 +11,23 @@
 | 이번 테스트 | 별도 사용자 버튼이 없는 키링을 가정. 초기화·등록 해제·양도는 후속으로 분리 |
 | 문서 상태 | 로컬 협의 초안. 팀 공유 외부 원본의 위치·버전 연결과 관련 파트 승인 필요. 펌웨어 구현·실물 연동 완료를 뜻하지 않음 |
 
-이전 IoT 명세의 흐름을 이어받되 현재 제품 명세와 서버 코드를 대조했다. **아래 새 BLE 메시지명·필드는 연결 구조를 설명하기 위한 제안이며 아직 확정된 송수신 규격이 아니다.** 미정인 항목은 임의로 채우지 않는다. FE는 화면·분기·파서 구조를 준비할 수 있고, 실제 등록·동기화 연결은 해당 미정 항목 합의와 펌웨어 구현 후 진행한다. JSON 예시는 읽기 위한 들여쓰기다. 실제 전송은 JSON 직렬화로 보기용 들여쓰기를 없앤 한 줄 뒤에 LF를 붙이되, 문자열 안의 공백·값과 payload 원본 바이트는 보존한다.
+**앱 연동 기준 빌드는 `0.1.0-registration`이다.** 탐색·기기 정보·등록 서명·상태 조회의 현재 동작과 설정·초기화의 후속 계약을 구분한다. JSON 예시는 읽기 위한 들여쓰기다. 실제 전송은 JSON 한 줄 뒤에 LF를 붙이고, 문자열 값과 payload 원본 바이트는 보존한다.
 
 ## 기준과 이번에 확인한 결정
 
 - 제품 기준: [압축 MVP](../docs/specifications/functional-spec-mvp.md), [키링 기능](../docs/specifications/functional-spec-v3/key.md), [매칭 기능](../docs/specifications/functional-spec-v3/mat.md), [ERD 기준 범위](../docs/specifications/reviews/erd-mvp-scope-20261028.md).
 - 이전 작성 문서: [통신 계약](../ai-server/docs/contracts/iot/protocol-contract-v1.md), [데이터 구조](../ai-server/docs/contracts/iot/keyring-data-structures-v1.md), [화면 계약](../ai-server/docs/contracts/iot/screen-design-contract-v1.md). 과거 사본이므로 현재 명세와 충돌하는 부분은 그대로 가져오지 않는다.
 - 상태 필드: [키링 상태 조회 BLE v1](keyring-status-ble-v1.md). 배터리·공간·미전송 기록 수의 의미와 미확인 기준은 유지한다.
-- 구현 확인 기준: 현재 로컬 체크아웃 `1bc3793`. 서버 소스의 존재와 실행·배포·실물 검증은 구분한다.
+- 구현 확인 기준은 [XIAO 등록 펌웨어 MR !172](https://lab.ssafy.com/s15-final/S15P31E106/-/merge_requests/172)의 `ec51e05`와 서버 `94fc351`이다.
+
+### 시험 보드·빌드
+
+| 항목 | 확인한 내용 |
+| --- | --- |
+| 실물 후보 | 이전 USB 부팅·BLE 탐색에 사용한 Seeed XIAO nRF52840 Sense 1대. 부트로더 ID `Seeed_XIAO_nRF52840_Sense`, 버전 `0.6.1`. 시험 직전에 보드 사용 가능 여부와 현재 설치 버전을 확인한다. |
+| 앱 연동 이미지 | `0.1.0-registration` / Zephyr 4.2.0 / `xiao_ble/nrf52840`. 빌드 산출물은 `iot/xiao-registration/build/firmware/zephyr/zephyr.uf2`. |
+| 확인 범위 | UF2 빌드 및 호스트에서 C·Java 서명 호환성 검증 통과. 기존 `Tingle-Lab` 검색은 별도 바이너리 펌웨어의 실물 기록이다. 등록용 UF2의 실물 탑재·앱 종단 연동은 미확인이다. |
+| 첫 합동 시험 | IoT는 XIAO·UF2·USB 로그, FE는 테스트 앱·BLE 로그, BE는 테스트 계정과 기기 공개키 등록을 준비한다. 15~20분으로 제안하며 일정은 FE·BE·IoT가 조율한다. |
 
 | 구분 | 반영할 기준 |
 | --- | --- |
@@ -53,28 +62,28 @@
 | 항목 | 내용 |
 | --- | --- |
 | 시작 조건 | 앱의 Bluetooth 사용·검색 권한 준비. 최초 등록은 로그인 상태에서 진행 |
-| 앱 요청 예시 | 주변 스캔 → 사용자가 후보 선택 → BLE 연결 → 서비스 탐색 → TX Notify 구독 → 아래 `GET_DEVICE_INFO` 제안 |
-| 키링 응답 예시 | 아래 `DEVICE_INFO` 제안. 이름·광고·기기 정보 응답은 소유권 증명이 아님 |
+| 앱 요청 예시 | 주변 스캔 → 후보 선택 → BLE 연결 → 서비스 탐색 → TX Notify 구독 → `GET_DEVICE_INFO` |
+| 키링 응답 예시 | 아래 `DEVICE_INFO`. 소유권은 2절의 서버 검증으로 확인한다. |
 | 성공 판단 기준 | 이 단계는 통신 채널 확보까지. 본인 기기 확인과 계정 등록 성공은 2절에서 별도 확인 |
 | 실패·재시도 | 연결 실패·Notify 구독 실패는 연결 미완료. 끊기면 조각 버퍼를 비우고 다시 서비스/기기 확인. 연결 제한 시간·자동 재연결 횟수/간격은 미정 |
-| 구현 상태 | 실습 펌웨어에 광고·UART 송수신 코드 있음. 60초 등록 모드·기기 정보·인증 메시지는 미구현 |
+| 구현 상태 | `0.1.0-registration`에 60초 등록 창·기기 정보·등록 서명·상태 조회를 구현했다. |
 | 실물 검증 여부 | 본 문서 기준 탐색→소유 확인까지 미검증. 문자 송수신 실습과 구분 |
 
 ### 등록 대기·광고·동시 연결
 
 | 항목 | 정해진 내용 / 남은 내용 |
 | --- | --- |
-| 등록 진입 | 버튼 없는 **미등록 테스트 기기**는 전원 ON 후 60초 등록 대기. 기기 재시작으로 설정·기록·서버 소유 관계를 지우지 않음 |
-| 종료 | 60초가 지나면 신규 등록 대기 종료. 진행 중 등록의 별도 제한 시간·중단 복구, 등록된 기기의 재연결 광고 정책은 FE·IoT 미정 |
+| 등록 진입 | 앱의 스캔을 시작하고 시험 보드 전원을 켠다. 로컬에 유효한 설정이 없는 시험 기기는 BLE 광고 시작부터 60초 동안 등록 증명을 발급한다. |
+| 종료 | 60초 뒤 신규 광고가 종료된다. 연결 중에도 증명 요청은 `REGISTRATION_WINDOW_CLOSED`로 거부된다. 같은 조건에서 보드를 재부팅해 다시 시도한다. |
 | 등록 안내 | 등록 대기/선택/성공/실패의 LED·진동 패턴은 미정. 매칭 안내 패턴과 혼동하지 않도록 별도 합의 |
-| 현재 실습 광고 | UART 서비스 UUID를 광고하고, Scan Response에 `Tingle-Keyring` 이름 제공. 현재 코드는 무기한 광고하므로 60초 모드는 추가 구현 필요 |
+| 현재 시험 광고 | NUS 서비스 UUID를 광고하고 Scan Response에 `Tingle-Keyring` 이름을 제공한다. 서비스 UUID를 스캔 필터로 사용한다. |
 | 서비스 UUID | `6E400001-B5A3-F393-E0A9-E50E24DCCA9E`. 이름·UUID는 서비스 후보 필터이며 인증 수단이 아님 |
 | 광고 데이터 | 고정 사용자 ID·프로필·성향 원문을 싣지 않음. 정식 광고의 회전 임시 ID·등록 가능 표시·Manufacturer/Service Data 바이트는 미정 |
-| 여러 후보 구분 | RSSI·동일 이름만으로 본인 기기를 자동 선택하지 않음. 기기 라벨/코드 대조 또는 선택 기기 식별 안내 방식은 미정 |
-| 앱의 여러 기기 연결 | MVP의 계정 등록 대상은 1개. 여러 키링 동시 관리·동시 연결은 이번 범위 제외. 실제 BLE 연결 수 상한과 폰 연결+키링 간 통신 병행 가능 여부는 실물 검증 필요 |
+| 여러 후보 구분 | 첫 합동 시험에서는 보드를 한 대씩 켜고 연결 후 `DEVICE_INFO.deviceSerial`을 USB `ENROLL` 로그의 serial과 대조한다. 출시용 물리 식별 방식은 미정이다. |
+| 앱의 여러 기기 연결 | MVP의 계정 등록 대상은 1개다. 이번 펌웨어는 BLE 연결을 1개로 설정한다. 폰 연결과 키링 간 통신 병행 여부는 실물 검증이 필요하다. |
 | 같은 키링에 폰 2대 | 소유 등록은 서버에서 한 계정만 성공해야 함. BLE 선연결 유지/두 번째 연결 거절·BUSY 응답 등 무선 경합 정책은 미정. 먼저 연결됐다는 이유로 소유권을 주지 않음 |
 
-예시 — 새 BLE 메시지 제안. `TEST-KEYRING-01`은 설명용 일련번호이며 실물 번호가 아니다.
+현재 구현의 응답 예시다. `XIAO-0123456789abcdef`는 설명용 일련번호다.
 
 ```json
 {
@@ -89,16 +98,24 @@
   "protocolVersion": 1,
   "type": "DEVICE_INFO",
   "requestId": "info-001",
-  "deviceSerial": "TEST-KEYRING-01",
-  "firmwareVersion": "0.0.0-example",
+  "deviceSerial": "XIAO-0123456789abcdef",
+  "firmwareVersion": "0.1.0-registration",
   "supportedProtocolVersions": [
     1
   ],
-  "supportedFunctions": []
+  "supportedFunctions": ["GET_DEVICE_INFO", "GET_REGISTRATION_PROOF", "GET_STATUS"],
+  "maxFrameBytes": 4096,
+  "maxPayloadBytes": 2048,
+  "settingsPolicy": "UNRESOLVED",
+  "storedSettingsVersion": 0,
+  "storedPayloadHash": "",
+  "storageHealthy": true,
+  "applied": false,
+  "timeReady": false
 }
 ```
 
-`supportedFunctions`는 실제 구현한 기능만 반환하도록 제안한다. 예시의 빈 목록을 지원 펌웨어로 간주하지 않는다. 기능 이름 목록·인증 전 공개 범위는 미정이다.
+`supportedFunctions`는 펌웨어가 공개한 기능 목록이다. 유효한 설정이 저장되지 않은 상태는 버전 `0`과 빈 해시로 표시한다. 출시용 인증 전 공개 범위는 미정이다.
 
 앱은 `발견 → BLE 연결 → 기기/소유 확인 → 서버 등록 확인 → 설정 반영 확인`을 구분한다. `CONNECTED`나 `DEVICE_INFO` 수신을 등록·사용 준비 완료로 표시하지 않는다.
 
@@ -107,11 +124,11 @@
 | 항목 | 내용 |
 | --- | --- |
 | 시작 조건 | 로그인·등록 동의, 등록 대기 중인 후보 선택. 현재 등록 키링이 없는 계정 |
-| 앱 요청 예시 | 서버 challenge 발급 → 키링에 `GET_REGISTRATION_PROOF` 제안 → 받은 증명을 서버 등록 API로 전달 |
-| 키링 응답 예시 | `REGISTRATION_PROOF` 제안의 `deviceSerial`·`proof`를 임의로 바꾸지 않고 전달 |
+| 앱 요청 예시 | 서버 challenge 발급 → 키링에 `GET_REGISTRATION_PROOF` → 받은 증명을 서버 등록 API로 전달 |
+| 키링 응답 예시 | `REGISTRATION_PROOF`의 `deviceSerial`을 `DEVICE_INFO`와 대조하고 `deviceSerial`·`proof`를 그대로 전달 |
 | 성공 판단 기준 | 서버의 소유 등록 성공과 선택 기기의 대응 확인. 키링 반영 미확인은 별도로 표시하고 사용 준비는 동기화까지 보류 |
 | 실패·재시도 | 서버 요청 응답 유실은 같은 HTTP 멱등 키·같은 본문으로 재확인. 서버만 등록 성공한 경우 중복 등록/임의 해제 대신 기존 등록 상태와 미완료 기기 반영을 복구 |
-| 구현 상태 | 서버 challenge·등록·서명 검증 코드 있음. 키링의 서명 생성·키 주입·앱/기기 소유 세션과 등록 결과 반영은 미연결 |
+| 구현 상태 | 서버 challenge·등록·검증과 시험 펌웨어의 Ed25519 서명 생성이 구현되어 있다. 실물의 신뢰 공개키 사전 등록, 소유 세션과 기기 등록 결과 반영은 별도 작업이다. |
 | 실물 검증 여부 | 실제 기기 증명으로 등록·재연결·동시 등록·부분 성공 복구 미검증 |
 
 ### 식별자·증명
@@ -124,23 +141,23 @@
 | `challengeId`·`nonce`·`expiresAt` | 서버가 로그인 회원에 귀속해 발급. 현재 코드의 유효 시간은 발급부터 5분이고 최초 등록 때 단회 소비. 앱은 응답의 `expiresAt`을 사용 |
 | `proof` | 현재 등록 API는 `protocolVersion`·`keyId`·`signature`. 과거의 `{protocolVersion,payload}` 등록 증명과 다름 |
 | 서버 검증 방식 | `tingle-device-proof-v1`, Ed25519. 서버에 해당 serial/keyId로 저장된 신뢰 공개키로 검증. 기기에서 받은 임의 공개키를 신뢰하지 않음 |
-| 실제 키링 구현 | 개인키 생성/주입·보존·폐기, 공개키 사전 등록, 펌웨어 서명 라이브러리·비밀키 접근 보호는 IoT·BE 미정. 서버 검증 코드만으로 실물 인증 완료가 아님 |
+| 실제 키링 구현 | 첫 부팅에 기기별 키를 생성하고 비휘발성 저장소에 보존한다. USB 콘솔의 `ENROLL serial=… keyId=… publicKeySpkiBase64url=…`에서 공개 정보를 얻어 BE 테스트 신뢰 목록에 사전 등록한다. 출고용 키 주입·폐기·물리 보호는 미정이다. |
 | 본인 확인 경계 | 올바른 기기의 서명과 사용자가 실제로 보유한 기기인지는 구분. 버튼 없는 등록에서 주변 타인의 선등록을 막을 실물 확인 수단·소유 세션은 미정이며 테스트 외 사용 준비 완료로 간주하지 않음 |
 
-### 요청·응답 제안과 서버 연결 순서
+### 등록 요청·응답과 서버 연결 순서
 
 ```text
-앱 → 서버: POST /api/keyrings/registration-challenges
+앱 → 서버: POST /api/keyrings/registration-challenges (빈 본문)
 서버 → 앱: challengeId, nonce, expiresAt, proofProtocolVersion
 앱 → 키링: 위 challenge를 전달해 등록 증명 요청
 키링 → 앱: deviceSerial, proof(protocolVersion, keyId, signature)
 앱 → 서버: POST /api/keyrings
-서버 → 앱: deviceId, status, firmwareVersion
+서버 → 앱: HTTP 201, deviceId, status, firmwareVersion
 앱 ↔ 키링: 서버 등록 결과·소유 상태 반영 확인 [인증/메시지 미정]
 앱 → 다음 단계: 프로필·성향·설정 준비 후 3절 동기화
 ```
 
-다음 JSON의 `<...>`는 합의/구현 후 실제 값을 넣을 자리다. 서명 생성·검증에 사용할 유효한 시험 벡터가 아니다.
+다음 JSON은 호스트 서명 테스트 벡터다. 실물 시험에는 서버가 방금 발급한 challenge와 해당 보드의 응답을 사용한다. BLE 요청의 `challengeId`는 소문자 표준 UUID, `expiresAt`은 서버가 반환한 UTC ISO 8601 형식이다. 60초 BLE 등록 창과 서버 challenge의 5분 유효 기간은 별도다.
 
 현재 [서버 서명 원문 코드](../back/src/main/java/com/e106/tingle/keyring/proof/KeyringProofTranscript.java)를 기준으로 등록 서명은 용도·증명 버전·keyId·serial·challengeId·nonce·만료 epoch 초를 순서대로 묶는다. 저장 ACK는 용도·증명 버전·keyId·serial·deviceId·ownerGeneration·syncRunId·nonce·settingsVersion·payloadHash·`STORED`를 묶는다. 필드 사이와 끝은 LF인 UTF-8 바이트이며 JSON 문자열 자체를 서명하는 방식이 아니다. nonce는 32바이트, 서명은 64바이트를 padding 없는 base64url로 표현한다. 이 서버 원문과 다른 임의 서명 예시를 정식 증명으로 사용하지 않는다.
 
@@ -150,7 +167,7 @@
   "type": "GET_REGISTRATION_PROOF",
   "requestId": "reg-001",
   "challengeId": "11111111-1111-4111-8111-111111111111",
-  "nonce": "<서버 nonce>",
+  "nonce": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
   "expiresAt": "2026-11-02T00:05:00Z",
   "proofProtocolVersion": "tingle-device-proof-v1"
 }
@@ -161,25 +178,25 @@
   "protocolVersion": 1,
   "type": "REGISTRATION_PROOF",
   "requestId": "reg-001",
-  "deviceSerial": "TEST-KEYRING-01",
+  "deviceSerial": "synthetic-device",
   "proof": {
     "protocolVersion": "tingle-device-proof-v1",
     "keyId": "test-key-01",
-    "signature": "<키링이 생성한 base64url 서명>"
+    "signature": "k4WP42MQvI6MV1VjirbdK9z7F-VOXgmHnzAHVmvU0WXpFxzLed20ObaeTF42B23uHaxnsCOCBSbcYcONtaZRCQ"
   }
 }
 ```
 
-서버 등록 요청은 다음과 같다. 발급과 등록은 각각 HTTP `Idempotency-Key` UUID를 사용하며 같은 작업 재시도에는 해당 키와 본문을 유지한다.
+서버 등록 요청은 다음과 같다. 로그인 인증으로 호출하고 발급과 등록은 각각 HTTP `Idempotency-Key` UUID를 사용한다. 같은 작업 재시도에는 해당 키와 본문을 유지한다.
 
 ```json
 {
   "challengeId": "11111111-1111-4111-8111-111111111111",
-  "deviceSerial": "TEST-KEYRING-01",
+  "deviceSerial": "synthetic-device",
   "proof": {
     "protocolVersion": "tingle-device-proof-v1",
     "keyId": "test-key-01",
-    "signature": "<키링이 생성한 base64url 서명>"
+    "signature": "k4WP42MQvI6MV1VjirbdK9z7F-VOXgmHnzAHVmvU0WXpFxzLed20ObaeTF42B23uHaxnsCOCBSbcYcONtaZRCQ"
   }
 }
 ```
@@ -193,11 +210,11 @@
 | 항목 | 내용 |
 | --- | --- |
 | 시작 조건 | 본인 소유 기기 확인, 필수 프로필·유효 성향 결과·희망 조건 준비, 연결·알림 채널 준비 |
-| 앱 요청 예시 | 서버에서 동기화 실행과 고정 payload 수신 → `SYNC_SETTINGS` 제안으로 전체 전송 |
-| 키링 응답 예시 | 완전성·버전 검사 → 임시 영역에서 비휘발성 저장·적용 → `SETTINGS_RESULT` 제안 |
+| 앱 요청 예시 | 서버에서 동기화 실행과 고정 payload 수신 → `SYNC_SETTINGS`로 전체 전송 |
+| 키링 응답 예시 | 현재 보드는 유효한 요청에 `ERROR / POLICY_UNRESOLVED`를 반환한다. 합성 승인 조건의 호스트 테스트는 비휘발성 저장 코어 성공 후 `SETTINGS_RESULT`를 검증한다. |
 | 성공 판단 기준 | 해당 기기의 최신 설정 저장·실제 적용·신뢰할 시간 확인, 서버의 유효 저장 ACK 확인을 구분해 모두 충족. 단순 수신·Write 성공·서명 존재만으로 완료하지 않음 |
-| 실패·재시도 | 미완성 전송은 처음부터 재전송. 저장/검사 실패 시 기존 정상 설정 유지. 응답 유실 시 같은 실행/버전/해시의 결과 재확인. 중간 데이터·구버전 응답을 최신 완료로 사용하지 않음 |
-| 구현 상태 | 서버 sync-run·저장 ACK 검증 코드 있음. 기본 payload 공급자는 `POLICY_UNRESOLVED` 반환. 공식 기기 payload·펌웨어 저장/적용·신뢰 시각 연결 필요 |
+| 실패·재시도 | 미완성 전송은 폐기하고 처음부터 재전송한다. 유효성 검사 실패 시 기존 정상 설정을 유지한다. 저장 오류나 완료 응답 유실은 재연결 후 저장 상태를 재확인한다. |
+| 구현 상태 | 설정 해시·버전 검증, 원자적 저장 및 `STORED` 서명 코어가 있다. 서버 기본 payload 공급자와 보드 승인 어댑터는 각각 `POLICY_UNRESOLVED`를 반환한다. 공식 payload·서버/소유 인증·적용·신뢰 시각 연결이 필요하다. |
 | 실물 검증 여부 | 분할 전송·전원 차단·저장 실패·버전 경합·재연결·실제 매칭 적용 미검증 |
 
 ### 보내야 할 데이터의 의미
@@ -226,17 +243,17 @@
 ### 서버 실행과 BLE 예시
 
 ```text
-POST /api/keyrings/{deviceId}/sync-runs       → 실행·당시 payload 고정
+POST /api/keyrings/{deviceId}/sync-runs (빈 본문) → 실행·당시 payload 고정
 GET  /api/keyrings/{deviceId}/sync-runs/{syncRunId} → 동일 실행 재확인
 앱 → 키링: 서버 payload를 바꾸지 않고 전체 전달
-키링: 검사 → 임시 저장 → 정상 저장 전환·적용 → 저장 ACK/적용 상태
+키링: 검사 → 승인 확인 → 비휘발성 저장·읽기 검증 → 저장 증명
 POST /api/keyrings/{deviceId}/sync-runs/{syncRunId}/ack → 기기 저장 증명 전달
 서버: 최신 버전·실행·소유 세대·해시·서명 검사 → ACKED / 오류
 ```
 
-서버 응답에는 `ownerGeneration`, `settingsVersion`, `currentSettingsVersion`, `state`, `stale`, `payload`, `payloadEncoding=base64url`, `payloadFormat`, `payloadHash`, `nonce`, `keyId`, `proofProtocolVersion`, `serverTime` 등이 있다. `payload`의 정확한 원본 바이트를 유지해야 해시·서명이 대응한다.
+서버 응답에서 아래 BLE 필드만 뽑아 전달한다. `deviceId`·`settingsVersion`은 양수 int64 숫자로 보존하고 `syncRunId`·`ownerGeneration`은 소문자 표준 UUID를 사용한다. `payload`는 패딩 없는 base64url 문자열이며 해시는 디코딩한 원본 바이트를 기준으로 한다. 현재 펌웨어는 `serverTime`을 신뢰 시각으로 적용하지 않는다.
 
-예시 — **대용량 전송 한도/프레임은 미정**이다. 이 JSON 전체가 상태 조회의 512바이트 제한 안에 들어간다고 가정하지 않는다.
+아래는 호스트 테스트 벡터다. `YWJj`는 `abc` 3바이트이며 실물·운영 시험에는 서버가 고정한 payload와 해당 기기 keyId를 사용한다. 시험 빌드의 한도는 프레임 4,096바이트(LF 포함), 디코딩한 설정 2,048바이트다.
 
 ```json
 {
@@ -244,19 +261,31 @@ POST /api/keyrings/{deviceId}/sync-runs/{syncRunId}/ack → 기기 저장 증명
   "type": "SYNC_SETTINGS",
   "requestId": "sync-001",
   "syncRunId": "22222222-2222-4222-8222-222222222222",
-  "deviceId": 17,
+  "deviceId": 9007199254740993,
   "ownerGeneration": "33333333-3333-4333-8333-333333333333",
-  "settingsVersion": 12,
+  "settingsVersion": 9223372036854775807,
   "payloadEncoding": "base64url",
-  "payloadFormat": "<서버 형식>",
-  "payload": "<서버 payload>",
-  "payloadHash": "<서버의 64자리 해시>",
-  "nonce": "<서버 nonce>",
+  "payloadFormat": "test-only-opaque-v1",
+  "payload": "YWJj",
+  "payloadHash": "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
+  "nonce": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
   "keyId": "test-key-01",
-  "proofProtocolVersion": "tingle-device-proof-v1",
-  "serverTime": "2026-11-02T00:00:00Z"
+  "proofProtocolVersion": "tingle-device-proof-v1"
 }
 ```
+
+입력·해시가 정상이고 해당 보드의 `keyId`가 맞으면 현재 실물 빌드는 다음 오류를 반환한다.
+
+```json
+{
+  "protocolVersion": 1,
+  "type": "ERROR",
+  "requestId": "sync-001",
+  "code": "POLICY_UNRESOLVED"
+}
+```
+
+다음 성공 응답은 합성 승인 조건으로 검증한 저장 코어 예시다.
 
 ```json
 {
@@ -264,20 +293,34 @@ POST /api/keyrings/{deviceId}/sync-runs/{syncRunId}/ack → 기기 저장 증명
   "type": "SETTINGS_RESULT",
   "requestId": "sync-001",
   "syncRunId": "22222222-2222-4222-8222-222222222222",
-  "settingsVersion": 12,
-  "payloadHash": "<서버의 64자리 해시>",
+  "settingsVersion": 9223372036854775807,
+  "payloadHash": "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
   "stored": true,
-  "applied": true,
-  "timeReady": true,
+  "applied": false,
+  "timeReady": false,
   "proof": {
     "protocolVersion": "tingle-device-proof-v1",
     "keyId": "test-key-01",
-    "signature": "<비휘발성 저장 후 생성한 서명>"
+    "signature": "ZkMXsDgolh12Kvzw-RQTEPdQ81qSSQ-lk_SUmBXVDVCiEFD475g6d0tNLmSqhAJ9Rg3vfFBBA0CgbzANF8jwAA"
   }
 }
 ```
 
-`stored/applied/timeReady`는 완료 조건을 분리하기 위한 제안 필드다. 특히 `STORED` 서명은 비휘발성 저장 증명이며 시간 신뢰·실제 계산 적용까지 자동 입증하지 않는다. 적용/시간 확인의 인증된 응답 방식은 미정이다. 서버 `/ack`에는 현재 DTO의 `settingsVersion`, `payloadHash`, `proof`만 전달한다.
+`STORED` 서명은 비휘발성 저장 증명이다. `applied`와 `timeReady`는 서명 원문에 포함되지 않으며 시험 빌드는 둘 다 `false`다. 실제 설정 적용 완료 ACK의 형식과 인증 방식은 후속 계약이다.
+
+앱은 현재 기기·실행 ID·버전·해시와 일치하는 실제 `stored=true` 응답을 받은 뒤 `POST /api/keyrings/{deviceId}/sync-runs/{syncRunId}/ack`에 아래 세 필드를 전달한다. 이 예시는 위 호스트 테스트 벡터의 HTTP 요청 형태다.
+
+```json
+{
+  "settingsVersion": 9223372036854775807,
+  "payloadHash": "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
+  "proof": {
+    "protocolVersion": "tingle-device-proof-v1",
+    "keyId": "test-key-01",
+    "signature": "ZkMXsDgolh12Kvzw-RQTEPdQ81qSSQ-lk_SUmBXVDVCiEFD475g6d0tNLmSqhAJ9Rg3vfFBBA0CgbzANF8jwAA"
+  }
+}
+```
 
 ### 완료·복구 기준
 
@@ -285,8 +328,8 @@ POST /api/keyrings/{deviceId}/sync-runs/{syncRunId}/ack → 기기 저장 증명
 - 최종 설정 반영 확인 시각과 전송 시도·상태 조회 수신·만남 업로드 시각을 구분한다. 현재 서버 `ackedAt`은 저장 증명을 서버가 확인한 시각이다. 기기 실제 적용 시각과 앱의 표시 필드/기준은 별도 합의하며 다른 작업 시각으로 채우지 않는다.
 - 새 설정을 알고 있으나 미반영이면 해당 기기는 새 매칭 대기. 저장 실패 시 기존 설정/기록을 보존하되 구버전으로 계속 매칭해도 된다는 뜻은 아니다.
 - 동기화 도중 서버 설정이 바뀌면 `SYNC_VERSION_STALE` 등을 확인하고 최신 실행을 다시 받는다. 과거 성공 응답으로 현재 완료 표시를 덮어쓰지 않는다.
-- 기기에 저장됐으나 서버 ACK 전송만 실패하면 저장 증명/동일 실행을 재확인한다. 새 설정이 없는 상태에서 다른 UUID·임의 해시로 결과를 만들지 않는다. 기기의 ACK 재현·재시작 복구 방식은 미정이다.
-- 재연결 시 기기의 적용 실행·설정/형식/정책/규칙 버전·해시를 조회해 서버 최신값과 비교해야 한다. 이를 위한 BLE 조회 메시지와 응답 필드는 미정이며 `GET_STATUS`로 대체하지 않는다.
+- 서버 ACK만 실패하면 동일 실행과 저장 증명을 재확인한다. 저장 코어는 승인된 동일 설정 재전송에 증명을 다시 생성한다. 설정 프레임을 재전송할 때 실행 ID·버전·해시·nonce를 유지한다. 실물 전원 재시작 후 재현 여부는 검증 대상이다.
+- 재연결 후 `DEVICE_INFO`의 `storedSettingsVersion`·`storedPayloadHash`를 서버 실행과 대조할 수 있다. 이 필드는 저장 상태를 나타낸다. 적용 실행·정책/규칙 버전·신뢰 시간 조회는 후속 계약이다.
 - 변경 즉시·수동·재연결·한국시간 자정 자동 동기화를 시도하되 자정 정시 완료는 보장하지 않는다. 재시작 후 신뢰 시간·설정 확인 전 새 매칭 대기, 기존 기록 보존. 단순 24시간 경과만으로 전체 중단하지 않는다.
 - 기존 계약의 ‘시간 다시 맞추기’도 시간 적용 결과를 확인해야 한다. 시간만 맞췄다는 이유로 설정 동기화까지 완료 표시하지 않는다. 독립 시간 요청/응답·기준 시각 인증 방식은 미정이며 휴대폰의 임의 시각을 신뢰 시각으로 확정하지 않는다.
 
@@ -504,7 +547,7 @@ POST /api/keyrings/{deviceId}/sync-runs/{syncRunId}/ack → 기기 저장 증명
 | 항목 | 기준 / 남은 내용 |
 | --- | --- |
 | 시작 조건 | 현재 소유 계정 로그인·대상 실물 보유. 버튼/고유번호만으로 해제 불가 |
-| 앱 요청·키링 응답 예시 | 미정. 이번 테스트에서는 미지원이며 성공 응답/완료 화면을 만들지 않음 |
+| 앱 요청·키링 응답 | 이번 시험 빌드에서 초기화·등록 해제·양도 명령과 성공 ACK는 미지원이다. 앱은 해당 기능을 미지원으로 표시한다. |
 | 완료 판단 | 기기 초기화 **및** 서버 소유 관계 해제를 모두 확인해야 완료. 그 뒤 다른 계정 등록 허용 |
 | 미전송 기록 | 삭제 동의 / 먼저 휴대폰·서버로 동기화 / 취소를 구분. 명시적 삭제 동의가 없으면 먼저 동기화하고, 실패/미연결 상태에서 강제 삭제하지 않음 |
 | 삭제 범위 | 기기 내부의 이전 소유 연결·개인 성향/설정·만남 원본의 삭제/보존 범위와 고정 기기 식별/차단 유지 방식은 후속 합의 |
@@ -514,48 +557,55 @@ POST /api/keyrings/{deviceId}/sync-runs/{syncRunId}/ack → 기기 저장 증명
 | 분실 영구 차단 | 서비스팀 확인 후 서버가 영구 사용 불가로 관리. 초기화·재등록·탈퇴로 차단이 사라지면 안 됨. 기기 전파/차단 증명은 미정, 오프라인 즉시 중지 보장 없음 |
 | 구현·실물 검증 | 본 문서에서 완료로 확인하지 않음. 이번 테스트 통과를 초기화·양도 완료로 확대하지 않음 |
 
+XIAO 전원 재시작·RESET은 로컬 설정이 없는 시험 보드의 등록 창을 다시 여는 용도다. 서비스 초기화에는 기기 데이터 처리와 서버 소유 해제를 검증하는 별도 절차가 필요하다.
+
 ## 7. 공통 BLE 메시지·전송·오류
 
 ### 서비스·송수신 방향
 
-상태 조회와 동일한 UART를 새 기능에도 재사용하는 **초안**이다. 기능별 새 UUID를 임의 발급하지 않는다.
+시험 펌웨어는 아래 NUS를 사용한다. 앱은 Central, 키링은 Peripheral이다.
 
 | 용도 | UUID | 방향·방식 |
 | --- | --- | --- |
 | 서비스 | `6E400001-B5A3-F393-E0A9-E50E24DCCA9E` | 앱의 서비스 탐색 |
 | 키링 RX | `6E400002-B5A3-F393-E0A9-E50E24DCCA9E` | 앱 → 키링, Write with response |
 | 키링 TX | `6E400003-B5A3-F393-E0A9-E50E24DCCA9E` | 키링 → 앱, Notify 구독 |
+| TX CCCD | `0x2902` | 연결마다 Notify 활성화 |
 
-현재 [BLE 실습 코드](firmware/arduino-onboarding/ble_uart_practice/ble_uart_practice.ino)는 문자/바이트를 중계한다. 위 UUID와 연결만으로 계정 인증·암호화·명령 권한이 자동 구현되지 않는다. 본인 인증/세션이 확정되기 전 타인에게 설정·기록 조회·삭제 권한을 주지 않는다.
+기기 정보·상태는 RX에 요청을 쓰고 TX Notify로 받는다. RX/TX 데이터의 GATT Read는 지원하지 않는다. RX는 Write Without Response와 Prepare Write를 거부한다. 계정 귀속은 서버 증명 검증, 설정·삭제 권한은 인증된 소유 세션을 기준으로 별도 판단한다.
 
 | 공통 항목 | 규칙 / 미정 |
 | --- | --- |
 | 형식 | 앱↔키링은 UTF-8 JSON, 한 줄 뒤 LF. 키링↔키링 바이너리의 상세 코덱은 별도 미정 |
 | `protocolVersion` | BLE JSON 버전, 정수 `1` 초안. `proof.protocolVersion`/`evidence.protocolVersion` 문자열이나 계산 규칙 버전과 별개 |
-| `type`·`requestId` | 메시지 종류와 1~36자 요청 ID. 응답은 요청 ID를 반환. 새 종류는 본 문서의 제안명이며 지원 기능 협의 필요 |
+| `type`·`requestId` | 메시지 종류와 UTF-8 1~36바이트 요청 ID. 응답에 같은 ID를 넣으며 형식 오류로 ID를 읽지 못하면 `null`이 올 수 있다. |
 | 요청 ID·멱등 처리 | 상태 조회 등 읽기 재요청은 새 requestId. 변경 BLE 메시지의 requestId 재사용 규칙/기기 결과 보존 기간은 미정. HTTP 멱등 키·syncRunId·eventId/submissionId·receiptId는 각각 업무 식별자로 고정하며 requestId 하나로 대체하지 않음 |
 | 늦은 응답 | 현재 연결 세대·대상 기기·요청/업무 ID·버전이 맞는 응답만 반영. 끊김 시 조각/대기 요청을 정리하고 과거 응답으로 현재 화면·다른 계정/기기를 갱신하지 않음 |
-| 순서 | JSON 프레임 중간에 다른 메시지 조각을 섞지 않음. 동시 작업 수·상태 조회/설정/기록의 우선순위·Notify 흐름 제어는 미정 |
+| 순서 | 양방향 조각 최대 20바이트. 앱은 직전 Write 응답을 받은 뒤 다음 조각을 쓰고, 완전한 Notify 응답을 받은 뒤 다음 요청을 시작한다. |
 | 완성 확인 | Notify 1회나 GATT Write 성공을 업무 완료로 보지 않음. LF까지 바이트 결합 후 JSON 해석. 설정은 전체 완성·해시/버전·저장/적용 확인이 추가로 필요 |
 | 인증·권한 | 등록 전 허용 명령, 소유 세션 생성·만료·재연결 확인, 암호화·재전송 방지·권한 오류는 IoT·BE·FE 미정 |
+
+시험 빌드의 요청은 문자열과 음이 아닌 정수로 구성된 단일 JSON 객체다. 중첩 객체·배열·boolean·null은 요청에서 지원하지 않는다. 서버 응답 전체를 전달하는 대신 각 BLE 요청에 필요한 필드를 선택한다. `proof` 객체와 `applied` 등은 키링 응답에 포함될 수 있다.
 
 ### 상태 조회 수치를 다른 기능에 그대로 적용하는가
 
 | 대상 | 조각·최대 크기 | 제한 시간·재시도 |
 | --- | --- | --- |
 | 기존 상태 조회 | 조각 최대 20 **바이트**, JSON+LF 최대 512바이트. UTF-8 문자 수가 아님 | 요청 전송 완료 후 완전 응답 10초, 동시 조회 1건. 횟수/간격은 미정 |
-| 기기 정보·등록 증명 | UART/JSON 재사용 제안. 최대 크기·조각/버퍼 한도는 미정 | 스캔·BLE 연결·증명 응답의 제한 시간/재시도는 미정. 서버 challenge 만료와 별개 |
-| 설정·기록 본문·서버 확인 | 총 payload 한도·조각 길이·번호·완성/누락 판정·흐름 제어 미정. 512바이트를 자동 적용하지 않음 | 큰 전송의 전체/구간 제한 시간·횟수 미정. 설정 중단 시 전체 재전송은 사용자 선택으로 반영 |
+| 기기 정보·등록 증명 | 시험 빌드의 요청 프레임 한도 4,096바이트(LF 포함), 조각 최대 20바이트 | 스캔·연결·등록 응답의 앱 타임아웃은 미정. 서버 challenge 만료와 별개 |
+| 설정 | 동일 프레임 한도와 디코딩한 설정 2,048바이트 한도 | 앱의 전송 타임아웃과 자동 재시도 횟수는 미정. 중단 후 처음부터 재전송 |
 
-20바이트·512바이트·10초는 상태 조회용 초기 제안이며 실물 성능 보장이 아니다. 큰 전송을 임의로 잘라 같은 JSON을 여러 번 파싱하거나, 잘린 본문을 저장 성공으로 응답하지 않는다. 합의한 길이·시간값과 지원 기능을 FE·IoT가 함께 적용한다.
+20바이트는 시험 빌드의 조각 한도다. 512바이트와 앱 응답 대기 10초는 상태 조회 초안의 기준이다. 펌웨어에서 쓰는 10초는 Notify 버퍼 부족 재시도 예산이다. 타임아웃·연결 끊김 시 미완성 버퍼와 대기 요청을 폐기하고, 재연결 → 서비스 탐색 → TX 재구독 → 기기 확인 후 다시 요청한다.
 
 ### 오류 구분
 
 | 구분 | 코드·내용 |
 | --- | --- |
-| 기존 상태 조회 초안 | `INVALID_REQUEST`, `UNSUPPORTED_VERSION`, `UNSUPPORTED_TYPE`, `STATUS_UNAVAILABLE` |
+| 시험 BLE 공통 | `INVALID_MESSAGE`(형식), `UNSUPPORTED_PROTOCOL`(버전), `UNSUPPORTED_TYPE`(종류), `REGISTRATION_WINDOW_CLOSED`(등록 창 종료) |
+| 시험 BLE 설정 | `INVALID_SETTINGS`, `INVALID_PAYLOAD`, `OWNER_MISMATCH`, `STALE_SETTINGS`, `VERSION_CONFLICT`, `STORAGE_ERROR`, `PROOF_ERROR`, `POLICY_UNRESOLVED` |
+| GATT·연결 | 조각 길이·쓰기 방식 오류 또는 처리 중 새 요청은 GATT 오류가 올 수 있다. 초과 프레임이나 전송 불능 시 연결이 끊길 수 있다. |
 | 현재 BE 코드 | `DEVICE_ALREADY_BOUND`(409), `IDEMPOTENCY_CONFLICT`(409), `SYNC_VERSION_STALE`(409), `INVALID_DEVICE_PROOF`(422), `POLICY_UNRESOLVED`(422). 세션/권한/리소스 오류는 기존 API 규칙 적용 |
-| 추가 BLE 오류 — 미정 | 인증/권한 없음, BUSY, 조각/크기/완전성 오류, 저장 실패, 버전 충돌, 서버 확인 검증 실패 등의 최종 코드·retryable 여부 |
+| 출시용 BLE 오류 — 미정 | 인증·권한, 대기/재시도 세부 분류와 최종 코드 합의 |
 
 ```json
 {
@@ -573,7 +623,7 @@ POST /api/keyrings/{deviceId}/sync-runs/{syncRunId}/ack → 기기 저장 증명
 | 우선 | 항목 | 확인할 내용·담당 |
 | --- | --- | --- |
 | 1 | 발견·실물·소유 확인 | 버튼 없는 시험의 식별 방법, 정식 제품 버튼 차이, 등록된 기기 재연결·동시 폰 정책·인증 세션. IoT·FE·BE |
-| 1 | 기기 증명 구현 | 서버에 이미 있는 Ed25519 등록/STORED 원문과 실물 키 주입·신뢰키 등록·서명 생성의 대응. IoT·BE |
+| 1 | 실물 신뢰키 등록 | 시험 보드 공개키 사전 등록과 등록 서명 실물 검증, 출고 키 주입·보호 절차. IoT·BE |
 | 1 | 등록 부분 성공 | 서버 등록 성공 뒤 키링 반영 요청·재확인·실패 복구의 메시지와 서버 확인 수단. IoT·FE·BE |
 | 1 | 서비스 식별 | 공통 서비스 식별값의 실제 값·기기 설정/발견/인증 연결. UART UUID와 구분. IoT·FE·BE |
 | 2 | 공식 동기화 payload | 최소 성향/조건/관계 상태·코드북·정밀도·형식/정책/규칙 버전·골든 벡터. AI·BE·IoT |
@@ -586,6 +636,8 @@ POST /api/keyrings/{deviceId}/sync-runs/{syncRunId}/ack → 기기 저장 증명
 미정은 기능 삭제를 뜻하지 않는다. 합의되지 않은 서명·성향 데이터·재시도 값으로 성공 응답을 만들어 연결하지 않는다.
 
 ## 9. 적용·호환성·검증
+
+첫 합동 시험은 `부팅·버전 확인 → 60초 등록 창에서 스캔·연결 → TX 구독 → 기기 정보·상태 조회 → 등록 challenge 서명 → 테스트 서버 등록 → 재연결·재구독` 순서로 진행한다. 재연결 전에 광고 창이 닫혔다면 시험 보드를 재부팅한다. 설정 단계에서는 현재 `POLICY_UNRESOLVED`가 앱의 미반영 상태로 표시되는지 확인한다. 공식 계약 반영 뒤 실제 저장, 서버 ACK 검증 및 전원 재시작 후 동일 버전·해시 복구를 이어서 확인한다.
 
 적용 순서는 **이 문서 공동 검토 → 각 미정 항목 확정·시험 벡터 공유 → 등록/동기화 펌웨어·FE/BE 연결 → 실제 2대 매칭/기록 검증**이다. 필드/형식의 호환되지 않는 변경은 버전과 지원 기능을 함께 갱신한다. 현재 문자 중계 펌웨어를 이 계약 지원 버전으로 표시하지 않는다.
 
