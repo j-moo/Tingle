@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import Logo from './Logo.tsx'
+import { markJump } from '../sectionNav.ts'
 import styles from './Nav.module.css'
 
 // 투명 유리(흐림) 고정 네비. 인트로 재생 중(<html data-intro="playing">)에는 위로 숨었다가 끝나면 내려온다(Nav.module.css)
@@ -39,7 +40,7 @@ export default function Nav() {
   }, [])
 
   return (
-    <header ref={header} className={styles.nav} data-tone={dark ? 'dark' : 'light'} data-open={open || undefined}>
+    <header ref={header} onClickCapture={(e) => { if ((e.target as Element).closest('a[href^="#"]')) markJump() }} className={styles.nav} data-tone={dark ? 'dark' : 'light'} data-open={open || undefined}>
       <div className={styles.bar}>
         <a className={styles.home} href='#top' aria-label='tingle 맨 위로' onClick={close}>
           <Logo className={styles.logo} />

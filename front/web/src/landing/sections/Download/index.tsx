@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useEffect, useState, type CSSProperties, type MouseEvent } from 'react'
+import { goSection, sideOf, TAP_MODE } from '../../sectionNav.ts'
 import { detectPlatform } from './detectPlatform.ts'
 import styles from './Download.module.css'
 
@@ -14,6 +15,19 @@ const APPS: Record<Target, { label: string, href: string, qr: string }> = {
 }
 
 export default function Download() {
+  const [footerH, setFooterH] = useState(0)                                  // 세로 화면: 다운로드 + 푸터가 딱 한 화면이 되게(Download.module.css)
+  useEffect(() => {
+    const footer = document.querySelector('footer')
+    if (!footer) return
+    const ro = new ResizeObserver(() => setFooterH(footer.offsetHeight))
+    ro.observe(footer)
+    return () => ro.disconnect()
+  }, [])
+  // 세로 화면: 버튼 · 링크 밖 왼쪽 절반을 누르면 이전 섹션(일상 영상)으로(마지막 섹션이라 오른쪽은 없음)
+  const onSectionClick = (e: MouseEvent) => {
+    if (!matchMedia(TAP_MODE).matches || (e.target as Element).closest('button, a') || sideOf(e.clientX) > 0) return
+    goSection(e.currentTarget, -1)
+  }
   const os = detectPlatform()
   const [target, setTarget] = useState<Target>(os === 'mac' ? 'mac' : 'android')
   const app = APPS[target]
@@ -21,7 +35,7 @@ export default function Download() {
   const mobileHref = os === 'android' ? APPS.android.href : ''      // 폰은 접속 기기 = 설치 플랫폼(아이폰 앱은 없음)
 
   return (
-    <section id='download' className={styles.download} data-nav='dark' data-device={handheld ? 'handheld' : 'computer'} aria-labelledby='download-title'>
+    <section id='download' className={styles.download} style={{ '--footer-h': `${footerH}px` } as CSSProperties} data-nav='dark' data-device={handheld ? 'handheld' : 'computer'} aria-labelledby='download-title' onClick={onSectionClick}>
       <div className={styles.row}>
         <div className={styles.copy}>
           <p className={styles.eyebrow}>곧 만나요</p>

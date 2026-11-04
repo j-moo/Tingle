@@ -1,6 +1,6 @@
 // 랜딩 인트로 Lottie 생성기 — After Effects 없이 글꼴 외곽선(path)으로 Lottie JSON 을 만든다.
 // 실행(front/web 에서): pnpm --dir tools/intro-lottie install && pnpm --dir tools/intro-lottie build
-//   → src/landing/sections/Intro/intro.json
+//   → src/landing/sections/Intro/intro.json(가로 1600×900) · intro-portrait.json(세로 900×1600, 아래 PORTRAIT 로 글자 크기만 줄임)
 // 장면: "진동" 팝 · 부르르 → "이 오면" 스프링 → 꽃잎이 올라와 덮음 → "만남이 시작된다" → 5칸 뒤집기 → tingle 로고 · "스친 순간, 새로운 시작."
 // 장면 값은 아래 SCENE, 등장 모션 후보는 gallery.mjs · enter-gallery.mjs, 꽃잎 모양은 petal-shapes.mjs
 import fs from 'node:fs'
@@ -14,9 +14,10 @@ import { petalShapeGallery } from './petal-shapes.mjs'
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const FONT_DIR = path.join(HERE, 'fonts')
 const font = file => opentype.loadSync(path.join(FONT_DIR, file))   // tools/intro-lottie/fonts (SIL OFL, OFL-*.txt)
-const OUT_FILE = path.join(HERE, '../../src/landing/sections/Intro/intro.json')
+const OUT_DIR = path.join(HERE, '../../src/landing/sections/Intro')
 
-const FPS = 60, W = 1600, H = 900
+const FPS = 60
+let W = 1600, H = 900                                                       // 장면 크기 — 세로판은 아래에서 900×1600 으로 바꿔 한 번 더 만든다
 const FONTS = {
   pretendard: 'Pretendard-Bold.ttf',   // 프리텐다드(SIL OFL) — Regular · Medium · Bold · Black 등 굵기별 파일
   nunito: 'Nunito-Black.ttf',          // Nunito Black 900(SIL OFL, Google Fonts) — 로고 "tingle"
@@ -439,7 +440,22 @@ function buildScene() {
   return { v: '5.7.4', fr: FPS, ip: 0, op: frames, w: W, h: H, nm: 'Tingle intro', ddd: 0, assets: flip.assets, layers, markers: [] }
 }
 
-const intro = dump(buildScene())
-fs.mkdirSync(path.dirname(OUT_FILE), { recursive: true })
-fs.writeFileSync(OUT_FILE, intro)
-console.log(`${path.relative(process.cwd(), OUT_FILE)} ${(intro.length / 1024).toFixed(1)}KB · ${JSON.parse(intro).op} 프레임(${(JSON.parse(intro).op / 60).toFixed(2)}초)`)
+const write = name => {
+  const file = path.join(OUT_DIR, name), intro = dump(buildScene())
+  fs.mkdirSync(OUT_DIR, { recursive: true })
+  fs.writeFileSync(file, intro)
+  console.log(`${path.relative(process.cwd(), file)} ${W}×${H} ${(intro.length / 1024).toFixed(1)}KB · ${JSON.parse(intro).op} 프레임(${(JSON.parse(intro).op / 60).toFixed(2)}초)`)
+}
+write('intro.json')
+
+// 세로판(폰 세로 화면): 장면 900×1600, 연출 · 타이밍은 같고 글자만 폭에 맞게 줄임.
+// 폰(약 9:19.5)은 9:16 보다 길어 화면을 꽉 채우면(slice) 양옆이 약 80px 씩 잘리므로 글자는 가운데 약 700px 안에 둔다
+const PORTRAIT = { size: 112, enterFrom: 300, phrase: 88, logo: 210, tagline: 44, tagGap: 50 }
+W = 900; H = 1600
+SCENE.size = PORTRAIT.size                                                   // "진동이 오면"
+SCENE.enter.from = PORTRAIT.enterFrom
+SCENE.phrase.size = PORTRAIT.phrase                                          // "만남이 시작된다"
+SCENE.flip.logoSize = PORTRAIT.logo                                          // 뒷면 tingle
+SCENE.flip.tagline.size = PORTRAIT.tagline                                   // "스친 순간, 새로운 시작."
+SCENE.flip.tagline.gap = PORTRAIT.tagGap
+write('intro-portrait.json')

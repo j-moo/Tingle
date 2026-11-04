@@ -218,6 +218,7 @@
   }
 }
 
+/* 세로 화면(모바일): 스크롤에 묶인 고정 · 가로 이동 대신 패널 줄을 직접 좌우로 밀어(scroll-snap) 넘기고, 진행 막대를 누르면 그 패널로(index.tsx) */
 /* 동작 줄이기, 또는 높이가 낮은 화면(휴대폰 가로 등 — 고정하면 설명이 화면 아래로 잘림): 고정 · 가로 이동 없이 세로로 */
 @media (prefers-reduced-motion: reduce), (max-height: 600px) {
   .section {
@@ -246,5 +247,104 @@
   }
   .visual {
     max-height: 50svh;                   /* 낮은 화면: 이미지 바로 아래 설명이 보이게 */
+  }
+}
+
+/* 누르기 모드(세로 · 폰 가로): 스크롤에 묶인 고정 · 가로 이동 대신 패널 줄을 직접 좌우로 밀어(scroll-snap) 넘기고, 진행 막대 · 화면 누르기로 넘김(index.tsx)
+   아래 '동작 줄이기 · 낮은 화면 세로 나열' 보다 뒤에 둬서 덮음 — 세로 나열이면 단계 계산이 안 돼 화면이 잠긴 채 갇힘 */
+@media (orientation: portrait), (orientation: landscape) and (max-height: 500px) {
+  .section {
+    height: auto;
+    padding-block: var(--rise-gap) 0;     /* 낮은 화면 세로 나열 블록의 여백을 되돌림 */
+  }
+  .sticky {
+    position: relative;
+    height: auto;
+    min-height: 100svh;
+    padding-block: calc(var(--nav-height) + 24px) 32px;
+  }
+  .track {
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    scroll-snap-type: x mandatory;
+    scrollbar-width: none;
+    transform: none;
+    transition: none;
+  }
+  .track::-webkit-scrollbar {
+    display: none;
+  }
+  .panel {
+    scroll-snap-align: center;
+  }
+  .track {
+    flex-direction: row;
+    align-items: stretch;
+    gap: var(--gap);
+    padding: 0 calc((100vw - var(--panel-w)) / 2);
+  }
+  .bars {
+    display: flex;
+  }
+}
+
+/* 폰 가로(누르기 모드): 높이가 낮아도 한 화면에 패널 하나(이미지 왼쪽 · 글 오른쪽) + 진행 막대. 위의 낮은 화면 세로 나열 규칙을 되돌림 */
+@media (orientation: landscape) and (max-height: 500px) {
+  .section {
+    --panel-w: calc(100vw - 96px);
+    --gap: 16px;
+    padding-block: var(--rise-gap) 0;
+  }
+  .sticky {
+    position: relative;
+    height: 100dvh;
+    min-height: 0;
+    gap: 8px;
+    padding-block: 68px 12px;
+  }
+  .label {
+    font-size: 14px;
+  }
+  .track {
+    min-height: 0;
+    flex: 1;
+    flex-direction: row;
+    align-items: stretch;
+    gap: var(--gap);
+    padding: 0 calc((100vw - var(--panel-w)) / 2);
+  }
+  .panel {
+    height: auto;
+    flex-direction: row;
+    align-items: center;
+    gap: 20px;
+    padding: 14px;
+    border-radius: 20px;
+    background: var(--bg-surface);
+  }
+  .visual {
+    width: auto;
+    height: 100%;
+    max-width: 40%;
+    max-height: none;
+    aspect-ratio: 1;
+    border-radius: 12px;
+  }
+  .text {
+    gap: 6px;
+    padding-inline: 0;
+  }
+  .step {
+    font-size: 12px;
+  }
+  .title {
+    font-size: 20px;
+  }
+  .body {
+    font-size: 13px;
+  }
+  .bars {
+    display: flex;
+    margin-top: 0;
   }
 }
