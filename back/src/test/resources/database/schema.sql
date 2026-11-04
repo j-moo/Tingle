@@ -664,6 +664,8 @@ CREATE TABLE "settings_snapshot" (
     "input_json" text NOT NULL,
     "input_hash" varchar(64) NOT NULL,
     "captured_at" timestamptz NOT NULL,
+    "redacted_at" timestamptz NULL,
+    "redaction_reason" varchar(40) NULL,
     CONSTRAINT "pk_settings_snapshot" PRIMARY KEY ("id")
 );
 COMMENT ON TABLE "settings_snapshot" IS '사용자·설정 버전별 불변 입력 보존 기반; 소비 형식/준비 검증 별도';
@@ -674,6 +676,8 @@ COMMENT ON COLUMN "settings_snapshot"."input_format" IS '호출자가 명시한 
 COMMENT ON COLUMN "settings_snapshot"."input_json" IS '정규화 불변 JSON 입력 증거; READY 승인 아님';
 COMMENT ON COLUMN "settings_snapshot"."input_hash" IS '정규화 UTF8 입력 SHA256';
 COMMENT ON COLUMN "settings_snapshot"."captured_at" IS '실제 보존 시각';
+COMMENT ON COLUMN "settings_snapshot"."redacted_at" IS '동의 철회로 입력 값 일부를 지운 시각; 지운 사본은 해시도 0으로 지워 근거로 쓰지 않음';
+COMMENT ON COLUMN "settings_snapshot"."redaction_reason" IS '값을 지운 사유(예: PROFILE_RELIGION_WITHDRAWN); 지운 원문은 남기지 않음';
 CREATE UNIQUE INDEX "uq_settings_snapshot_user_version" ON "settings_snapshot" ("user_id", "settings_version");
 
 -- Logical relationships:

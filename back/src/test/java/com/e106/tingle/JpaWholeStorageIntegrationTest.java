@@ -30,7 +30,7 @@ class JpaWholeStorageIntegrationTest {
 	private JsonMapper mapper;
 
 	@Test
-	@DisplayName("실제 전체 앱의 JPA 생성은 승인한 26표·231칼럼만 만들고 구 테이블을 추가하지 않는다")
+	@DisplayName("실제 전체 앱의 JPA 생성은 승인한 26표·233칼럼만 만들고 구 테이블을 추가하지 않는다")
 	void generatesExactlyCanonicalTablesAndColumnsWithoutBootstrapSql() throws Exception {
 		JsonNode design = mapper.readTree(new ClassPathResource("database/tables.json")
 			.getContentAsString(StandardCharsets.UTF_8));
@@ -55,7 +55,7 @@ class JpaWholeStorageIntegrationTest {
 				}
 				return rs.getString(1) + "." + rs.getString(2) + ":" + type + ":" + rs.getString(5);
 			});
-		assertThat(actual).containsExactlyInAnyOrderElementsOf(expected).hasSize(231)
+		assertThat(actual).containsExactlyInAnyOrderElementsOf(expected).hasSize(233)
 			.contains("chat_message.push_state:jsonb:NO");
 		assertThat(jdbc.queryForObject("select column_default from information_schema.columns "
 			+ "where table_schema='public' and table_name='chat_message' and column_name='push_state'",

@@ -23,6 +23,8 @@ public class SettingsSnapshotService {
 	private final SettingsSnapshotJson json;
 	private final Clock clock;
 
+	private static final String RELIGION_WITHDRAWN = "PROFILE_RELIGION_WITHDRAWN";
+
 	@Transactional(propagation = Propagation.MANDATORY)
 	public SettingsSnapshotView capture(long userId, long settingsVersion, String inputFormat, String inputJson) {
 		requireKey(userId, settingsVersion);
@@ -52,6 +54,18 @@ public class SettingsSnapshotService {
 	public Optional<SettingsSnapshotView> find(long userId, long settingsVersion) {
 		requireKey(userId, settingsVersion);
 		return snapshots.findByUserIdAndSettingsVersion(userId, settingsVersion).map(SettingsSnapshot::view);
+	}
+
+	/** 종교 동의 철회. 과거 사본의 종교 값과 해시를 지워 그 사본을 근거로 쓰지 않게 한다. 지운 사본 수. */
+	@Transactional(propagation = Propagation.MANDATORY)
+	public int redactReligion(long userId) {
+		return snapshots.redactReligion(userId, RELIGION_WITHDRAWN);
+	}
+
+	/** 철회 기록보다 먼저 만든 사본 중 종교가 남은 것을 모든 회원에서 지운다(정리 작업용). 지운 사본 수. */
+	@Transactional
+	public int redactReligionBeforeWithdrawal() {
+		return snapshots.redactReligionBeforeWithdrawal(RELIGION_WITHDRAWN);
 	}
 
 	private static void requireKey(long userId, long settingsVersion) {

@@ -83,6 +83,11 @@ public class EncounterReceipts {
 			throw unavailable();
 		}
 		Saved row = saved.getFirst();
+		if (ReligionEvidenceRetirement.TOMBSTONE.equals(row.submission())
+			|| ReligionEvidenceRetirement.TOMBSTONE.equals(row.event())) {
+			// 원문/해시를 지운 사건은 새 접수나 삭제 허용 영수증으로 되살리지 않는다.
+			throw new BusinessException(ErrorCode.IDEMPOTENCY_CONFLICT);
+		}
 		Envelope envelope = decode(row.submission() == null ? row.event() : row.submission());
 		// 같은 event를 새 submission으로 바꾸어도 새 접수로 취급하지 않는다.
 		if (envelope.deviceId() != deviceId || !envelope.submissionId().equals(submissionId)

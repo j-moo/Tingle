@@ -12,8 +12,10 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.e106.tingle.agreement.dto.AgreementAnswer;
 import com.e106.tingle.agreement.dto.OptionalConsentView;
+import com.e106.tingle.encounter.ReligionEvidenceRetirement;
 import com.e106.tingle.global.error.BusinessException;
 import com.e106.tingle.global.error.ErrorCode;
+import com.e106.tingle.settings.snapshot.SettingsSnapshotService;
 import com.e106.tingle.user.InactiveProfileCleaner;
 import com.e106.tingle.user.ProfilePhotoService;
 import com.e106.tingle.user.ProfileService;
@@ -41,6 +43,8 @@ public class OptionalConsentService {
 	private final ProfileService profiles;
 	private final ProfilePhotoService photos;
 	private final InactiveProfileCleaner inactiveProfiles;
+	private final SettingsSnapshotService snapshots;
+	private final ReligionEvidenceRetirement retirement;
 	private final JsonMapper jsonMapper;
 	private final Clock clock;
 
@@ -94,6 +98,7 @@ public class OptionalConsentService {
 			// 설정 입력 사본은 활성 회원만 만들 수 있다. 비활성 회원은 값만 지우고 설정 번호를 올린다.
 			inactiveProfiles.clear(userId, types.contains(OptionalConsent.PROFILE_RELIGION),
 				types.contains(OptionalConsent.PROFILE_INTRODUCTION), types.contains(OptionalConsent.PROFILE_PHOTO));
+			redactReligionHistory(userId, types);
 		}
 	}
 
@@ -114,6 +119,16 @@ public class OptionalConsentService {
 		}
 		if (types.contains(OptionalConsent.PROFILE_PHOTO)) {
 			photos.delete(userId);
+		}
+		redactReligionHistory(userId, types);
+	}
+
+	// 현재 프로필 값과 별개로, 철회 전에 만든 설정 입력 사본의 종교도 지운다(S15P31E106-232).
+	// 현재 값 삭제는 user_consents 철회 행, 과거 사본 삭제는 settings_snapshot.redacted_at·redaction_reason 으로 남는다.
+	private void redactReligionHistory(long userId, Set<OptionalConsent> types) {
+		if (types.contains(OptionalConsent.PROFILE_RELIGION)) {
+			snapshots.redactReligion(userId);
+			retirement.retire(userId);
 		}
 	}
 
