@@ -1,0 +1,26 @@
+/* 영상 앞뒤로 검은 구간(--lead-top · --lead-bottom)을 두고, 가운데 track(1.5625 화면)에서 영상 화면이 고정된 채 0.5625 화면만큼 머문 뒤 위로 빠짐
+   영상이 화면을 꽉 덮는 동안 네비 · 스크롤바 숨김(BrandFilm/index.tsx) */
+.film {
+  --lead-top: 120svh;                    /* 영상 위 검은 구간 길이 */
+  --lead-bottom: 60svh;                  /* 영상 아래 검은 구간 길이 */
+  padding-block: var(--lead-top) var(--lead-bottom);
+  background: #000;
+}
+
+.track {
+  height: 156.25svh;
+}
+
+.sticky {
+  --miss: 1;
+  position: sticky;
+  top: 0;
+  height: 100svh;
+  overflow: hidden;
+}
+
+.video {
+  position: absolute;
+  inset: 0;
+  filter: blur(calc(var(--miss) * 28px));   /* 영상 화면이 화면과 어긋난 정도(--miss, index.tsx)만큼 흐림, 딱 맞으면 선명 */
+}
