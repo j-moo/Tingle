@@ -36,3 +36,17 @@ html {
     scroll-behavior: auto;
   }
 }
+
+/* 인트로 재생 중 · 브랜드 필름이 화면을 덮는 동안 스크롤바를 없앰(Intro · BrandFilm 이 data-intro · data-film · --sbw 를 닮)
+   없어진 폭(--sbw)만큼 본문 오른쪽을 비워 화면이 옆으로 밀리지 않게. 그 자리는 인트로는 장면이 덮고(Intro.module.css), 필름은 영상 바탕과 같은 검정 */
+html[data-intro='playing'],
+html[data-film='on'] {
+  scrollbar-width: none;
+}
+html[data-intro='playing'] body,
+html[data-film='on'] body {
+  padding-right: var(--sbw, 0px);
+}
+html[data-film='on'] body {
+  background: #000;
+}

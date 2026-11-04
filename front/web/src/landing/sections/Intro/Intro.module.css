@@ -1,6 +1,8 @@
-/* 한 화면 가득 흰 바탕. 애니메이션(1600×900)은 가운데에 맞춰 넣는다 */
+/* 한 화면 가득 흰 바탕. 애니메이션(1600×900)은 가운데에 맞춰 넣는다
+   sticky: 스크롤해도 제자리에 남고, 다음 섹션이 위로 올라와 덮음(landing.module.css 에서 다음 섹션들을 위에 쌓음) */
 .intro {
-  position: relative;
+  position: sticky;
+  top: 0;
   display: grid;
   height: 100svh;
   place-items: center;
@@ -9,8 +11,27 @@
 }
 
 .stage {
-  width: 100%;
-  height: 100%;
+  position: absolute;
+  inset: 0;                              /* 그리드 줄 높이가 svg 비율(16:9)을 따라 늘어나 화면보다 커지던 것 방지 — 넓은 화면에서 로고가 아래로 밀림 */
+  /* 애니메이션 속 로고 · 문구 묶음은 장면 가운데보다 약 46/900 아래에 있음 → 그만큼 올려 화면(네비 포함) 정가운데에 맞춤
+     세로 화면은 장면을 맞춰 넣으므로(meet) 높이 기준(svh) · 폭 기준(vw, 1600:900) 중 작은 쪽 */
+  translate: 0 calc(-1 * min(5.1svh, 2.87vw));
+  /* 재생 중 숨긴 스크롤바 자리까지 장면으로 덮되, 장면 위치 · 크기는 끝난 뒤와 똑같게: 언제나 화면 기준 [-스크롤바 폭, 화면 끝]
+     (끝나면 스크롤바 아래로 잘려 들어갈 뿐 움직이지 않음) */
+  left: calc(-1 * var(--intro-sbw, 0px));
+  right: calc(-1 * var(--intro-sbw, 0px));
+}
+:global(html[data-intro='playing']) .intro {
+  margin-right: calc(-1 * var(--intro-sbw, 0px));   /* 숨긴 스크롤바 자리까지 */
+}
+:global(html[data-intro='playing']) .stage {
+  right: 0;
+}
+@media (min-aspect-ratio: 6/5) {
+  .stage {
+    top: calc(-2 * max(5.1svh, 2.87vw));   /* 가로 화면은 장면으로 꽉 채움(slice). 옮기면 아래가 비므로 위로 늘려 가운데를 같은 만큼 올림 */
+    translate: none;
+  }
 }
 
 .srOnly {
