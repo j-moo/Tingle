@@ -9,6 +9,7 @@ import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletionStage;
@@ -33,6 +34,7 @@ public class AiInternalClient {
 	private static final Set<String> PATHS = Set.of("/internal/ai/personal-analyses", "/internal/ai/explanations",
 		"/internal/ai/icebreakers", "/internal/ai/risk-detections");
 	private static final String MATCHING_PATH = "/internal/matching/evaluations";
+	private static final Map<String, String> INTERNAL_HOSTS = Map.of("dev", "ai-dev", "prod", "ai");
 	private static final int MAX_RESPONSE_BYTES = 1_048_576;
 	private final AiServiceTokenProvider tokens;
 	private final JsonMapper json;
@@ -172,10 +174,14 @@ public class AiInternalClient {
 			URI uri = URI.create(properties.baseUrl());
 			boolean loopback = Set.of("localhost", "127.0.0.1", "::1", "[::1]").contains(uri.getHost());
 			boolean local = Set.of("local", "test").contains(properties.environment());
+			// 같은 서버 compose 내부망의 AI(외부 비공개)는 http 로 부른다. 환경마다 한 이름만 허용해 개발이 운영 AI를 부르지 않게 한다.
+			boolean internal = uri.getHost() != null
+				&& uri.getHost().equals(INTERNAL_HOSTS.get(properties.environment()));
 			if (!properties.enabled() || uri.getHost() == null || uri.getRawUserInfo() != null
 				|| uri.getRawQuery() != null || uri.getRawFragment() != null || uri.getPort() == 0
 				|| uri.getPort() > 65_535 || !(uri.getRawPath().isEmpty() || "/".equals(uri.getRawPath()))
-				|| !("https".equals(uri.getScheme()) || (local && loopback && "http".equals(uri.getScheme())))) {
+				|| !("https".equals(uri.getScheme())
+				|| ((local && loopback || internal) && "http".equals(uri.getScheme())))) {
 				return null;
 			}
 			return uri;

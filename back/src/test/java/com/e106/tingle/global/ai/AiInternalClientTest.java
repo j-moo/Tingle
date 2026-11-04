@@ -135,6 +135,16 @@ class AiInternalClientTest {
 	}
 
 	@Test
+	void allowsHttpOnlyToTheEnvironmentsOwnInternalAiHost() {
+		client("dev", "http://ai-dev:8000").requireAvailable();
+		client("prod", "http://ai:8000").requireAvailable();
+		for (String[] wrong : new String[][] {{"dev", "http://ai:8000"}, {"prod", "http://ai-dev:8000"},
+			{"dev", "http://ai-dev.evil.invalid:8000"}, {"test", "http://ai-dev:8000"}, {"local", "http://ai:8000"}}) {
+			assertUnavailable(() -> client(wrong[0], wrong[1]).requireAvailable());
+		}
+	}
+
+	@Test
 	void redirectsInvalidTokensForbiddenAndUnavailableResponsesNeverRepeatOrForwardTheToken() {
 		server.createContext("/target", exchange -> {
 			calls.incrementAndGet();
