@@ -1,6 +1,7 @@
 from fastapi import FastAPI, HTTPException, Request
 
 from app.config import settings
+from app.icebreakers.http_api import create_router as create_icebreaker_router
 from app.match_explanation.runtime import create_runtime_router
 from app.middleware.request_id import RequestIdMiddleware, install_error_handlers
 from app.risk_detection.http_api import ReleaseCatalog, create_router
@@ -18,6 +19,9 @@ service_auth = ServiceAuthenticator(ServiceAuthSettings(
 if settings.ai_service_public_keys and not service_auth.is_ready:
     raise RuntimeError("Invalid service authentication configuration") from None
 app.state.service_auth = service_auth
+app.include_router(create_icebreaker_router(
+    service_auth, settings.icebreaker_release_descriptor_file,
+))
 app.include_router(create_router(
     authenticate=service_auth,
     catalog=ReleaseCatalog(settings.risk_release_descriptor_file),
