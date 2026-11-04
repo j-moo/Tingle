@@ -6,6 +6,7 @@ import com.ssafy.e106.core.auth.DefaultSessionStore
 import com.ssafy.e106.core.auth.SessionStore
 import com.ssafy.e106.core.auth.SocialKeys
 import com.ssafy.e106.core.auth.SocialLogin
+import com.ssafy.e106.core.ble.KeyringBle
 import com.ssafy.e106.core.network.createHttpClient
 import com.ssafy.e106.core.push.DefaultPushEvents
 import com.ssafy.e106.core.push.PushDevice
@@ -35,6 +36,8 @@ import org.koin.dsl.module
  * §5 구현이 올라올 때마다 한 줄씩 더한다.
  */
 fun coreModule(baseUrl: String, httpLog: Boolean, socialKeys: SocialKeys) = module {
+    // 권한 요청은 화면의 사용자 동작에서만 한다. 플랫폼 인스턴스 생성은 무선 작업을 시작하지 않는다.
+    single<KeyringBle> { platformKeyringBle() }
     single<TokenStore> { platformTokenStore(baseUrl) }
     single<SocialLogin>(createdAtStart = true) { platformSocialLogin(socialKeys) }   // 앞에 뜬 Activity 를 앱 시작부터 기억해야 한다
     // HttpClient(Bearer · 재발급)와 SessionStore 는 서로를 부른다. 같이 만들고 SessionStore 를 시작한다. 푸시 등록기도 같이 시작한다
@@ -90,3 +93,6 @@ internal expect fun Scope.platformPushDevice(): PushDevice
 
 /** 앱 화면이 하나라도 보이는지. 채팅 실시간 연결을 백그라운드에서 끊는 데 쓴다 */
 internal expect fun Scope.platformForeground(): StateFlow<Boolean>
+
+/** Android NUS 기반. iOS는 지원 준비 전 명시적으로 Unsupported를 반환한다. */
+internal expect fun Scope.platformKeyringBle(): KeyringBle

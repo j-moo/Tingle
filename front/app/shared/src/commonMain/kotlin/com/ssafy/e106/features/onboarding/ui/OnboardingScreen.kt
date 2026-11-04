@@ -23,6 +23,7 @@ import com.ssafy.e106.features.survey.ui.SurveyAccess
 import com.ssafy.e106.features.survey.ui.SurveyRoute
 import com.ssafy.e106.features.settings.SettingsAccess
 import com.ssafy.e106.features.settings.ui.ConnectedSettingsRoute
+import com.ssafy.e106.features.keyring.ui.ConnectedKeyringSetupRoute
 import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.viewmodel.koinViewModel
 import org.koin.compose.koinInject
@@ -38,6 +39,9 @@ fun OnboardingRoute(
     val state by model.state.collectAsStateWithLifecycle()
     var developmentProfile by rememberSaveable(session.userId, session.status, session.isReady) { mutableStateOf(false) }
     val canSkip = profileAccess.canSkipKeyring(session)
+    // 등록 전 계정도 개발 앱에서 실물 통신을 확인한다. 실제 귀속은 별도 확인창 수락과 서버 검증 뒤에만 진행한다.
+    // 계정/가입 단계 변경 시 진입 상태를 버리고, 회전 시 연결 정리는 BLE 화면의 ON_STOP 정책을 따른다.
+    var openBleProbe by rememberSaveable(session) { mutableStateOf(false) }
     val canManage = profileAccess.canManageProfile(session)
     var manageProfile by rememberSaveable(session.userId, session.status, session.isReady) { mutableStateOf(false) }
     var openSurvey by rememberSaveable(session.userId, session.status, session.isReady) { mutableStateOf(false) }
@@ -47,6 +51,7 @@ fun OnboardingRoute(
     val canSettings = settingsAccess.allowed(session)
     when {
         state.session != session -> OnboardingPanel(stringResource(Res.string.onboarding_title)) { Text(stringResource(Res.string.onboarding_loading)) }
+        canSkip && openBleProbe -> ConnectedKeyringSetupRoute({ openBleProbe = false })
         canSettings && openSettings -> ConnectedSettingsRoute(session, { openSettings = false })
         canSurvey && openSurvey -> SurveyRoute(session, { openSurvey = false })
         canManage && manageProfile -> ProfileManagementRoute(session, { manageProfile = false })
@@ -64,7 +69,8 @@ fun OnboardingRoute(
             canSkipKeyring = canSkip, onSkipKeyring = { if (canSkip) developmentProfile = true },
             canManageProfile = canManage, onManageProfile = { if (canManage) manageProfile = true },
             canOpenSurvey = canSurvey, onOpenSurvey = { if (canSurvey) openSurvey = true },
-            canOpenSettings = canSettings, onOpenSettings = { if (canSettings) openSettings = true })
+            canOpenSettings = canSettings, onOpenSettings = { if (canSettings) openSettings = true },
+            onBleProbe = if (canSkip) ({ openBleProbe = true }) else null)
     }
 }
 
@@ -86,6 +92,7 @@ fun OnboardingScreen(
     onOpenSurvey: () -> Unit = {},
     canOpenSettings: Boolean = false,
     onOpenSettings: () -> Unit = {},
+    onBleProbe: (() -> Unit)? = null,
 ) {
     val session = state.session ?: return
     val agreements = session.status == OnboardingStatus.AGREEMENT_REQUIRED
@@ -125,6 +132,8 @@ fun OnboardingScreen(
                     enabled = !state.busy, onClick = onReload)
             }
             keyring -> {
+                // 진입만으로 등록하지 않는다. 운영 앱에는 이 개발 시험 경로의 콜백을 전달하지 않는다.
+                onBleProbe?.let { AppButton(stringResource(Res.string.ble_probe_entry), enabled = !state.busy, onClick = it) }
                 Text(stringResource(Res.string.onboarding_keyring_wait))
                 if (canSkipKeyring) {
                     Text(stringResource(Res.string.profile_development_keyring_entry), style = MaterialTheme.typography.bodySmall)

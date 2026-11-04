@@ -1,0 +1,28 @@
+package com.ssafy.e106.core.ble
+
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.StateFlow
+
+/** 화면에는 플랫폼 객체 대신 탐색 세션에서만 유효한 ID를 제공한다. 서버 deviceId/소유 인증이 아니다. */
+data class BleCandidate(val id: String, val name: String?, val rssi: Int)
+enum class BleLinkState { Ready, Closed }
+enum class BleFailure { Unsupported, PermissionRequired, BluetoothOff, LocationOff, Busy, NotFound, ScanFailed,
+    ConnectFailed, ServiceMissing, SubscribeFailed, WriteFailed, Disconnected, Timeout, InvalidFrame, Overflow }
+class BleException(val reason: BleFailure) : Exception(reason.name)
+
+/**
+ * 한 앱에서 한 번의 탐색/연결을 소유하는 플랫폼 인터페이스.
+ * scan 수집 취소가 탐색 중지다. connect는 서비스 확인과 Notify 구독까지 완료된 채널만 반환한다.
+ * 연결/교환 취소·시간 초과는 연결을 닫는다. 자동 재시도, 서버 등록, 설정 적용은 수행하지 않는다.
+ */
+interface KeyringBle {
+    fun scan(): Flow<List<BleCandidate>>
+    suspend fun connect(candidateId: String): BleConnection
+}
+
+interface BleConnection {
+    val state: StateFlow<BleLinkState>
+    /** UTF-8 JSON+LF 하나를 보내고 LF 응답 하나를 받는다. Write ACK 자체는 업무 성공이 아니다. */
+    suspend fun exchange(request: ByteArray, maxResponseBytes: Int = 4096, responseTimeoutMillis: Long = 10_000): ByteArray
+    fun close()
+}

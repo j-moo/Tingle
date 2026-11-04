@@ -8,6 +8,7 @@ import android.provider.Settings
 import androidx.compose.runtime.*
 import androidx.compose.ui.platform.LocalContext
 import com.ssafy.e106.core.push.rememberNotificationPermission
+import com.ssafy.e106.core.ble.*
 import com.ssafy.e106.features.profile.ui.ProfileBackHandler
 
 /** 순철의 알림 권한 기반을 소비하며 권한 요청·관찰 로직을 다시 구현하지 않는다. */
@@ -20,6 +21,7 @@ actual fun ConnectedDevicePermissionsRoute(onBack: () -> Unit) {
     // 수동 새로고침은 기반을 다시 관찰한다. 설정 복귀 갱신은 기반의 LifecycleResumeEffect가 담당한다.
     key(refresh) {
         val permission = rememberNotificationPermission()
+        val ble = rememberBlePermission()
         DevicePermissionsScreen(DevicePermissionsState(
             notifications = when {
                 permission.granted -> DevicePermissionStatus.Granted
@@ -27,7 +29,19 @@ actual fun ConnectedDevicePermissionsRoute(onBack: () -> Unit) {
                 else -> DevicePermissionStatus.SettingsRequired
             },
             actionFailed = actionFailed,
-            keyringStatusAvailable = false,
+            // 권한과 블루투스 전원을 구분한다. 권한이 없어 전원을 읽지 못하면 Unknown이다.
+            nearby = when (ble.availability) {
+                BleAvailability.Unsupported -> DevicePermissionStatus.Unsupported
+                BleAvailability.PermissionRequired -> DevicePermissionStatus.Requestable
+                else -> DevicePermissionStatus.Granted
+            },
+            bluetooth = when (ble.availability) {
+                BleAvailability.Unsupported -> DeviceBluetoothStatus.Unsupported
+                BleAvailability.PermissionRequired -> DeviceBluetoothStatus.Unknown
+                BleAvailability.BluetoothOff -> DeviceBluetoothStatus.Off
+                else -> DeviceBluetoothStatus.On
+            },
+            keyringStatusAvailable = true,
             notificationSettingsFallback = true,
         ), onAction = { action ->
             when (action) {
@@ -40,7 +54,9 @@ actual fun ConnectedDevicePermissionsRoute(onBack: () -> Unit) {
                 DevicePermissionsAction.NotificationSettings -> {
                     actionFailed = !openNotificationSettings(context)
                 }
-                else -> Unit // BLE 관찰/요청 계약이 준비되기 전에는 관련 액션을 화면에 노출하지 않는다.
+                DevicePermissionsAction.RequestNearby -> { actionFailed = runCatching { ble.request() }.isFailure }
+                DevicePermissionsAction.NearbySettings -> { actionFailed = runCatching { ble.openAppSettings() }.isFailure }
+                DevicePermissionsAction.BluetoothSettings -> { actionFailed = runCatching { ble.openBluetoothSettings() }.isFailure }
             }
         })
     }
