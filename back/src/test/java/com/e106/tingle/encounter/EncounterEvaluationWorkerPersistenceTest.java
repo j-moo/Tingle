@@ -63,7 +63,7 @@ class EncounterEvaluationWorkerPersistenceTest {
 
 	@Configuration(proxyBeanMethods = false)
 	@EnableAutoConfiguration
-	@Import(EncounterReceipts.class)
+	@Import({EncounterReceipts.class, ReligionEvidenceRetirement.class})
 	static class Config {
 		@Bean
 		@ServiceConnection
@@ -96,6 +96,8 @@ class EncounterEvaluationWorkerPersistenceTest {
 	private EncounterEvaluationWorker worker;
 	@Autowired
 	private EncounterReceipts receipts;
+	@Autowired
+	private ReligionEvidenceRetirement retirement;
 	@Autowired
 	private JdbcTemplate jdbc;
 	@Autowired
@@ -295,6 +297,28 @@ class EncounterEvaluationWorkerPersistenceTest {
 		assertThat(worker.run(input.matchingId())).isEqualTo(State.STALE);
 		assertThat(jdbc.queryForObject("select evaluation is null and proposed_at is null from matching where id=?",
 			Boolean.class, input.matchingId())).isTrue();
+	}
+
+	@Test
+	void religionWithdrawalDuringExternalEvaluationCannotRestoreRetiredEvidence() {
+		jdbc.update("insert into settings_snapshot(user_id,settings_version,input_format,input_json,input_hash,"
+			+ "captured_at,redacted_at,redaction_reason) values (?,1,'test','{}',?,?,?,'PROFILE_RELIGION_WITHDRAWN')",
+			input.rightUserId(), "0".repeat(64), Timestamp.from(NOW), Timestamp.from(NOW));
+		GATEWAY.set((captured, hash) -> {
+			retirement.retire(captured.rightUserId());
+			return qualified(captured, hash);
+		});
+		enqueue(input);
+
+		assertThat(worker.run(input.matchingId())).isEqualTo(State.STALE);
+		assertThat(worker.run(input.matchingId())).isEqualTo(State.IDLE);
+		assertThat(jdbc.queryForObject("select evaluation is null and proposed_at is null from matching where id=?",
+			Boolean.class, input.matchingId())).isTrue();
+		for (String state : jdbc.queryForList("select request_state::text from matching_participant "
+			+ "where matching_id=?", String.class, input.matchingId())) {
+			assertThat(state).doesNotContain(HASH, EncounterEvaluationWorker.WORKFLOW_KEY)
+				.contains("encounter:retired:");
+		}
 	}
 
 	@Test

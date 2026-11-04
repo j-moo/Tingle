@@ -1,7 +1,7 @@
 {
   "version": "1.7.0-owned-block-relations",
   "total_tables": 26,
-  "total_columns": 231,
+  "total_columns": 233,
   "physical_foreign_keys": false,
   "tables": {
     "personality": {
@@ -3380,6 +3380,30 @@
           "reference": null,
           "default": null,
           "json_shape": null
+        },
+        {
+          "name": "redacted_at",
+          "type": "timestamptz",
+          "meaning": "동의 철회로 입력 값 일부를 지운 시각; 지운 사본은 해시도 0으로 지워 근거로 쓰지 않음",
+          "nullable": true,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "redaction_reason",
+          "type": "varchar(40)",
+          "meaning": "값을 지운 사유(예: PROFILE_RELIGION_WITHDRAWN); 지운 원문은 남기지 않음",
+          "nullable": true,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
         }
       ],
       "indexes": [
@@ -4198,6 +4222,11 @@
       "date": "2026-10-29",
       "issue": "S15P31E106-104 / S15P31E106-81 / S15P31E106-72",
       "reason": "고정 develop 5bfd8b5의 입력표 및 81 DB 삭제 상태와 104 외부 정리 상태를 함께 보존해 실제 정의를 23표183컬럼으로 정렬한다. 원본 source_sha256과 선행 변경 이력을 유지한다. 서버 최신 상태 검증이나 공유 DB 적용 증거가 아님."
+    },
+    {
+      "date": "2026-11-03",
+      "issue": "S15P31E106-232",
+      "reason": "종교 동의 철회 시 과거 설정 입력 사본의 종교 값을 지우고 지운 시각·사유를 남기기 위해 settings_snapshot 에 redacted_at·redaction_reason 을 추가한다(26표 233칼럼)."
     }
   ]
 }

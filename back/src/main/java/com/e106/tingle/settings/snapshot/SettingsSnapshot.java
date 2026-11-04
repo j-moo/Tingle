@@ -39,6 +39,10 @@ public class SettingsSnapshot {
 	private String inputHash;
 	@Column(nullable = false, updatable = false)
 	private Instant capturedAt;
+	// 동의 철회로 값을 지운 시각·사유(지운 원문은 남기지 않음). 해시도 0으로 지워 이 사본은 근거로 쓰이지 않는다.
+	private Instant redactedAt;
+	@Column(length = 40)
+	private String redactionReason;
 
 	SettingsSnapshot(long userId, long settingsVersion, String inputFormat, String inputJson,
 		String inputHash, Instant capturedAt) {

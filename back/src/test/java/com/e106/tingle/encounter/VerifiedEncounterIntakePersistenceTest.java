@@ -69,7 +69,7 @@ class VerifiedEncounterIntakePersistenceTest {
 
 	@Configuration(proxyBeanMethods = false)
 	@EnableAutoConfiguration
-	@Import({EncounterReceipts.class, EncounterEvaluationWorker.class})
+	@Import({EncounterReceipts.class, EncounterEvaluationWorker.class, ReligionEvidenceRetirement.class})
 	static class Config {
 		@Bean
 		@ServiceConnection
@@ -96,6 +96,8 @@ class VerifiedEncounterIntakePersistenceTest {
 	private EncounterReceipts receipts;
 	@Autowired
 	private EncounterEvaluationWorker worker;
+	@Autowired
+	private ReligionEvidenceRetirement retirement;
 	@Autowired
 	private PlatformTransactionManager transactions;
 	@Autowired
@@ -217,6 +219,25 @@ class VerifiedEncounterIntakePersistenceTest {
 			+ "where matching_id=? and user_id=?", Boolean.class, matching(), high)).isTrue();
 		assertThat(intake.accept(low, firstDevice, first)).isEqualTo(firstReceipt);
 		assertThat(work()).isNull();
+	}
+
+	@Test
+	void retiredGenerationRejectsReplayAndThePreviouslyUnsubmittedCounterpart() {
+		intake.accept(low, firstDevice, first);
+		jdbc.update("insert into settings_snapshot(user_id,settings_version,input_format,input_json,input_hash,"
+			+ "captured_at,redacted_at,redaction_reason) values (?,1,'test','{}',?,?,?,'PROFILE_RELIGION_WITHDRAWN')",
+			low, "0".repeat(64), Timestamp.from(NOW), Timestamp.from(NOW));
+		retirement.retire(low);
+
+		assertThatThrownBy(() -> sync(intake).sync(low, new EncounterSyncRequest(firstDevice, List.of(first))))
+			.isInstanceOfSatisfying(BusinessException.class, failure ->
+				assertThat(failure.getErrorCode()).isEqualTo(ErrorCode.IDEMPOTENCY_CONFLICT));
+		// 상대방은 아직 영수증이 없고 lookup도 합성 성공하지만, 폐기한 동일 세대는 되살릴 수 없다.
+		assertThat(sync(intake).sync(high, new EncounterSyncRequest(secondDevice, List.of(second)))
+			.results()).containsExactly(Receipt.unresolved(second));
+		assertThat(work()).isNull();
+		assertThat(jdbc.queryForObject("select encounter_signature is null from matching_participant "
+			+ "where matching_id=? and user_id=?", Boolean.class, matching(), high)).isTrue();
 	}
 
 	@Test

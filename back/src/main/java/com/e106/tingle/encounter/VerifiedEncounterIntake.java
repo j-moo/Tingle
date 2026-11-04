@@ -154,6 +154,9 @@ public final class VerifiedEncounterIntake {
 				throw conflict();
 			}
 		}
+		if (state(matchingId, low, "encounter:retired:" + context.generation()) != null) {
+			throw unresolved();
+		}
 		Boolean waiting = jdbc.queryForObject("select status='WAITING' and proposed_at is null and met_at=? "
 			+ "and policy_version=? and opportunity_expires_at=? and counterpart_deadline_at=? "
 			+ "from matching where id=?", Boolean.class, Timestamp.from(context.metAt()), context.policy(),
