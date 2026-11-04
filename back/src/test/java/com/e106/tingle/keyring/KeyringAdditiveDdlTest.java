@@ -3,6 +3,8 @@ package com.e106.tingle.keyring;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.sql.Connection;
 import java.sql.Statement;
 import java.util.Map;
@@ -38,7 +40,7 @@ class KeyringAdditiveDdlTest {
 				+ "where table_schema=current_schema() and table_type='BASE TABLE'", Integer.class))
 				.isEqualTo(26);
 			assertThat(jdbc.queryForObject("select count(*) from information_schema.columns "
-				+ "where table_schema=current_schema()", Integer.class)).isEqualTo(233);
+				+ "where table_schema=current_schema()", Integer.class)).isEqualTo(234);
 			assertThat(jdbc.queryForObject("select count(*) from information_schema.table_constraints "
 				+ "where constraint_schema=current_schema() and constraint_type='FOREIGN KEY'", Integer.class))
 				.isZero();
@@ -131,6 +133,26 @@ class KeyringAdditiveDdlTest {
 			assertThat(after).isEqualTo(before);
 			assertThat(jdbc.queryForObject("select 'keyring_sync_run'::regclass::oid::bigint", Long.class))
 				.isEqualTo(identity);
+		});
+	}
+
+	@Test
+	void serverProofColumnPreservesLegacyRunWithoutInventingSignedEvidence() throws Exception {
+		inDisposableSchema(jdbc -> {
+			jdbc.execute(new ClassPathResource("database/schema.sql")
+				.getContentAsString(StandardCharsets.UTF_8));
+			jdbc.execute("alter table keyring_sync_run drop column server_proofs");
+			jdbc.update("insert into keyring_sync_run(sync_run_id,keyring_id,owner_user_id,owner_generation,"
+				+ "credential_key_id,protocol_version,settings_version,payload,payload_hash,nonce,created_at,"
+				+ "state,request_key,revision) values (?,1,91,?,'legacy-key','tingle-device-proof-v1',7,?,?,?,"
+				+ "'2026-10-28T00:00:00Z','PENDING',?,0)", UUID.randomUUID(), UUID.randomUUID(),
+				new byte[] {0, 1, -1}, "a".repeat(64), "A".repeat(43), UUID.randomUUID());
+			var before = jdbc.queryForMap("select * from keyring_sync_run");
+			jdbc.execute(Files.readString(Path.of("../infra/db/prod-changes/247-keyring-server-proofs.sql")));
+			var after = jdbc.queryForMap("select * from keyring_sync_run");
+			assertThat(after.remove("server_proofs")).isNull();
+			assertThat((byte[])after.remove("payload")).containsExactly((byte[])before.remove("payload"));
+			assertThat(after).isEqualTo(before);
 		});
 	}
 

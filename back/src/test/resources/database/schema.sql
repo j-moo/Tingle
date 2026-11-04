@@ -625,6 +625,7 @@ CREATE TABLE "keyring_sync_run" (
     "ack_proof_hash" varchar(64),
     "request_key" uuid NOT NULL,
     "request_key_aliases" jsonb,
+    "server_proofs" jsonb,
     "ack_request_key" uuid,
     "revision" bigint NOT NULL,
     CONSTRAINT "pk_keyring_sync_run" PRIMARY KEY ("id")

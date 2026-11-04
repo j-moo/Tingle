@@ -24,6 +24,7 @@ import com.e106.tingle.user.RequiresOnboarding;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Positive;
 import lombok.RequiredArgsConstructor;
+import tools.jackson.databind.JsonNode;
 
 @RestController
 @RequestMapping("/api/keyrings/{deviceId}/sync-runs")
@@ -35,11 +36,13 @@ public class KeyringSyncController {
 	@RequiresOnboarding(OnboardingStatus.SYNC_PENDING)
 	public ResponseEntity<SyncRunView> create(@AuthenticationPrincipal Jwt jwt,
 		@PathVariable @Positive long deviceId, @RequestHeader("Idempotency-Key") String requestKey,
-		@RequestBody(required = false) byte[] body) {
-		if (body != null && body.length != 0) {
+		@RequestBody(required = false) JsonNode body) {
+		if (body != null && (!body.isObject() || body.size() != 1 || !body.has("deviceNonce")
+			|| !body.get("deviceNonce").isString())) {
 			throw new BusinessException(ErrorCode.INVALID_REQUEST);
 		}
-		KeyringSyncService.Created result = service.create(userId(jwt), family(jwt), deviceId, uuid(requestKey));
+		String nonce = body == null ? null : body.get("deviceNonce").asString();
+		KeyringSyncService.Created result = service.create(userId(jwt), family(jwt), deviceId, uuid(requestKey), nonce);
 		return ResponseEntity.status(result.created() ? HttpStatus.CREATED : HttpStatus.OK).body(result.run());
 	}
 

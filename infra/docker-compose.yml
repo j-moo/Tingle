@@ -128,6 +128,10 @@ services:
       APP_AI_SERVICE_BASE_URL: http://ai-dev:8000
       APP_AI_SERVICE_KEY_ID: be-dev-1
       APP_AI_SERVICE_PRIVATE_KEY_FILE: /run/secrets/tingle/ai-service-dev.pem
+      # 개발 1바이트 설정 서명. 실제 키 인계·공동 시험 승인 전에는 비활성이다.
+      KEYRING_DEV_SETTINGS_ENABLED: "${KEYRING_DEV_SETTINGS_ENABLED:-false}"
+      KEYRING_DEV_SETTINGS_PRIVATE_KEY_FILE: "${KEYRING_DEV_SETTINGS_PRIVATE_KEY_FILE:-/run/secrets/tingle/dev-settings-private.pem}"
+      KEYRING_DEV_SETTINGS_PUBLIC_KEY_FILE: "${KEYRING_DEV_SETTINGS_PUBLIC_KEY_FILE:-/run/secrets/tingle/dev-settings-public.pem}"
     volumes: # 개발 사진은 운영과 섞이지 않게 따로 둔다
       - /srv/tingle/secrets:/run/secrets/tingle:ro
       - /data/uploads/dev:/data/photos

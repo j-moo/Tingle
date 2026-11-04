@@ -4,8 +4,10 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HexFormat;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
 
@@ -80,6 +82,9 @@ public class KeyringSyncRun {
 	@JdbcTypeCode(SqlTypes.JSON)
 	@Column(columnDefinition = "jsonb")
 	private List<String> requestKeyAliases;
+	@JdbcTypeCode(SqlTypes.JSON)
+	@Column(columnDefinition = "jsonb")
+	private Map<String, DevSettingsProof> serverProofs;
 	@Version
 	@Column(nullable = false)
 	private long revision;
@@ -119,6 +124,15 @@ public class KeyringSyncRun {
 
 	public List<String> getRequestKeyAliases() {
 		return requestKeyAliases == null ? List.of() : List.copyOf(requestKeyAliases);
+	}
+
+	public Map<String, DevSettingsProof> getServerProofs() {
+		return serverProofs == null ? Map.of() : Map.copyOf(serverProofs);
+	}
+
+	public void rememberServerProof(UUID requestKey, DevSettingsProof proof) {
+		serverProofs = new HashMap<>(getServerProofs());
+		serverProofs.put(requestKey.toString(), Objects.requireNonNull(proof));
 	}
 
 	/** 기기·소유 세대 행 잠금 안에서만 호출한다. 최초 요청 키는 바꾸지 않는다. */
