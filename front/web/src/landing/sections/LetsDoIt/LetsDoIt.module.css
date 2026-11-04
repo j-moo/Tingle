@@ -4,10 +4,11 @@
   --panel-w: min(1120px, 100vw - 160px);
   --gap: 48px;
   --i: 0;
-  --hold: 3;                             /* 패널 하나가 머무는 스크롤 길이(화면 배수). 길게/짧게는 이 값만 */
-  height: calc((var(--steps) * var(--hold) + 1) * 100svh);   /* 고정된 채 스크롤하는 거리 = 단계 수 × 머묾 길이 */
-  border-radius: 32px 32px 0 0;          /* 인트로 위로 올라오는 레이어 */
-  background: #fff;
+  --hold: 1.5;                           /* 패널 하나가 머무는 스크롤 길이(화면 배수). 길게/짧게는 이 값만 */
+  --rise-gap: 30svh;                     /* 인트로 위로 올라올 때 "Let's Do it!!" 위 빈 여백 */
+  height: calc((var(--steps) * var(--hold) + 1) * 100svh + var(--rise-gap));   /* 고정된 채 스크롤하는 거리 = 단계 수 × 머묾 길이 */
+  padding-top: var(--rise-gap);
+  background: #fff;                      /* 인트로 위로 올라오는 레이어(각진 모서리, 한 줄로) */
   box-shadow: 0 -16px 48px rgb(0 0 0 / 8%);
 }
 
@@ -98,14 +99,54 @@
   gap: 15px;
   margin: 6px auto 0;
 }
-.bars span {
+/* 막대 = 버튼(누르면 그 단계로). 누르기 쉽게 높이 24px(최소 터치 영역), 보이는 막대는 가운데 4px(::after) */
+.bars button {
+  position: relative;
+  display: flex;
   flex: 1;
-  height: 4px;
-  border-radius: 2px;
-  background: var(--neutral-150);
-  transition: background 0.3s;
+  height: 24px;
+  align-items: center;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
 }
-.bars .on {
+.bars button::after {
+  width: 100%;
+  height: 4px;
+  border-radius: 4px;
+  background: var(--neutral-150);
+  content: '';
+  transition: background 0.3s, height 0.2s ease;
+}
+/* 호버 · 키보드 포커스: 막대가 두꺼워지고 진해지며 위에 단계 이름(STEP n)이 떠오름 */
+.bars button::before {
+  position: absolute;
+  bottom: 100%;
+  left: 0;
+  color: var(--text-secondary);
+  content: attr(data-label);
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(4px);
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+.bars button:hover::after,
+.bars button:focus-visible::after {
+  height: 8px;
+  background: var(--neutral-400);
+}
+.bars button:hover::before,
+.bars button:focus-visible::before {
+  opacity: 1;
+  transform: none;
+}
+.bars .on::after,
+.bars .on:hover::after,
+.bars .on:focus-visible::after {
   background: var(--brand-ink);
 }
 
