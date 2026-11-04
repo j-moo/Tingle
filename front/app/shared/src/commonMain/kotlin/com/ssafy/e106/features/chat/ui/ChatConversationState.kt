@@ -2,6 +2,7 @@ package com.ssafy.e106.features.chat.ui
 
 enum class ConversationLoad { Loading, Failed, Active, Closed, ConsentRequired, Unavailable }
 enum class HistoryLoad { Idle, Loading, Failed }
+enum class ChatRealtimeStatus { Connecting, Connected, Reconnecting, Stopped }
 
 // 전송 결과는 호출부가 확인해 전달한다. 시간 초과만으로 Failed를 지정하지 않는다.
 enum class MessageDelivery { Sent, Sending, Failed, Unknown, Checking, Rejected }
@@ -30,6 +31,7 @@ data class ChatConversationState(
     // 서버가 준 불투명 커서 그대로. null은 마지막 페이지이며 메시지 수로 추정하지 않는다.
     val nextCursor: String? = null,
     val historyLoad: HistoryLoad = HistoryLoad.Idle,
+    val realtime: ChatRealtimeStatus? = null,
 ) {
     val readable: Boolean get() = load == ConversationLoad.Active && canRead
     val inputEnabled: Boolean get() = readable && canSend && !submitting

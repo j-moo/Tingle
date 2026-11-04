@@ -7,6 +7,13 @@ import com.ssafy.e106.features.profile.profileModule
 import com.ssafy.e106.features.auth.authUiModule
 import com.ssafy.e106.features.onboarding.onboardingModule
 import com.ssafy.e106.features.survey.surveyModule
+import com.ssafy.e106.features.settings.settingsModule
+import com.ssafy.e106.features.home.homeModule
+import com.ssafy.e106.features.proposals.proposalModule
+import com.ssafy.e106.features.proposals.reason.matchReasonModule
+import com.ssafy.e106.features.chat.chatModule
+import com.ssafy.e106.features.safety.safetyModule
+import com.ssafy.e106.features.report.reportModule
 import org.koin.android.ext.koin.androidContext
 import org.koin.core.context.startKoin
 
@@ -24,7 +31,9 @@ class TingleApplication : Application() {
             modules(coreModule(BuildConfig.API_BASE_URL, BuildConfig.HTTP_LOG, socialKeys), authUiModule,
                 onboardingModule(allowUnpublishedAgreements = developmentOnboarding),
                 profileModule(allowKeyringSkip = developmentOnboarding, allowUnpublishedAgreements = developmentOnboarding),
-                surveyModule(development = developmentOnboarding))
+                surveyModule(development = developmentOnboarding),
+                settingsModule(development = developmentOnboarding),
+                proposalModule(developmentOnboarding), matchReasonModule, homeModule, chatModule, safetyModule, reportModule)
         }
     }
 }

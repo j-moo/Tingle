@@ -10,6 +10,7 @@ val chatModule = module {
     single<ChatRepository> { HttpChatRepository(get()) }
     single { ChatLocalStorage(get()) }
     viewModel { ChatListViewModel(get(), get(), get()) }
-    viewModel { ChatRoomViewModel(get(), get(), get()) }
+    // 최신 방별 저장소와 공통 실시간 기반을 같은 기능 객체에 주입한다.
+    viewModel { ChatRoomViewModel(get(), get(), get(), get()) }
     viewModel { ChatPartnerViewModel(get(), get()) }
 }

@@ -194,6 +194,30 @@ class ProfileLifecycleDeviceTest {
             assertEquals(1, f.server.writes)
         }
     }
+    @Test fun unsavedProfileSurvivesRecreationAndBackRequiresChoice() {
+        // 실제 편집 ViewModel/Route를 사용하되 저장소만 대역으로 둔다. 서버 쓰기는 끝까지 0이어야 한다.
+        val f = ProfileLifecycleFixture(management = true)
+        launch(f).use { scenario ->
+            compose.waitUntil(5_000) {
+                var ready = false; scenario.onActivity { ready = it.editModel.state.value.canEdit }; ready
+            }
+            compose.onNodeWithText("프로필 수정").performClick()
+            compose.onNode(hasSetTextAction()).performScrollTo().performTextReplacement("Layout Draft")
+            scenario.recreate()
+            compose.waitUntil(5_000) {
+                var ready = false; scenario.onActivity { ready = it.editModel.state.value.canEdit }; ready
+            }
+            compose.onNodeWithText("Layout Draft").assertExists()
+            scenario.onActivity { it.onBackPressedDispatcher.onBackPressed() }
+            compose.onNodeWithText("변경 내용을 저장하지 않고 나갈까요?").assertIsDisplayed()
+            compose.onNodeWithText("계속 수정하기").performClick()
+            compose.onNodeWithText("Layout Draft").assertExists()
+            scenario.onActivity { it.onBackPressedDispatcher.onBackPressed() }
+            compose.onNodeWithText("저장하지 않고 나가기").performClick()
+            compose.onNodeWithText("내 프로필").assertExists()
+            scenario.onActivity { assertEquals(0, f.server.writes); assertEquals("Tester", f.server.data.nickname) }
+        }
+    }
     @Test fun pickerResultAndCropSurviveRecreationWithoutRelaunchOrUpload() {
         val f = ProfileLifecycleFixture()
         val context = InstrumentationRegistry.getInstrumentation().context

@@ -67,8 +67,11 @@ fun ProfileEditScreen(
                         Column(Modifier.fillMaxWidth().padding(AppSpacing.Medium),
                             verticalArrangement = Arrangement.spacedBy(AppSpacing.Small)) {
                             Text(stringResource(Res.string.profile_edit_identity), style = MaterialTheme.typography.titleSmall)
-                            Text("${stringResource(Res.string.profile_birth_date)} · ${state.birthDateLabel}")
-                            Text("${stringResource(Res.string.profile_gender)} · ${stringResource(if (state.gender == ProfileGender.Male) Res.string.profile_male else Res.string.profile_female)}")
+                            // 문장 전체를 리소스에 두어 번역에서 어순과 구분자를 함께 바꿀 수 있게 한다.
+                            // 날짜 값은 서버 계약의 날짜 전용 값이며 여기서 시간대로 변환하지 않는다.
+                            Text(stringResource(Res.string.profile_edit_birth_date_value, state.birthDateLabel))
+                            Text(stringResource(Res.string.profile_edit_gender_value,
+                                stringResource(if (state.gender == ProfileGender.Male) Res.string.profile_male else Res.string.profile_female)))
                             Text(stringResource(Res.string.profile_edit_locked), style = MaterialTheme.typography.bodySmall)
                             TextButton(onClick = onCorrection, enabled = editable) { Text(stringResource(Res.string.profile_edit_correction)) }
                         }

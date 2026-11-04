@@ -4,6 +4,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.ssafy.e106.core.auth.*
 import com.ssafy.e106.core.network.*
+import com.ssafy.e106.core.realtime.ChatEvent
+import com.ssafy.e106.core.realtime.ChatEvents
 import com.ssafy.e106.features.chat.data.*
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
@@ -19,7 +21,8 @@ data class ConnectedChatRoom(val owner: Session.SignedIn? = null, val id: Long? 
 /** 읽기는 화면 수명에 묶고 쓰기는 회전에 취소하지 않는다. 계정 변경은 모든 이전 결과를 폐기한다. */
 @OptIn(ExperimentalUuidApi::class)
 class ChatRoomViewModel(private val api: ChatRepository, private val sessions: SessionStore,
-    private val local: ChatLocalStorage, private val now: () -> Duration = monotonicChatClock()) : ViewModel() {
+    private val local: ChatLocalStorage, private val events: ChatEvents,
+    private val now: () -> Duration = monotonicChatClock()) : ViewModel() {
     private val mutable = MutableStateFlow(ConnectedChatRoom())
     val state = mutable.asStateFlow()
     private var epoch = 0L
@@ -30,6 +33,8 @@ class ChatRoomViewModel(private val api: ChatRepository, private val sessions: S
     private var expiryJob: Job? = null
     private var draftJob: Job? = null
     private var pollJob: Job? = null
+    private var realtimeJob: Job? = null
+    private var recoveryRequested = false
     private var ackJob: Job? = null
     private val storage = local.mutex
     private val prefs = local.prefs
@@ -51,22 +56,28 @@ class ChatRoomViewModel(private val api: ChatRepository, private val sessions: S
         owner == sessions.state.value && mutable.value.id == id
     private fun writeValid(stamp: Long, owner: Session.SignedIn, id: Long) = stamp == writeEpoch &&
         owner == sessions.state.value && mutable.value.id == id
-    private fun cancelReads() { readGeneration++; visiblePending.clear(); readJob?.cancel(); expiryJob?.cancel(); pollJob?.cancel(); ackJob?.cancel(); readPending = false }
+    // 화면 이탈은 수신/조회만 정리한다. 전송 작업은 회전 중에도 유지하며 계정 변경 시 별도로 취소한다.
+    private fun stopRealtime() { realtimeJob?.cancel(); realtimeJob = null; recoveryRequested = false }
+    private fun cancelReads() { readGeneration++; visiblePending.clear(); readJob?.cancel(); expiryJob?.cancel(); pollJob?.cancel(); stopRealtime(); ackJob?.cancel(); readPending = false }
 
     fun open(id: Long) {
         if (id <= 0) return
         if (mutable.value.id != id) {
             if (mutable.value.sending) return
             persistDraft(); epoch++; writeEpoch++; cancelReads(); lifetime.reset(); records = emptyList(); acknowledged.clear(); receivedThrough = 0; needsInitialPage = true
+            // 다른 방 진입은 같은 화면의 중복 ON_RESUME와 다르므로 첫 조회/구독을 새로 시작한다.
+            resumed = false
             mutable.update { ConnectedChatRoom(owner = it.owner, id = id) }
         }
         resume()
     }
     fun resume() {
+        // ON_RESUME와 첫 화면 구성이 겹쳐도 이미 보이는 방의 연결/조회를 중복 시작하지 않는다.
+        if (resumed) return
         resumed = true
         if (!mutable.value.sending) reload()
-        pollJob?.cancel()
-        // WebSocket 기반이 준비되기 전의 HTTP 갱신이다. 화면 밖에서는 실행하지 않는다.
+        // 실시간 이벤트는 즉시 반영하고, 주기 재조회는 놓친 이벤트·권한 변경·일시 HTTP 실패를 복구한다.
+        // 두 경로는 readPending으로 합쳐 실행하며 화면 밖에서는 모두 취소한다.
         pollJob = viewModelScope.launch { while (isActive) { delay(5_000); if (mutable.value.ui.readable) recoverNew() } }
     }
     fun pause() {
@@ -78,7 +89,8 @@ class ChatRoomViewModel(private val api: ChatRepository, private val sessions: S
             nextCursor = null, historyLoad = HistoryLoad.Idle)) }
     }
     fun reload() = read { owner, id, stamp ->
-        needsInitialPage = true; receivedThrough = 0
+        // 최초 페이지를 다시 읽을 때 구독과 복구 위치를 함께 초기화하여 이전 방 결과가 섞이지 않게 한다.
+        stopRealtime(); needsInitialPage = true; receivedThrough = 0
         mutable.update { it.copy(ui = it.ui.copy(load = ConversationLoad.Loading, canRead = false, canSend = false, messages = emptyList()), error = null) }
         val pending = storage.withLock { prefs.flow(pendingChatKey).first() }?.takeIf { it.owner == owner.userId }
         val draft = local.draft(owner.userId, id)
@@ -94,10 +106,66 @@ class ChatRoomViewModel(private val api: ChatRepository, private val sessions: S
                 receivedThrough = records.maxOfOrNull { it.sequence } ?: 0
                 needsInitialPage = false
                 reconcilePending(owner, id, records)
+                // 최신 초안 복원 정책을 유지한다. 첫 페이지의 늦은 응답으로 사용자의 새 입력을 덮지 않는다.
                 mutable.update { it.copy(ui = it.ui.copy(nextCursor = result.value.nextCursor, historyLoad = HistoryLoad.Idle)) }; render()
+                startRealtime(owner, id, stamp)
             }
             is ApiResult.Fail -> fail(result.error, owner, id, stamp)
         }
+    }
+
+    /** 공통 기반은 연결/인증을 맡는다. 기능은 이벤트를 신호로 사용하고 HTTP로 권한·누락·본문을 함께 재확인한다. */
+    private fun startRealtime(owner: Session.SignedIn, id: Long, stamp: Long) {
+        if (!valid(stamp, owner, id) || !resumed || !mutable.value.ui.readable || realtimeJob?.isActive == true) return
+        mutable.update { it.copy(ui = it.ui.copy(realtime = ChatRealtimeStatus.Connecting)) }
+        realtimeJob = viewModelScope.launch {
+            val seen = linkedSetOf<String>()
+            try {
+                events.connect(id, receivedThrough, ChatMessageRecord.serializer()) { it.sequence }.collect { event ->
+                    if (!valid(stamp, owner, id) || !resumed) return@collect
+                    when (event) {
+                        is ChatEvent.Connected -> {
+                            mutable.update { it.copy(ui = it.ui.copy(realtime = ChatRealtimeStatus.Connected)) }
+                            // 기반이 이미 전달한 순번과 HTTP로 확인한 순번은 다르다. 복구는 후자에서 시작한다.
+                            requestRecovery()
+                        }
+                        is ChatEvent.Message -> {
+                            val message = event.message
+                            require(message.messageId > 0 && message.sequence > 0 && message.sender in setOf("ME", "PARTNER"))
+                            if (message.sequence > receivedThrough && seen.add(event.eventId)) {
+                                // 장시간 열린 방에서도 중복 판별용 메모리가 무한히 늘지 않게 제한한다.
+                                if (seen.size > 512) seen.remove(seen.first())
+                                requestRecovery()
+                            }
+                        }
+                        is ChatEvent.Reconnecting ->
+                            mutable.update { it.copy(ui = it.ui.copy(realtime = ChatRealtimeStatus.Reconnecting)) }
+                        is ChatEvent.Ended -> {
+                            if (event.error.revokesChat()) fail(event.error, owner, id, stamp)
+                            else mutable.update { it.copy(ui = it.ui.copy(realtime = ChatRealtimeStatus.Stopped)) }
+                        }
+                    }
+                }
+                if (valid(stamp, owner, id) && resumed && mutable.value.ui.readable)
+                    mutable.update { it.copy(ui = it.ui.copy(realtime = ChatRealtimeStatus.Stopped)) }
+            } catch (e: CancellationException) { throw e }
+            catch (_: Exception) {
+                if (valid(stamp, owner, id) && resumed && mutable.value.ui.readable)
+                    mutable.update { it.copy(ui = it.ui.copy(realtime = ChatRealtimeStatus.Stopped)) }
+            }
+        }
+    }
+
+    private fun requestRecovery() {
+        recoveryRequested = true
+        drainRecovery()
+    }
+
+    /** 조회/전송 중 온 신호는 하나로 합쳐 보존하고, 현재 작업이 끝난 뒤 한 번 더 복구한다. */
+    private fun drainRecovery() {
+        if (!recoveryRequested || readPending || mutable.value.sending || !resumed || !mutable.value.ui.readable) return
+        recoveryRequested = false
+        recoverNew()
     }
 
     /** 각 내용 조회 전 방의 현재 권한을 검사하고, 서버 시각으로 남은 수명을 계산한다. */
@@ -259,6 +327,7 @@ class ChatRoomViewModel(private val api: ChatRepository, private val sessions: S
                 // 복귀 직후 전송으로 첫 페이지 조회를 취소했다면 전송 종료 뒤 전체 첫 페이지를 다시 받는다.
                 // 새 메시지 한 건만 가진 상태를 정상 복구로 취급하지 않는다.
                 if (resumed && (!mutable.value.ui.readable || needsInitialPage)) reload()
+                else drainRecovery()
             } }
         }
     }
@@ -317,8 +386,10 @@ class ChatRoomViewModel(private val api: ChatRepository, private val sessions: S
             mutable.update { if (it.owner == owner && it.id == id)
                 it.copy(pending = it.pending?.takeUnless { p -> p.room == id }, sending = false) else it }
         }
+        // 권한 종료와 HTTP 조회 실패 모두 재시도 전까지 구독을 멈춘다. 저장소 정리 후 취소한다.
+        stopRealtime()
     }
-    /** 일시적인 백그라운드 조회 실패는 마지막 정상 화면과 만료 타이머를 보존하고 다음 주기에 재시도한다. */
+    /** 일시적인 백그라운드 조회 실패는 마지막 정상 화면과 만료 타이머를 보존하고 다음 주기 또는 실시간 이벤트에 재시도한다. */
     private suspend fun readFailure(error: AppError, owner: Session.SignedIn, id: Long, stamp: Long, background: Boolean) {
         if (!background || error.revokesChat()) fail(error, owner, id, stamp)
         else if (valid(stamp, owner, id)) mutable.update { it.copy(error = error,
@@ -331,9 +402,10 @@ class ChatRoomViewModel(private val api: ChatRepository, private val sessions: S
         readJob = viewModelScope.launch {
             try { block(owner, id, stamp) }
             catch (e: CancellationException) { throw e }
+            // 예상하지 못한 파싱·저장소 오류도 기존 화면 보존/권한 종료 정책으로 처리한다.
             catch (_: Exception) { currentCoroutineContext().ensureActive(); readFailure(chatInvalid(), owner, id, stamp, background) }
-            // 취소된 조회의 정리 작업이 새 조회의 진행 표시를 해제하지 않도록 요청도 구분한다.
-            finally { if (readStamp == readGeneration && valid(stamp, owner, id)) readPending = false }
+            // 이전 조회의 finally가 새 조회를 끝내거나 중복 복구를 시작하지 않도록 요청 세대도 확인한다.
+            finally { if (readStamp == readGeneration && valid(stamp, owner, id)) { readPending = false; drainRecovery() } }
         }
     }
 }

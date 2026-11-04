@@ -146,6 +146,18 @@ fun ChatConversationScreen(
 private fun ConversationNotice(state: ChatConversationState, onAction: (ConversationAction) -> Unit) {
     Column(Modifier.fillMaxWidth().padding(horizontal = AppSpacing.Large, vertical = AppSpacing.Small),
         verticalArrangement = Arrangement.spacedBy(AppSpacing.ExtraSmall)) {
+        // 수신 연결 상태와 메시지 전송 결과는 별개다. 종료된 연결은 명시적인 다시 연결을 제공한다.
+        state.realtime?.let { status ->
+            Text(stringResource(when (status) {
+                ChatRealtimeStatus.Connecting -> Res.string.chat_realtime_connecting
+                ChatRealtimeStatus.Connected -> Res.string.chat_realtime_connected
+                ChatRealtimeStatus.Reconnecting -> Res.string.chat_realtime_reconnecting
+                ChatRealtimeStatus.Stopped -> Res.string.chat_realtime_stopped
+            }), style = MaterialTheme.typography.bodySmall, color = AppColors.TextSecondary)
+            if (status == ChatRealtimeStatus.Stopped) TextButton(onClick = { onAction(ConversationAction.Reload) }) {
+                Text(stringResource(Res.string.chat_realtime_retry))
+            }
+        }
         Text(state.closesAtLabel?.takeIf { it.isNotBlank() }?.let { stringResource(Res.string.chat_conversation_closes, it) }
             ?: stringResource(Res.string.chat_conversation_closes_unknown),
             style = MaterialTheme.typography.bodySmall, color = AppColors.TextSecondary)

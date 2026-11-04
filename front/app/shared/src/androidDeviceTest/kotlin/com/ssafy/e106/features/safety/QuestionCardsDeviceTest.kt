@@ -37,7 +37,7 @@ class QuestionCardsTestActivity : ComponentActivity() {
         val local = ChatLocalStorage(ChatMemoryPrefs())
         val provider = ViewModelProvider(this, object : ViewModelProvider.Factory {
             @Suppress("UNCHECKED_CAST") override fun <T : ViewModel> create(modelClass: Class<T>): T = when (modelClass) {
-                ChatRoomViewModel::class.java -> ChatRoomViewModel(chats, session, local)
+                ChatRoomViewModel::class.java -> ChatRoomViewModel(chats, session, local, IdleChatEvents)
                 ChatPartnerViewModel::class.java -> ChatPartnerViewModel(chats, session)
                 ChatExtrasViewModel::class.java -> ChatExtrasViewModel(api, chats, session)
                 else -> ChatListViewModel(chats, session, local)

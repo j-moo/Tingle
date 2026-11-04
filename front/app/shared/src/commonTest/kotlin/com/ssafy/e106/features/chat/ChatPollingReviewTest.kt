@@ -26,8 +26,9 @@ class ChatPollingReviewTest {
     @BeforeTest fun setup() { Dispatchers.setMain(dispatcher) }
     @AfterTest fun teardown() { models.clear(); Dispatchers.resetMain() }
     private fun test(block: suspend TestScope.() -> Unit) = runTest(dispatcher) { try { block() } finally { models.clear() } }
+    // 실시간 입력은 별도 검사로 분리하고 이 검사는 기존 조회/저장 복구 전제를 유지한다.
     private fun room(api: ChatTestServer, local: ChatLocalStorage = ChatLocalStorage(ChatMemoryPrefs())) =
-        ChatRoomViewModel(api, TestSession(OnboardingStatus.READY), local).also { models.put("room", it); it.open(20) }
+        ChatRoomViewModel(api, TestSession(OnboardingStatus.READY), local, IdleChatEvents).also { models.put("room", it); it.open(20) }
 
     @Test fun pollingPermissionFailureKeepsMessagesAndRecoversOnNextTick() = test {
         for (error in listOf(AppError.Offline, AppError.Server(503, "SERVICE_UNAVAILABLE", "later"))) {
