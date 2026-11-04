@@ -32,7 +32,7 @@
   overflow: hidden;
   opacity: var(--shown);
   filter: blur(var(--blur));
-  translate: 0 calc((1 - var(--shown)) * 100px);
+  translate: 0 calc((1 - var(--shown)) * var(--rise, 100px));   /* 떠오르는 거리(세로 화면은 --rise: 0) */
   transform: scale(calc(0.75 + var(--full) * 0.25));
 }
 .video {
@@ -97,5 +97,144 @@
   .play svg {
     width: 30px;
     height: 30px;
+  }
+}
+
+/* 세로 화면(모바일): 스크롤 연출 없이 화면 폭 16:9 영상 카드. 누르면 전체 화면으로 펼쳐 재생(.expanded), ✕ 로 닫음 */
+.close {
+  position: absolute;
+  z-index: 4;
+  top: max(16px, env(safe-area-inset-top));
+  right: 16px;
+  display: grid;
+  width: 44px;
+  height: 44px;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: rgb(0 0 0 / 55%);
+  color: #fff;
+  cursor: pointer;
+}
+.close svg {
+  width: 22px;
+  height: 22px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.4;
+  stroke-linecap: round;
+}
+@media (orientation: portrait), (orientation: landscape) and (max-height: 500px) {
+  .film {                                /* 검은 바탕이 한 화면을 꽉 채우고 영상 카드는 가운데 */
+    display: flex;
+    min-height: 100svh;
+    align-items: center;
+    padding: 0;
+  }
+  .track {
+    width: 100%;
+    height: auto;
+  }
+  .sticky {
+    --blur: 0px;
+    position: relative;
+    height: auto;
+    aspect-ratio: 16 / 9;
+  }
+  .frame {
+    opacity: 1;
+    --rise: 0px;                         /* translate 를 직접 덮으면 빌드(CSS 압축)에서 빠짐 — 변수로 0 */
+    filter: none;
+    transform: none;
+  }
+  .title {
+    display: none;
+  }
+  .play {
+    opacity: 1;
+  }
+  .sticky.expanded {                     /* 섹션도 펼친 동안 z-index 100(index.tsx) — 섹션끼리 쌓인 층 때문에 안쪽 z-index 만으로는 네비 · 다음 섹션 아래에 깔림 */
+    position: fixed;
+    z-index: 100;
+    inset: 0;
+    height: 100dvh;
+    aspect-ratio: auto;
+    background: #000;
+  }
+}
+
+/* 기기 전체화면(세로 화면에서 영상을 눌렀을 때): 방향과 상관없이 영상만 화면 가득 */
+.sticky:fullscreen {
+  --rise: 0px;
+  width: 100%;
+  height: 100%;
+  aspect-ratio: auto;
+  background: #000;
+}
+.sticky:fullscreen .frame {
+  opacity: 1;
+  filter: none;
+  transform: none;
+}
+.sticky:fullscreen .title,
+.sticky:fullscreen .play {
+  display: none;
+}
+
+/* 세로 화면: 아래 가운데 "다음" — 누르면 다음 섹션으로(검은 영역 아무 곳이나 눌러도 같음) */
+.next {
+  position: absolute;
+  bottom: max(24px, env(safe-area-inset-bottom));
+  left: 50%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 8px 16px;
+  border: 0;
+  background: none;
+  color: rgb(255 255 255 / 70%);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  translate: -50% 0;
+}
+.next svg {
+  width: 24px;
+  height: 24px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+@media (orientation: portrait), (orientation: landscape) and (max-height: 500px) {
+  .film {
+    position: relative;
+    cursor: pointer;
+  }
+}
+
+/* 폰 가로: 검은 한 화면(주소창이 접히면 늘어나게 dvh) 가운데 16:9 카드 — 높이에 맞춰 폭을 줄임(아래 "다음" 자리) */
+@media (orientation: landscape) and (max-height: 500px) {
+  .film {
+    min-height: 100dvh;
+    justify-content: center;
+    padding-block: 56px 48px;            /* 위 = 작은 네비, 아래 = 한 줄 "다음" 자리 — 카드가 "다음" 과 겹치지 않게 */
+  }
+  .track {
+    width: min(100% - 48px, (100dvh - 116px) * 16 / 9);
+  }
+  .next {                                /* 낮은 화면: "다음 ⌄" 한 줄로 작게 맨 아래 */
+    bottom: 4px;
+    flex-direction: row;
+    gap: 4px;
+    padding: 6px 12px;
+  }
+  .next svg {
+    width: 18px;
+    height: 18px;
   }
 }

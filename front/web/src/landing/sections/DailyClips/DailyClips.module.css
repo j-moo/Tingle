@@ -77,3 +77,87 @@
   }
 }
 
+
+/* 누르기 모드(세로 · 폰 가로): 브랜드 필름이 스크롤 연출 없이 카드라 위로 덮어 올라오지 않고 그냥 이어짐 */
+@media (orientation: portrait), (orientation: landscape) and (max-height: 500px) {
+  .daily {
+    margin-top: 0;
+  }
+}
+
+/* 세로 화면: 아래 가운데 "다음" — 누르면 앱 다운로드로(섹션 아무 곳이나 눌러도 같음) */
+.next {
+  position: absolute;
+  bottom: max(20px, env(safe-area-inset-bottom));
+  left: 50%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 8px 16px;
+  border: 0;
+  background: none;
+  color: rgb(38 38 51 / 60%);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  translate: -50% 0;
+}
+.next svg {
+  width: 24px;
+  height: 24px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+@media (orientation: portrait) {
+  .daily {                               /* 누르기로 오가는 한 화면(손가락 스크롤을 막아 잘리면 볼 수 없음) — 위아래 여유(--lead) 없이 딱 화면 높이 */
+    --lead: 0px;
+    height: 100svh;
+    min-height: 0;
+    gap: 24px;
+    padding: calc(var(--nav-height) + 24px) 0 88px;   /* 아래 88 = "다음" 자리 */
+    cursor: pointer;
+  }
+  .stairs {
+    gap: 16px;
+  }
+  .clip {                                /* 화면이 낮으면 세 장이 들어가게 줄임: (화면 - 제목 · 여백 · "다음" 약 290px) ÷ 3 = 카드 높이, × 420/213 = 폭 */
+    width: min(62%, calc((100svh - 290px) / 3 * 420 / 213));
+  }
+}
+
+/* 폰 가로: 한 화면에 제목 + 영상 3개 가로 계단(낮은 화면에 맞게 계단 높이 · 카드 크기 줄임) */
+@media (orientation: landscape) and (max-height: 500px) {
+  .daily {
+    --lead: 0px;
+    height: 100dvh;
+    min-height: 0;
+    gap: 14px;
+    padding: 68px 0 64px;               /* 위 = 작은 네비, 아래 = "다음" 자리 */
+    cursor: pointer;
+  }
+  .title {
+    font-size: 24px;
+  }
+  .stairs {
+    width: auto;
+    justify-content: center;
+    gap: 14px;
+    padding-bottom: 32px;                /* 마지막 카드가 내려간 만큼 */
+  }
+  .clip {
+    width: min((100vw - 120px) / 3, (100dvh - 220px) * 420 / 213);
+    flex: none;
+    border-radius: 12px;
+  }
+  .clip:nth-child(2) {
+    transform: translateY(16px);
+  }
+  .clip:nth-child(3) {
+    transform: translateY(32px);
+  }
+}

@@ -148,14 +148,31 @@
   }
   .row {
     flex-direction: column;
-    align-items: stretch;
+    align-items: center;                 /* 좁은 화면: 문구 · QR · 버튼을 가운데로(왼쪽에 쏠리지 않게) */
     gap: 24px;
     width: calc(100% - 40px);
+    text-align: center;
+  }
+  .copy,
+  .desktop {
+    align-items: center;
+  }
+  .mobile {
+    align-self: stretch;                 /* 폰 · 태블릿의 설치하기 버튼은 지금처럼 폭 가득 */
   }
 }
 
 @media (min-width: 721px) {
   .download[data-device='handheld'] .mobile {
     width: 280px;
+  }
+}
+
+/* 누르기 모드(세로 · 폰 가로): 이 섹션 + 푸터가 딱 한 화면(일상 영상의 "다음"으로 오면 앱 다운로드 · 푸터만 보임). --footer-h 는 index.tsx 가 잼 */
+@media (orientation: portrait), (orientation: landscape) and (max-height: 500px) {
+  .download {
+    display: flex;
+    min-height: calc(100dvh - var(--footer-h, 0px));
+    align-items: center;
   }
 }
