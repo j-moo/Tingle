@@ -41,102 +41,107 @@ fun ChatConversationScreen(
         }.distinctUntilChanged().collect { ids -> withFrameNanos { }; latestDisplayed(ids) }
     }
     Surface(modifier.fillMaxSize(), color = AppColors.Background) {
-        Column(Modifier.fillMaxSize().safeDrawingPadding().imePadding()) {
-            AppTopBar(
-                title = if (state.readable) state.nickname?.takeIf { it.isNotBlank() }
-                    ?: stringResource(Res.string.chat_conversation_title) else stringResource(Res.string.chat_conversation_title),
-                onBack = { onAction(ConversationAction.Back) },
-                actionText = if (state.readable) stringResource(Res.string.chat_conversation_menu) else null,
-                onAction = { if (state.readable) onAction(ConversationAction.OpenMenu) },
-            )
-            if (!state.readable) {
-                LazyColumn(Modifier.weight(1f).fillMaxWidth(), contentPadding = screenPaddingValues(),
-                    verticalArrangement = Arrangement.spacedBy(AppSpacing.Large)) {
-                    item {
-                        StatusCard(stringResource(when (state.load) {
-                            ConversationLoad.Loading -> Res.string.chat_conversation_loading
-                            ConversationLoad.Closed -> Res.string.chat_conversation_closed
-                            ConversationLoad.ConsentRequired -> Res.string.chat_access_consent
-                            ConversationLoad.Active, ConversationLoad.Unavailable -> Res.string.chat_access_unavailable
-                            else -> Res.string.chat_conversation_failed
-                        }), stringResource(when (state.load) {
-                            ConversationLoad.Loading -> Res.string.chat_conversation_loading_help
-                            ConversationLoad.Closed -> Res.string.chat_conversation_closed_help
-                            ConversationLoad.ConsentRequired -> Res.string.chat_access_consent_help
-                            ConversationLoad.Active, ConversationLoad.Unavailable -> Res.string.chat_access_unavailable_help
-                            else -> Res.string.chat_conversation_failed_help
-                        }))
-                    }
-                    item {
-                        if (state.load == ConversationLoad.Loading)
-                            Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = AppColors.SelectionBorder) }
-                        else if (state.load == ConversationLoad.ConsentRequired) {
-                            AppButton(stringResource(Res.string.chat_access_open_consent), Modifier.fillMaxWidth(),
-                                onClick = { onAction(ConversationAction.OpenConsent) })
-                        } else AppButton(stringResource(if (state.load == ConversationLoad.Closed || state.load == ConversationLoad.Unavailable)
-                            Res.string.chat_conversation_back else Res.string.chat_conversation_retry),
-                            Modifier.fillMaxWidth(), onClick = { onAction(if (state.load == ConversationLoad.Closed || state.load == ConversationLoad.Unavailable)
-                                ConversationAction.Back else ConversationAction.Reload) })
-                    }
-                }
-            } else {
-                // 입력창을 먼저 측정하고 남은 높이를 안내/대화에 나눈다. 큰 글자나 IME 때문에
-                // 안내가 길어져도 전송 버튼을 화면 밖으로 밀지 않고 안내 영역에서 스크롤한다.
-                BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
-                    // 여백을 남기는 가중치 대신 안내/추천 높이만 제한하고, 남는 높이는 대화 목록에 준다.
-                    val noticeHeight = maxHeight * 0.35f
-                    val supportHeight = minOf(240.dp, maxHeight * 0.5f)
-                    Column(Modifier.fillMaxSize()) {
-                        Column(Modifier.heightIn(max = noticeHeight).fillMaxWidth().verticalScroll(rememberScrollState())) {
-                            TextButton(onClick = { onAction(ConversationAction.OpenPartner) },
-                                modifier = Modifier.align(Alignment.End).padding(horizontal = AppSpacing.Large)) {
-                                Text(stringResource(Res.string.chat_partner_open))
-                            }
-                            ConversationNotice(state, onAction)
+        BoxWithConstraints(Modifier.fillMaxSize().safeDrawingPadding().imePadding()) {
+            // 가로 IME 등으로 남은 높이가 짧으면 입력/전송을 우선한다. 높이가 확보되면 제목/메뉴가 복귀한다.
+            // 입력 컴포지션 위치는 유지하고 높이만 조정해 초안과 포커스를 보존한다.
+            val compactInput = maxHeight < 240.dp
+            Column(Modifier.fillMaxSize()) {
+                if (!compactInput || !state.readable) AppTopBar(
+                    title = if (state.readable) state.nickname?.takeIf { it.isNotBlank() }
+                        ?: stringResource(Res.string.chat_conversation_title) else stringResource(Res.string.chat_conversation_title),
+                    onBack = { onAction(ConversationAction.Back) },
+                    actionText = if (state.readable) stringResource(Res.string.chat_conversation_menu) else null,
+                    onAction = { if (state.readable) onAction(ConversationAction.OpenMenu) },
+                )
+                if (!state.readable) {
+                    LazyColumn(Modifier.weight(1f).fillMaxWidth(), contentPadding = screenPaddingValues(),
+                        verticalArrangement = Arrangement.spacedBy(AppSpacing.Large)) {
+                        item {
+                            StatusCard(stringResource(when (state.load) {
+                                ConversationLoad.Loading -> Res.string.chat_conversation_loading
+                                ConversationLoad.Closed -> Res.string.chat_conversation_closed
+                                ConversationLoad.ConsentRequired -> Res.string.chat_access_consent
+                                ConversationLoad.Active, ConversationLoad.Unavailable -> Res.string.chat_access_unavailable
+                                else -> Res.string.chat_conversation_failed
+                            }), stringResource(when (state.load) {
+                                ConversationLoad.Loading -> Res.string.chat_conversation_loading_help
+                                ConversationLoad.Closed -> Res.string.chat_conversation_closed_help
+                                ConversationLoad.ConsentRequired -> Res.string.chat_access_consent_help
+                                ConversationLoad.Active, ConversationLoad.Unavailable -> Res.string.chat_access_unavailable_help
+                                else -> Res.string.chat_conversation_failed_help
+                            }))
                         }
-                        Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.TopCenter) {
-                            LazyColumn(Modifier.widthIn(max = 640.dp).fillMaxWidth(), state = listState, reverseLayout = true,
-                                contentPadding = screenPaddingValues(), verticalArrangement = Arrangement.spacedBy(AppSpacing.Medium)) {
-                                if (state.messages.isEmpty()) item(key = "empty") {
-                                    StatusCard(stringResource(if (state.nextCursor.isNullOrBlank()) Res.string.chat_conversation_empty else Res.string.chat_history_empty),
-                                        stringResource(if (state.nextCursor.isNullOrBlank()) Res.string.chat_conversation_empty_help else Res.string.chat_history_empty_help))
+                        item {
+                            if (state.load == ConversationLoad.Loading)
+                                Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = AppColors.SelectionBorder) }
+                            else if (state.load == ConversationLoad.ConsentRequired) {
+                                AppButton(stringResource(Res.string.chat_access_open_consent), Modifier.fillMaxWidth(),
+                                    onClick = { onAction(ConversationAction.OpenConsent) })
+                            } else AppButton(stringResource(if (state.load == ConversationLoad.Closed || state.load == ConversationLoad.Unavailable)
+                                Res.string.chat_conversation_back else Res.string.chat_conversation_retry),
+                                Modifier.fillMaxWidth(), onClick = { onAction(if (state.load == ConversationLoad.Closed || state.load == ConversationLoad.Unavailable)
+                                    ConversationAction.Back else ConversationAction.Reload) })
+                        }
+                    }
+                } else {
+                    // 입력창을 먼저 측정하고 남은 높이를 안내/대화에 나눈다. 큰 글자나 IME 때문에
+                    // 안내가 길어져도 전송 버튼을 화면 밖으로 밀지 않고 안내 영역에서 스크롤한다.
+                    BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
+                        // 여백을 남기는 가중치 대신 안내/추천 높이만 제한하고, 남는 높이는 대화 목록에 준다.
+                        val noticeHeight = maxHeight * 0.35f
+                        val supportHeight = minOf(240.dp, maxHeight * 0.5f)
+                        Column(Modifier.fillMaxSize()) {
+                            Column(Modifier.heightIn(max = noticeHeight).fillMaxWidth().verticalScroll(rememberScrollState())) {
+                                TextButton(onClick = { onAction(ConversationAction.OpenPartner) },
+                                    modifier = Modifier.align(Alignment.End).padding(horizontal = AppSpacing.Large)) {
+                                    Text(stringResource(Res.string.chat_partner_open))
                                 }
-                                items(state.messages.distinctBy { it.id }.asReversed(), key = { "message-${it.id}" }) { message ->
-                                    Row(Modifier.fillMaxWidth(), horizontalArrangement = if (message.mine) Arrangement.End else Arrangement.Start) {
-                                        val who = stringResource(if (message.mine) Res.string.chat_conversation_me else Res.string.chat_conversation_other)
-                                        val time = message.timeLabel?.takeIf { it.isNotBlank() }
-                                            ?: stringResource(Res.string.chat_conversation_time_unknown)
-                                        Column(horizontalAlignment = if (message.mine) Alignment.End else Alignment.Start) {
-                                            MessageBubble(message.text,
-                                                if (message.mine && message.delivery != MessageDelivery.Sent) who
-                                                else stringResource(Res.string.chat_conversation_message_meta, who, time))
-                                            if (message.mine) MessageDeliveryStatus(message,
-                                                enabled = state.inputEnabled,
-                                                onRecovery = { action -> if (state.inputEnabled) onMessageRecovery(message.id, action) })
+                                ConversationNotice(state, onAction)
+                            }
+                            Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.TopCenter) {
+                                LazyColumn(Modifier.widthIn(max = 640.dp).fillMaxWidth(), state = listState, reverseLayout = true,
+                                    contentPadding = screenPaddingValues(), verticalArrangement = Arrangement.spacedBy(AppSpacing.Medium)) {
+                                    if (state.messages.isEmpty()) item(key = "empty") {
+                                        StatusCard(stringResource(if (state.nextCursor.isNullOrBlank()) Res.string.chat_conversation_empty else Res.string.chat_history_empty),
+                                            stringResource(if (state.nextCursor.isNullOrBlank()) Res.string.chat_conversation_empty_help else Res.string.chat_history_empty_help))
+                                    }
+                                    items(state.messages.distinctBy { it.id }.asReversed(), key = { "message-${it.id}" }) { message ->
+                                        Row(Modifier.fillMaxWidth(), horizontalArrangement = if (message.mine) Arrangement.End else Arrangement.Start) {
+                                            val who = stringResource(if (message.mine) Res.string.chat_conversation_me else Res.string.chat_conversation_other)
+                                            val time = message.timeLabel?.takeIf { it.isNotBlank() }
+                                                ?: stringResource(Res.string.chat_conversation_time_unknown)
+                                            Column(horizontalAlignment = if (message.mine) Alignment.End else Alignment.Start) {
+                                                MessageBubble(message.text,
+                                                    if (message.mine && message.delivery != MessageDelivery.Sent) who
+                                                    else stringResource(Res.string.chat_conversation_message_meta, who, time))
+                                                if (message.mine) MessageDeliveryStatus(message,
+                                                    enabled = state.inputEnabled,
+                                                    onRecovery = { action -> if (state.inputEnabled) onMessageRecovery(message.id, action) })
+                                            }
                                         }
                                     }
-                                }
-                                if (!state.nextCursor.isNullOrBlank()) item(key = "older-messages") {
-                                    if (state.historyLoad == HistoryLoad.Failed) Text(stringResource(Res.string.chat_history_failed),
-                                        style = MaterialTheme.typography.bodySmall, color = AppColors.Error)
-                                    AppButton(stringResource(if (state.historyLoad == HistoryLoad.Failed) Res.string.chat_history_retry else Res.string.chat_history_more),
-                                        Modifier.fillMaxWidth(), variant = AppButtonVariant.Secondary,
-                                        enabled = state.canLoadOlder, loading = state.historyLoad == HistoryLoad.Loading,
-                                        loadingText = stringResource(Res.string.chat_history_loading),
-                                        onClick = { if (state.canLoadOlder) onAction(ConversationAction.LoadOlder) })
+                                    if (!state.nextCursor.isNullOrBlank()) item(key = "older-messages") {
+                                        if (state.historyLoad == HistoryLoad.Failed) Text(stringResource(Res.string.chat_history_failed),
+                                            style = MaterialTheme.typography.bodySmall, color = AppColors.Error)
+                                        AppButton(stringResource(if (state.historyLoad == HistoryLoad.Failed) Res.string.chat_history_retry else Res.string.chat_history_more),
+                                            Modifier.fillMaxWidth(), variant = AppButtonVariant.Secondary,
+                                            enabled = state.canLoadOlder, loading = state.historyLoad == HistoryLoad.Loading,
+                                            loadingText = stringResource(Res.string.chat_history_loading),
+                                            onClick = { if (state.canLoadOlder) onAction(ConversationAction.LoadOlder) })
+                                    }
                                 }
                             }
+                            // 추천은 말풍선 목록과 분리해 입력창 바로 위에 둔다. 작은 화면/키보드에서도
+                            // 입력창 높이를 먼저 확보하고, 펼친 추천은 남은 영역 안에서 스크롤한다.
+                            if (conversationSupport != null) Column(
+                                Modifier.fillMaxWidth().heightIn(max = supportHeight)
+                                    .verticalScroll(rememberScrollState())
+                                    .padding(horizontal = AppSpacing.Large),
+                            ) { conversationSupport() }
                         }
-                        // 추천은 말풍선 목록과 분리해 입력창 바로 위에 둔다. 작은 화면/키보드에서도
-                        // 입력창 높이를 먼저 확보하고, 펼친 추천은 남은 영역 안에서 스크롤한다.
-                        if (conversationSupport != null) Column(
-                            Modifier.fillMaxWidth().heightIn(max = supportHeight)
-                                .verticalScroll(rememberScrollState())
-                                .padding(horizontal = AppSpacing.Large),
-                        ) { conversationSupport() }
                     }
+                    ConversationComposer(state, onDraftChange, onAction, compactInput)
                 }
-                ConversationComposer(state, onDraftChange, onAction)
             }
         }
     }
@@ -170,7 +175,7 @@ private fun ConversationNotice(state: ChatConversationState, onAction: (Conversa
 
 @Composable
 private fun ConversationComposer(state: ChatConversationState, onDraftChange: (String) -> Unit,
-    onAction: (ConversationAction) -> Unit) {
+    onAction: (ConversationAction) -> Unit, compactInput: Boolean) {
     val validation = state.validatedDraft
     val inputError = validation.error?.takeIf { it != ChatDraftError.Blank }
     HorizontalDivider(color = AppColors.BorderSubtle)
@@ -178,26 +183,29 @@ private fun ConversationComposer(state: ChatConversationState, onDraftChange: (S
         verticalArrangement = Arrangement.spacedBy(AppSpacing.ExtraSmall)) {
         if (!state.canSend) Text(stringResource(Res.string.chat_conversation_read_only),
             style = MaterialTheme.typography.bodySmall, color = AppColors.TextSecondary)
-        // 여러 줄 입력은 이 기능의 UI이며 기존 한 줄 AppTextField 계약을 변경하지 않는다.
-        OutlinedTextField(value = state.draft, onValueChange = { if (state.inputEnabled) onDraftChange(it) },
-            enabled = state.inputEnabled, modifier = Modifier.fillMaxWidth(), minLines = 1, maxLines = 3,
-            label = { Text(stringResource(Res.string.chat_conversation_input)) },
-            placeholder = { Text(stringResource(Res.string.chat_conversation_placeholder)) },
-            shape = AppShapes.Control, isError = inputError != null, textStyle = MaterialTheme.typography.bodyLarge,
-            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Default),
-            colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = AppColors.TextPrimary,
-                unfocusedBorderColor = AppColors.BorderControl, errorBorderColor = AppColors.Error,
-                disabledContainerColor = AppColors.SurfaceMuted))
+        // 입력/전송을 같은 행에서 측정해 IME가 높이를 줄여도 버튼이 입력창 아래에서 잘리지 않게 한다.
+        // 키보드 개폐 전후에 같은 Row를 유지하므로 입력창을 다른 부모로 옮기며 포커스를 잃지 않는다.
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(AppSpacing.Medium)) {
-            Text(stringResource(Res.string.chat_conversation_count, validation.graphemes),
-                Modifier.weight(1f), style = MaterialTheme.typography.bodySmall,
-                color = if (inputError != null) AppColors.Error else AppColors.TextSecondary)
+            // 여러 줄 입력은 이 기능의 UI이며 기존 한 줄 AppTextField 계약을 변경하지 않는다.
+            OutlinedTextField(value = state.draft, onValueChange = { if (state.inputEnabled) onDraftChange(it) },
+                // 짧은 창에서는 입력 내부를 스크롤한다. 줄바꿈/본문 자체를 제거하거나 전송 규칙을 바꾸지 않는다.
+                enabled = state.inputEnabled, modifier = Modifier.weight(1f), minLines = 1, maxLines = if (compactInput) 1 else 3,
+                label = { Text(stringResource(Res.string.chat_conversation_input)) },
+                placeholder = { Text(stringResource(Res.string.chat_conversation_placeholder)) },
+                shape = AppShapes.Control, isError = inputError != null, textStyle = MaterialTheme.typography.bodyLarge,
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Default),
+                colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = AppColors.TextPrimary,
+                    unfocusedBorderColor = AppColors.BorderControl, errorBorderColor = AppColors.Error,
+                    disabledContainerColor = AppColors.SurfaceMuted))
             AppButton(stringResource(Res.string.chat_conversation_send),
                 enabled = state.submitEnabled, loading = state.submitting,
                 loadingText = stringResource(Res.string.chat_conversation_sending),
                 onClick = { if (state.submitEnabled) onAction(ConversationAction.Send) })
         }
+        Text(stringResource(Res.string.chat_conversation_count, validation.graphemes),
+            style = MaterialTheme.typography.bodySmall,
+            color = if (inputError != null) AppColors.Error else AppColors.TextSecondary)
         if (inputError != null) Text(stringResource(when (inputError) {
             ChatDraftError.Bytes -> Res.string.chat_input_bytes
             ChatDraftError.InvalidText -> Res.string.chat_input_invalid
