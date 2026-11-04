@@ -69,7 +69,7 @@ class KeyringRegistrationTest {
     @AfterTest fun after() { models.clear(); Dispatchers.resetMain() }
     private fun model(server: RegistrationServer, prefs: RegistrationPrefs = RegistrationPrefs(),
         session: TestSession = TestSession(OnboardingStatus.KEYRING_REQUIRED), name: String = "registration") =
-        KeyringRegistrationViewModel(server, server, KeyringRegistrationStore(prefs), session,
+        KeyringRegistrationViewModel(server, server, KeyringRegistrationStore(prefs), session, KeyringSyncStore(prefs),
             { Instant.parse("2026-11-04T12:00:00Z") }).also { models.put(name, it) }
 
     @Test fun readyScreenNeverRegistersUntilExplicitStartAndChecksOwnership() = runTest(dispatcher) {

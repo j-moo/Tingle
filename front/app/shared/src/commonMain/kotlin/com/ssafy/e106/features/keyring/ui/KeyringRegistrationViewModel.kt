@@ -25,7 +25,8 @@ data class LiveRegistrationState(val owner: Long? = null, val loaded: Boolean = 
 @OptIn(ExperimentalUuidApi::class)
 class KeyringRegistrationViewModel(private val api: KeyringRegistrationRepository,
     private val owned: OwnedKeyringRepository, private val store: KeyringRegistrationStore,
-    private val sessions: SessionStore, private val now: () -> Instant = { Clock.System.now() }) : ViewModel() {
+    private val sessions: SessionStore, private val syncStore: KeyringSyncStore,
+    private val now: () -> Instant = { Clock.System.now() }) : ViewModel() {
     private val mutable = MutableStateFlow(LiveRegistrationState())
     val state = mutable.asStateFlow()
     private var job: Job? = null
@@ -114,9 +115,14 @@ class KeyringRegistrationViewModel(private val api: KeyringRegistrationRepositor
         val receipt = requireNotNull(pending.receipt)
         val match = operation.unwrap(owned.list()).find { it.deviceId == receipt.deviceId }
             ?: throw RegistrationProblem(RegistrationIssue.NotInOwnedList)
+        // 등록 복구 기록을 지우기 전에 동기화 대상을 보존한다. 프로필/설문을 마친 후에도
+        // 같은 기기 번호로 자동 재개하며, 저장 실패 시 등록 API를 새로 호출하지 않는다.
+        syncStore.rememberTarget(operation.owner, receipt.deviceId, pending.serial)
+        operation.ensure()
         operation.save(null)
         operation.ensure()
         mutable.update { it.copy(confirmed = match, pending = null, canRestart = false) }
+        operation.unwrap(sessions.refreshOnboarding())
     }
 
     /** 서버 요청 전 준비 기록, 또는 서버가 확실히 거절한 요청만 사용자 선택으로 지울 수 있다. */

@@ -41,7 +41,9 @@ fun OnboardingRoute(
     val canSkip = profileAccess.canSkipKeyring(session)
     // 등록 전 계정도 개발 앱에서 실물 통신을 확인한다. 실제 귀속은 별도 확인창 수락과 서버 검증 뒤에만 진행한다.
     // 계정/가입 단계 변경 시 진입 상태를 버리고, 회전 시 연결 정리는 BLE 화면의 ON_STOP 정책을 따른다.
-    var openBleProbe by rememberSaveable(session) { mutableStateOf(false) }
+    val canSync = profileAccess.canSyncKeyring(session)
+    // 가입 입력이 끝나 SYNC_PENDING이 되면 연결/동기화 안내를 연다. 실제 탐색은 OS 권한 이후에 진행한다.
+    var openBleProbe by rememberSaveable(session.userId, session.status) { mutableStateOf(canSync) }
     val canManage = profileAccess.canManageProfile(session)
     var manageProfile by rememberSaveable(session.userId, session.status, session.isReady) { mutableStateOf(false) }
     var openSurvey by rememberSaveable(session.userId, session.status, session.isReady) { mutableStateOf(false) }
@@ -51,7 +53,7 @@ fun OnboardingRoute(
     val canSettings = settingsAccess.allowed(session)
     when {
         state.session != session -> OnboardingPanel(stringResource(Res.string.onboarding_title)) { Text(stringResource(Res.string.onboarding_loading)) }
-        canSkip && openBleProbe -> ConnectedKeyringSetupRoute({ openBleProbe = false })
+        (canSkip || canSync) && openBleProbe -> ConnectedKeyringSetupRoute({ openBleProbe = false })
         canSettings && openSettings -> ConnectedSettingsRoute(session, { openSettings = false })
         canSurvey && openSurvey -> SurveyRoute(session, { openSurvey = false })
         canManage && manageProfile -> ProfileManagementRoute(session, { manageProfile = false })
@@ -70,7 +72,7 @@ fun OnboardingRoute(
             canManageProfile = canManage, onManageProfile = { if (canManage) manageProfile = true },
             canOpenSurvey = canSurvey, onOpenSurvey = { if (canSurvey) openSurvey = true },
             canOpenSettings = canSettings, onOpenSettings = { if (canSettings) openSettings = true },
-            onBleProbe = if (canSkip) ({ openBleProbe = true }) else null)
+            onBleProbe = if (canSkip || canSync) ({ openBleProbe = true }) else null)
     }
 }
 
@@ -155,6 +157,7 @@ fun OnboardingScreen(
             }))
         }
         state.error?.let { OnboardingError(it.message) }
+        if (!keyring && onBleProbe != null) AppButton(stringResource(Res.string.sync_live_open), enabled = !state.busy, onClick = onBleProbe)
         if (canOpenSettings) AppButton(stringResource(Res.string.settings_api_entry), enabled = !state.busy, onClick = onOpenSettings)
         if (canOpenSurvey) AppButton(stringResource(if (keyring) Res.string.survey_api_dev_entry else Res.string.survey_api_entry),
             enabled = !state.busy, onClick = onOpenSurvey)

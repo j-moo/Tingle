@@ -25,6 +25,7 @@ import com.ssafy.e106.features.settings.ui.ConnectedSettingsRoute
 import com.ssafy.e106.features.survey.ui.SurveyRoute
 import com.ssafy.e106.features.keyring.ui.ConnectedOwnedKeyringsRoute
 import com.ssafy.e106.features.keyring.ui.ConnectedKeyringSetupRoute
+import com.ssafy.e106.features.keyring.ui.KeyringSyncViewModel
 import com.ssafy.e106.resources.*
 import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.koinInject
@@ -49,6 +50,14 @@ internal enum class ServicePage { Home, Proposals, Menu, Chats, Safety, Report, 
     var logoutPrompt by rememberSaveable { mutableStateOf(false) }
     val state by model.state.collectAsStateWithLifecycle()
     val uri = LocalUriHandler.current
+    // 같은 Activity의 동기화 모델을 BLE 화면에서도 공유한다. 가입 화면이 바뀌어도 대상 기록은 유지하며,
+    // 개발 앱의 전경에서만 자동 발급을 시작한다. 회전/백그라운드에서는 취소 후 내구 기록으로 복구한다.
+    if (access.development) {
+        val sync: KeyringSyncViewModel = koinViewModel()
+        LifecycleEventEffect(Lifecycle.Event.ON_START) { sync.resume() }
+        LifecycleEventEffect(Lifecycle.Event.ON_STOP) { sync.pause() }
+        DisposableEffect(sync) { sync.resume(); onDispose { sync.pause() } }
+    }
     fun go(destination: ServicePage) { model.leave(); page = destination }
     fun chats(room: Long? = null) { roomId = room; go(ServicePage.Chats) }
     fun proposals() { proposalId = null; go(ServicePage.Proposals) }
