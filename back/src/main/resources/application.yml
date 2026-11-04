@@ -77,6 +77,10 @@ app:
   keyring:
     # 구매처를 임의 지정하지 않는다. 미설정이면 API는 purchaseUrl:null을 반환한다.
     purchase-url: ${KEYRING_PURCHASE_URL:}
+    dev-settings:
+      enabled: ${KEYRING_DEV_SETTINGS_ENABLED:false}
+      private-key-file: ${KEYRING_DEV_SETTINGS_PRIVATE_KEY_FILE:}
+      public-key-file: ${KEYRING_DEV_SETTINGS_PUBLIC_KEY_FILE:}
 
   # 새 설문 회차가 쓰는 설문 버전 (resources/survey/questionnaires/{버전}.json). 바꿔도 이미 시작한 회차는 원래 버전을 쓴다.
   survey:

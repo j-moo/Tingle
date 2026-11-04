@@ -1,7 +1,7 @@
 {
-  "version": "1.7.0-owned-block-relations",
+  "version": "1.8.0-keyring-server-proofs",
   "total_tables": 26,
-  "total_columns": 233,
+  "total_columns": 234,
   "physical_foreign_keys": false,
   "tables": {
     "personality": {
@@ -3216,6 +3216,18 @@
           "name": "request_key_aliases",
           "type": "jsonb",
           "meaning": "같은 기기·소유 세대·설정 버전의 불변 실행에 추가로 대응시킨 Idempotency-Key의 UUID 문자열 배열(List<String>). 최초 request_key는 유지하고 기기 잠금 아래 검증한 키만 추가한다. 기존 미상 값은 NULL이며 빈 배열과 구분한다.",
+          "nullable": true,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "server_proofs",
+          "type": "jsonb",
+          "meaning": "개발 설정 발급의 HTTP 요청 키별 고정 서버 서명 증명. 기존 실행은 NULL이며 서버 서명 증거를 소급 생성하지 않는다.",
           "nullable": true,
           "pk": false,
           "increment": false,
