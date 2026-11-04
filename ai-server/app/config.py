@@ -8,6 +8,7 @@ class Settings(BaseSettings):
     host: str = "127.0.0.1"
     port: int = 8000
     ai_service_public_keys: dict[str, str] = {}
+    icebreaker_release_descriptor_file: str = ""
     risk_release_descriptor_file: str = ""
     explanation_release_descriptor_files: list[str] = []
 
