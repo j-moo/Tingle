@@ -121,6 +121,13 @@ services:
       TERMS_CONTENT_URL: https://${DOMAIN:?}/dev/terms/ # 개발은 develop 에 머지된 web-dev 페이지
       PRIVACY_CONTENT_URL: https://${DOMAIN:?}/dev/privacy/
       AI_RISK_CONTENT_URL: https://${DOMAIN:?}/dev/ai-risk/
+      # AI 서버 호출(app.ai.service, S15P31E106-234). 서비스 토큰 서명 키는 서버에 손으로 둔 파일이다(비밀 키는 secrets, 공개 키는 ai-keys).
+      # 키 파일 없이 켜면 back-dev 가 뜨지 않는다. 운영은 키를 따로 만든 뒤 연결한다
+      APP_AI_SERVICE_ENABLED: "true"
+      APP_AI_SERVICE_ENVIRONMENT: dev
+      APP_AI_SERVICE_BASE_URL: http://ai-dev:8000
+      APP_AI_SERVICE_KEY_ID: be-dev-1
+      APP_AI_SERVICE_PRIVATE_KEY_FILE: /run/secrets/tingle/ai-service-dev.pem
     volumes: # 개발 사진은 운영과 섞이지 않게 따로 둔다
       - /srv/tingle/secrets:/run/secrets/tingle:ro
       - /data/uploads/dev:/data/photos
@@ -144,6 +151,9 @@ services:
     build: ../ai-server
     environment:
       APP_ENV: dev
+      AI_SERVICE_PUBLIC_KEYS: '{"be-dev-1":"/run/ai-keys/be-dev-1.pub.pem"}' # back-dev 서명 키와 짝. 파일이 없으면 기동을 거절한다
+    volumes:
+      - /srv/tingle/ai-keys/dev:/run/ai-keys:ro # 공개 키만 둔다(비밀값 아님). 컨테이너 사용자(uid 10001)가 읽도록 644
     mem_limit: 512m
     restart: unless-stopped
 
