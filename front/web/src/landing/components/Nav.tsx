@@ -1,8 +1,9 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import Logo from './Logo.tsx'
 import styles from './Nav.module.css'
 
-// 흰 반투명 고정 네비. 인트로 재생 중(<html data-intro="playing">)에는 위로 숨었다가 끝나면 내려온다(Nav.module.css)
+// 투명 유리(흐림) 고정 네비. 인트로 재생 중(<html data-intro="playing">)에는 위로 숨었다가 끝나면 내려온다(Nav.module.css)
+// 네비 아래가 어두운 섹션(data-nav="dark")이면 로고 · 메뉴 · 버튼을 흰색으로(data-tone="dark")
 // 키링 섹션은 아직 없어서 맨 위로 보낸다
 const ITEMS = [
   { label: '브랜드 필름', href: '#brand-film' },
@@ -12,10 +13,33 @@ const DOWNLOAD = { label: '어플 다운로드', href: '#download' }
 
 export default function Nav() {
   const [open, setOpen] = useState(false)
+  const [dark, setDark] = useState(false)
+  const header = useRef<HTMLElement>(null)
   const close = () => setOpen(false)
 
+  useEffect(() => {
+    let frame = 0
+    const update = () => {
+      frame = 0
+      const h = header.current
+      if (!h) return
+      const y = h.querySelector('div')!.getBoundingClientRect().height / 2      // 네비 줄 가운데 높이에서 바로 아래 깔린 요소
+      const under = document.elementsFromPoint(innerWidth / 2, y).find((el) => !h.contains(el))
+      setDark(!!under?.closest('[data-nav="dark"]'))
+    }
+    const onScroll = () => { if (!frame) frame = requestAnimationFrame(update) }
+    update()
+    addEventListener('scroll', onScroll, { passive: true })
+    addEventListener('resize', onScroll)
+    return () => {
+      removeEventListener('scroll', onScroll)
+      removeEventListener('resize', onScroll)
+      cancelAnimationFrame(frame)
+    }
+  }, [])
+
   return (
-    <header className={styles.nav}>
+    <header ref={header} className={styles.nav} data-tone={dark ? 'dark' : 'light'} data-open={open || undefined}>
       <div className={styles.bar}>
         <a className={styles.home} href='#top' aria-label='tingle 맨 위로' onClick={close}>
           <Logo className={styles.logo} />
