@@ -119,6 +119,15 @@ private fun ResetRecordsSection(state: KeyringResetState, onChoice: (ResetRecord
             if (!state.recordQueryAvailable) Text(stringResource(Res.string.reset_records_query_unavailable))
             AppButton(stringResource(if (state.recordQueryAvailable) Res.string.reset_records_refresh else Res.string.reset_records_preparing),
                 enabled = state.canQueryRecords, onClick = { if (state.canQueryRecords) onRefresh() }, variant = AppButtonVariant.Secondary)
+            // 조회가 없어도 기록이 있을 수 있음을 알리고 초기화 자체와 분리된 삭제 동의를 받는다.
+            // 음수는 손상된 값이므로 이 경로로 진행시키지 않는다.
+            if (count == null) {
+                Text(stringResource(Res.string.reset_records_unknown_delete_help), color = AppColors.Error)
+                AppCheckbox(state.recordDeletionAccepted, { accepted ->
+                    onChoice(ResetRecordChoice.Delete)
+                    onDeletionAccepted(accepted)
+                }, stringResource(Res.string.reset_records_unknown_delete_accept))
+            }
         }
         count == 0 -> StatusCard(stringResource(Res.string.reset_records_empty), stringResource(Res.string.reset_records_empty_help))
         else -> {

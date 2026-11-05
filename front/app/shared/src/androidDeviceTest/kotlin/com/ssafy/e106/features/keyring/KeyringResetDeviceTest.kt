@@ -53,8 +53,16 @@ class KeyringResetTestActivity : ComponentActivity() {
                 }) { ConnectedBleProbeRoute({}, ble, sync = managedSync, managedConnection = true) }
                 "blocked" -> {
                     val state by model.state.collectAsStateWithLifecycle()
-                    LaunchedEffect(Unit) { model.load(resetRun.deviceId, true) }
-                    KeyringResetScreen(state, model::accepted, { if (it == KeyringResetAction.OpenConfirm) model.confirm() })
+                    // 실제 화면/모델의 두 동의와 시작을 시험 기기에만 연결한다. 외부 기기/서버는 사용하지 않는다.
+                    LaunchedEffect(Unit) { model.load(resetRun.deviceId, true, resetSerial) }
+                    KeyringResetScreen(state, model::accepted, {
+                        when (it) {
+                            KeyringResetAction.OpenConfirm -> model.confirm()
+                            KeyringResetAction.StartReset -> model.start(f.board)
+                            KeyringResetAction.Cancel -> model.cancel()
+                            else -> Unit
+                        }
+                    }, onRecordChoice = model::recordChoice, onRecordDeletionAccepted = model::recordDeletionAccepted)
                 }
                 "links" -> KeyringResetRecoveryLinks(1, {}, f.store)
                 else -> ConnectedKeyringResetRoute(resetRun.deviceId, {}, {}, model, ble)
@@ -92,11 +100,31 @@ class KeyringResetDeviceTest {
             assertEquals(0, f.board.sends)
         }
     }
-    @Test fun unknownInventoryKeepsStartDisabledAfterConsent() {
-        val f = ResetFixture(); KeyringResetTestActivity.fixture = f
+    @Test fun unknownInventoryRequiresBothCheckboxesBeforeExplicitStart() {
+        val f = ResetFixture(); f.server.run = resetRun.copy(discardUnsentConfirmed = true); KeyringResetTestActivity.fixture = f
         launch("blocked").use {
             compose.onNodeWithText("안내 확인하고 계속").performClick()
             compose.onNodeWithText("초기화 대상과 안내 내용을 확인했어요.").performScrollTo().performClick()
+            compose.onNodeWithText("키링 초기화하기").assertIsNotEnabled()
+            assertEquals(0, f.server.starts.size)
+            compose.onNodeWithText("개수를 확인할 수 없는 미전송 만남 기록의 삭제에 동의해요.").performScrollTo().performClick()
+            compose.onNodeWithText("키링 초기화하기").assertIsEnabled()
+            assertEquals(0, f.server.starts.size)
+            compose.onNodeWithText("키링 초기화하기").performClick()
+            compose.onNodeWithText("키링 초기화를 완료했어요").assertExists()
+            assertEquals(1, f.server.starts.size)
+            assertEquals(true, f.server.starts.single().second.discardUnsentConfirmed)
+        }
+    }
+    @Test fun consentIsNotReusedAfterActivityRecreation() {
+        val f = ResetFixture(); KeyringResetTestActivity.fixture = f
+        launch("blocked").use { scenario ->
+            compose.onNodeWithText("안내 확인하고 계속").performClick()
+            compose.onNodeWithText("초기화 대상과 안내 내용을 확인했어요.").performScrollTo().performClick()
+            compose.onNodeWithText("개수를 확인할 수 없는 미전송 만남 기록의 삭제에 동의해요.").performScrollTo().performClick()
+            compose.onNodeWithText("키링 초기화하기").assertIsEnabled()
+            scenario.recreate(); compose.waitForIdle()
+            compose.onNodeWithText("안내 확인하고 계속").performClick()
             compose.onNodeWithText("키링 초기화하기").assertIsNotEnabled()
             assertEquals(0, f.server.starts.size)
         }

@@ -33,9 +33,9 @@ data class KeyringResetState(
     }
     val busy: Boolean get() = displayStage in listOf(KeyringResetStage.Loading, KeyringResetStage.Preparing,
         KeyringResetStage.Resetting, KeyringResetStage.Unlinking, KeyringResetStage.Recovering)
-    // 먼저 보내기는 초기화 허가가 아니다. 전송 후 기록을 다시 조회한 상태에서 동의받는다.
+    // 미확인도 별도 삭제 동의로만 해결한다. 선업로드 선택이나 잘못된 음수는 삭제 허가가 아니다.
     val recordsResolved: Boolean get() = pendingRecordCount == 0 ||
-        (pendingRecordCount != null && pendingRecordCount > 0 &&
+        ((pendingRecordCount == null || pendingRecordCount > 0) &&
             recordChoice == ResetRecordChoice.Delete && recordDeletionAccepted)
     val canConfirm: Boolean get() = displayStage == KeyringResetStage.Confirm && accepted && recordsResolved
     val canQueryRecords: Boolean get() = displayStage == KeyringResetStage.Confirm && recordQueryAvailable
