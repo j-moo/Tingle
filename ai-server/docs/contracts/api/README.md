@@ -99,6 +99,7 @@ Spring Boot·JPA·PostgreSQL 운영 기준과 인증·프로필·키링 담당 �
 | POST | `/api/survey-sessions/{sessionId}/migrations` | migrateSurvey | 영빈 ERD21 검토 |
 | POST | `/api/survey-sessions/{sessionId}/analyses` | requestAnalysis | 영빈 ERD21 검토 |
 | GET | `/api/analysis-results/{resultId}` | getAnalysis | 영빈 ERD21 검토 |
+| GET | `/api/jobs/{jobId}` | getJob | 가을 2026-11-04 활성화(작업 테이블 없음) |
 | GET | `/api/chat-rooms` | listChats | 영빈 ERD21 검토 |
 | GET | `/api/chat-rooms/{chatRoomId}` | getChat | 영빈 ERD21 검토 |
 | POST | `/api/chat-rooms/{chatRoomId}/entries` | enterChat | 영빈 ERD21 검토 |
@@ -143,7 +144,6 @@ Spring Boot·JPA·PostgreSQL 운영 기준과 인증·프로필·키링 담당 �
 | PUT | `/admin/v1/release-channels/current` | activateRelease | 기존 제외 이력 유지 |
 | POST | `/api/v1/auth/signup` | completeProfile | 기존 제외 이력 유지 |
 | PUT | `/api/survey-sessions/{sessionId}/metadata` | setSurveyMetadata | 이번 담당 제외·후속 |
-| GET | `/api/jobs/{jobId}` | getJob | 이번 담당 제외·후속 |
 | POST | `/api/reports` | createReport | 이번 담당 제외·후속 |
 | POST | `/api/match-proposals/{proposalId}/cancel` | cancelProposalAcceptance | 이번 담당 제외·후속 |
 

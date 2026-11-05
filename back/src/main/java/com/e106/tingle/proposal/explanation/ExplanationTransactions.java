@@ -4,6 +4,7 @@ import java.time.Clock;
 import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 
 import org.springframework.stereotype.Service;
@@ -90,6 +91,15 @@ public class ExplanationTransactions {
 		MatchProposal proposal = locked(proposalId, viewerId);
 		expire(proposal, viewerId);
 		return status(proposal, viewerId);
+	}
+
+	/** 공용 작업 조회(GET /api/jobs)용. 설명 GET과 같은 열람 검사·기한 만료를 거친 본인 실행이며, 요청한 적이 없으면 빈 값이다. */
+	@Transactional
+	public Optional<ExplanationJournal.Run> current(long proposalId, long viewerId) {
+		MatchProposal proposal = locked(proposalId, viewerId);
+		expire(proposal, viewerId);
+		return ExplanationJournal.current(proposal.getEvaluation(), viewerId, mapper,
+			ExplanationBinding.of(proposal, mapper));
 	}
 
 	@Transactional
