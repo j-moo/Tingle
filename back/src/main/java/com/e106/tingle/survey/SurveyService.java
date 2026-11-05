@@ -23,6 +23,7 @@ import com.e106.tingle.user.Profile;
 import com.e106.tingle.user.ProfileRepository;
 import com.e106.tingle.user.UserRepository;
 
+import jakarta.persistence.EntityManager;
 import lombok.RequiredArgsConstructor;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
@@ -47,6 +48,7 @@ public class SurveyService {
 	private final UserRepository userRepository;
 	private final JsonMapper jsonMapper;
 	private final Clock clock;
+	private final EntityManager entityManager;
 
 	public QuestionnaireResponse currentQuestionnaire() {
 		return questionnaire(catalog.current());
@@ -83,8 +85,17 @@ public class SurveyService {
 		SurveyResponse response = editable(userId, sessionId);
 		SurveyDefinition definition = definitionOf(response);
 		SurveyAnswerValidator.validate(definition, questionId, value);
-		surveyAnswerRepository.save(SurveyAnswer.of(response.getId(), questionId, value, now()));
-		return view(response, definition);
+		// 회차 행을 잠근 뒤 답을 한 번만 읽고, 그 목록으로 저장과 응답을 함께 처리한다(저장마다 SELECT 두 번을 줄임).
+		Map<String, SurveyAnswer> answers = answersOf(response);
+		SurveyAnswer answer = SurveyAnswer.of(response.getId(), questionId, value, now());
+		SurveyAnswer existing = answers.get(questionId);
+		if (existing == null) {
+			entityManager.persist(answer);
+			answers.put(questionId, answer);
+		} else {
+			existing.overwrite(answer);
+		}
+		return view(response, definition, answers);
 	}
 
 	/**
@@ -97,8 +108,12 @@ public class SurveyService {
 		if (!definition.questionIds().contains(questionId)) {
 			throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND);
 		}
-		surveyAnswerRepository.deleteById(new SurveyAnswer.Key(response.getId(), questionId));
-		return view(response, definition);
+		Map<String, SurveyAnswer> answers = answersOf(response);
+		SurveyAnswer removed = answers.remove(questionId);
+		if (removed != null) {
+			surveyAnswerRepository.delete(removed);
+		}
+		return view(response, definition, answers);
 	}
 
 	/**
@@ -136,14 +151,13 @@ public class SurveyService {
 			return view(response, definition);
 		}
 		// 저장 때 검사했어도 옛 자료(예: 숫자 문항에 문자열 "4")가 있을 수 있어, 규칙에 맞는 답만 답한 것으로 센다.
-		Map<String, SurveyAnswer> answers = surveyAnswerRepository.findBySurveyId(response.getId()).stream()
-			.collect(Collectors.toMap(SurveyAnswer::getQuestionId, Function.identity()));
+		Map<String, SurveyAnswer> answers = answersOf(response);
 		if (!definition.questionIds().stream()
 			.allMatch(id -> answers.containsKey(id) && stillValid(definition, id, answers.get(id)))) {
 			throw new BusinessException(ErrorCode.ANSWERS_INCOMPLETE);
 		}
 		response.complete(now());
-		return view(response, definition);
+		return view(response, definition, answers);
 	}
 
 	/**
@@ -227,8 +241,7 @@ public class SurveyService {
 	private MigrationPlanResponse plan(SurveyResponse source, MigrationRule rule) {
 		SurveyDefinition from = definitionOf(source);
 		SurveyDefinition to = catalog.find(rule.toSurveyVersion()).orElseThrow();
-		Map<String, SurveyAnswer> answers = surveyAnswerRepository.findBySurveyId(source.getId()).stream()
-			.collect(Collectors.toMap(SurveyAnswer::getQuestionId, Function.identity()));
+		Map<String, SurveyAnswer> answers = answersOf(source);
 		List<String> answered = from.questionIds().stream().filter(answers::containsKey).toList();
 		List<String> preserved = answered.stream()
 			.filter(id -> rule.preserve().contains(id) && stillValid(to, id, answers.get(id)))
@@ -326,8 +339,16 @@ public class SurveyService {
 	}
 
 	private SurveySessionResponse view(SurveyResponse response, SurveyDefinition definition) {
-		Map<String, SurveyAnswer> answers = surveyAnswerRepository.findBySurveyId(response.getId()).stream()
+		return view(response, definition, answersOf(response));
+	}
+
+	private Map<String, SurveyAnswer> answersOf(SurveyResponse response) {
+		return surveyAnswerRepository.findBySurveyId(response.getId()).stream()
 			.collect(Collectors.toMap(SurveyAnswer::getQuestionId, Function.identity()));
+	}
+
+	private SurveySessionResponse view(SurveyResponse response, SurveyDefinition definition,
+		Map<String, SurveyAnswer> answers) {
 		if (!definition.questionIds().containsAll(answers.keySet())) {
 			throw new BusinessException(ErrorCode.SERVICE_UNAVAILABLE);
 		}

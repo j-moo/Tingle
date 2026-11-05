@@ -73,6 +73,13 @@ public class SurveyAnswer {
 		return answer;
 	}
 
+	// 같은 문항을 다시 저장하면 값·형식·시각을 새 답으로 바꾼다(회차 행 잠금 안에서만 부른다).
+	void overwrite(SurveyAnswer newer) {
+		answerValue = newer.answerValue;
+		answerType = newer.answerType;
+		answeredAt = newer.answeredAt;
+	}
+
 	public JsonNode value(JsonMapper mapper) {
 		if ("STRING".equals(answerType)) {
 			return mapper.readTree(mapper.writeValueAsString(answerValue));

@@ -36,22 +36,31 @@ public class OnboardingService {
 	// 미구현 단계도 통과시키지 않는다. 각 도메인의 실제 데이터로 판단하고, READY 는 매칭 제안과 같은 기준(ready)을 쓴다.
 	@Transactional(readOnly = true)
 	public OnboardingStatus statusOf(long userId) {
-		if (!agreementService.hasAgreedRequiredForAccess(userId, members.signupCompleted(userId))) {
-			return OnboardingStatus.AGREEMENT_REQUIRED;
+		return statusUpTo(userId, OnboardingStatus.READY);
+	}
+
+	// limit 앞 단계만 차례로 확인한다. 모두 마쳤으면 limit 을, 아니면 처음 못 마친 단계를 돌려준다.
+	// API 권한 검사는 필요한 단계까지만 보면 되므로 뒤 단계 조회(키링·설문·매칭 준비 등)를 하지 않는다.
+	private OnboardingStatus statusUpTo(long userId, OnboardingStatus limit) {
+		for (OnboardingStatus step : OnboardingStatus.values()) {
+			if (!step.isBefore(limit) || !passed(userId, step)) {
+				return step;
+			}
 		}
-		if (!members.hasKeyring(userId)) {
-			return OnboardingStatus.KEYRING_REQUIRED;
-		}
-		if (!profileRepository.findById(userId).map(Profile::isRegistered).orElse(false)) {
-			return OnboardingStatus.PROFILE_REQUIRED;
-		}
-		if (!members.surveyCompleted(userId)) {
-			return OnboardingStatus.SURVEY_REQUIRED;
-		}
-		if (!members.preferencesSet(userId)) {
-			return OnboardingStatus.PREFERENCES_REQUIRED;
-		}
-		return members.ready(userId, clock.instant()) ? OnboardingStatus.READY : OnboardingStatus.SYNC_PENDING;
+		return limit;
+	}
+
+	private boolean passed(long userId, OnboardingStatus step) {
+		return switch (step) {
+			case AGREEMENT_REQUIRED -> agreementService.hasAgreedRequiredForAccess(userId,
+				members.signupCompleted(userId));
+			case KEYRING_REQUIRED -> members.hasKeyring(userId);
+			case PROFILE_REQUIRED -> profileRepository.findById(userId).map(Profile::isRegistered).orElse(false);
+			case SURVEY_REQUIRED -> members.surveyCompleted(userId);
+			case PREFERENCES_REQUIRED -> members.preferencesSet(userId);
+			case SYNC_PENDING -> members.ready(userId, clock.instant());
+			case READY -> true;
+		};
 	}
 
 	/**
@@ -61,17 +70,24 @@ public class OnboardingService {
 	@Transactional
 	public OnboardingDetailResponse detail(long userId) {
 		// 뒤의 가입 완료 기록도 회원 행을 쓰므로 회원→설정 순서로 잠근다.
-		userRepository.findByIdForUpdate(userId)
+		User user = userRepository.findByIdForUpdate(userId)
 			.orElseThrow(() -> new BusinessException(ErrorCode.AUTH_REQUIRED));
+		// 회원 행을 잠갔으므로 이 요청이 끝날 때까지 가입 완료 시각·계정 상태는 잠글 때 읽은 값 그대로다.
+		boolean completedBefore = user.getSignupCompletedAt() != null;
+		boolean active = user.getStatus() == UserStatus.ACTIVE;
 		settingsChanges.refreshAgeReferenceIfPresent(userId);
-		OnboardingStatus status = recordProgress(userId);
+		OnboardingStatus status = statusOf(userId);
 		boolean ready = status == OnboardingStatus.READY;
+		// 이미 가입을 마친 회원은 남길 것이 없으므로 UPDATE 와 다시 읽기를 하지 않는다(앱 실행마다 부르는 API).
+		if (ready && !completedBefore) {
+			userRepository.markSignupCompleted(userId, clock.instant());
+		}
 		SurveyService.Progress survey = surveyService.progress(userId);
 		PersonalAnalysisService.Recovery submitted = analysisService.recovery(userId);
 		Long activeResultId = profileRepository.findById(userId).map(Profile::getActivePersonalityId).orElse(null);
 		MemberAccessRepository.SettingsVersions versions = members.settingsVersions(userId);
-		// 가입 완료 bulk 갱신 직후이므로 잠글 때 읽은 엔티티의 이전 값 대신 실제 DB 값을 사용한다.
-		return new OnboardingDetailResponse(status, members.signupCompleted(userId), ready,
+		// signupCompleted 는 MemberAccessRepository.signupCompleted 와 같은 기준(ACTIVE 이고 가입 완료 시각이 있음).
+		return new OnboardingDetailResponse(status, active && (completedBefore || ready), ready,
 			ready && members.matchingEnabled(userId),
 			survey.sessionId(), survey.answeredCount(), survey.questionCount(), survey.nextQuestionId(),
 			submitted.sessionId(), submitted.analysis(), activeResultId,
@@ -86,8 +102,8 @@ public class OnboardingService {
 	 */
 	@Transactional(readOnly = true)
 	public boolean canAccess(long userId, OnboardingStatus required) {
-		OnboardingStatus status = statusOf(userId);
-		if (!status.isBefore(required)) {
+		OnboardingStatus status = statusUpTo(userId, required);
+		if (status == required) {
 			return true;
 		}
 		return status != OnboardingStatus.AGREEMENT_REQUIRED && signupCompleted(userId);
