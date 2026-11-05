@@ -2,6 +2,9 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
     <application>
+        <!-- 차단/나가기 저장소 복구 실패 안내를 확인하는 별도 테스트 호스트. -->
+        <activity android:name="com.ssafy.e106.features.safety.SafetyRestoreTestActivity" android:exported="true"
+            android:theme="@android:style/Theme.Material.Light.NoActionBar" />
         <!-- 신고 권한 재조회 실패 이후 실제 버튼 복구를 검사하는 서버와 분리된 호스트. -->
         <activity android:name="com.ssafy.e106.features.report.ReportEvidenceTestActivity" android:exported="true"
             android:theme="@android:style/Theme.Material.Light.NoActionBar" />
