@@ -47,6 +47,24 @@ public class Keyring {
 	private String credentialPublicKey;
 	private Instant credentialRevokedAt;
 	private UUID ownerGeneration;
+	// Device-authenticated counter. Unknown legacy rows stay null until a signed epoch-zero challenge/proof.
+	private Long ownershipEpoch;
+
+	public void confirmOwnershipEpoch(long epoch) {
+		if (epoch < 0 || (ownershipEpoch == null ? epoch != 0 : ownershipEpoch != epoch)) {
+			throw new IllegalStateException("Device ownership epoch is unconfirmed");
+		}
+		ownershipEpoch = epoch;
+	}
+
+	public void releaseAfterVerifiedReset(UUID expectedGeneration, long fromEpoch) {
+		if (fromEpoch < 0 || fromEpoch == Long.MAX_VALUE
+			|| (ownershipEpoch != null && ownershipEpoch != fromEpoch)) {
+			throw new IllegalStateException("Reset ownership epoch changed");
+		}
+		releaseAfterVerifiedReset(expectedGeneration);
+		ownershipEpoch = fromEpoch + 1;
+	}
 
 	public Keyring(String serialNumber, String firmwareVersion) {
 		this.serialNumber = Objects.requireNonNull(serialNumber);
@@ -62,6 +80,19 @@ public class Keyring {
 		ownerGeneration = Objects.requireNonNull(generation);
 		ownerUserId = userId;
 		state = KeyringState.REGISTERED;
+		syncedSettingsVersion = null;
+		syncedAt = null;
+	}
+
+	/** 검증된 기기 초기화 증명 뒤에만 해제한다. 영구 식별자·기기 인증키는 보존한다. */
+	public void releaseAfterVerifiedReset(UUID expectedGeneration) {
+		if (state != KeyringState.REGISTERED || !Objects.equals(ownerGeneration, expectedGeneration)
+			|| expectedGeneration == null) {
+			throw new IllegalStateException("Reset ownership changed");
+		}
+		ownerUserId = null;
+		ownerGeneration = null;
+		state = KeyringState.UNBOUND;
 		syncedSettingsVersion = null;
 		syncedAt = null;
 	}

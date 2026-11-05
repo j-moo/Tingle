@@ -1,7 +1,7 @@
 {
-  "version": "1.8.0-keyring-server-proofs",
+  "version": "1.9.0-keyring-ownership-epoch",
   "total_tables": 30,
-  "total_columns": 272,
+  "total_columns": 274,
   "physical_foreign_keys": false,
   "tables": {
     "personality": {
@@ -1053,6 +1053,18 @@
           "name": "owner_generation",
           "type": "uuid",
           "meaning": "현재 소유 등록 세대. 새로 검증한 등록에서만 발급하며 기존 소유자의 미상 세대를 임의 UUID로 채우지 않는다.",
+          "nullable": true,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "ownership_epoch",
+          "type": "bigint",
+          "meaning": "서버가 기기 서명으로 확인한 소유 카운터. 기존 미확인 값은 NULL 유지하며 서명된 최초 epoch0 또는 검증된 초기화 완료로만 설정한다. 재등록 시 보존하고 임의 backfill하지 않는다.",
           "nullable": true,
           "pk": false,
           "increment": false,
@@ -3097,6 +3109,18 @@
           "type": "bigint",
           "meaning": "실행에 고정한 양수 설정 버전. ACK 시 현재 설정과 함께 재검증한다.",
           "nullable": false,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "ownership_epoch",
+          "type": "bigint",
+          "meaning": "이 설정 실행에 고정한 기기 소유 카운터. 확인된 카운터는 등록·서버 설정·STORED v2 서명에 결속한다. 기존 v1 실행의 미확인 값은 NULL로 남기며 소급 변환하지 않는다.",
+          "nullable": true,
           "pk": false,
           "increment": false,
           "unique": false,

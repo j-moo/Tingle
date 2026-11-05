@@ -11,6 +11,7 @@ import java.util.UUID;
 public final class ServerSettingsTranscript {
 
 	public static final String PROTOCOL_VERSION = "tingle-dev-settings-proof-v1";
+	public static final String PROTOCOL_VERSION_2 = "tingle-dev-settings-proof-v2";
 	public static final String PAYLOAD_FORMAT = "tingle-dev-settings-v1";
 
 	private final byte[] bytes;
@@ -21,23 +22,41 @@ public final class ServerSettingsTranscript {
 		bytes = (String.join("\n", fields) + "\n").getBytes(StandardCharsets.UTF_8);
 	}
 
+	private ServerSettingsTranscript(String serverKeyId, byte[] bytes) {
+		this.serverKeyId = serverKeyId;
+		this.bytes = bytes.clone();
+	}
+
 	/** payload 원문 대신 SHA-256을 결속한다. JSON 직렬화 순서에 의존하지 않는다. */
 	public static ServerSettingsTranscript create(String serverKeyId, String serial, String deviceKeyId, long deviceId,
 		UUID ownerGeneration, UUID syncRunId, long settingsVersion, String payloadFormat,
 		byte[] payload, String nonce, String deviceNonce, Instant serverTime) {
+		return create(serverKeyId, serial, deviceKeyId, deviceId, ownerGeneration, syncRunId, settingsVersion,
+			payloadFormat, payload, nonce, deviceNonce, serverTime, null);
+	}
+
+	public static ServerSettingsTranscript create(String serverKeyId, String serial, String deviceKeyId, long deviceId,
+		UUID ownerGeneration, UUID syncRunId, long settingsVersion, String payloadFormat,
+		byte[] payload, String nonce, String deviceNonce, Instant serverTime, Long ownershipEpoch) {
 		if (deviceId <= 0 || settingsVersion <= 0 || ownerGeneration == null || syncRunId == null
 			|| payload == null || payload.length != 1 || (payload[0] != 0 && payload[0] != 1)
 			|| !PAYLOAD_FORMAT.equals(payloadFormat) || serverTime == null
-			|| serverTime.getEpochSecond() <= 0 || serverTime.getNano() != 0) {
+			|| serverTime.getEpochSecond() <= 0 || serverTime.getNano() != 0
+			|| (ownershipEpoch != null && ownershipEpoch < 0)) {
 			throw new IllegalArgumentException("Invalid settings signature input");
 		}
 		KeyringProofTranscript.decodeBase64Url(nonce, 32);
 		KeyringProofTranscript.decodeBase64Url(deviceNonce, 32);
-		return new ServerSettingsTranscript(identifier(serverKeyId), "TINGLE-KEYRING-SERVER-SETTINGS", PROTOCOL_VERSION,
+		String protocol = ownershipEpoch == null ? PROTOCOL_VERSION : PROTOCOL_VERSION_2;
+		ServerSettingsTranscript base = new ServerSettingsTranscript(identifier(serverKeyId),
+			"TINGLE-KEYRING-SERVER-SETTINGS", protocol,
 			serverKeyId, identifier(serial), identifier(deviceKeyId), Long.toString(deviceId),
 			ownerGeneration.toString(), syncRunId.toString(), Long.toString(settingsVersion),
 			identifier(payloadFormat), hash(payload), nonce,
 			deviceNonce, Long.toString(serverTime.getEpochSecond()));
+		return ownershipEpoch == null ? base : new ServerSettingsTranscript(serverKeyId,
+			(new String(base.bytes(), StandardCharsets.UTF_8) + ownershipEpoch + "\n")
+				.getBytes(StandardCharsets.UTF_8));
 	}
 
 	String serverKeyId() {

@@ -30,6 +30,8 @@ public class RegistrationChallengeService {
 	private final RefreshTokenRepository sessions;
 	private final OnboardingService onboarding;
 	private final Clock clock;
+	@org.springframework.beans.factory.annotation.Value("${app.keyring-reset.enabled:false}")
+	private boolean resetEnabled;
 
 	@Transactional
 	public Challenge issue(long userId, UUID familyId, UUID requestKey) {
@@ -53,7 +55,8 @@ public class RegistrationChallengeService {
 				random.nextBytes(bytes);
 				String nonce = Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
 				return challenges.saveAndFlush(new RegistrationChallenge(UUID.randomUUID(), userId, requestKey,
-					nonce, now));
+					nonce, now, resetEnabled ? com.e106.tingle.keyring.proof.KeyringProofTranscript.PROTOCOL_VERSION_2
+						: com.e106.tingle.keyring.proof.KeyringProofTranscript.PROTOCOL_VERSION));
 			});
 		return new Challenge(challenge.getChallengeId(), challenge.getNonce(), challenge.getExpiresAt(),
 			challenge.getProtocolVersion());

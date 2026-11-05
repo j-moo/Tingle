@@ -69,10 +69,18 @@ public final class ServerSettingsSigner {
 		if (!keyId.equals(transcript.serverKeyId())) {
 			throw new IllegalArgumentException("Transcript server key does not match signer");
 		}
+		return sign(transcript.bytes());
+	}
+
+	/** Reset authorization uses its own domain-separated canonical transcript with the same reviewed dev key. */
+	public String sign(byte[] transcript) {
+		if (transcript == null || transcript.length == 0 || transcript.length > 4096) {
+			throw new IllegalArgumentException("Invalid signing transcript");
+		}
 		try {
 			Signature signer = Signature.getInstance("Ed25519");
 			signer.initSign(privateKey);
-			signer.update(transcript.bytes());
+			signer.update(transcript);
 			return Base64.getUrlEncoder().withoutPadding().encodeToString(signer.sign());
 		} catch (GeneralSecurityException exception) {
 			throw new IllegalStateException("Settings signing unavailable", exception);
