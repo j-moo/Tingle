@@ -57,6 +57,10 @@ checkstyle {
 }
 
 tasks.named('test') {
+	dependsOn tasks.named('bootJar')
+	doFirst {
+		systemProperty 'tingle.restore-ops.jar', tasks.named('bootJar').get().archiveFile.get().asFile.absolutePath
+	}
 	useJUnitPlatform {
 		excludeTags 'ai-risk-http', 'ai-explanation-http'
 	}

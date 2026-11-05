@@ -57,6 +57,14 @@ public class RestoreReplayService {
 	}
 
 	/** Caller must already drain requests/workers and hold the infrastructure serving fence. */
+	public void fenceServing() throws IOException {
+		if (markerFile.isEmpty()) {
+			throw new IOException("Restore marker is not configured");
+		}
+		invalidateProof(safeMarker());
+	}
+
+	/** Caller must already drain requests/workers and hold the infrastructure serving fence. */
 	public boolean replayAndVerify(String expectedFingerprint) {
 		try {
 			if (markerFile.isEmpty()) {
@@ -178,6 +186,12 @@ public class RestoreReplayService {
 			throw new IllegalStateException("Restore deletion generation changed");
 		}
 		Context actual = deletions.lockContext(expected.matchingId(), clock.instant(), expected.dueAt()).orElse(null);
+		ExternalCleanupState progress = external.lock(expected.matchingId())
+			.map(ExternalCleanupRepository.Row::cleanup).orElse(null);
+		if (actual == null && replayAlreadyApplied(intent, current, progress)) {
+			// Resume this restore's external verification without creating a fresh epoch on every retry.
+			return;
+		}
 		if (actual != null) {
 			if (actual.chatId() != expected.chatId() || !actual.createdAt().equals(expected.createdAt())
 				|| !actual.closedAt().equals(expected.closedAt())
@@ -192,10 +206,25 @@ public class RestoreReplayService {
 			Status.DB_DELETED, current == null ? 1 : current.attempt() + 1, null, null, intent.inventory(), null,
 			current == null || current.dbDeletedAt() == null ? clock.instant() : current.dbDeletedAt()));
 		external.lock(expected.matchingId()).ifPresent(row -> {
-			if (row.cleanup() != null) {
-				external.save(expected.matchingId(), row.cleanup().invalidate("DB_RESTORED"));
-			}
+			ExternalCleanupState state = row.cleanup() == null
+				? new ExternalCleanupState(1, UUID.randomUUID(), null, null,
+					ExternalCleanupState.Status.BLOCKED, 0, null, null, List.of(), List.of(), List.of(), null, null)
+				: row.cleanup();
+			external.save(expected.matchingId(), state.forDbRestore(UUID.fromString(generation)));
 		});
+	}
+
+	private boolean replayAlreadyApplied(ChatDeletionState intent, ChatDeletionState current,
+		ExternalCleanupState progress) {
+		if (current == null || current.status() != Status.DB_DELETED || current.dbDeletedAt() == null
+			|| !current.context().equals(intent.context()) || !current.inventory().equals(intent.inventory())
+			|| progress == null || !UUID.fromString(generation).equals(progress.dbRestoreGeneration())
+			|| progress.binding() == null) {
+			return false;
+		}
+		var binding = progress.binding();
+		return current.context().equals(binding.context()) && current.generation().equals(binding.dbGeneration())
+			&& current.attempt() == binding.dbAttempt() && current.dbDeletedAt().equals(binding.firstDbDeletedAt());
 	}
 
 	private Path safeMarker() throws IOException {
