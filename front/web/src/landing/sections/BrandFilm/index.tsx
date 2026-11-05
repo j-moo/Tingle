@@ -13,7 +13,7 @@ import styles from './BrandFilm.module.css'
 //   영상 카드 밖 검은 영역의 오른쪽(또는 아래 "다음")을 누르면 다음 섹션(일상 영상), 왼쪽은 이전 섹션(Let's Do it!!)
 export const order = 30
 
-const BRAND_FILM_URL = 'https://www.youtube.com/watch?v=sB1Mr-eXR3c'                 // 임시 영상(브랜드 필름 나오면 교체)
+const BRAND_FILM_URL = 'https://youtu.be/UMA1McwDOhI'                               // 팅글 브랜드 필름(TINGLE 팅글 채널)
 const TITLE = '스친 순간, 새로운 시작.'                                                // 영상 위 문구(임시 — 브랜드 필름 문구 정해지면 교체)
 const IDLE_BLUR = 8                                                                    // 작은 영상일 때 흐림(px). 나타나는 동안은 여기에 +16, 커지며 0
 const COVER_BLUR = 28                                                                  // 다음 섹션이 다 덮었을 때 흐림(px)
