@@ -147,7 +147,7 @@ export default function BrandFilm() {
       <div ref={track} className={styles.track}>
         <div ref={stage} className={`${styles.sticky} ${expanded ? styles.expanded : ''}`} role={expanded ? 'dialog' : undefined} aria-modal={expanded || undefined} aria-label={expanded ? 'tingle 브랜드 필름' : undefined}>
           <div className={styles.frame}>
-            <YouTube className={styles.video} url={BRAND_FILM_URL} title='tingle 브랜드 필름' fit='contain' player load={load} poster={!playing} playing={playing} />
+            <YouTube className={styles.video} url={BRAND_FILM_URL} title='tingle 브랜드 필름' load={load} poster={!playing} playing={playing} />
           </div>
           {BRAND_FILM_URL && <p className={styles.title} aria-hidden>{TITLE}</p>}
           {BRAND_FILM_URL && (portrait || full) && !playing && (
