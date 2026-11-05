@@ -18,25 +18,26 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 
 /**
- * 약관 조회와 동의. 경로는 docs/contracts/api/auth.md 를 따른다.
+ * 약관 조회와 동의. 경로는 팀 공유 인증 API 계약 를 따른다.
  */
 @RestController
 @RequiredArgsConstructor
 public class AgreementController {
 
 	private final AgreementService agreementService;
+	private final OptionalConsentService optionalConsentService;
 	private final OnboardingService onboardingService;
 
-	@GetMapping("/api/v1/agreements")
+	@GetMapping("/api/agreements")
 	public AgreementsResponse getCurrentAgreements() {
 		return AgreementsResponse.of(agreementService.currentItems());
 	}
 
-	@PostMapping("/api/v1/users/me/agreements")
+	@PostMapping("/api/users/{userId}/agreements")
 	@RequiresOnboarding(OnboardingStatus.AGREEMENT_REQUIRED)
 	public OnboardingResponse agree(@AuthenticationPrincipal Jwt jwt, @Valid @RequestBody AgreeRequest request) {
 		long userId = Long.parseLong(jwt.getSubject());
-		agreementService.agree(userId, request.agreements());
+		optionalConsentService.agree(userId, request.agreements());
 		return new OnboardingResponse(onboardingService.recordProgress(userId));
 	}
 }

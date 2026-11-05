@@ -11,7 +11,7 @@ import com.e106.tingle.global.error.BusinessException;
 import com.e106.tingle.global.error.ErrorCode;
 
 /**
- * 프로필 입력값 규칙 (docs/contracts/api/auth.md "입력값 규칙"). FE도 같은 규칙으로 검사한다.
+ * 프로필 입력값 규칙 (팀 공유 인증 API 계약 "입력값 규칙"). FE도 같은 규칙으로 검사한다.
  */
 public final class ProfileRules {
 

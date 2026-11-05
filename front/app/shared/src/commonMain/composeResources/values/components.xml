@@ -1,0 +1,4 @@
+<resources>
+    <string name="button_loading">처리 중…</string>
+    <string name="button_previous">이전</string>
+</resources>

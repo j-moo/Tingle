@@ -1,0 +1,10 @@
+<resources>
+    <string name="chat_questions_expand">대화 주제 추천</string>
+    <string name="chat_questions_collapse">추천 질문 접기</string>
+    <string name="chat_questions_help">질문을 골라 입력창에 넣어 보세요. 수정한 뒤 직접 전송할 수 있어요.</string>
+    <string name="chat_questions_pending">추천 질문을 준비하고 있어요. 채팅은 계속 이용할 수 있어요.</string>
+    <string name="chat_questions_replace_title">작성 중인 내용을 바꿀까요?</string>
+    <string name="chat_questions_replace_help">선택한 질문으로 입력창의 내용을 바꿔요. 전송 버튼을 누르기 전에는 상대에게 보내지지 않아요.</string>
+    <string name="chat_questions_replace">질문으로 바꾸기</string>
+    <string name="chat_questions_keep">기존 내용 유지</string>
+</resources>

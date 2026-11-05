@@ -1,0 +1,9 @@
+/* 섹션이 아직 없어도 푸터가 네비 밑에 깔리지 않게 본문은 최소 한 화면 */
+.main {
+  min-height: 100svh;
+}
+/* 인트로(첫 섹션)는 화면에 붙어 있고 다음 섹션들이 레이어처럼 그 위로 올라와 덮는다(Intro.module.css 의 sticky) */
+.main > :not(:first-child) {
+  position: relative;
+  z-index: 1;
+}

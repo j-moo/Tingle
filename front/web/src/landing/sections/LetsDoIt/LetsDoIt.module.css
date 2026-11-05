@@ -1,0 +1,350 @@
+/* 데스크톱: 패널 1120(화면이 좁으면 양옆 80 남김) · 간격 48 → 양옆에 이웃 패널이 걸쳐 보임
+   모바일: 패널 = 화면 - 64 · 간격 12 → 양옆 20px 만큼 이웃 이미지만 보임(글은 24px 들여 안 보이게) */
+.section {
+  --panel-w: min(1120px, 100vw - 160px);
+  --gap: 48px;
+  --i: 0;
+  --hold: 1.5;                           /* 패널 하나가 머무는 스크롤 길이(화면 배수). 길게/짧게는 이 값만 */
+  --rise-gap: 30svh;                     /* 인트로 위로 올라올 때 "Let's Do it!!" 위 빈 여백 */
+  height: calc((var(--steps) * var(--hold) + 1) * 100svh + var(--rise-gap));   /* 고정된 채 스크롤하는 거리 = 단계 수 × 머묾 길이 */
+  padding-top: var(--rise-gap);
+  background: #fff;                      /* 인트로 위로 올라오는 레이어(각진 모서리, 한 줄로) */
+  box-shadow: 0 -16px 48px rgb(0 0 0 / 8%);
+}
+
+.sticky {
+  position: sticky;
+  top: 0;
+  display: flex;
+  height: 100svh;
+  flex-direction: column;
+  justify-content: center;
+  gap: 14px;
+  padding-top: var(--nav-height);
+  overflow: hidden;
+}
+
+.label {
+  width: var(--panel-w);
+  margin: 0 auto;
+  color: var(--brand-ink);
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1.4;
+}
+
+.track {
+  display: flex;
+  gap: var(--gap);
+  margin: 0;
+  padding: 0 calc((100vw - var(--panel-w)) / 2);
+  list-style: none;
+  transform: translateX(calc(var(--i) * -1 * (var(--panel-w) + var(--gap))));
+  transition: transform 0.7s cubic-bezier(0.34, 1.35, 0.64, 1);   /* 단계가 바뀌면 빠르게 출발해 살짝 넘쳤다 돌아오며 멈춤 */
+  will-change: transform;
+}
+
+/* 데스크톱 패널 = 회색 박스 안에 이미지 + 글 */
+.panel {
+  display: flex;
+  flex: none;
+  width: var(--panel-w);
+  height: min(600px, 100svh - var(--nav-height) - 120px);
+  align-items: center;
+  gap: 48px;
+  padding: 48px 32px;
+  border-radius: 32px;
+  background: var(--bg-surface);
+}
+
+.visual {
+  flex: none;
+  height: 100%;
+  max-width: 50%;                        /* 이미지가 커져도 글 칸이 남게 */
+  aspect-ratio: 1;
+  border-radius: 20px;
+  background: var(--neutral-150);
+  object-fit: cover;
+}
+
+.text {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 20px;
+}
+.step {
+  color: var(--text-secondary);
+  font-size: 18px;
+  font-weight: 700;
+}
+.title {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: clamp(32px, 3.4vw, 48px);
+  font-weight: 900;
+  line-height: 1.25;
+  letter-spacing: -0.02em;
+}
+.body {
+  color: #4d4d4d;
+  font-size: 22px;
+  line-height: 1.5;
+}
+
+/* 진행 막대: 패널 폭을 3등분, 현재 단계만 진하게 */
+.bars {
+  display: flex;
+  width: var(--panel-w);
+  gap: 15px;
+  margin: 6px auto 0;
+}
+/* 막대 = 버튼(누르면 그 단계로). 누르기 쉽게 높이 24px(최소 터치 영역), 보이는 막대는 가운데 4px(::after) */
+.bars button {
+  position: relative;
+  display: flex;
+  flex: 1;
+  height: 24px;
+  align-items: center;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+}
+.bars button::after {
+  width: 100%;
+  height: 4px;
+  border-radius: 4px;
+  background: var(--neutral-150);
+  content: '';
+  transition: background 0.3s, height 0.2s ease;
+}
+/* 호버 · 키보드 포커스: 막대가 두꺼워지고 진해지며 위에 단계 이름(STEP n)이 떠오름 */
+.bars button::before {
+  position: absolute;
+  bottom: 100%;
+  left: 0;
+  color: var(--text-secondary);
+  content: attr(data-label);
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(4px);
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+.bars button:hover::after,
+.bars button:focus-visible::after {
+  height: 8px;
+  background: var(--neutral-400);
+}
+.bars button:hover::before,
+.bars button:focus-visible::before {
+  opacity: 1;
+  transform: none;
+}
+.bars .on::after,
+.bars .on:hover::after,
+.bars .on:focus-visible::after {
+  background: var(--brand-ink);
+}
+
+/* 태블릿(721~1023): 박스는 두고 이미지 위 · 글 아래로 쌓음(가로로 두면 글 칸이 0 이 됨) */
+@media (min-width: 721px) and (max-width: 1023px) {
+  .section {
+    --panel-w: calc(100vw - 96px);
+    --gap: 24px;
+  }
+  .panel {
+    height: auto;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 24px;
+    padding: 32px;
+  }
+  .visual {
+    width: 100%;
+    height: auto;
+    max-width: none;
+    max-height: 40svh;
+    aspect-ratio: 16 / 10;
+  }
+  .title {
+    font-size: 36px;
+  }
+  .body {
+    font-size: 18px;
+  }
+}
+
+/* 모바일: 박스 없음, 이미지 위 · 글 아래 */
+@media (max-width: 720px) {
+  .section {
+    --panel-w: calc(100vw - 64px);
+    --gap: 12px;
+  }
+  .label {
+    font-size: 14px;
+  }
+  .panel {
+    height: auto;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 20px;
+    padding: 0;
+    border-radius: 0;
+    background: none;
+  }
+  .visual {
+    width: 100%;
+    height: auto;
+    max-width: none;
+    aspect-ratio: 326 / 300;
+    border-radius: 16px;
+  }
+  .text {
+    gap: 12px;
+    padding-inline: 24px;
+  }
+  .step {
+    font-size: 14px;
+  }
+  .title {
+    font-size: 28px;
+  }
+  .body {
+    font-size: 16px;
+  }
+}
+
+/* 세로 화면(모바일): 스크롤에 묶인 고정 · 가로 이동 대신 패널 줄을 직접 좌우로 밀어(scroll-snap) 넘기고, 진행 막대를 누르면 그 패널로(index.tsx) */
+/* 동작 줄이기, 또는 높이가 낮은 화면(휴대폰 가로 등 — 고정하면 설명이 화면 아래로 잘림): 고정 · 가로 이동 없이 세로로 */
+@media (prefers-reduced-motion: reduce), (max-height: 600px) {
+  .section {
+    height: auto;
+    padding-block: calc(var(--nav-height) + 48px) 48px;
+  }
+  .sticky {
+    position: static;
+    height: auto;
+    padding-top: 0;
+  }
+  .track {
+    flex-direction: column;
+    align-items: center;
+    padding: 0;
+    transform: none;
+    transition: none;
+  }
+  .bars {
+    display: none;
+  }
+}
+@media (max-height: 600px) {
+  .track {
+    gap: 40px;
+  }
+  .visual {
+    max-height: 50svh;                   /* 낮은 화면: 이미지 바로 아래 설명이 보이게 */
+  }
+}
+
+/* 누르기 모드(세로 · 폰 가로): 스크롤에 묶인 고정 · 가로 이동 대신 패널 줄을 직접 좌우로 밀어(scroll-snap) 넘기고, 진행 막대 · 화면 누르기로 넘김(index.tsx)
+   아래 '동작 줄이기 · 낮은 화면 세로 나열' 보다 뒤에 둬서 덮음 — 세로 나열이면 단계 계산이 안 돼 화면이 잠긴 채 갇힘 */
+@media (orientation: portrait), (orientation: landscape) and (max-height: 500px) {
+  .section {
+    height: auto;
+    padding-block: var(--rise-gap) 0;     /* 낮은 화면 세로 나열 블록의 여백을 되돌림 */
+  }
+  .sticky {
+    position: relative;
+    height: auto;
+    min-height: 100svh;
+    padding-block: calc(var(--nav-height) + 24px) 32px;
+  }
+  .track {
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    scroll-snap-type: x mandatory;
+    scrollbar-width: none;
+    transform: none;
+    transition: none;
+  }
+  .track::-webkit-scrollbar {
+    display: none;
+  }
+  .panel {
+    scroll-snap-align: center;
+  }
+  .track {
+    flex-direction: row;
+    align-items: stretch;
+    gap: var(--gap);
+    padding: 0 calc((100vw - var(--panel-w)) / 2);
+  }
+  .bars {
+    display: flex;
+  }
+}
+
+/* 폰 가로(누르기 모드): 높이가 낮아도 한 화면에 패널 하나(이미지 왼쪽 · 글 오른쪽) + 진행 막대. 위의 낮은 화면 세로 나열 규칙을 되돌림 */
+@media (orientation: landscape) and (max-height: 500px) {
+  .section {
+    --panel-w: calc(100vw - 96px);
+    --gap: 16px;
+    padding-block: var(--rise-gap) 0;
+  }
+  .sticky {
+    position: relative;
+    height: 100dvh;
+    min-height: 0;
+    gap: 8px;
+    padding-block: 68px 12px;
+  }
+  .label {
+    font-size: 14px;
+  }
+  .track {
+    min-height: 0;
+    flex: 1;
+    flex-direction: row;
+    align-items: stretch;
+    gap: var(--gap);
+    padding: 0 calc((100vw - var(--panel-w)) / 2);
+  }
+  .panel {
+    height: auto;
+    flex-direction: row;
+    align-items: center;
+    gap: 20px;
+    padding: 14px;
+    border-radius: 20px;
+    background: var(--bg-surface);
+  }
+  .visual {
+    width: auto;
+    height: 100%;
+    max-width: 40%;
+    max-height: none;
+    aspect-ratio: 1;
+    border-radius: 12px;
+  }
+  .text {
+    gap: 6px;
+    padding-inline: 0;
+  }
+  .step {
+    font-size: 12px;
+  }
+  .title {
+    font-size: 20px;
+  }
+  .body {
+    font-size: 13px;
+  }
+  .bars {
+    display: flex;
+    margin-top: 0;
+  }
+}

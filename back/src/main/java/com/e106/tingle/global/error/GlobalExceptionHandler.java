@@ -8,6 +8,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.context.request.WebRequest;
+import org.springframework.web.multipart.MaxUploadSizeExceededException;
 import org.springframework.web.servlet.mvc.method.annotation.ResponseEntityExceptionHandler;
 
 import lombok.extern.slf4j.Slf4j;
@@ -31,6 +32,14 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
 	public ResponseEntity<ErrorResponse> handleUnexpected(Exception exception) {
 		log.error("처리하지 못한 예외", exception);
 		return json(HttpStatus.INTERNAL_SERVER_ERROR, ErrorCode.INTERNAL_ERROR);
+	}
+
+	// 업로드 한도(spring.servlet.multipart) 초과는 스프링 기본 413 대신 사진 규칙 위반(400 PHOTO_INVALID)으로 응답한다.
+	@Override
+	protected ResponseEntity<Object> handleMaxUploadSizeExceededException(MaxUploadSizeExceededException exception,
+		HttpHeaders headers, HttpStatusCode status, WebRequest request) {
+		return ResponseEntity.status(HttpStatus.BAD_REQUEST).contentType(MediaType.APPLICATION_JSON)
+			.body(ErrorResponse.from(ErrorCode.PHOTO_INVALID));
 	}
 
 	@Override

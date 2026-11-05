@@ -1,10 +1,12 @@
 package com.e106.tingle;
 
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import java.time.Clock;
@@ -30,6 +32,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
 import org.springframework.test.web.servlet.ResultMatcher;
@@ -38,6 +41,8 @@ import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilde
 import com.e106.tingle.auth.SocialProvider;
 import com.e106.tingle.auth.SocialVerifier;
 import com.e106.tingle.auth.SocialVerifier.SocialAccount;
+import com.e106.tingle.personality.PersonalAnalysisClient;
+import com.e106.tingle.user.ProfileAnalysisApplicationService;
 
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
@@ -49,6 +54,7 @@ import tools.jackson.databind.json.JsonMapper;
 public abstract class IntegrationTestSupport {
 
 	protected static final String VERSION = "2026-10-19";
+	protected static final String OPTIONAL_CONSENT_VERSION = "2026-11-02";
 
 	@Autowired
 	protected MockMvc mockMvc;
@@ -65,6 +71,14 @@ public abstract class IntegrationTestSupport {
 	@MockitoBean
 	protected Clock clock;
 
+	// AI 서버 대신. 기본값 ready()=false 라 따로 설정하지 않은 테스트에서는 분석을 실행하지 않는다.
+	@MockitoBean
+	protected PersonalAnalysisClient personalAnalysisClient;
+
+	// 실제 동작 그대로. 분석 결과 적용의 일시 오류를 흉내 낼 때만 바꾼다.
+	@MockitoSpyBean
+	protected ProfileAnalysisApplicationService profileAnalysisApplications;
+
 	protected final AtomicReference<Duration> timeShift = new AtomicReference<>(Duration.ZERO);
 
 	@BeforeEach
@@ -77,9 +91,10 @@ public abstract class IntegrationTestSupport {
 	// ---------- 로그인·토큰 ----------
 
 	protected JsonNode login(String provider, String socialId) throws Exception {
-		given(socialVerifier.verify(eq(SocialProvider.fromPath(provider)), eq("social-" + socialId)))
+		given(socialVerifier.verify(eq(SocialProvider.fromPath(provider)),
+			argThat(request -> ("social-" + socialId).equals(request.token()))))
 			.willReturn(new SocialAccount(socialId, null));
-		String response = mockMvc.perform(post("/api/v1/auth/" + provider)
+		String response = mockMvc.perform(post("/api/auth/" + provider)
 				.contentType(MediaType.APPLICATION_JSON)
 				.content("{\"token\":\"social-" + socialId + "\"}"))
 			.andExpect(status().isOk())
@@ -88,13 +103,13 @@ public abstract class IntegrationTestSupport {
 	}
 
 	protected JsonResult refresh(String refreshToken) throws Exception {
-		return new JsonResult(mockMvc.perform(post("/api/v1/auth/token/refresh")
+		return new JsonResult(mockMvc.perform(post("/api/auth/token/refresh")
 			.contentType(MediaType.APPLICATION_JSON)
 			.content("{\"refreshToken\":\"" + refreshToken + "\"}")));
 	}
 
 	protected ResultActions logout(String refreshToken) throws Exception {
-		return mockMvc.perform(post("/api/v1/auth/logout")
+		return mockMvc.perform(post("/api/auth/logout")
 			.contentType(MediaType.APPLICATION_JSON)
 			.content("{\"refreshToken\":\"" + refreshToken + "\"}"));
 	}
@@ -115,16 +130,16 @@ public abstract class IntegrationTestSupport {
 	}
 
 	protected ResultActions agree(JsonNode tokens, List<Map<String, Object>> answers) throws Exception {
-		return perform(post("/api/v1/users/me/agreements"), tokens, toJson(Map.of("agreements", answers)));
+		return perform(post(me(tokens, "/agreements")), tokens, toJson(Map.of("agreements", answers)));
 	}
 
 	protected ResultActions patchProfile(JsonNode tokens, Map<String, Object> fields) throws Exception {
-		return perform(patch("/api/v1/users/me/profile"), tokens, toJson(fields));
+		return perform(patch(me(tokens, "/profile")), tokens, toJson(fields));
 	}
 
 	// "프로필 등록 완료"
 	protected ResultActions completeProfile(JsonNode tokens) throws Exception {
-		return perform(post("/api/v1/users/me/profile/complete"), tokens, null);
+		return perform(post(me(tokens, "/profile/complete")), tokens, null);
 	}
 
 	/**
@@ -134,47 +149,70 @@ public abstract class IntegrationTestSupport {
 	protected String completeOnboarding(JsonNode tokens) throws Exception {
 		long userId = userIdOf(tokens);
 		agree(tokens).andExpect(status().isOk());
-		long bindingId = bindKeyring(userId);
+		long keyringId = bindKeyring(userId);
 		String nickname = uniqueNickname();
 		patchProfile(tokens, fullProfile(nickname)).andExpect(status().isOk());
 		completeProfile(tokens).andExpect(status().isOk());
-		long analysisId = finishSurvey(userId);
+		long personalityId = finishSurvey(userId);
 		setPreferences(userId);
-		acknowledgeSync(userId, bindingId, analysisId);
+		acknowledgeSync(userId, keyringId, personalityId);
 		// 앱처럼 단계를 조회하면 READY 도달이 기록된다(가입 완료 시각)
-		perform(get("/api/v1/users/me/onboarding"), tokens, null).andExpect(status().isOk());
+		perform(get(me(tokens, "/onboarding")), tokens, null).andExpect(status().isOk());
 		return nickname;
+	}
+
+	// 선택 정보(PROFILE_PHOTO·PROFILE_INTRODUCTION·PROFILE_RELIGION) 동의. 이미 동의했으면 기록이 늘지 않는다.
+	protected ResultActions consentOptional(JsonNode tokens, String type, boolean agreed) throws Exception {
+		return perform(put(me(tokens, "/optional-consents/" + type)), tokens,
+			"{\"agreed\":" + agreed + ",\"version\":\"" + OPTIONAL_CONSENT_VERSION + "\"}");
 	}
 
 	// ---------- 아직 API가 없는 가입 단계 (ERD 테이블에 직접 기록) ----------
 
 	protected long bindKeyring(long userId) {
-		Long deviceId = jdbc.queryForObject("insert into keyrings(public_device_id,serial_hash,"
-			+ "verification_key_ref,firmware_version) values (?,?,'test-only','test') returning device_id", Long.class,
-			UUID.randomUUID(), UUID.randomUUID().toString().getBytes());
-		return jdbc.queryForObject("insert into keyring_bindings(device_id,user_id,bound_at) values (?,?,now()) "
-			+ "returning binding_id", Long.class, deviceId, userId);
+		// 등록만으로 ACK를 만들지 않는다. 실제 기기 번호를 반환한다.
+		return jdbc.queryForObject("insert into keyring(serial_number,firmware_version,owner_user_id,state) "
+			+ "values (?,'test',?,'REGISTERED') returning id", Long.class, UUID.randomUUID().toString(), userId);
 	}
 
 	protected long finishSurvey(long userId) {
-		Long responseId = jdbc.queryForObject("insert into survey_responses(user_id,version_code,client_request_id,"
-			+ "response_json,completed_at) values (?,'SIS-Q-1.1',?,'{}',now()) returning response_id", Long.class,
-			userId, UUID.randomUUID());
-		return jdbc.queryForObject("insert into analysis_results(response_id,version_code,outcome,result_json) "
-			+ "values (?,'SIS-A-1','SUCCEEDED','{}') returning result_id", Long.class, responseId);
+		// 성공 분석을 명시적으로 준비하는 fixture다. 실제 설문 분석·기기 검증을 대신하지 않는다.
+		Long surveyId = jdbc.queryForObject("insert into survey(user_id,survey_version,revision,completed_at) "
+			+ "values (?,'SIS-Q-1.1-100',0,now()) returning id", Long.class, userId);
+		Long personalityId = jdbc.queryForObject("insert into personality(survey_id,analysis_version,status,result) "
+			+ "values (?,'test-analysis','SUCCEEDED','{}') returning id", Long.class, surveyId);
+		jdbc.update("insert into profile(user_id,active_personality_id) values (?,?) "
+			+ "on conflict(user_id) do update set active_personality_id=excluded.active_personality_id",
+			userId, personalityId);
+		return personalityId;
 	}
 
 	protected void setPreferences(long userId) {
-		jdbc.update("insert into matching_settings(user_id,desired_genders,age_min,settings_version) "
-			+ "values (?,ARRAY['MALE'],19,1)", userId);
+		// 이 helper가 명시적으로 나이 범위를 선택한다. 조건 저장으로 ACK를 만들지 않는다.
+		jdbc.update("insert into user_setting(user_id,vibration_enabled,led_enabled,settings_version) "
+			+ "values (?,true,true,1) on conflict(user_id) do update "
+			+ "set settings_version=greatest(user_setting.settings_version,1)", userId);
+		jdbc.update("insert into matching_preference(user_id,matching_enabled,age_preference_mode,min_age,"
+			+ "max_age,photo_required) values (?,true,true,19,null,false) on conflict(user_id) do update "
+			+ "set age_preference_mode=true,min_age=19,max_age=null", userId);
 	}
 
-	protected void acknowledgeSync(long userId, long bindingId, long analysisId) {
-		Long snapshotId = jdbc.queryForObject("insert into settings_snapshots(user_id,settings_version,"
-			+ "analysis_result_id,snapshot_json,created_at) values (?,1,?,'{}',now()) returning snapshot_id",
-			Long.class, userId, analysisId);
-		jdbc.update("insert into keyring_sync_runs(binding_id,snapshot_id,payload_hash,status,acknowledged_at) "
-			+ "values (?,?,?,'ACKNOWLEDGED',now())", bindingId, snapshotId, new byte[] {1});
+	protected void acknowledgeSync(long userId, long keyringId, long personalityId) {
+		// 명시적인 ACK fixture에서만 현재 소유·설정 버전·본인 성공 분석 포인터를 함께 확인한다.
+		int acknowledged = jdbc.update("update keyring k set synced_settings_version=u.settings_version, "
+			+ "synced_at=now() from user_setting u,profile p,personality a,survey s where k.owner_user_id=? "
+			+ "and k.id=? and k.state='REGISTERED' and u.user_id=k.owner_user_id "
+			+ "and u.settings_version>=1 and p.user_id=u.user_id and p.active_personality_id=a.id "
+			+ "and a.id=? and a.status='SUCCEEDED' and a.survey_id=s.id "
+			+ "and s.user_id=u.user_id and s.completed_at is not null", userId, keyringId, personalityId);
+		if (acknowledged != 1) {
+			throw new IllegalStateException("명시적인 canonical ACK fixture의 소유·설정·분석 증거가 없습니다");
+		}
+	}
+
+	// 본인 자원 경로 /api/users/{userId}{rest}. 회원번호는 토큰에서 꺼낸다.
+	protected String me(JsonNode tokens, String rest) throws Exception {
+		return "/api/users/" + userIdOf(tokens) + rest;
 	}
 
 	// 액세스 토큰(JWT)의 sub 가 회원번호다.

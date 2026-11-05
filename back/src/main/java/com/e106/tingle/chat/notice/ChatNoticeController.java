@@ -21,24 +21,24 @@ import com.e106.tingle.chat.dto.NoticesView;
 import lombok.RequiredArgsConstructor;
 
 @RestController
-@RequestMapping("/api/v1/chat-rooms/{id}")
+@RequestMapping("/api/chat-rooms/{id}")
 @RequiredArgsConstructor
 public class ChatNoticeController {
 	private final ChatNoticeService service;
 
 	@PostMapping("/entries")
-	public ResponseEntity<EntryView> enter(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID id,
+	public ResponseEntity<EntryView> enter(@AuthenticationPrincipal Jwt jwt, @PathVariable long id,
 		@RequestHeader("Idempotency-Key") UUID key) {
 		return ok(service.enter(id, Long.parseLong(jwt.getSubject()), key));
 	}
 
 	@GetMapping("/notices")
-	public ResponseEntity<NoticesView> notices(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID id) {
+	public ResponseEntity<NoticesView> notices(@AuthenticationPrincipal Jwt jwt, @PathVariable long id) {
 		return ok(service.list(id, Long.parseLong(jwt.getSubject())));
 	}
 
 	@PutMapping("/notices/{noticeId}/ack")
-	public ResponseEntity<NoticeAck> ack(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID id,
+	public ResponseEntity<NoticeAck> ack(@AuthenticationPrincipal Jwt jwt, @PathVariable long id,
 		@PathVariable UUID noticeId, @RequestHeader("Idempotency-Key") UUID key) {
 		return ok(service.ack(id, noticeId, Long.parseLong(jwt.getSubject()), key));
 	}

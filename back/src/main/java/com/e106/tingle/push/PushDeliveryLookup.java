@@ -41,7 +41,7 @@ public class PushDeliveryLookup {
 			return List.of();
 		}
 		return installations.findByUserIdOrderById(userId).stream()
-			.filter(installation -> eligible(installation, kind))
+			.filter(this::eligible)
 			.map(installation -> new Candidate(installation.getId(), userId, installation.getClientInstallationId(),
 				kind, fingerprint(installation.getTokenCiphertext()), installation.getBindingId(),
 				installation.getLinkedAt()))
@@ -53,10 +53,12 @@ public class PushDeliveryLookup {
 		Objects.requireNonNull(candidate);
 		Objects.requireNonNull(candidate.kind());
 		return installations.findById(candidate.internalId())
-			.filter(installation -> installation.getUserId() == candidate.userId()
+			.filter(installation -> Objects.equals(installation.getUserId(), candidate.userId())
 				&& installation.getClientInstallationId().equals(candidate.installationId())
+				&& Objects.equals(installation.getBindingId(), candidate.bindingId())
+				&& Objects.equals(installation.getLinkedAt(), candidate.linkedAt())
 				&& fingerprint(installation.getTokenCiphertext()).equals(candidate.fingerprint()))
-			.filter(installation -> activeUser(candidate.userId()) && eligible(installation, candidate.kind()))
+			.filter(installation -> activeUser(candidate.userId()) && eligible(installation))
 			.map(installation -> new PushDeliveryTarget(
 				installation.getClientInstallationId(), installation.getPlatform(),
 				encryption.decrypt(installation.getClientInstallationId(), candidate.userId(),
@@ -66,7 +68,7 @@ public class PushDeliveryLookup {
 	@Transactional
 	public boolean invalidate(Candidate candidate) {
 		return installations.findById(candidate.internalId())
-			.filter(installation -> installation.getUserId() == candidate.userId()
+			.filter(installation -> Objects.equals(installation.getUserId(), candidate.userId())
 				&& installation.getClientInstallationId().equals(candidate.installationId())
 				&& Objects.equals(installation.getBindingId(), candidate.bindingId())
 				&& fingerprint(installation.getTokenCiphertext()).equals(candidate.fingerprint()))
@@ -79,11 +81,12 @@ public class PushDeliveryLookup {
 		return users.findById(userId).map(user -> user.getStatus() == UserStatus.ACTIVE).orElse(false);
 	}
 
-	private boolean eligible(PushInstallation installation, PushNotificationKind kind) {
-		return kind == PushNotificationKind.NEW_PROPOSAL
-			|| (installation.getLoginFamilyId() != null
-				&& sessions.isPushSessionUsable(
-					installation.getLoginFamilyId(), installation.getUserId(), clock.instant()));
+	private boolean eligible(PushInstallation installation) {
+		// 모든 알림은 현재 수신 연결과 살아 있는 해당 로그인에만 보낸다. 과거 누락 증거는 추정하지 않는다.
+		return installation.getUserId() != null && installation.getLoginFamilyId() != null
+			&& installation.getBindingId() != null && installation.getLinkedAt() != null
+			&& sessions.isPushSessionUsable(
+				installation.getLoginFamilyId(), installation.getUserId(), clock.instant());
 	}
 
 	private static String fingerprint(String ciphertext) {

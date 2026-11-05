@@ -1,0 +1,45 @@
+# Candidate rules for the existing development Loki/Grafana owner to provision.
+# Not loaded by this MR. No notification recipient or server configuration is changed.
+# Gauges, not monotonic counters: do not use rate() on these numeric values.
+# Syntax reference: https://grafana.com/docs/loki/latest/query/metric_queries/
+groups:
+  - name: tingle_async_jobs_dev
+    interval: 1m
+    rules:
+      - alert: TingleAsyncJobsOverdue
+        expr: >-
+          max by (service, stage) (last_over_time({service="back-dev"} |= "event=async_jobs "
+          | regexp "stage=(?P<stage>[a-z_]+).* overdue=(?P<overdue>[0-9]+)"
+          | unwrap overdue | __error__="" [2m])) > 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: Async work remains past its recorded due time
+      - alert: TingleAsyncJobsInvalid
+        expr: >-
+          max by (service, stage) (last_over_time({service="back-dev"} |= "event=async_jobs "
+          | regexp "stage=(?P<stage>[a-z_]+).* invalid=(?P<invalid>[0-9]+)"
+          | unwrap invalid | __error__="" [2m])) > 0
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: Async work has an unknown status or invalid due time
+      - alert: TingleAsyncJobCollectionFailed
+        expr: count_over_time({service="back-dev"} |= "event=async_jobs_collect_failed " [5m]) > 0
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: Async observation could not read the database
+      - alert: TingleAsyncJobsFailed
+        expr: >-
+          max by (service, stage) (last_over_time({service="back-dev"} |= "event=async_jobs "
+          | regexp "stage=(?P<stage>[a-z_]+).* failed=(?P<failed>[0-9]+)"
+          | unwrap failed | __error__="" [2m])) > 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: Async jobs remain failed after their domain retry budget

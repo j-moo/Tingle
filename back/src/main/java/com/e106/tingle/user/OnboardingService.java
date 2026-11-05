@@ -7,6 +7,10 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.e106.tingle.agreement.AgreementService;
 import com.e106.tingle.auth.MemberAccessRepository;
+import com.e106.tingle.global.error.BusinessException;
+import com.e106.tingle.global.error.ErrorCode;
+import com.e106.tingle.personality.PersonalAnalysisService;
+import com.e106.tingle.settings.snapshot.SettingsChangeCoordinator;
 import com.e106.tingle.survey.SurveyService;
 import com.e106.tingle.user.dto.OnboardingDetailResponse;
 
@@ -14,7 +18,7 @@ import lombok.RequiredArgsConstructor;
 
 /**
  * 회원의 현재 가입 단계를 계산한다. 단계는 저장하지 않고 각 도메인의 상태를 보고 그때그때 계산한다.
- * 처음으로 모든 단계를 마친 시각만 app_users.signup_completed_at 에 남긴다.
+ * 처음으로 모든 단계를 마친 시각만 users.signup_completed_at 에 남긴다.
  */
 @Service
 @RequiredArgsConstructor
@@ -25,27 +29,38 @@ public class OnboardingService {
 	private final ProfileRepository profileRepository;
 	private final UserRepository userRepository;
 	private final SurveyService surveyService;
+	private final PersonalAnalysisService analysisService;
 	private final Clock clock;
+	private final SettingsChangeCoordinator settingsChanges;
 
 	// 미구현 단계도 통과시키지 않는다. 각 도메인의 실제 데이터로 판단하고, READY 는 매칭 제안과 같은 기준(ready)을 쓴다.
 	@Transactional(readOnly = true)
 	public OnboardingStatus statusOf(long userId) {
-		if (!agreementService.hasAgreedRequiredForAccess(userId, members.signupCompleted(userId))) {
-			return OnboardingStatus.AGREEMENT_REQUIRED;
+		return statusUpTo(userId, OnboardingStatus.READY);
+	}
+
+	// limit 앞 단계만 차례로 확인한다. 모두 마쳤으면 limit 을, 아니면 처음 못 마친 단계를 돌려준다.
+	// API 권한 검사는 필요한 단계까지만 보면 되므로 뒤 단계 조회(키링·설문·매칭 준비 등)를 하지 않는다.
+	private OnboardingStatus statusUpTo(long userId, OnboardingStatus limit) {
+		for (OnboardingStatus step : OnboardingStatus.values()) {
+			if (!step.isBefore(limit) || !passed(userId, step)) {
+				return step;
+			}
 		}
-		if (!members.hasKeyring(userId)) {
-			return OnboardingStatus.KEYRING_REQUIRED;
-		}
-		if (!profileRepository.findById(userId).map(Profile::isRegistered).orElse(false)) {
-			return OnboardingStatus.PROFILE_REQUIRED;
-		}
-		if (!members.surveyCompleted(userId)) {
-			return OnboardingStatus.SURVEY_REQUIRED;
-		}
-		if (!members.preferencesSet(userId)) {
-			return OnboardingStatus.PREFERENCES_REQUIRED;
-		}
-		return members.ready(userId, clock.instant()) ? OnboardingStatus.READY : OnboardingStatus.SYNC_PENDING;
+		return limit;
+	}
+
+	private boolean passed(long userId, OnboardingStatus step) {
+		return switch (step) {
+			case AGREEMENT_REQUIRED -> agreementService.hasAgreedRequiredForAccess(userId,
+				members.signupCompleted(userId));
+			case KEYRING_REQUIRED -> members.hasKeyring(userId);
+			case PROFILE_REQUIRED -> profileRepository.findById(userId).map(Profile::isRegistered).orElse(false);
+			case SURVEY_REQUIRED -> members.surveyCompleted(userId);
+			case PREFERENCES_REQUIRED -> members.preferencesSet(userId);
+			case SYNC_PENDING -> members.ready(userId, clock.instant());
+			case READY -> true;
+		};
 	}
 
 	/**
@@ -54,13 +69,29 @@ public class OnboardingService {
 	 */
 	@Transactional
 	public OnboardingDetailResponse detail(long userId) {
-		OnboardingStatus status = recordProgress(userId);
+		// 뒤의 가입 완료 기록도 회원 행을 쓰므로 회원→설정 순서로 잠근다.
+		User user = userRepository.findByIdForUpdate(userId)
+			.orElseThrow(() -> new BusinessException(ErrorCode.AUTH_REQUIRED));
+		// 회원 행을 잠갔으므로 이 요청이 끝날 때까지 가입 완료 시각·계정 상태는 잠글 때 읽은 값 그대로다.
+		boolean completedBefore = user.getSignupCompletedAt() != null;
+		boolean active = user.getStatus() == UserStatus.ACTIVE;
+		settingsChanges.refreshAgeReferenceIfPresent(userId);
+		OnboardingStatus status = statusOf(userId);
 		boolean ready = status == OnboardingStatus.READY;
+		// 이미 가입을 마친 회원은 남길 것이 없으므로 UPDATE 와 다시 읽기를 하지 않는다(앱 실행마다 부르는 API).
+		if (ready && !completedBefore) {
+			userRepository.markSignupCompleted(userId, clock.instant());
+		}
 		SurveyService.Progress survey = surveyService.progress(userId);
-		// ponytail: 설정 반영 버전 필드는 키링 동기화 기능 전까지 임시값
-		return new OnboardingDetailResponse(status, signupCompleted(userId), ready, ready,
+		PersonalAnalysisService.Recovery submitted = analysisService.recovery(userId);
+		Long activeResultId = profileRepository.findById(userId).map(Profile::getActivePersonalityId).orElse(null);
+		MemberAccessRepository.SettingsVersions versions = members.settingsVersions(userId);
+		// signupCompleted 는 MemberAccessRepository.signupCompleted 와 같은 기준(ACTIVE 이고 가입 완료 시각이 있음).
+		return new OnboardingDetailResponse(status, active && (completedBefore || ready), ready,
+			ready && members.matchingEnabled(userId),
 			survey.sessionId(), survey.answeredCount(), survey.questionCount(), survey.nextQuestionId(),
-			0, null, clock.instant());
+			submitted.sessionId(), submitted.analysis(), activeResultId,
+			versions.required(), versions.acknowledged(), clock.instant());
 	}
 
 	/**
@@ -71,8 +102,8 @@ public class OnboardingService {
 	 */
 	@Transactional(readOnly = true)
 	public boolean canAccess(long userId, OnboardingStatus required) {
-		OnboardingStatus status = statusOf(userId);
-		if (!status.isBefore(required)) {
+		OnboardingStatus status = statusUpTo(userId, required);
+		if (status == required) {
 			return true;
 		}
 		return status != OnboardingStatus.AGREEMENT_REQUIRED && signupCompleted(userId);

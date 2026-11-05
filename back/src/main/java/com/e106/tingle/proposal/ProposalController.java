@@ -27,7 +27,7 @@ import jakarta.validation.constraints.Positive;
 import jakarta.validation.constraints.Size;
 
 @RestController
-@RequestMapping("/api/v1/match-proposals")
+@RequestMapping("/api/match-proposals")
 public class ProposalController {
 	private final ProposalService service;
 
@@ -68,9 +68,4 @@ public class ProposalController {
 			idempotencyKey, null);
 	}
 
-	@PostMapping("/{id}/cancel")
-	public ProposalView cancel(@AuthenticationPrincipal Jwt jwt, @PathVariable @Positive long id,
-		@RequestHeader("Idempotency-Key") UUID idempotencyKey) {
-		return service.cancel(id, Long.parseLong(jwt.getSubject()), idempotencyKey);
-	}
 }

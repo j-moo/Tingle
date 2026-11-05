@@ -31,7 +31,7 @@ import jakarta.validation.constraints.Size;
 import lombok.RequiredArgsConstructor;
 
 @RestController
-@RequestMapping("/api/v1/chat-rooms")
+@RequestMapping("/api/chat-rooms")
 @RequiredArgsConstructor
 public class ChatController {
 	private final ChatService service;
@@ -44,26 +44,27 @@ public class ChatController {
 	}
 
 	@GetMapping("/{id}")
-	public ResponseEntity<ChatRoomView> room(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID id) {
+	public ResponseEntity<ChatRoomView> room(@AuthenticationPrincipal Jwt jwt, @PathVariable long id) {
 		return ok(service.room(id, Long.parseLong(jwt.getSubject())));
 	}
 
 	@GetMapping("/{id}/messages")
-	public ResponseEntity<MessagePage> messages(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID id,
+	public ResponseEntity<MessagePage> messages(@AuthenticationPrincipal Jwt jwt, @PathVariable long id,
 		@RequestParam(required = false) @Size(max = 256) String cursor,
-		@RequestParam(defaultValue = "20") @Min(1) @Max(100) int limit) {
-		return ok(service.messages(id, Long.parseLong(jwt.getSubject()), cursor, limit));
+		@RequestParam(defaultValue = "20") @Min(1) @Max(100) int limit,
+		@RequestParam(required = false) @Min(0) Long afterSequence) {
+		return ok(service.messages(id, Long.parseLong(jwt.getSubject()), cursor, limit, afterSequence));
 	}
 
 	@PostMapping("/{id}/messages")
-	public ResponseEntity<MessageView> send(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID id,
+	public ResponseEntity<MessageView> send(@AuthenticationPrincipal Jwt jwt, @PathVariable long id,
 		@RequestHeader("Idempotency-Key") UUID key, @Valid @RequestBody SendMessageRequest request) {
 		return ResponseEntity.status(HttpStatus.CREATED).cacheControl(CacheControl.noStore()).body(
 			service.send(id, Long.parseLong(jwt.getSubject()), request.clientMessageId(), key, request.text()));
 	}
 
 	@PostMapping("/{id}/reads")
-	public ResponseEntity<ReadMessagesResult> read(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID id,
+	public ResponseEntity<ReadMessagesResult> read(@AuthenticationPrincipal Jwt jwt, @PathVariable long id,
 		@Valid @RequestBody ReadMessagesRequest request) {
 		return ok(service.read(id, Long.parseLong(jwt.getSubject()), request.messageIds()));
 	}

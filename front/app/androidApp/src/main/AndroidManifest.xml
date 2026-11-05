@@ -1,8 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- allowBackup=false: 토큰 · 캐시를 기기 백업에 싣지 않는다 -->
     <application
-        android:label="tingle"
+        android:name=".TingleApplication"
+        android:allowBackup="false"
+        android:label="${appLabel}"
         android:supportsRtl="true"
         android:theme="@android:style/Theme.Material.Light.NoActionBar">
         <activity

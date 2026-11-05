@@ -1,0 +1,10 @@
+<resources>
+    <string name="settings_api_entry">희망 나이 · 매칭 설정</string>
+    <string name="settings_api_gate_help">설정은 실제 서버에서 불러와요. 현재 가입 단계에서 허용되지 않으면 먼저 필요한 가입 단계를 완료해 주세요.</string>
+    <string name="settings_api_blocked">현재 가입 단계에서는 서버가 이 설정을 허용하지 않아요. 키링 등록·성향 분석 등 필요한 가입 단계를 완료한 뒤 다시 확인해 주세요.</string>
+    <string name="settings_api_save">변경 내용 저장</string>
+    <string name="settings_api_saved">서버에 저장했어요. 키링 반영은 아직 확인되지 않았어요.</string>
+    <string name="settings_api_sync_unconfirmed">서버 설정과 키링 반영은 별개예요. 키링 동기화가 확인되기 전에는 적용 완료로 표시하지 않아요.</string>
+    <string name="settings_api_refresh_stage">가입 단계 다시 확인</string>
+    <string name="settings_api_back">돌아가기</string>
+</resources>

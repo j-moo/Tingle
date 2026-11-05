@@ -1,2 +1,0 @@
-# Preserve source bytes so archive and checkout hashes match the source manifest.
-* -text

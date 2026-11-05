@@ -1,0 +1,59 @@
+flowchart LR
+  start(["홈·설정 진입"])
+  settings["설정·내 정보"]
+  choice{"관리할 항목?"}
+  profile["프로필·사진 수정"]
+  edit[/"일반 정보·사진 변경"/]
+  correct["생년월일·성별 정정 문의"]
+  pref["희망 조건·사진 옵션"]
+  switch["매칭·진동·LED 스위치"]
+  survey(["03 성향 재검사"])
+  saved{"서버 저장 성공?"}
+  failed["오류·입력 유지"]
+  sync["연결 기기 동기화"]
+  status["기기별 반영 상태"]
+  devices["키링 목록·상세"]
+  action{"키링 관리 선택?"}
+  register(["02 추가 등록"])
+  manual["수동 동기화"]
+  reset[/"초기화 확인"/]
+  both{"기기·소유 해제 완료?"}
+  partial["부분 실패·복구"]
+  resetDone(["초기화 완료"])
+  lost(["10 분실 문의"])
+  start --> settings
+  settings --> choice
+  choice -->|"내 정보"| profile
+  profile -->|"일반 수정"| edit
+  profile -->|"고정 정보 정정"| correct
+  choice -->|"희망 조건"| pref
+  choice -->|"출력·매칭"| switch
+  choice -->|"재검사"| survey
+  choice -->|"키링"| devices
+  edit --> saved
+  pref -->|"설정 저장"| saved
+  switch -->|"토글 저장"| saved
+  saved -->|"아니요"| failed
+  failed -->|"재시도"| settings
+  saved -->|"예"| sync
+  sync --> status
+  devices --> action
+  action -->|"추가 등록"| register
+  action -->|"동기화"| manual
+  manual --> sync
+  action -->|"초기화"| reset
+  reset -->|"확인 후 실행"| both
+  both -->|"아니요"| partial
+  partial -->|"상태 재조회·재시도"| both
+  both -->|"예"| resetDone
+  action -->|"분실"| lost
+classDef screen fill:#A0F4CD,stroke:#53B78E
+class settings,profile,correct,pref,switch,failed,status,devices,partial screen
+classDef action fill:#E2E5E3,stroke:#8D9891
+class sync,manual action
+classDef decision fill:#ECFBF4,stroke:#53B78E
+class choice,saved,action,both decision
+classDef input fill:#E2E5E3,stroke:#8D9891
+class edit,reset input
+classDef terminal fill:#F5F6F5,stroke:#8D9891
+class start,survey,register,resetDone,lost terminal

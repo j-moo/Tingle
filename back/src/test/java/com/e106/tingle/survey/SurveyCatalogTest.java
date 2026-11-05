@@ -13,9 +13,9 @@ import tools.jackson.databind.json.JsonMapper;
 class SurveyCatalogTest {
 
 	@Test
-	@DisplayName("서버가 쓰는 설문 파일은 docs/contracts/survey 의 원본과 같다")
+	@DisplayName("서버가 쓰는 설문 파일은 AI 참조 설문 원본과 같다")
 	void resourceMatchesContract() throws Exception {
-		Path contract = Path.of("../docs/contracts/survey/questionnaire-SIS-Q-1.1-100.json");
+		Path contract = Path.of("../ai-server/reference/survey-20261021/questionnaire-SIS-Q-1.1-100.json");
 		Path resource = Path.of("src/main/resources/survey/questionnaires/SIS-Q-1.1-100.json");
 		assertThat(Files.readAllBytes(resource)).isEqualTo(Files.readAllBytes(contract));
 	}

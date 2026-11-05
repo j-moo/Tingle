@@ -1,0 +1,18 @@
+# 소셜 로그인 키 템플릿. 이 파일을 복사해 값을 채운 뒤 "사용자 홈"의 gradle.properties 로 둔다.
+#   Windows    C:\Users\<이름>\.gradle\gradle.properties
+#   mac·리눅스  ~/.gradle/gradle.properties
+#
+# 같은 폴더의 front/app/gradle.properties 에 넣지 않는다 — 그 파일은 깃에 올라간다.
+# 값은 Jenkins Credentials 의 tingle-app-env (app.env) 에 있다. Jenkins 는 환경변수로 받으므로 이 파일이 필요 없다.
+# 값이 비어 있으면 그 공급자의 로그인 버튼이 화면에 나오지 않는다 (AndroidSocialLogin.configured).
+
+GOOGLE_WEB_CLIENT_ID=
+KAKAO_NATIVE_APP_KEY=
+
+# 개발용 빌드(applicationId com.ssafy.tingle.dev)가 쓰는 카카오 키.
+# 비우면 운영 키로 떨어져 운영 앱과 카카오 콜백 스킴(kakao{앱키}://oauth)이 겹치고,
+# 두 앱이 같이 깔려 있으면 로그인 콜백이 어느 쪽으로 갈지 정해지지 않는다.
+KAKAO_NATIVE_APP_KEY_DEV=
+
+# 네이버는 Client ID 만. 비밀값(NAVER_CLIENT_SECRET)은 앱에 넣지 않는다 — 인가 코드를 서버가 비밀값으로 교환한다(OIDC + PKCE)
+NAVER_CLIENT_ID=

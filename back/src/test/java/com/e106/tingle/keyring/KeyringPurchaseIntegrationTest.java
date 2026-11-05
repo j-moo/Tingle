@@ -24,7 +24,7 @@ import tools.jackson.databind.JsonNode;
 @Import(TestcontainersConfiguration.class)
 class KeyringPurchaseIntegrationTest extends IntegrationTestSupport {
 
-	private static final String PATH = "/api/v1/keyrings/purchase-info";
+	private static final String PATH = "/api/keyrings/purchase-info";
 
 	@Test
 	@DisplayName("약관 동의 후 키링 등록 전에도 구매 안내와 등록 필요 여부를 조회한다")
@@ -47,20 +47,20 @@ class KeyringPurchaseIntegrationTest extends IntegrationTestSupport {
 		long bindingId = bindKeyring(userIdOf(user));
 		perform(get(PATH), user, null).andExpect(status().isOk())
 			.andExpect(jsonPath("$.registrationRequired").value(false));
-		jdbc.update("update keyring_bindings set unbound_at=now() where binding_id=?", bindingId);
+		jdbc.update("update keyring set owner_user_id=null,state='UNBOUND' where id=?", bindingId);
 		perform(get(PATH), user, null).andExpect(status().isOk())
 			.andExpect(jsonPath("$.registrationRequired").value(true));
 	}
 
 	@Test
-	@DisplayName("다른 회원의 기기와 실제 기기가 없는 연결은 등록 필요 여부를 바꾸지 않는다")
-	void ignoresOtherOwnersAndDanglingBindings() throws Exception {
+	@DisplayName("다른 회원의 기기와 소유자 없는 기기는 등록 필요 여부를 바꾸지 않는다")
+	void ignoresOtherOwnersAndUnboundDevices() throws Exception {
 		JsonNode owner = login("kakao", newSocialId());
 		bindKeyring(userIdOf(owner));
 		JsonNode user = login("kakao", newSocialId());
 		agree(user).andExpect(status().isOk());
-		jdbc.update("insert into keyring_bindings(device_id,user_id,bound_at) values (?,?,now())",
-			Long.MAX_VALUE, userIdOf(user));
+		jdbc.update("insert into keyring(serial_number,firmware_version,state) values (?,'test','UNBOUND')",
+			newSocialId());
 		perform(get(PATH), user, null).andExpect(status().isOk())
 			.andExpect(jsonPath("$.registrationRequired").value(true));
 	}
@@ -84,7 +84,7 @@ class KeyringPurchaseIntegrationTest extends IntegrationTestSupport {
 		perform(get(PATH), user, null).andExpect(status().isUnauthorized());
 		JsonNode suspended = login("kakao", newSocialId());
 		agree(suspended).andExpect(status().isOk());
-		jdbc.update("update app_users set status='SUSPENDED' where user_id=?", userIdOf(suspended));
+		jdbc.update("update users set status='SUSPENDED' where id=?", userIdOf(suspended));
 		perform(get(PATH), suspended, null).andExpect(status().isUnauthorized());
 	}
 }

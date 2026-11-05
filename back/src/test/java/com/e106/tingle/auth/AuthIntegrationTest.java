@@ -4,7 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.emptyOrNullString;
 import static org.hamcrest.Matchers.everyItem;
 import static org.hamcrest.Matchers.not;
-import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -45,7 +45,6 @@ import tools.jackson.databind.JsonNode;
 @Import({TestcontainersConfiguration.class, TestProtectedController.class})
 class AuthIntegrationTest extends IntegrationTestSupport {
 
-	private static final String ONBOARDING = "/api/v1/users/me/onboarding";
 
 	// ---------- 소셜 로그인 ----------
 
@@ -73,21 +72,22 @@ class AuthIntegrationTest extends IntegrationTestSupport {
 	@DisplayName("401은 원인별 코드로 나뉜다: 토큰 없음·만료·위조·세션 종료")
 	void unauthorizedCodesTellAppWhatToDo() throws Exception {
 		// 번역이 없는 언어로 요청해도 기본(한국어) 문구가 온다
-		mockMvc.perform(get(ONBOARDING).header("Accept-Language", "en")).andExpect(status().isUnauthorized())
+		mockMvc.perform(get("/api/users/1/onboarding").header("Accept-Language", "en"))
+			.andExpect(status().isUnauthorized())
 			.andExpect(jsonPath("$.code").value("AUTH_REQUIRED"))
 			.andExpect(jsonPath("$.message").value("로그인이 필요합니다."));
-		mockMvc.perform(get(ONBOARDING).header("Authorization", "Bearer forged.token.value"))
+		mockMvc.perform(get("/api/users/1/onboarding").header("Authorization", "Bearer forged.token.value"))
 			.andExpect(status().isUnauthorized())
 			.andExpect(jsonPath("$.code").value("ACCESS_TOKEN_INVALID"));
 
 		JsonNode tokens = login("kakao", newSocialId());
 		timeShift.set(Duration.ofMinutes(31));
-		perform(get(ONBOARDING), tokens, null).andExpect(status().isUnauthorized())
+		perform(get(me(tokens, "/onboarding")), tokens, null).andExpect(status().isUnauthorized())
 			.andExpect(jsonPath("$.code").value("ACCESS_TOKEN_EXPIRED"));
 
 		// 만료와 세션 종료가 겹치면 재발급해도 소용없으므로 세션 종료로 알린다
 		logout(tokens.path("refreshToken").asString()).andExpect(status().isNoContent());
-		perform(get(ONBOARDING), tokens, null).andExpect(status().isUnauthorized())
+		perform(get(me(tokens, "/onboarding")), tokens, null).andExpect(status().isUnauthorized())
 			.andExpect(jsonPath("$.code").value("SESSION_REVOKED"));
 	}
 
@@ -103,7 +103,7 @@ class AuthIntegrationTest extends IntegrationTestSupport {
 	@Test
 	@DisplayName("지원하지 않는 로그인 방식은 400 INVALID_PROVIDER")
 	void unsupportedProviderReturns400InvalidProvider() throws Exception {
-		mockMvc.perform(post("/api/v1/auth/apple").contentType(MediaType.APPLICATION_JSON).content("{\"token\":\"t\"}"))
+		mockMvc.perform(post("/api/auth/apple").contentType(MediaType.APPLICATION_JSON).content("{\"token\":\"t\"}"))
 			.andExpect(status().isBadRequest())
 			.andExpect(jsonPath("$.code").value("INVALID_PROVIDER"));
 	}
@@ -111,10 +111,11 @@ class AuthIntegrationTest extends IntegrationTestSupport {
 	@Test
 	@DisplayName("소셜 토큰 검증에 실패하면 401 INVALID_SOCIAL_TOKEN")
 	void socialTokenVerificationFailureReturns401() throws Exception {
-		given(socialVerifier.verify(eq(SocialProvider.NAVER), anyString()))
+		given(socialVerifier.verify(eq(SocialProvider.NAVER), any()))
 			.willThrow(new BusinessException(ErrorCode.INVALID_SOCIAL_TOKEN));
 
-		mockMvc.perform(post("/api/v1/auth/naver").contentType(MediaType.APPLICATION_JSON).content("{\"token\":\"t\"}"))
+		mockMvc.perform(post("/api/auth/naver").contentType(MediaType.APPLICATION_JSON)
+				.content("{\"code\":\"c\",\"codeVerifier\":\"v\",\"redirectUri\":\"r\",\"nonce\":\"n\"}"))
 			.andExpect(status().isUnauthorized())
 			.andExpect(jsonPath("$.code").value("INVALID_SOCIAL_TOKEN"));
 	}
@@ -122,10 +123,10 @@ class AuthIntegrationTest extends IntegrationTestSupport {
 	@Test
 	@DisplayName("만료된 액세스 토큰이 헤더에 있어도 로그인은 막히지 않는다")
 	void loginIsNotBlockedByExpiredAccessTokenHeader() throws Exception {
-		given(socialVerifier.verify(eq(SocialProvider.KAKAO), anyString()))
+		given(socialVerifier.verify(eq(SocialProvider.KAKAO), any()))
 			.willReturn(new SocialAccount(newSocialId(), null));
 
-		mockMvc.perform(post("/api/v1/auth/kakao")
+		mockMvc.perform(post("/api/auth/kakao")
 				.header("Authorization", "Bearer expired.or.broken")
 				.contentType(MediaType.APPLICATION_JSON)
 				.content("{\"token\":\"t\"}"))
@@ -137,10 +138,10 @@ class AuthIntegrationTest extends IntegrationTestSupport {
 	@Test
 	@DisplayName("약관 조회는 인증 없이 현재 버전을 돌려주고, 제목은 요청 언어에 없으면 한국어다")
 	void agreementsReturnCurrentVersionsWithoutAuth() throws Exception {
-		mockMvc.perform(get("/api/v1/agreements").header("Accept-Language", "en"))
+		mockMvc.perform(get("/api/agreements").header("Accept-Language", "en"))
 			.andExpect(status().isOk())
 			// 설정의 모든 항목에 messages.properties 제목이 있어야 한다
-			.andExpect(jsonPath("$.agreements.length()").value(4))
+			.andExpect(jsonPath("$.agreements.length()").value(7))
 			.andExpect(jsonPath("$.agreements[*].title", everyItem(not(emptyOrNullString()))))
 			.andExpect(jsonPath("$.agreements[2].title").value("AI 대화 위험 감지를 위한 개인정보 처리 동의"))
 			.andExpect(jsonPath("$.agreements[0].type").value("TERMS"))
@@ -153,18 +154,30 @@ class AuthIntegrationTest extends IntegrationTestSupport {
 	// ---------- 로그인 세션과 로그아웃 ----------
 
 	@Test
-	@DisplayName("로그아웃하면 그 세션의 액세스·리프레시 토큰이 바로 막히고 다른 기기 세션은 유지된다")
-	void logoutRevokesOnlyThatSession() throws Exception {
+	@DisplayName("로그아웃하면 그 세션의 액세스·리프레시 토큰이 바로 막힌다")
+	void logoutRevokesSession() throws Exception {
+		JsonNode phone = login("kakao", newSocialId());
+
+		logout(phone.path("refreshToken").asString()).andExpect(status().isNoContent());
+
+		perform(get(me(phone, "/onboarding")), phone, null).andExpect(status().isUnauthorized())
+			.andExpect(jsonPath("$.code").value("SESSION_REVOKED"));
+		refresh(phone.path("refreshToken").asString()).andExpect(status().isUnauthorized());
+	}
+
+	@Test
+	@DisplayName("로그인 기기는 하나라서 새 기기로 로그인하면 이전 기기 세션은 바로 끝난다")
+	void newLoginEndsPreviousSession() throws Exception {
 		String socialId = newSocialId();
 		JsonNode phone = login("kakao", socialId);
 		JsonNode tablet = login("kakao", socialId);
 
-		logout(phone.path("refreshToken").asString()).andExpect(status().isNoContent());
-
-		perform(get(ONBOARDING), phone, null).andExpect(status().isUnauthorized())
+		perform(get(me(phone, "/onboarding")), phone, null).andExpect(status().isUnauthorized())
 			.andExpect(jsonPath("$.code").value("SESSION_REVOKED"));
-		refresh(phone.path("refreshToken").asString()).andExpect(status().isUnauthorized());
-		perform(get(ONBOARDING), tablet, null).andExpect(status().isOk());
+		refresh(phone.path("refreshToken").asString()).andExpect(status().isUnauthorized())
+			.andExpect(jsonPath("$.code").value("INVALID_REFRESH_TOKEN"));
+		// 끝난 이전 세션의 토큰은 탈취로 보지 않아서 지금 기기 세션은 유지된다.
+		perform(get(me(tablet, "/onboarding")), tablet, null).andExpect(status().isOk());
 		refresh(tablet.path("refreshToken").asString()).andExpect(status().isOk());
 	}
 
@@ -185,25 +198,11 @@ class AuthIntegrationTest extends IntegrationTestSupport {
 		JsonNode tokens = login("kakao", newSocialId());
 		timeShift.set(Duration.ofMinutes(31));
 
-		mockMvc.perform(post("/api/v1/auth/logout")
+		mockMvc.perform(post("/api/auth/logout")
 				.header("Authorization", "Bearer " + tokens.path("accessToken").asString())
 				.contentType(MediaType.APPLICATION_JSON)
 				.content("{\"refreshToken\":\"" + tokens.path("refreshToken").asString() + "\"}"))
 			.andExpect(status().isNoContent());
-	}
-
-	@Test
-	@DisplayName("로그아웃한 세션의 리프레시 토큰을 다시 써도 다른 기기 세션까지 폐기하지 않는다")
-	void refreshWithLoggedOutSessionDoesNotRevokeOtherSessions() throws Exception {
-		String socialId = newSocialId();
-		JsonNode phone = login("kakao", socialId);
-		JsonNode tablet = login("kakao", socialId);
-		logout(phone.path("refreshToken").asString()).andExpect(status().isNoContent());
-
-		refresh(phone.path("refreshToken").asString()).andExpect(status().isUnauthorized())
-			.andExpect(jsonPath("$.code").value("INVALID_REFRESH_TOKEN"));
-
-		refresh(tablet.path("refreshToken").asString()).andExpect(status().isOk());
 	}
 
 	@Test
@@ -216,7 +215,7 @@ class AuthIntegrationTest extends IntegrationTestSupport {
 
 		refresh(original).andExpect(status().isUnauthorized());
 
-		perform(get(ONBOARDING), tokens, null).andExpect(status().isUnauthorized());
+		perform(get(me(tokens, "/onboarding")), tokens, null).andExpect(status().isUnauthorized());
 	}
 
 	@Test
@@ -227,8 +226,8 @@ class AuthIntegrationTest extends IntegrationTestSupport {
 
 		logout(second.path("refreshToken").asString()).andExpect(status().isNoContent());
 
-		perform(get(ONBOARDING), second, null).andExpect(status().isUnauthorized());
-		perform(get(ONBOARDING), first, null).andExpect(status().isUnauthorized());
+		perform(get(me(second, "/onboarding")), second, null).andExpect(status().isUnauthorized());
+		perform(get(me(first, "/onboarding")), first, null).andExpect(status().isUnauthorized());
 	}
 
 	// ---------- 토큰 재발급 ----------
@@ -250,7 +249,7 @@ class AuthIntegrationTest extends IntegrationTestSupport {
 	void refreshWorksWithExpiredAccessTokenHeader() throws Exception {
 		JsonNode tokens = login("kakao", newSocialId());
 
-		mockMvc.perform(post("/api/v1/auth/token/refresh")
+		mockMvc.perform(post("/api/auth/token/refresh")
 				.header("Authorization", "Bearer expired.or.broken")
 				.contentType(MediaType.APPLICATION_JSON)
 				.content("{\"refreshToken\":\"" + tokens.path("refreshToken").asString() + "\"}"))
@@ -264,15 +263,17 @@ class AuthIntegrationTest extends IntegrationTestSupport {
 		JsonNode tokens = login("kakao", socialId);
 		String bearer = "Bearer " + tokens.path("accessToken").asString();
 
-		mockMvc.perform(post("/api/v1/auth/kakao")
+		String relogin = mockMvc.perform(post("/api/auth/kakao")
 				.header("Authorization", bearer)
 				.contentType(MediaType.APPLICATION_JSON)
 				.content("{\"token\":\"social-" + socialId + "\"}"))
-			.andExpect(status().isOk());
-		mockMvc.perform(post("/api/v1/auth/token/refresh")
+			.andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+		// 새 로그인이 이전 세션을 끝내므로 새로 받은 리프레시 토큰으로 재발급한다.
+		mockMvc.perform(post("/api/auth/token/refresh")
 				.header("Authorization", bearer)
 				.contentType(MediaType.APPLICATION_JSON)
-				.content("{\"refreshToken\":\"" + tokens.path("refreshToken").asString() + "\"}"))
+				.content("{\"refreshToken\":\"" + jsonMapper.readTree(relogin).path("refreshToken").asString()
+					+ "\"}"))
 			.andExpect(status().isOk());
 	}
 
@@ -406,10 +407,10 @@ class AuthIntegrationTest extends IntegrationTestSupport {
 	@Test
 	@DisplayName("세션 쿠키를 만들지 않는다")
 	void doesNotCreateSessionCookie() throws Exception {
-		given(socialVerifier.verify(eq(SocialProvider.KAKAO), anyString()))
+		given(socialVerifier.verify(eq(SocialProvider.KAKAO), any()))
 			.willReturn(new SocialAccount(newSocialId(), null));
 
-		mockMvc.perform(post("/api/v1/auth/kakao").contentType(MediaType.APPLICATION_JSON).content("{\"token\":\"t\"}"))
+		mockMvc.perform(post("/api/auth/kakao").contentType(MediaType.APPLICATION_JSON).content("{\"token\":\"t\"}"))
 			.andExpect(status().isOk())
 			.andExpect(header().doesNotExist("Set-Cookie"));
 	}

@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- 첫 등록 NUS 연결용. 위치를 추론하지 않으며 구형 OS만 위치 권한을 요구한다. -->
+    <uses-feature android:name="android.hardware.bluetooth_le" android:required="false" />
+    <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30" />
+    <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" android:maxSdkVersion="30" />
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" android:maxSdkVersion="30" />
+    <uses-permission android:name="android.permission.BLUETOOTH_SCAN" android:usesPermissionFlags="neverForLocation" />
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+    <!-- Android 13+ 알림 권한. 요청 시점 · 안내 화면은 화면 쪽이 rememberNotificationPermission() 으로 -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <application>
+        <!-- 카카오 로그인(카카오계정 웹)이 끝나면 kakao{앱 키}://oauth 로 돌아온다. kakaoScheme 은 androidApp 이 manifestPlaceholders 로 채운다 -->
+        <activity
+            android:name="com.kakao.sdk.auth.AuthCodeHandlerActivity"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:host="oauth" android:scheme="${kakaoScheme}" />
+            </intent-filter>
+        </activity>
+        <!-- 네이버 로그인(OIDC) 창. 콜백 https://{host}{path} 를 App Link(autoVerify)로 받는다 — 서버 /.well-known/assetlinks.json 에 이 앱 서명이 있어야 한다.
+             host · path 는 androidApp 이 manifestPlaceholders 로 채운다(운영 /auth/naver/callback, 개발 /dev/auth/naver/callback) -->
+        <activity
+            android:name="com.ssafy.e106.core.auth.NaverAuthActivity"
+            android:exported="true"
+            android:launchMode="singleTask"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar">
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" android:host="${naverCallbackHost}" android:path="${naverCallbackPath}" />
+            </intent-filter>
+        </activity>
+        <!-- 서버 data 메시지 수신 → 알림(core/push) -->
+        <service
+            android:name="com.ssafy.e106.core.push.TingleMessagingService"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.google.firebase.MESSAGING_EVENT" />
+            </intent-filter>
+        </service>
+        <!-- 알림 탭만 받는다. exported=false 라 다른 앱이 띄울 수 없다. 앱 작업(task)에 남지 않고 곧바로 닫힌다 -->
+        <activity
+            android:name="com.ssafy.e106.core.push.PushTapActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:taskAffinity=""
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
+    </application>
+</manifest>

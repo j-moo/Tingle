@@ -1,24 +1,33 @@
 package com.e106.tingle.survey;
 
+import java.time.Clock;
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
-import java.util.UUID;
+import java.util.Map;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.e106.tingle.global.error.BusinessException;
 import com.e106.tingle.global.error.ErrorCode;
+import com.e106.tingle.survey.SurveyCatalog.MigrationRule;
 import com.e106.tingle.survey.SurveyCatalog.SurveyDefinition;
 import com.e106.tingle.survey.dto.Manifest;
+import com.e106.tingle.survey.dto.MigrationPlanResponse;
 import com.e106.tingle.survey.dto.QuestionnaireResponse;
 import com.e106.tingle.survey.dto.SurveySessionResponse;
 import com.e106.tingle.user.Profile;
 import com.e106.tingle.user.ProfileRepository;
 import com.e106.tingle.user.UserRepository;
 
+import jakarta.persistence.EntityManager;
 import lombok.RequiredArgsConstructor;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
+import tools.jackson.databind.node.ObjectNode;
 
 /**
  * 설문 회차 시작·조회. 회차는 시작할 때의 설문 버전을 고정하고, 그 버전 파일로 문항·진행을 계산한다.
@@ -27,62 +36,166 @@ import tools.jackson.databind.json.JsonMapper;
 @RequiredArgsConstructor
 public class SurveyService {
 
-	// 새 회차의 응답 JSON. 응답은 문항 ID 키로 쌓고, 나이 정보는 비워 둔다.
-	private static final String EMPTY_RESPONSE =
-		"{\"answers\":{},\"metadata\":{\"ownAge\":null,\"desiredAgeMin\":null,\"desiredAgeMax\":null}}";
+	// 설문 중 고르는 선택 나이 정보. 설문 파일에 metadataSchema 가 없어 모든 버전에 같은 규칙(19~100 정수 또는 null)을 쓴다.
+	private static final List<String> METADATA_FIELDS = List.of("ownAge", "desiredAgeMin", "desiredAgeMax");
+	private static final int MIN_AGE = 19;
+	private static final int MAX_AGE = 100;
 
 	private final SurveyResponseRepository surveyResponseRepository;
+	private final SurveyAnswerRepository surveyAnswerRepository;
 	private final SurveyCatalog catalog;
 	private final ProfileRepository profileRepository;
 	private final UserRepository userRepository;
 	private final JsonMapper jsonMapper;
+	private final Clock clock;
+	private final EntityManager entityManager;
 
 	public QuestionnaireResponse currentQuestionnaire() {
 		return questionnaire(catalog.current());
 	}
 
 	/**
-	 * 설문 회차를 시작한다. 같은 회원·버전의 작성 중 회차가 있으면 그 회차를 이어간다.
-	 * 같은 Idempotency-Key 로 다시 오면 처음 돌려준 회차를 다시 준다(다른 버전이면 IDEMPOTENCY_CONFLICT).
+	 * 설문 회차를 시작한다. 같은 회원·버전의 작성 중 회차가 있으면 새로 만들지 않고 그 회차를 이어간다.
 	 */
 	@Transactional
-	public SurveySessionResponse start(long userId, UUID idempotencyKey, String surveyVersion) {
+	public SurveySessionResponse start(long userId, String surveyVersion) {
 		SurveyDefinition definition = catalog.find(surveyVersion)
 			.orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
 		requireRegisteredProfile(userId);
-		// 같은 회원의 시작 요청을 줄 세워 작성 중 회차가 둘 생기지 않게 한다.
-		userRepository.findByIdForUpdate(userId).orElseThrow(() -> new BusinessException(ErrorCode.AUTH_REQUIRED));
-
-		SurveyResponse previous = surveyResponseRepository.findByUserIdAndClientRequestId(userId, idempotencyKey)
-			.orElse(null);
-		if (previous != null) {
-			if (!previous.getVersionCode().equals(surveyVersion)) {
-				throw new BusinessException(ErrorCode.IDEMPOTENCY_CONFLICT);
-			}
-			return view(previous, definition);
-		}
-		SurveyResponse draft = surveyResponseRepository
-			.findByUserIdAndVersionCodeAndCompletedAtIsNull(userId, surveyVersion).orElse(null);
-		if (draft == null) {
-			return view(surveyResponseRepository.save(
-				SurveyResponse.start(userId, surveyVersion, idempotencyKey, EMPTY_RESPONSE)), definition);
-		}
-		// 이어가는 회차에 이번 키를 연결해, 완료 뒤 이 키로 재시도해도 같은 회차를 돌려준다.
-		// ponytail: 회차당 키 하나(최근 키)만 기억한다. 그 전 키로 완료 뒤 재시도하면 새 초안이 생긴다.
-		// 모든 키를 지켜야 하면 키 이력 테이블이 필요하다(ERD 변경).
-		surveyResponseRepository.rebindRequest(draft.getId(), idempotencyKey);
-		return view(draft, definition);
+		return view(draftOf(userId, surveyVersion), definition);
 	}
 
 	@Transactional(readOnly = true)
-	public SurveySessionResponse get(long userId, UUID sessionId) {
+	public SurveySessionResponse get(long userId, long sessionId) {
 		SurveyResponse response = owned(userId, sessionId);
 		return view(response, definitionOf(response));
 	}
 
 	@Transactional(readOnly = true)
-	public QuestionnaireResponse questionnaireOf(long userId, UUID sessionId) {
+	public QuestionnaireResponse questionnaireOf(long userId, long sessionId) {
 		return questionnaire(definitionOf(owned(userId, sessionId)));
+	}
+
+	/**
+	 * 미완료 회차에 문항 하나의 답을 저장한다. 같은 문항을 다시 저장하면 값과 시각을 덮어쓴다.
+	 * 값은 회차에 고정된 설문 파일의 responseSchema 로 검사한다.
+	 */
+	@Transactional
+	public SurveySessionResponse saveAnswer(long userId, long sessionId, String questionId, JsonNode value) {
+		SurveyResponse response = editable(userId, sessionId);
+		SurveyDefinition definition = definitionOf(response);
+		SurveyAnswerValidator.validate(definition, questionId, value);
+		// 회차 행을 잠근 뒤 답을 한 번만 읽고, 그 목록으로 저장과 응답을 함께 처리한다(저장마다 SELECT 두 번을 줄임).
+		Map<String, SurveyAnswer> answers = answersOf(response);
+		SurveyAnswer answer = SurveyAnswer.of(response.getId(), questionId, value, now());
+		SurveyAnswer existing = answers.get(questionId);
+		if (existing == null) {
+			entityManager.persist(answer);
+			answers.put(questionId, answer);
+		} else {
+			existing.overwrite(answer);
+		}
+		return view(response, definition, answers);
+	}
+
+	/**
+	 * 미완료 회차에서 문항 하나의 답을 지워 미응답으로 되돌린다. 답이 없던 문항이면 아무것도 바꾸지 않는다.
+	 */
+	@Transactional
+	public SurveySessionResponse deleteAnswer(long userId, long sessionId, String questionId) {
+		SurveyResponse response = editable(userId, sessionId);
+		SurveyDefinition definition = definitionOf(response);
+		if (!definition.questionIds().contains(questionId)) {
+			throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND);
+		}
+		Map<String, SurveyAnswer> answers = answersOf(response);
+		SurveyAnswer removed = answers.remove(questionId);
+		if (removed != null) {
+			surveyAnswerRepository.delete(removed);
+		}
+		return view(response, definition, answers);
+	}
+
+	/**
+	 * 미완료 회차에 설문 중 고른 선택 나이 정보를 통째로 저장하고 revision 을 1 올린다.
+	 * 프로필 생년월일·희망 조건과는 별개로, 그쪽 값은 읽지도 바꾸지도 않는다.
+	 * If-Match 가 없으면 428, 현재 revision 과 다르면 412(그사이 다른 기기에서 바꿈), 규칙 위반은 422 INVALID_ANSWER.
+	 */
+	@Transactional
+	public SurveySessionResponse saveMetadata(long userId, long sessionId, JsonNode metadata, String ifMatch) {
+		if (ifMatch == null || ifMatch.isBlank()) {
+			throw new BusinessException(ErrorCode.PRECONDITION_REQUIRED);
+		}
+		validateMetadata(metadata);
+		SurveyResponse response = editable(userId, sessionId);
+		if (!("\"" + response.getRevision() + "\"").equals(ifMatch.trim())) {
+			throw new BusinessException(ErrorCode.PRECONDITION_FAILED);
+		}
+		ObjectNode context = contextOf(response);
+		context.set("metadata", metadata);
+		response.changeContext(jsonMapper.writeValueAsString(context));
+		return view(response, definitionOf(response));
+	}
+
+	/**
+	 * 모든 문항에 규칙에 맞는 답이 있으면 완료 시각을 남긴다("unknown"도 답). 이미 완료한 회차는 그대로 돌려준다.
+	 * 완료는 분석 성공과 별개다(분석 요청은 별도 API).
+	 */
+	@Transactional
+	public SurveySessionResponse complete(long userId, long sessionId) {
+		// 성향 분석 결과 적용(최신 완료 회차인지 확인)과 같은 회원 행 잠금으로 줄 세운다.
+		userRepository.findByIdForUpdate(userId).orElseThrow(() -> new BusinessException(ErrorCode.AUTH_REQUIRED));
+		SurveyResponse response = lockedOwned(userId, sessionId);
+		SurveyDefinition definition = definitionOf(response);
+		if (response.isCompleted()) {
+			return view(response, definition);
+		}
+		// 저장 때 검사했어도 옛 자료(예: 숫자 문항에 문자열 "4")가 있을 수 있어, 규칙에 맞는 답만 답한 것으로 센다.
+		Map<String, SurveyAnswer> answers = answersOf(response);
+		if (!definition.questionIds().stream()
+			.allMatch(id -> answers.containsKey(id) && stillValid(definition, id, answers.get(id)))) {
+			throw new BusinessException(ErrorCode.ANSWERS_INCOMPLETE);
+		}
+		response.complete(now());
+		return view(response, definition, answers);
+	}
+
+	/**
+	 * 본인 회차를 targetSurveyVersion 으로 옮길 때 옮길 답·다시 답할 문항·옮길 수 없는 답을 미리 보여 준다. DB는 바꾸지 않는다.
+	 */
+	@Transactional(readOnly = true)
+	public MigrationPlanResponse migrationPlan(long userId, long sessionId, String targetSurveyVersion) {
+		SurveyResponse source = owned(userId, sessionId);
+		return plan(source, migrationRule(source, targetSurveyVersion));
+	}
+
+	/**
+	 * 원본 회차·분석은 그대로 두고 새 버전의 회차를 만들어, 미리보기에서 옮길 수 있다고 한 답만 복사한다.
+	 * 같은 버전의 작성 중 회차가 이미 있으면 새로 만들지 않고 그 회차를 그대로 돌려준다(답은 복사하지 않음).
+	 */
+	@Transactional
+	public SurveySessionResponse migrate(long userId, long sessionId, String targetSurveyVersion, String policyHash) {
+		userRepository.findByIdForUpdate(userId).orElseThrow(() -> new BusinessException(ErrorCode.AUTH_REQUIRED));
+		// 원본 회차도 잠가서, 미리보기 계산과 답 복사 사이에 원본 답이 저장·삭제로 바뀌지 않게 한다.
+		SurveyResponse source = lockedOwned(userId, sessionId);
+		MigrationRule rule = migrationRule(source, targetSurveyVersion);
+		if (!rule.policyHash().equals(policyHash)) {
+			throw new BusinessException(ErrorCode.MIGRATION_POLICY_CHANGED);
+		}
+		SurveyDefinition target = catalog.find(targetSurveyVersion).orElseThrow();
+		SurveyResponse existing = surveyResponseRepository
+			.findByUserIdAndVersionCodeAndCompletedAtIsNull(userId, targetSurveyVersion).orElse(null);
+		if (existing != null) {
+			return view(existing, target);
+		}
+		SurveyResponse created = surveyResponseRepository.save(SurveyResponse.start(userId, targetSurveyVersion));
+		List<String> preserved = plan(source, rule).preservedQuestionIds();
+		surveyAnswerRepository.saveAll(surveyAnswerRepository.findBySurveyId(source.getId()).stream()
+			.filter(answer -> preserved.contains(answer.getQuestionId()))
+			.map(answer -> SurveyAnswer.of(created.getId(), answer.getQuestionId(), answer.value(jsonMapper),
+				answer.getAnsweredAt()))
+			.toList());
+		return view(created, target);
 	}
 
 	/**
@@ -101,13 +214,110 @@ public class SurveyService {
 			.orElseGet(() -> new Progress(null, 0, current.questionCount(), current.questionIds().getFirst()));
 	}
 
-	public record Progress(UUID sessionId, int answeredCount, int questionCount, String nextQuestionId) {
+	public record Progress(Long sessionId, int answeredCount, int questionCount, String nextQuestionId) {
 	}
 
-	private SurveyResponse owned(long userId, UUID sessionId) {
+	// 같은 회원의 시작 요청을 회원 행 잠금으로 줄 세워, 같은 버전의 작성 중 회차가 둘 생기지 않게 한다.
+	private SurveyResponse draftOf(long userId, String surveyVersion) {
+		userRepository.findByIdForUpdate(userId).orElseThrow(() -> new BusinessException(ErrorCode.AUTH_REQUIRED));
+		return surveyResponseRepository.findByUserIdAndVersionCodeAndCompletedAtIsNull(userId, surveyVersion)
+			.orElseGet(() -> surveyResponseRepository.save(SurveyResponse.start(userId, surveyVersion)));
+	}
+
+	private SurveyResponse owned(long userId, long sessionId) {
 		// 남의 회차와 없는 회차를 구분하지 않는다(존재 여부를 알려 주지 않기 위해).
-		return surveyResponseRepository.findByPublicIdAndUserId(sessionId, userId)
+		return surveyResponseRepository.findByIdAndUserId(sessionId, userId)
 			.orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
+	}
+
+	// 같은 버전이거나 두 버전 사이의 이관 규칙 파일이 없으면 옮기지 않는다.
+	private MigrationRule migrationRule(SurveyResponse source, String targetSurveyVersion) {
+		return catalog.migration(source.getVersionCode(), targetSurveyVersion)
+			.orElseThrow(() -> new BusinessException(ErrorCode.MIGRATION_UNSUPPORTED));
+	}
+
+	// 규칙의 preserve 문항이라도 새 버전 규칙으로 다시 검사해 맞지 않으면 옮기지 않는다(옮길 수 없는 답).
+	// 다시 답할 문항(reconfirm)은 원본 답이 있어도 옮기지 않으며, 그 밖에 답한 문항은 옮길 수 없는 답이다.
+	private MigrationPlanResponse plan(SurveyResponse source, MigrationRule rule) {
+		SurveyDefinition from = definitionOf(source);
+		SurveyDefinition to = catalog.find(rule.toSurveyVersion()).orElseThrow();
+		Map<String, SurveyAnswer> answers = answersOf(source);
+		List<String> answered = from.questionIds().stream().filter(answers::containsKey).toList();
+		List<String> preserved = answered.stream()
+			.filter(id -> rule.preserve().contains(id) && stillValid(to, id, answers.get(id)))
+			.toList();
+		List<String> incompatible = answered.stream()
+			.filter(id -> !preserved.contains(id) && !rule.reconfirm().contains(id))
+			.toList();
+		return new MigrationPlanResponse(source.getId(), rule.toSurveyVersion(), preserved, rule.reconfirm(),
+			incompatible, rule.policyHash());
+	}
+
+	private boolean stillValid(SurveyDefinition target, String questionId, SurveyAnswer answer) {
+		try {
+			SurveyAnswerValidator.validate(target, questionId, answer.value(jsonMapper));
+			return true;
+		} catch (BusinessException invalid) {
+			return false;
+		}
+	}
+
+	// 세 칸이 모두 있어야 하고(값은 null 가능) 다른 칸은 받지 않는다. 최소·최대가 모두 있으면 최소 <= 최대.
+	private static void validateMetadata(JsonNode metadata) {
+		if (metadata == null || !metadata.isObject()) {
+			throw new BusinessException(ErrorCode.INVALID_REQUEST);
+		}
+		if (metadata.size() != METADATA_FIELDS.size() || !METADATA_FIELDS.stream().allMatch(metadata::has)) {
+			throw new BusinessException(ErrorCode.INVALID_ANSWER);
+		}
+		for (String field : METADATA_FIELDS) {
+			JsonNode age = metadata.get(field);
+			if (!age.isNull() && !(age.isIntegralNumber() && age.canConvertToInt()
+				&& age.intValue() >= MIN_AGE && age.intValue() <= MAX_AGE)) {
+				throw new BusinessException(ErrorCode.INVALID_ANSWER);
+			}
+		}
+		JsonNode min = metadata.get("desiredAgeMin");
+		JsonNode max = metadata.get("desiredAgeMax");
+		if (!min.isNull() && !max.isNull() && min.intValue() > max.intValue()) {
+			throw new BusinessException(ErrorCode.INVALID_ANSWER);
+		}
+	}
+
+	// 옛 회차의 response_context 에는 answers·audit 같은 다른 키가 있을 수 있어, 그 키는 두고 metadata 만 바꾼다.
+	private ObjectNode contextOf(SurveyResponse response) {
+		if (response.getResponseContext() != null
+			&& jsonMapper.readTree(response.getResponseContext()) instanceof ObjectNode existing) {
+			return existing;
+		}
+		return jsonMapper.createObjectNode();
+	}
+
+	private JsonNode metadataOf(SurveyResponse response) {
+		if (response.getResponseContext() == null) {
+			return null;
+		}
+		JsonNode metadata = jsonMapper.readTree(response.getResponseContext()).get("metadata");
+		return metadata == null || metadata.isNull() ? null : metadata;
+	}
+
+	// 저장·삭제·완료는 회차 행을 잠근 뒤 처리한다. 남의·없는 회차는 404, 완료한 회차는 409.
+	private SurveyResponse lockedOwned(long userId, long sessionId) {
+		return surveyResponseRepository.findOwnedForUpdate(sessionId, userId)
+			.orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
+	}
+
+	private SurveyResponse editable(long userId, long sessionId) {
+		SurveyResponse response = lockedOwned(userId, sessionId);
+		if (response.isCompleted()) {
+			throw new BusinessException(ErrorCode.SESSION_COMPLETED);
+		}
+		return response;
+	}
+
+	// DB(timestamptz)가 마이크로초까지 저장하므로 응답과 다시 조회한 값이 같도록 맞춘다.
+	private Instant now() {
+		return clock.instant().truncatedTo(ChronoUnit.MICROS);
 	}
 
 	// ponytail: 키링 등록 API(영빈 담당) 전이라 키링 단계와 상관없이 "프로필 등록을 마쳤는지"로만 설문을 연다.
@@ -118,29 +328,40 @@ public class SurveyService {
 		}
 	}
 
+	// 회차에 고정된 버전의 설문 파일. 서버에서 그 파일이 빠졌으면 다른 버전으로 추정하지 않고 막는다.
 	private SurveyDefinition definitionOf(SurveyResponse response) {
 		return catalog.find(response.getVersionCode())
-			.orElseThrow(() -> new IllegalStateException("설문 버전 파일이 없습니다: " + response.getVersionCode()));
+			.orElseThrow(() -> new BusinessException(ErrorCode.SERVICE_UNAVAILABLE));
 	}
 
-	private QuestionnaireResponse questionnaire(SurveyDefinition definition) {
-		return new QuestionnaireResponse(Manifest.of(definition), definition.questionCount(),
-			definition.questions(), catalog.metadataSchema());
+	private static QuestionnaireResponse questionnaire(SurveyDefinition definition) {
+		return new QuestionnaireResponse(Manifest.of(definition), definition.questionCount(), definition.questions());
 	}
 
 	private SurveySessionResponse view(SurveyResponse response, SurveyDefinition definition) {
-		JsonNode stored = jsonMapper.readTree(response.getResponseJson());
-		JsonNode answers = stored.get("answers");
+		return view(response, definition, answersOf(response));
+	}
+
+	private Map<String, SurveyAnswer> answersOf(SurveyResponse response) {
+		return surveyAnswerRepository.findBySurveyId(response.getId()).stream()
+			.collect(Collectors.toMap(SurveyAnswer::getQuestionId, Function.identity()));
+	}
+
+	private SurveySessionResponse view(SurveyResponse response, SurveyDefinition definition,
+		Map<String, SurveyAnswer> answers) {
+		if (!definition.questionIds().containsAll(answers.keySet())) {
+			throw new BusinessException(ErrorCode.SERVICE_UNAVAILABLE);
+		}
 		List<SurveySessionResponse.Answer> answered = definition.questionIds().stream()
-			.filter(answers::has)
-			.map(id -> new SurveySessionResponse.Answer(id, answers.get(id)))
+			.filter(answers::containsKey)
+			.map(id -> new SurveySessionResponse.Answer(id, answers.get(id).value(jsonMapper)))
 			.toList();
 		String nextQuestionId = definition.questionIds().stream()
-			.filter(id -> !answers.has(id))
+			.filter(id -> !answers.containsKey(id))
 			.findFirst()
 			.orElse(null);
-		return new SurveySessionResponse(response.getPublicId(), Manifest.of(definition),
-			response.isCompleted() ? "COMPLETED" : "DRAFT", response.getRevision(), answered.size(),
-			definition.questionCount(), nextQuestionId, answered, stored.get("metadata"), response.getCompletedAt());
+		return new SurveySessionResponse(response.getId(), Manifest.of(definition),
+			response.isCompleted() ? "COMPLETED" : "DRAFT", answered.size(), definition.questionCount(),
+			nextQuestionId, answered, response.getCompletedAt(), response.getRevision(), metadataOf(response));
 	}
 }

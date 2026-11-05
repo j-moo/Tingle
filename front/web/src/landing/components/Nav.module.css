@@ -1,0 +1,139 @@
+/* 투명 유리(색 없이 흐림만), 인트로 동안 위로 숨김 */
+.nav {
+  position: fixed;
+  inset: 0 0 auto;
+  z-index: 50;
+  background: transparent;
+  backdrop-filter: blur(16px);
+  transition: transform 0.5s cubic-bezier(0.22, 1, 0.36, 1), visibility 0s;
+}
+/* 어두운 섹션 위(Nav.tsx): 로고 본체 · 메뉴 · 버튼을 흰색으로 */
+.nav[data-tone='dark'] {
+  --logo-ink: #fff;
+  --text-primary: #fff;
+  --text-secondary: rgb(255 255 255 / 80%);
+  --action-primary: #fff;
+  --action-on-primary: var(--neutral-900);
+}
+.logo path,
+.item,
+.cta,
+.burger {
+  transition: fill 0.3s, color 0.3s, background-color 0.3s;
+}
+/* 모바일 메뉴를 펼치면 글이 뒤 내용과 겹치지 않게 바탕을 깔아 줌 */
+.nav[data-open] {
+  background: rgb(255 255 255 / 92%);
+}
+.nav[data-open][data-tone='dark'] {
+  background: rgb(0 0 0 / 85%);
+}
+:global(html[data-intro='playing']) .nav,
+:global(html[data-film='on']) .nav {                     /* 브랜드 필름이 화면을 덮는 동안도 숨김 */
+  visibility: hidden;                    /* 숨은 동안 Tab 포커스가 가지 않게(다 올라간 뒤 적용) */
+  transform: translateY(-100%);
+  transition: transform 0.5s cubic-bezier(0.22, 1, 0.36, 1), visibility 0s 0.5s;
+}
+:global(html[data-film='on']) .nav {
+  padding-right: var(--sbw, 0px);        /* 스크롤바가 빠진 자리까지 네비 바탕으로 덮고, 안쪽 내용은 제자리(index.css) */
+}
+
+.bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: min(1120px, 100% - 40px);
+  height: var(--nav-height);
+  margin-inline: auto;
+}
+
+.home {
+  display: flex;
+}
+.logo {
+  height: 26px;
+}
+
+.menu {
+  display: flex;
+  align-items: center;
+  gap: 32px;
+}
+.item {
+  color: var(--text-secondary);
+  font-size: 15px;
+  font-weight: 600;
+  text-decoration: none;
+}
+.item:hover {
+  color: var(--text-primary);
+}
+
+.cta {
+  display: inline-flex;
+  align-items: center;
+  height: 40px;
+  padding-inline: 18px;
+  border-radius: var(--radius-control);
+  background: var(--action-primary);
+  color: var(--action-on-primary);
+  font-size: 14px;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.mobile {
+  display: none;
+  align-items: center;
+  gap: 8px;
+}
+.burger {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text-primary);
+  cursor: pointer;
+}
+.burger svg {
+  width: 24px;
+  height: 24px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+
+.sheet {
+  display: none;
+}
+
+@media (max-width: 720px), (orientation: landscape) and (max-height: 500px) {   /* 폰 가로도 작은 네비(앱 + ☰) */
+  .nav {
+    --nav-height: 60px;
+  }
+  .logo {
+    height: 22px;
+  }
+  .menu {
+    display: none;
+  }
+  .mobile {
+    display: flex;
+  }
+  .sheet {
+    display: flex;
+    flex-direction: column;
+    padding: 8px 20px 16px;
+  }
+  .sheet a {
+    padding-block: 12px;
+    color: var(--text-primary);
+    font-size: 16px;
+    font-weight: 600;
+    text-decoration: none;
+  }
+}

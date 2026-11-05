@@ -1,0 +1,6 @@
+{
+  "fromSurveyVersion": "SIS-Q-1.1-100",
+  "toSurveyVersion": "TEST-Q-2",
+  "preserve": ["Q001", "Q040"],
+  "reconfirm": ["Q002"]
+}

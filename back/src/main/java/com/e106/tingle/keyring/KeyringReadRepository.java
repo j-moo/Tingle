@@ -1,7 +1,6 @@
 package com.e106.tingle.keyring;
 
 import java.util.List;
-import java.util.UUID;
 
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
@@ -17,26 +16,20 @@ public class KeyringReadRepository {
 	private final JdbcTemplate jdbc;
 
 	public boolean hasActiveBinding(long userId) {
-		return Boolean.TRUE.equals(jdbc.queryForObject("select exists (select 1 from keyring_bindings b "
-			+ "join keyrings k on k.device_id=b.device_id where b.user_id=? and b.unbound_at is null)",
+		return Boolean.TRUE.equals(jdbc.queryForObject("select exists (select 1 from keyring "
+			+ "where owner_user_id=? and state='REGISTERED')",
 			Boolean.class, userId));
 	}
 
 	public List<KeyringView> findOwned(long userId) {
-		// DB의 활성 device_id 유일 제약으로 소유자는 한 명이다. 자격 정보는 SELECT하지 않는다.
-		return jdbc.query("select k.public_device_id,k.firmware_version,b.bound_at,case "
-			+ "when exists (select 1 from keyring_sync_runs r join settings_snapshots s "
-			+ "on s.snapshot_id=r.snapshot_id join matching_settings m on m.user_id=b.user_id "
-			+ "where r.binding_id=b.binding_id and s.user_id=b.user_id "
-			+ "and s.settings_version=m.settings_version and r.status='ACKNOWLEDGED' "
-			+ "and r.acknowledged_at is not null) then 'READY' "
-			+ "when exists (select 1 from keyring_sync_runs r where r.binding_id=b.binding_id) "
-			+ "or exists (select 1 from matching_settings m where m.user_id=b.user_id) "
-			+ "then 'SYNC_PENDING' else 'REGISTERED' end as status "
-			+ "from keyring_bindings b join keyrings k on k.device_id=b.device_id "
-			+ "where b.user_id=? and b.unbound_at is null order by b.bound_at desc,k.public_device_id",
-			(rs, row) -> new KeyringView(rs.getObject("public_device_id", UUID.class),
-				KeyringStatus.valueOf(rs.getString("status")), rs.getTimestamp("bound_at").toInstant(),
-				rs.getString("firmware_version")), userId);
+		// 현재 소유와 실제 ACK만 읽는다. 기기 자격 정보와 추정 등록 시각은 응답하지 않는다.
+		return jdbc.query("select k.id,k.firmware_version,case "
+			+ "when s.settings_version>0 and k.synced_settings_version=s.settings_version then 'READY' "
+			+ "when s.user_id is not null or k.synced_settings_version is not null then 'SYNC_PENDING' "
+			+ "else 'REGISTERED' end as status from keyring k "
+			+ "left join user_setting s on s.user_id=k.owner_user_id "
+			+ "where k.owner_user_id=? and k.state='REGISTERED' order by k.id",
+			(rs, row) -> new KeyringView(rs.getLong("id"),
+				KeyringStatus.valueOf(rs.getString("status")), rs.getString("firmware_version")), userId);
 	}
 }

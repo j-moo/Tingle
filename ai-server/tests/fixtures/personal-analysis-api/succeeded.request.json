@@ -1,0 +1,415 @@
+{
+  "analysisId": 14601,
+  "surveyVersion": "SIS-Q-1.1-100",
+  "analysisVersion": "SIS-A-1.0",
+  "answers": [
+    {
+      "questionId": "Q001",
+      "value": 1
+    },
+    {
+      "questionId": "Q002",
+      "value": 1
+    },
+    {
+      "questionId": "Q003",
+      "value": 1
+    },
+    {
+      "questionId": "Q004",
+      "value": 1
+    },
+    {
+      "questionId": "Q005",
+      "value": 1
+    },
+    {
+      "questionId": "Q006",
+      "value": 1
+    },
+    {
+      "questionId": "Q007",
+      "value": 1
+    },
+    {
+      "questionId": "Q008",
+      "value": 1
+    },
+    {
+      "questionId": "Q009",
+      "value": 1
+    },
+    {
+      "questionId": "Q010",
+      "value": 1
+    },
+    {
+      "questionId": "Q011",
+      "value": 1
+    },
+    {
+      "questionId": "Q012",
+      "value": 1
+    },
+    {
+      "questionId": "Q013",
+      "value": 1
+    },
+    {
+      "questionId": "Q014",
+      "value": 1
+    },
+    {
+      "questionId": "Q015",
+      "value": 1
+    },
+    {
+      "questionId": "Q016",
+      "value": 1
+    },
+    {
+      "questionId": "Q017",
+      "value": 1
+    },
+    {
+      "questionId": "Q018",
+      "value": 1
+    },
+    {
+      "questionId": "Q019",
+      "value": 1
+    },
+    {
+      "questionId": "Q020",
+      "value": 1
+    },
+    {
+      "questionId": "Q021",
+      "value": 1
+    },
+    {
+      "questionId": "Q022",
+      "value": 1
+    },
+    {
+      "questionId": "Q023",
+      "value": 1
+    },
+    {
+      "questionId": "Q024",
+      "value": 1
+    },
+    {
+      "questionId": "Q025",
+      "value": 1
+    },
+    {
+      "questionId": "Q026",
+      "value": 1
+    },
+    {
+      "questionId": "Q027",
+      "value": 1
+    },
+    {
+      "questionId": "Q028",
+      "value": 1
+    },
+    {
+      "questionId": "Q029",
+      "value": 1
+    },
+    {
+      "questionId": "Q030",
+      "value": 4
+    },
+    {
+      "questionId": "Q031",
+      "value": 5
+    },
+    {
+      "questionId": "Q032",
+      "value": 2
+    },
+    {
+      "questionId": "Q033",
+      "value": 3
+    },
+    {
+      "questionId": "Q034",
+      "value": 1
+    },
+    {
+      "questionId": "Q035",
+      "value": 1
+    },
+    {
+      "questionId": "Q036",
+      "value": 1
+    },
+    {
+      "questionId": "Q037",
+      "value": 1
+    },
+    {
+      "questionId": "Q038",
+      "value": 1
+    },
+    {
+      "questionId": "Q039",
+      "value": 1
+    },
+    {
+      "questionId": "Q040",
+      "value": [
+        "rest"
+      ]
+    },
+    {
+      "questionId": "Q041",
+      "value": 1
+    },
+    {
+      "questionId": "Q042",
+      "value": 1
+    },
+    {
+      "questionId": "Q043",
+      "value": 1
+    },
+    {
+      "questionId": "Q044",
+      "value": "explain"
+    },
+    {
+      "questionId": "Q045",
+      "value": "listen"
+    },
+    {
+      "questionId": "Q046",
+      "value": 1
+    },
+    {
+      "questionId": "Q047",
+      "value": 1
+    },
+    {
+      "questionId": "Q048",
+      "value": 1
+    },
+    {
+      "questionId": "Q049",
+      "value": "half"
+    },
+    {
+      "questionId": "Q050",
+      "value": "practical"
+    },
+    {
+      "questionId": "Q051",
+      "value": 1
+    },
+    {
+      "questionId": "Q052",
+      "value": [
+        "morning"
+      ]
+    },
+    {
+      "questionId": "Q053",
+      "value": "local"
+    },
+    {
+      "questionId": "Q054",
+      "value": 1
+    },
+    {
+      "questionId": "Q055",
+      "value": "none"
+    },
+    {
+      "questionId": "Q056",
+      "value": "none"
+    },
+    {
+      "questionId": "Q057",
+      "value": 1
+    },
+    {
+      "questionId": "Q058",
+      "value": "yes"
+    },
+    {
+      "questionId": "Q059",
+      "value": 1
+    },
+    {
+      "questionId": "Q060",
+      "value": "none"
+    },
+    {
+      "questionId": "Q061",
+      "value": "any"
+    },
+    {
+      "questionId": "Q062",
+      "value": "any"
+    },
+    {
+      "questionId": "Q063",
+      "value": "any"
+    },
+    {
+      "questionId": "Q064",
+      "value": "any"
+    },
+    {
+      "questionId": "Q065",
+      "value": 1
+    },
+    {
+      "questionId": "Q066",
+      "value": "any"
+    },
+    {
+      "questionId": "Q067",
+      "value": "any"
+    },
+    {
+      "questionId": "Q068",
+      "value": "any"
+    },
+    {
+      "questionId": "Q069",
+      "value": "any"
+    },
+    {
+      "questionId": "Q070",
+      "value": "any"
+    },
+    {
+      "questionId": "Q071",
+      "value": "any"
+    },
+    {
+      "questionId": "Q072",
+      "value": "any"
+    },
+    {
+      "questionId": "Q073",
+      "value": "any"
+    },
+    {
+      "questionId": "Q074",
+      "value": "any"
+    },
+    {
+      "questionId": "Q075",
+      "value": "any"
+    },
+    {
+      "questionId": "Q076",
+      "value": "any"
+    },
+    {
+      "questionId": "Q077",
+      "value": "any"
+    },
+    {
+      "questionId": "Q078",
+      "value": "any"
+    },
+    {
+      "questionId": "Q079",
+      "value": [
+        "apologize"
+      ]
+    },
+    {
+      "questionId": "Q080",
+      "value": "any"
+    },
+    {
+      "questionId": "Q081",
+      "value": "any"
+    },
+    {
+      "questionId": "Q082",
+      "value": "any"
+    },
+    {
+      "questionId": "Q083",
+      "value": "any"
+    },
+    {
+      "questionId": "Q084",
+      "value": "any"
+    },
+    {
+      "questionId": "Q085",
+      "value": "any"
+    },
+    {
+      "questionId": "Q086",
+      "value": "any"
+    },
+    {
+      "questionId": "Q087",
+      "value": "any"
+    },
+    {
+      "questionId": "Q088",
+      "value": "any"
+    },
+    {
+      "questionId": "Q089",
+      "value": "any"
+    },
+    {
+      "questionId": "Q090",
+      "value": "any"
+    },
+    {
+      "questionId": "Q091",
+      "value": "any"
+    },
+    {
+      "questionId": "Q092",
+      "value": "any"
+    },
+    {
+      "questionId": "Q093",
+      "value": "any"
+    },
+    {
+      "questionId": "Q094",
+      "value": "any"
+    },
+    {
+      "questionId": "Q095",
+      "value": "any"
+    },
+    {
+      "questionId": "Q096",
+      "value": [
+        "approach"
+      ]
+    },
+    {
+      "questionId": "Q097",
+      "value": "unknown"
+    },
+    {
+      "questionId": "Q098",
+      "value": "close"
+    },
+    {
+      "questionId": "Q099",
+      "value": "unknown"
+    },
+    {
+      "questionId": "Q100",
+      "value": "unknown"
+    }
+  ]
+}

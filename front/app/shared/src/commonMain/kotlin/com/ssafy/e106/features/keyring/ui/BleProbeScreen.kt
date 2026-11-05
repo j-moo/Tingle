@@ -1,0 +1,88 @@
+package com.ssafy.e106.features.keyring.ui
+
+import androidx.compose.foundation.layout.*
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Modifier
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.*
+import com.ssafy.e106.core.ble.*
+import com.ssafy.e106.core.ui.components.*
+import com.ssafy.e106.features.onboarding.ui.OnboardingPanel
+import com.ssafy.e106.features.profile.ui.ProfileBackHandler
+import com.ssafy.e106.resources.*
+import org.jetbrains.compose.resources.stringResource
+import org.koin.compose.viewmodel.koinViewModel
+
+/** 읽기 진단은 단독 사용 가능하다. 개발 등록 경로에서만 별도 등록 모델을 받아 실제 귀속 확인 UI를 제공한다. */
+@Composable fun ConnectedBleProbeRoute(onBack: () -> Unit, model: BleProbeViewModel = koinViewModel(),
+    registration: KeyringRegistrationViewModel? = null, sync: KeyringSyncViewModel? = null,
+    managedConnection: Boolean = false) {
+    val permission = rememberBlePermission()
+    val state by model.state.collectAsStateWithLifecycle()
+    val registrationBusy = registration?.state?.collectAsStateWithLifecycle()?.value?.busy == true
+    val syncBusy = sync?.state?.collectAsStateWithLifecycle()?.value?.busy == true
+    val registering = registrationBusy || syncBusy
+    var settingsFailed by remember { mutableStateOf(false) }
+    // 서비스 호스트가 있으면 내부 화면 이동은 연결 종료가 아니다. 단독 진단 화면은 기존 종료 정책을 유지한다.
+    fun release() { registration?.pause(); if (!managedConnection) { sync?.detach(); model.leave() } }
+    LifecycleEventEffect(Lifecycle.Event.ON_START) { registration?.restore(); sync?.resume() }
+    LifecycleEventEffect(Lifecycle.Event.ON_STOP) { release() }
+    DisposableEffect(model, registration, managedConnection) { onDispose { release() } }
+    LaunchedEffect(permission.availability) { if (permission.availability != BleAvailability.Ready) model.leave() }
+    ProfileBackHandler(true) { release(); onBack() }
+    OnboardingPanel(stringResource(Res.string.ble_probe_title)) {
+        TextButton(onClick = { release(); onBack() }) { Text(stringResource(Res.string.owned_keyrings_back)) }
+        Text(stringResource(if (registration == null) Res.string.ble_probe_description else Res.string.registration_live_description))
+        Text(stringResource(when (permission.availability) {
+            BleAvailability.Unsupported -> Res.string.ble_unsupported
+            BleAvailability.PermissionRequired -> Res.string.ble_permission
+            BleAvailability.BluetoothOff -> Res.string.ble_bluetooth_off
+            BleAvailability.LocationOff -> Res.string.ble_location_off
+            BleAvailability.Ready -> Res.string.ble_available
+        }))
+        fun guarded(action: () -> Unit) { settingsFailed = runCatching(action).isFailure }
+        when (permission.availability) {
+            BleAvailability.PermissionRequired -> {
+                AppButton(stringResource(Res.string.ble_request_permission), onClick = { guarded(permission.request) })
+                TextButton(onClick = { guarded(permission.openAppSettings) }) { Text(stringResource(Res.string.ble_app_settings)) }
+            }
+            BleAvailability.BluetoothOff -> AppButton(stringResource(Res.string.ble_bluetooth_settings), onClick = { guarded(permission.openBluetoothSettings) })
+            BleAvailability.LocationOff -> AppButton(stringResource(Res.string.ble_location_settings), onClick = { guarded(permission.openLocationSettings) })
+            else -> Unit
+        }
+        if (settingsFailed) Text(stringResource(Res.string.ble_settings_failed), color = MaterialTheme.colorScheme.error)
+        state.error?.let { Text(stringResource(Res.string.ble_failed, it.name), color = MaterialTheme.colorScheme.error) }
+        state.commandError?.let { Text(stringResource(Res.string.ble_command_failed, it), color = MaterialTheme.colorScheme.error) }
+        if (state.busy) { CircularProgressIndicator(); Text(stringResource(if (syncBusy) Res.string.sync_live_sending else Res.string.ble_connecting)) }
+        if (permission.availability == BleAvailability.Ready && !state.connected) {
+            AppButton(stringResource(if (state.scanning) Res.string.ble_stop_scan else Res.string.ble_start_scan),
+                enabled = !state.busy && !registering, onClick = { if (state.scanning) model.stopScan() else model.scan() })
+            Text(stringResource(Res.string.ble_scan_help))
+            if (state.scanning) Text(stringResource(Res.string.ble_scanning))
+            state.candidates.forEachIndexed { index, device ->
+                AppButton(stringResource(Res.string.ble_candidate, index + 1, device.name ?: "NUS", device.rssi),
+                    modifier = Modifier.fillMaxWidth(), variant = AppButtonVariant.Secondary,
+                    enabled = !state.busy && !registering, onClick = { model.connect(device.id) })
+            }
+        }
+        state.info?.let { info ->
+            Text(stringResource(Res.string.ble_info, info.serial, info.firmware))
+            Text(stringResource(Res.string.ble_not_registered))
+            AppButton(stringResource(Res.string.ble_read_status), enabled = !state.busy && !registering && state.connected && info.supportsStatus,
+                onClick = model::readStatus)
+            if (!info.supportsStatus) Text(stringResource(Res.string.ble_status_unsupported))
+        }
+        state.status?.let { status ->
+            val unknown = stringResource(Res.string.ble_unknown)
+            val charging = when (status.charging) { true -> stringResource(Res.string.ble_charging); false -> stringResource(Res.string.ble_not_charging); null -> unknown }
+            Text(stringResource(Res.string.ble_status, status.batteryPercent?.let { "$it%" } ?: unknown,
+                status.batteryMillivolts?.let { "$it mV" } ?: unknown, charging, status.pendingRecordCount?.toString() ?: unknown))
+        }
+        if (state.connected || state.busy) AppButton(stringResource(Res.string.ble_disconnect),
+            variant = AppButtonVariant.Secondary, enabled = !registering, onClick = model::leave)
+        // 동기화 중 다른 명령을 막고 등록 결과와 설정 상태를 같은 화면에 표시한다.
+        registration?.let { KeyringRegistrationPanel(it, model, state, syncBusy) }
+        sync?.let { KeyringSyncPanel(it, model, state, registrationBusy, managedConnection = managedConnection) }
+    }
+}

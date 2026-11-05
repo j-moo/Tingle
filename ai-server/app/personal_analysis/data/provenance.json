@@ -1,0 +1,16 @@
+{
+  "sourceCommit": "f5224c9aad434e4e1b54df8f3f17d6f84eb48897",
+  "artifacts": {
+    "docs/contracts/survey/questionnaire-SIS-Q-1.1-100.json": "d1199ef59596e78e2c2d3df8884a72a2b97c63099e443da7b9103f3d1e7bcb6e",
+    "docs/handoffs/survey-20261021/mockup/dist/data100.mjs": "44aced472a2671bd5f63546c37884e465144c92c0450b7d5a95d6b3b51114043",
+    "docs/handoffs/survey-20261021/mockup/dist/engine100.mjs": "1b45d79d88b90bc407170acab69b32e29ad1efbf034fdb8536128a3051436893",
+    "docs/handoffs/survey-20261021/mockup/dist/initial-profiles.mjs": "9ce40316e9c02052469bf9aa1f4e96ce6abacb2c95cd5120f9a677f2bdfa606f",
+    "docs/handoffs/survey-20261021/mockup/dist/type-recommendations100.mjs": "9f43017634850a05992995a32bff20d802bf22144d674de4e8a8e0406eb00428",
+    "docs/handoffs/survey-20261021/mockup/dist/wording100.mjs": "b101b30b0b4325089e67938bc1e01b49999a02abade9da0c5892323c091046f5",
+    "docs/handoffs/survey-20261021/mockup/dist/age100.mjs": "8572c1903b9c1248a3d488a5922c688960292a18164d77da32d6d8443751d19e"
+  },
+  "packaged": {
+    "reference.json": "9f4d0c762a713c8c8bb8f69eb45c9e6206a33857ff482a4988d74db383585658",
+    "questionnaire-SIS-Q-1.1-100.json": "d1199ef59596e78e2c2d3df8884a72a2b97c63099e443da7b9103f3d1e7bcb6e"
+  }
+}

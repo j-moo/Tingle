@@ -15,6 +15,9 @@ public record AuthProperties(
 	Duration refreshReuseGrace,
 	String googleClientId,
 	String kakaoAppId,
+	String naverClientId,
+	String naverClientSecret,
+	String naverRedirectUri,
 	String issuer,
 	String audience
 ) {
