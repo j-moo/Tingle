@@ -126,6 +126,16 @@ Spring Boot·JPA·PostgreSQL 운영 기준과 인증·프로필·키링 담당 �
 | GET | `/api/users/{userId}/preferences` | getPreferences | 다른 담당 기존 계약 |
 | PUT | `/api/users/{userId}/settings` | setSettings | 다른 담당 기존 계약 |
 | GET | `/api/users/{userId}/settings` | getSettings | 다른 담당 기존 계약 |
+| POST | `/api/admin/v1/rule-artifacts` | createArtifact | 가을 운영자 규칙 관리(57~60) |
+| GET | `/api/admin/v1/rule-artifacts/{artifactId}` | getArtifact | 가을 운영자 규칙 관리(57~60) |
+| PUT | `/api/admin/v1/rule-artifacts/{artifactId}` | updateArtifact | 가을 운영자 규칙 관리(57~60) |
+| POST | `/api/admin/v1/releases` | createRelease | 가을 운영자 규칙 관리(57~60) |
+| GET | `/api/admin/v1/releases/{releaseId}` | getRelease | 가을 운영자 규칙 관리(57~60) |
+| POST | `/api/admin/v1/releases/{releaseId}/validate` | validateRelease | 가을 운영자 규칙 관리(57~60) |
+| POST | `/api/admin/v1/releases/{releaseId}/approvals` | approveRelease | 가을 운영자 규칙 관리(57~60) |
+| POST | `/api/admin/v1/releases/{releaseId}/publish` | publishRelease | 가을 운영자 규칙 관리(57~60) |
+| GET | `/api/admin/v1/release-channels/current` | getReleaseChannel | 가을 운영자 규칙 관리(57~60) |
+| PUT | `/api/admin/v1/release-channels/current` | activateRelease | 가을 운영자 규칙 관리(57~60) |
 
 ## 현재 MVP 제외·과거 계약 보존
 
@@ -134,15 +144,6 @@ Spring Boot·JPA·PostgreSQL 운영 기준과 인증·프로필·키링 담당 �
 | Method | 보존 경로 | operationId | 구분 |
 | --- | --- | --- | --- |
 | GET | `/api/v1/users/me/profile/photos/{photoId}` | getPhotoStatus | 기존 제외 이력 유지 |
-| POST | `/admin/v1/rule-artifacts` | createArtifact | 기존 제외 이력 유지 |
-| GET | `/admin/v1/rule-artifacts/{artifactId}` | getArtifact | 기존 제외 이력 유지 |
-| PUT | `/admin/v1/rule-artifacts/{artifactId}` | updateArtifact | 기존 제외 이력 유지 |
-| POST | `/admin/v1/releases` | createRelease | 기존 제외 이력 유지 |
-| GET | `/admin/v1/releases/{releaseId}` | getRelease | 기존 제외 이력 유지 |
-| POST | `/admin/v1/releases/{releaseId}/validate` | validateRelease | 기존 제외 이력 유지 |
-| POST | `/admin/v1/releases/{releaseId}/publish` | publishRelease | 기존 제외 이력 유지 |
-| POST | `/admin/v1/releases/{releaseId}/approvals` | approveRelease | 기존 제외 이력 유지 |
-| PUT | `/admin/v1/release-channels/current` | activateRelease | 기존 제외 이력 유지 |
 | POST | `/api/v1/auth/signup` | completeProfile | 기존 제외 이력 유지 |
 | POST | `/api/reports` | createReport | 이번 담당 제외·후속 |
 | POST | `/api/match-proposals/{proposalId}/cancel` | cancelProposalAcceptance | 이번 담당 제외·후속 |

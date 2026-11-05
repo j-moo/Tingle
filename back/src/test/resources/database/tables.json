@@ -1,7 +1,7 @@
 {
   "version": "1.8.0-keyring-server-proofs",
-  "total_tables": 26,
-  "total_columns": 234,
+  "total_tables": 30,
+  "total_columns": 272,
   "physical_foreign_keys": false,
   "tables": {
     "personality": {
@@ -3519,6 +3519,550 @@
           "meaning": "본인 목록 페이지"
         }
       ]
+    },
+    "rule_artifact": {
+      "name": "rule_artifact",
+      "purpose": "규칙 정의 — 설문 문항·이관 규칙 등 한 버전. 게시 전 초안만 수정, 게시 후 불변",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "meaning": "정의 ID — API artifactId",
+          "nullable": false,
+          "pk": true,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "kind",
+          "type": "varchar(30)",
+          "meaning": "종류 — QUESTIONNAIRE / MIGRATION 등. 형식은 kind+schema_version 으로 검사",
+          "nullable": false,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "version",
+          "type": "varchar(100)",
+          "meaning": "버전 이름 — 종류 안에서 유일. 설문은 survey.survey_version 으로 쓰여 30자 이하",
+          "nullable": false,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "schema_version",
+          "type": "varchar(100)",
+          "meaning": "정의 형식 버전 — 서버에 등록된 형식만 허용",
+          "nullable": false,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "revision",
+          "type": "integer",
+          "meaning": "초안 수정 번호 — 0부터, 수정마다 1 증가. If-Match 조건부 수정에 사용",
+          "nullable": false,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "document",
+          "type": "jsonb",
+          "meaning": "정의 본문 — 키를 정렬한 JSON. 실행 코드가 아닌 데이터",
+          "nullable": false,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": "kind+schema_version 별 형식(RuleDocuments)"
+        },
+        {
+          "name": "content_hash",
+          "type": "varchar(64)",
+          "meaning": "내용 해시 — kind·version·schema_version·document 의 SHA-256",
+          "nullable": false,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "created_by",
+          "type": "bigint",
+          "meaning": "만든 운영자 ID",
+          "nullable": false,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": "users.id",
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "created_at",
+          "type": "timestamptz",
+          "meaning": "만든 시각",
+          "nullable": false,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "published_at",
+          "type": "timestamptz",
+          "meaning": "게시 시각 — NULL 이면 초안. 값이 있으면 수정 불가",
+          "nullable": true,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        }
+      ],
+      "indexes": [
+        {
+          "columns": [
+            "id"
+          ],
+          "primary_key": true,
+          "unique": true,
+          "name": "pk_rule_artifact",
+          "meaning": "기본 키"
+        },
+        {
+          "columns": [
+            "kind",
+            "version"
+          ],
+          "primary_key": false,
+          "unique": true,
+          "name": "uq_rule_artifact_kind_version",
+          "meaning": "종류별 버전 이름 하나"
+        }
+      ]
+    },
+    "rule_release": {
+      "name": "rule_release",
+      "purpose": "규칙 조합 — 종류별 정의 하나씩 묶어 검증·승인·게시하는 단위. 조합은 생성 후 불변",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "meaning": "조합 ID — API releaseId",
+          "nullable": false,
+          "pk": true,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "name",
+          "type": "varchar(100)",
+          "meaning": "조합 이름",
+          "nullable": false,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "engine_version",
+          "type": "varchar(100)",
+          "meaning": "실행할 규칙 엔진 버전 — 서버 엔진과 같아야 검증 통과",
+          "nullable": false,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "artifact_ids",
+          "type": "jsonb",
+          "meaning": "조합에 든 정의 ID 배열",
+          "nullable": false,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": "[rule_artifact.id 문자열]"
+        },
+        {
+          "name": "created_by",
+          "type": "bigint",
+          "meaning": "만든 운영자 ID",
+          "nullable": false,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": "users.id",
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "created_at",
+          "type": "timestamptz",
+          "meaning": "만든 시각",
+          "nullable": false,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "validation_id",
+          "type": "uuid",
+          "meaning": "마지막 검증 번호 — API validationRunId. 상세는 rule_audit.detail",
+          "nullable": true,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "validation_hash",
+          "type": "varchar(64)",
+          "meaning": "마지막 검증 때 후보 해시",
+          "nullable": true,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "validation_passed",
+          "type": "boolean",
+          "meaning": "마지막 검증 통과 여부",
+          "nullable": true,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "approval_id",
+          "type": "uuid",
+          "meaning": "마지막 승인 번호",
+          "nullable": true,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "approval_hash",
+          "type": "varchar(64)",
+          "meaning": "승인한 후보 해시 — 지금 후보 해시와 다르면 승인 무효",
+          "nullable": true,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "approved_by",
+          "type": "bigint",
+          "meaning": "승인한 운영자 ID — 조합·정의 작성자와 달라야 함",
+          "nullable": true,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": "users.id",
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "approved_at",
+          "type": "timestamptz",
+          "meaning": "승인 시각",
+          "nullable": true,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "published_by",
+          "type": "bigint",
+          "meaning": "게시한 운영자 ID",
+          "nullable": true,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": "users.id",
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "published_at",
+          "type": "timestamptz",
+          "meaning": "게시 시각 — NULL 이면 미게시. 값이 있으면 불변",
+          "nullable": true,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        }
+      ],
+      "indexes": [
+        {
+          "columns": [
+            "id"
+          ],
+          "primary_key": true,
+          "unique": true,
+          "name": "pk_rule_release",
+          "meaning": "기본 키"
+        }
+      ]
+    },
+    "rule_channel": {
+      "name": "rule_channel",
+      "purpose": "새 설문 회차 기본 조합 포인터 — 행은 current 하나. 기존 회차·결과에는 영향 없음",
+      "columns": [
+        {
+          "name": "name",
+          "type": "varchar(30)",
+          "meaning": "채널 이름 — current",
+          "nullable": false,
+          "pk": true,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "release_id",
+          "type": "uuid",
+          "meaning": "가리키는 게시 조합. NULL 이면 서버 설정 파일 버전",
+          "nullable": true,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": "rule_release.id",
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "survey_version",
+          "type": "varchar(30)",
+          "meaning": "가리키는 조합의 설문 버전 사본",
+          "nullable": true,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamptz",
+          "meaning": "마지막 전환 시각",
+          "nullable": false,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        }
+      ],
+      "indexes": [
+        {
+          "columns": [
+            "name"
+          ],
+          "primary_key": true,
+          "unique": true,
+          "name": "pk_rule_channel",
+          "meaning": "기본 키"
+        }
+      ]
+    },
+    "rule_audit": {
+      "name": "rule_audit",
+      "purpose": "규칙 관리 작업 기록 — 생성·수정·검증·승인·게시·전환. 수정·삭제하지 않음",
+      "columns": [
+        {
+          "name": "id",
+          "type": "bigint",
+          "meaning": "기록 번호",
+          "nullable": false,
+          "pk": true,
+          "increment": true,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "action",
+          "type": "varchar(30)",
+          "meaning": "작업 — ARTIFACT_CREATE / ARTIFACT_UPDATE / RELEASE_CREATE / RELEASE_VALIDATE / RELEASE_APPROVE / RELEASE_PUBLISH / CHANNEL_SWITCH",
+          "nullable": false,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "target_id",
+          "type": "uuid",
+          "meaning": "대상 정의·조합 ID. 채널을 파일 버전으로 되돌리면 NULL",
+          "nullable": true,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "revision",
+          "type": "integer",
+          "meaning": "정의 수정 번호 — 정의 작업만",
+          "nullable": true,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "content_hash",
+          "type": "varchar(64)",
+          "meaning": "그때의 정의 내용 해시 또는 조합 후보 해시",
+          "nullable": true,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "detail",
+          "type": "jsonb",
+          "meaning": "부가 정보 — 검증 결과(검사별 기대값·실제값), 채널 전환 전 조합",
+          "nullable": true,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": "검증: ValidationResponse / 전환: {previousReleaseId}"
+        },
+        {
+          "name": "reason",
+          "type": "text",
+          "meaning": "변경 이유",
+          "nullable": true,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "actor_id",
+          "type": "bigint",
+          "meaning": "작업한 운영자 ID",
+          "nullable": false,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": "users.id",
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "occurred_at",
+          "type": "timestamptz",
+          "meaning": "작업 시각",
+          "nullable": false,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        }
+      ],
+      "indexes": [
+        {
+          "columns": [
+            "id"
+          ],
+          "primary_key": true,
+          "unique": true,
+          "name": "pk_rule_audit",
+          "meaning": "기본 키"
+        },
+        {
+          "columns": [
+            "target_id",
+            "occurred_at"
+          ],
+          "primary_key": false,
+          "unique": false,
+          "name": "ix_rule_audit_target",
+          "meaning": "대상별 기록·작성자 조회"
+        }
+      ]
     }
   },
   "enums": {
@@ -4192,6 +4736,34 @@
       "relation": ">",
       "to_table": "users",
       "to_column": "id"
+    },
+    {
+      "from_table": "rule_artifact",
+      "from_column": "created_by",
+      "relation": ">",
+      "to_table": "users",
+      "to_column": "id"
+    },
+    {
+      "from_table": "rule_release",
+      "from_column": "created_by",
+      "relation": ">",
+      "to_table": "users",
+      "to_column": "id"
+    },
+    {
+      "from_table": "rule_channel",
+      "from_column": "release_id",
+      "relation": ">?",
+      "to_table": "rule_release",
+      "to_column": "id"
+    },
+    {
+      "from_table": "rule_audit",
+      "from_column": "actor_id",
+      "relation": ">",
+      "to_table": "users",
+      "to_column": "id"
     }
   ],
   "amendments": [
@@ -4239,6 +4811,11 @@
       "date": "2026-11-03",
       "issue": "S15P31E106-232",
       "reason": "종교 동의 철회 시 과거 설정 입력 사본의 종교 값을 지우고 지운 시각·사유를 남기기 위해 settings_snapshot 에 redacted_at·redaction_reason 을 추가한다(26표 233칼럼)."
+    },
+    {
+      "date": "2026-11-04",
+      "issue": "S15P31E106-57 / S15P31E106-58 / S15P31E106-59 / S15P31E106-60",
+      "reason": "운영자 규칙 관리 API 구현: rule_artifact·rule_release·rule_channel·rule_audit 4표 38컬럼·논리관계 4개 추가. 기존 표는 변경 없음. 공유 DB 미적용."
     }
   ]
 }

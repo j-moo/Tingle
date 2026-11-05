@@ -42,6 +42,18 @@ public class SurveyAnswer {
 	// 구 aggregate JSON에는 문항별 시각이 없었다. 그 자료는 NULL로 보존한다.
 	private Instant answeredAt;
 
+	/**
+	 * 이 답을 저장 한도(answer_value 100자) 안에서 저장할 수 있는지. 관리자가 올린 설문 정의 검증에 쓴다.
+	 */
+	public static boolean fitsStorage(JsonNode value) {
+		try {
+			of(1, "Q", value, Instant.EPOCH);
+			return true;
+		} catch (IllegalArgumentException tooLong) {
+			return false;
+		}
+	}
+
 	static SurveyAnswer of(long surveyId, String questionId, JsonNode value, Instant answeredAt) {
 		if (surveyId <= 0 || questionId == null || questionId.isBlank() || questionId.length() > 50 || value == null) {
 			throw new IllegalArgumentException("회차·문항·답이 필요합니다");
