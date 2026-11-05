@@ -65,6 +65,22 @@ private class SyncServer : KeyringSyncRepository, OwnedKeyringRepository {
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class KeyringSyncTest {
+    /** 서버 ACK 응답 유실 후 동일 증명은 복구하지만 같은 run의 소유 순번 변경은 거절한다. */
+    @Test fun v2AckRecoveryPreservesEpochAndRejectsChangedIdentity() = runTest(dispatcher) {
+        val server = SyncServer().apply { run = syncRun.copy(ownershipEpoch = 1,
+            proofProtocolVersion = "tingle-device-proof-v2", serverProofProtocolVersion = "tingle-dev-settings-proof-v2") }
+        val prefs = SyncPrefs(); val store = KeyringSyncStore(prefs); store.rememberTarget(1, syncRun.deviceId, "XIAO-test")
+        server.ackAction = { ApiResult.Fail(AppError.Offline) }
+        val m = model(server, store); m.attach("XIAO-test") { stored(it) }; runCurrent()
+        val original = server.acks.single(); assertEquals(1L, store.read(1).single().identity?.ownershipEpoch)
+        models.clear(); server.run = server.run.copy(ownershipEpoch = 2)
+        val restored = model(server, KeyringSyncStore(prefs)); runCurrent()
+        assertEquals(1, server.acks.size); assertEquals(SyncPhase.Failed, restored.state.value.items.single().phase)
+        server.run = server.run.copy(ownershipEpoch = 1)
+        server.ackAction = { server.run = server.run.copy(state = "ACKED"); ApiResult.Ok(server.run) }
+        restored.retry(syncRun.deviceId); runCurrent()
+        assertEquals(original, server.acks.last()); assertEquals(SyncPhase.Confirmed, restored.state.value.items.single().phase)
+    }
     private val dispatcher = StandardTestDispatcher()
     private val models = ViewModelStore()
     @BeforeTest fun before() = Dispatchers.setMain(dispatcher)

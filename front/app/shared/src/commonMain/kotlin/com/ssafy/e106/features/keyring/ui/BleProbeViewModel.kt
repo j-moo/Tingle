@@ -178,9 +178,18 @@ class BleProbeViewModel(private val ble: KeyringBle, private val sessions: Sessi
         mutable.value = mutable.value.copy(busy = true)
         try {
             val id = Uuid.random().toString()
+            // 연결 직후 읽은 정보는 다른 앱의 초기화 이후 낡을 수 있다. 쓰기 전 같은 보드를 다시 확인한다.
+            val info = readInfo(channel)
+            check(stamp == generation && channel === connection && info.serial == expectedSerial)
+            check(info.supportsProof(challenge.proofProtocolVersion) &&
+                (challenge.proofProtocolVersion != KeyringRegistrationProtocol.VERSION_2 || info.ownerState == "UNOWNED"))
+            mutable.update { it.copy(info = info) }
             val result = channel.exchange(KeyringRegistrationProtocol.request(challenge, id))
             check(stamp == generation && channel === connection)
-            return KeyringRegistrationProtocol.response(result, id, expectedSerial, challenge)
+            return KeyringRegistrationProtocol.response(result, id, expectedSerial, challenge).also {
+                // v1은 epoch 필드가 없지만 v2 응답은 방금 확인한 기기의 순번과 정확히 같아야 한다.
+                if (challenge.proofProtocolVersion == KeyringRegistrationProtocol.VERSION_2) check(it.ownershipEpoch == info.ownershipEpoch)
+            }
         } catch (failure: Exception) {
             // 취소/불완전 프레임 뒤에는 같은 채널의 늦은 응답을 다음 요청에 섞지 않는다.
             if (stamp == generation && failure !is BleCommandException) { channel.close(); connection = null }
@@ -218,6 +227,12 @@ class BleProbeViewModel(private val ble: KeyringBle, private val sessions: Sessi
         mutable.update { it.copy(busy = true) }
         try {
             val requestId = Uuid.random().toString()
+            // 서버가 발급한 v2 순번과 현재 기기 순번을 대조한다. 불일치 시 이전 소유 설정을 보내지 않는다.
+            val info = readInfo(channel)
+            check(stamp == generation && channel === connection && info.serial == expectedSerial)
+            check(info.supportsProof(run.proofProtocolVersion) &&
+                (run.proofProtocolVersion != KeyringRegistrationProtocol.VERSION_2 || run.ownershipEpoch == info.ownershipEpoch))
+            mutable.update { it.copy(info = info) }
             // NUS 기반이 Notify 구독 및 20바이트 순차 Write with Response를 보장한다.
             // 전송 재시도는 조정 모델이 새 보드 challenge/서명을 발급받은 뒤에만 진입한다.
             val bytes = channel.exchange(KeyringSyncProtocol.request(run, requestId))

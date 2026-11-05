@@ -86,7 +86,9 @@ class KeyringRegistrationViewModel(private val api: KeyringRegistrationRepositor
         val body = try { proof(challenge) } catch (cancelled: CancellationException) { throw cancelled }
             catch (_: Exception) { throw RegistrationProblem(RegistrationIssue.Device) }
         operation.ensure()
-        if (body.deviceSerial != pending.serial || body.challengeId != challenge.challengeId || !KeyringRegistrationProtocol.validBody(body))
+        // BLE와 복구 저장소의 경계에서도 서버 challenge의 버전을 유지한다. v2를 v1 증명으로 대체하지 않는다.
+        if (body.deviceSerial != pending.serial || body.challengeId != challenge.challengeId ||
+            body.proof.protocolVersion != challenge.proofProtocolVersion || !KeyringRegistrationProtocol.validBody(body))
             throw RegistrationProblem(RegistrationIssue.InvalidResponse)
         if (Instant.parse(challenge.expiresAt) <= now()) throw RegistrationProblem(RegistrationIssue.ExpiredChallenge)
         // 등록 POST보다 먼저 디스크에 본문과 키를 기록한다. 이 지점부터는 새 challenge를 발급하지 않는다.

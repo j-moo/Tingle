@@ -18,14 +18,18 @@ import kotlin.time.Instant
     val proofProtocolVersion: String, val createdAt: String, val ackedAt: String? = null, val serverTime: String,
     val serverProofProtocolVersion: String? = null, val serverKeyId: String? = null,
     val deviceNonce: String? = null, val serverSignature: String? = null,
+    val ownershipEpoch: Long? = null,
 ) {
     override fun toString() = "KeyringSyncRun(REDACTED)"
-    fun identity() = SyncIdentity(syncRunId, deviceId, ownerGeneration, settingsVersion, payloadHash, nonce, keyId, payloadFormat)
+    fun identity() = SyncIdentity(syncRunId, deviceId, ownerGeneration, settingsVersion, payloadHash, nonce, keyId, payloadFormat,
+        ownershipEpoch, proofProtocolVersion)
 }
 
 /** 복구 때 동일 실행의 바이트/소유 세대가 바뀌지 않았는지 비교할 최소 메타데이터. */
 @Serializable data class SyncIdentity(val syncRunId: String, val deviceId: Long, val ownerGeneration: String,
-    val settingsVersion: Long, val payloadHash: String, val nonce: String, val keyId: String, val payloadFormat: String) {
+    val settingsVersion: Long, val payloadHash: String, val nonce: String, val keyId: String, val payloadFormat: String,
+    // 이전 v1 복구 파일은 그대로 읽되 v2 실행은 epoch·증명 버전까지 같아야 같은 작업으로 인정한다.
+    val ownershipEpoch: Long? = null, val proofProtocolVersion: String = KeyringRegistrationProtocol.VERSION) {
     override fun toString() = "SyncIdentity(REDACTED)"
 }
 @Serializable data class KeyringSyncAck(val settingsVersion: Long, val payloadHash: String, val proof: KeyringProof) {
@@ -72,7 +76,10 @@ internal object KeyringSyncProtocol {
             ?.also { require(validDeviceNonce(it)) } ?: error("Missing device challenge")
     }
     fun signed(run: KeyringSyncRun, deviceNonce: String): Boolean = run.deviceNonce == deviceNonce && validDeviceNonce(deviceNonce) &&
-        run.payloadFormat == "tingle-dev-settings-v1" && run.serverProofProtocolVersion == "tingle-dev-settings-proof-v1" &&
+        run.payloadFormat == "tingle-dev-settings-v1" &&
+        KeyringRegistrationProtocol.validEpoch(run.proofProtocolVersion, run.ownershipEpoch) &&
+        run.serverProofProtocolVersion == (if (run.proofProtocolVersion == KeyringRegistrationProtocol.VERSION_2)
+            "tingle-dev-settings-proof-v2" else "tingle-dev-settings-proof-v1") &&
         run.serverKeyId?.matches(Regex("dev-ed25519-[0-9a-f]{16}")) == true &&
         run.serverSignature?.let { encoded(it, 64..64) } == true && runCatching { Instant.parse(run.serverTime) }.isSuccess
     fun valid(run: KeyringSyncRun, deviceId: Long): Boolean =
@@ -82,7 +89,7 @@ internal object KeyringSyncProtocol {
         run.state in setOf("PENDING", "ACKED") && run.payloadEncoding == "base64url" &&
         run.payloadFormat.length in 1..100 && encoded(run.payload, 1..2048) &&
         Regex("[0-9a-f]{64}").matches(run.payloadHash) && encoded(run.nonce, 32..32) &&
-        KeyringRegistrationProtocol.serial(run.keyId) && run.proofProtocolVersion == KeyringRegistrationProtocol.VERSION
+        KeyringRegistrationProtocol.serial(run.keyId) && KeyringRegistrationProtocol.validEpoch(run.proofProtocolVersion, run.ownershipEpoch)
 
     fun request(run: KeyringSyncRun, requestId: String): ByteArray {
         require(valid(run, run.deviceId) && !run.stale && KeyringRegistrationProtocol.uuid(requestId) &&
@@ -90,6 +97,8 @@ internal object KeyringSyncProtocol {
         return (buildJsonObject {
             put("protocolVersion", 1); put("type", "SYNC_SETTINGS"); put("requestId", requestId)
             put("syncRunId", run.syncRunId); put("deviceId", run.deviceId); put("ownerGeneration", run.ownerGeneration)
+            // 서명 규격만 v2다. BLE 봉투 protocolVersion=1과 payloadFormat=v1은 바꾸지 않는다.
+            run.ownershipEpoch?.let { put("ownershipEpoch", it) }
             put("settingsVersion", run.settingsVersion); put("payload", run.payload); put("payloadEncoding", run.payloadEncoding)
             put("payloadFormat", run.payloadFormat); put("payloadHash", run.payloadHash); put("nonce", run.nonce)
             put("keyId", run.keyId); put("proofProtocolVersion", run.proofProtocolVersion)

@@ -25,7 +25,21 @@ internal object BleProbeProtocol {
         val version = value.string("firmwareVersion") ?: throw BleException(BleFailure.InvalidFrame)
         if (!serial.matches(Regex("[A-Za-z0-9._-]{1,64}")) || version.length !in 1..80) throw BleException(BleFailure.InvalidFrame)
         val functions = (value["supportedFunctions"] as? JsonArray)?.mapNotNull { (it as? JsonPrimitive)?.takeIf { p -> p.isString }?.content }.orEmpty()
-        return BleDeviceInfo(serial, version, "GET_STATUS" in functions, "GET_REGISTRATION_PROOF" in functions)
+        // 구형 펌웨어의 생략과 신형 필드 손상을 구분한다. 미확인 epoch를 0으로 만들지 않는다.
+        val epoch = value["ownershipEpoch"]?.let {
+            number(value, "ownershipEpoch")?.takeIf { n -> n >= 0 } ?: throw BleException(BleFailure.InvalidFrame)
+        }
+        val owner = value["ownerState"]?.let {
+            value.string("ownerState")?.takeIf { s -> s in setOf("BOUND", "UNOWNED", "RESETTING", "UNKNOWN") }
+                ?: throw BleException(BleFailure.InvalidFrame)
+        }
+        val versions = value["supportedProofProtocolVersions"]?.let {
+            (it as? JsonArray)?.map { p ->
+                (p as? JsonPrimitive)?.takeIf { s -> s.isString }?.content ?: throw BleException(BleFailure.InvalidFrame)
+            } ?: throw BleException(BleFailure.InvalidFrame)
+        } ?: listOf(KeyringRegistrationProtocol.VERSION)
+        return BleDeviceInfo(serial, version, "GET_STATUS" in functions, "GET_REGISTRATION_PROOF" in functions,
+            epoch, owner, versions)
     }
 
     fun status(value: JsonObject) = BleDeviceStatus(
@@ -39,5 +53,16 @@ internal object BleProbeProtocol {
 }
 
 class BleCommandException(val code: String) : Exception("BLE command failed")
-data class BleDeviceInfo(val serial: String, val firmware: String, val supportsStatus: Boolean, val supportsRegistration: Boolean = false)
+data class BleDeviceInfo(val serial: String, val firmware: String, val supportsStatus: Boolean, val supportsRegistration: Boolean = false,
+    val ownershipEpoch: Long? = null, val ownerState: String? = null,
+    val supportedProofProtocolVersions: List<String> = listOf("tingle-device-proof-v1")) {
+    /** v2 명령은 펌웨어 이름이 아니라 실제 응답의 지원 규격·소유 순번으로 판단한다. */
+    internal fun supportsProof(version: String) = version in supportedProofProtocolVersions &&
+        ownerState !in setOf("RESETTING", "UNKNOWN") && when (version) {
+            KeyringRegistrationProtocol.VERSION -> ownershipEpoch == null || ownershipEpoch == 0L
+            KeyringRegistrationProtocol.VERSION_2 -> ownershipEpoch != null && ownershipEpoch >= 0 &&
+                ownerState in setOf("UNOWNED", "BOUND")
+            else -> false
+        }
+}
 data class BleDeviceStatus(val batteryPercent: Long?, val batteryMillivolts: Long?, val charging: Boolean?, val pendingRecordCount: Long?)
