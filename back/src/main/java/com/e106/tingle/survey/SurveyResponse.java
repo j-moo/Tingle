@@ -45,23 +45,23 @@ public class SurveyResponse {
 
 	private Instant completedAt;
 
-	// 아래 칸은 ERD에 남은 옛 설계(재시도 키·ETag 변경 번호·공개 UUID·metadata·문항 사본)의 기존 값 보존용이다.
+	// 선택 나이 정보(metadata) 저장마다 1씩 올리는 변경 번호. 응답 ETag 이고, metadata 저장은 If-Match 로 이 값을 맞춰야 한다.
+	@ColumnDefault("0")
+	@Column(nullable = false)
+	private long revision;
+
+	// 설문 중 고른 나이 정보는 {"metadata": {...}} 안에 둔다. 옛 회차의 다른 키(answers·audit 등)는 그대로 보존한다.
+	@JdbcTypeCode(SqlTypes.JSON)
+	@Column(columnDefinition = "jsonb")
+	private String responseContext;
+
+	// 아래 칸은 ERD에 남은 옛 설계(재시도 키·공개 UUID·문항 사본)의 기존 값 보존용이다.
 	// 현재 명세는 쓰지 않으므로 새 회차는 비워 두고 읽지도 않는다. 칸 자체는 ERD와 같게 매핑만 유지한다.
 	@Getter(AccessLevel.NONE)
 	private UUID clientRequestId;
 
 	@Getter(AccessLevel.NONE)
-	@ColumnDefault("0")
-	@Column(nullable = false)
-	private long revision;
-
-	@Getter(AccessLevel.NONE)
 	private UUID legacyPublicId;
-
-	@Getter(AccessLevel.NONE)
-	@JdbcTypeCode(SqlTypes.JSON)
-	@Column(columnDefinition = "jsonb")
-	private String responseContext;
 
 	@Getter(AccessLevel.NONE)
 	@JdbcTypeCode(SqlTypes.JSON)
@@ -73,6 +73,11 @@ public class SurveyResponse {
 		response.userId = userId;
 		response.versionCode = versionCode;
 		return response;
+	}
+
+	void changeContext(String context) {
+		responseContext = context;
+		revision++;
 	}
 
 	void complete(Instant now) {

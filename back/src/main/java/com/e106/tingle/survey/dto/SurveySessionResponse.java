@@ -12,6 +12,8 @@ import tools.jackson.databind.JsonNode;
  * @param status DRAFT(작성 중) 또는 COMPLETED(완료, 더 이상 수정 불가)
  * @param nextQuestionId 표시 순서상 첫 미응답 문항. 모두 응답했으면 null
  * @param answers 응답한 문항만 표시 순서대로. "unknown"(모르겠음)도 응답이다
+ * @param revision 선택 나이 정보 저장마다 오르는 변경 번호(응답 ETag 와 같음)
+ * @param metadata 설문 중 고른 선택 나이 정보 {ownAge, desiredAgeMin, desiredAgeMax}. 저장한 적 없으면 null
  */
 public record SurveySessionResponse(
 	long sessionId,
@@ -21,7 +23,9 @@ public record SurveySessionResponse(
 	int questionCount,
 	String nextQuestionId,
 	List<Answer> answers,
-	Instant completedAt
+	Instant completedAt,
+	long revision,
+	JsonNode metadata
 ) {
 
 	public record Answer(String questionId, JsonNode value) {

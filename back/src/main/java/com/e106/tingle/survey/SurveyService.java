@@ -26,6 +26,7 @@ import com.e106.tingle.user.UserRepository;
 import lombok.RequiredArgsConstructor;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
+import tools.jackson.databind.node.ObjectNode;
 
 /**
  * 설문 회차 시작·조회. 회차는 시작할 때의 설문 버전을 고정하고, 그 버전 파일로 문항·진행을 계산한다.
@@ -33,6 +34,11 @@ import tools.jackson.databind.json.JsonMapper;
 @Service
 @RequiredArgsConstructor
 public class SurveyService {
+
+	// 설문 중 고르는 선택 나이 정보. 설문 파일에 metadataSchema 가 없어 모든 버전에 같은 규칙(19~100 정수 또는 null)을 쓴다.
+	private static final List<String> METADATA_FIELDS = List.of("ownAge", "desiredAgeMin", "desiredAgeMax");
+	private static final int MIN_AGE = 19;
+	private static final int MAX_AGE = 100;
 
 	private final SurveyResponseRepository surveyResponseRepository;
 	private final SurveyAnswerRepository surveyAnswerRepository;
@@ -93,6 +99,27 @@ public class SurveyService {
 		}
 		surveyAnswerRepository.deleteById(new SurveyAnswer.Key(response.getId(), questionId));
 		return view(response, definition);
+	}
+
+	/**
+	 * 미완료 회차에 설문 중 고른 선택 나이 정보를 통째로 저장하고 revision 을 1 올린다.
+	 * 프로필 생년월일·희망 조건과는 별개로, 그쪽 값은 읽지도 바꾸지도 않는다.
+	 * If-Match 가 없으면 428, 현재 revision 과 다르면 412(그사이 다른 기기에서 바꿈), 규칙 위반은 422 INVALID_ANSWER.
+	 */
+	@Transactional
+	public SurveySessionResponse saveMetadata(long userId, long sessionId, JsonNode metadata, String ifMatch) {
+		if (ifMatch == null || ifMatch.isBlank()) {
+			throw new BusinessException(ErrorCode.PRECONDITION_REQUIRED);
+		}
+		validateMetadata(metadata);
+		SurveyResponse response = editable(userId, sessionId);
+		if (!("\"" + response.getRevision() + "\"").equals(ifMatch.trim())) {
+			throw new BusinessException(ErrorCode.PRECONDITION_FAILED);
+		}
+		ObjectNode context = contextOf(response);
+		context.set("metadata", metadata);
+		response.changeContext(jsonMapper.writeValueAsString(context));
+		return view(response, definitionOf(response));
 	}
 
 	/**
@@ -222,6 +249,45 @@ public class SurveyService {
 		}
 	}
 
+	// 세 칸이 모두 있어야 하고(값은 null 가능) 다른 칸은 받지 않는다. 최소·최대가 모두 있으면 최소 <= 최대.
+	private static void validateMetadata(JsonNode metadata) {
+		if (metadata == null || !metadata.isObject()) {
+			throw new BusinessException(ErrorCode.INVALID_REQUEST);
+		}
+		if (metadata.size() != METADATA_FIELDS.size() || !METADATA_FIELDS.stream().allMatch(metadata::has)) {
+			throw new BusinessException(ErrorCode.INVALID_ANSWER);
+		}
+		for (String field : METADATA_FIELDS) {
+			JsonNode age = metadata.get(field);
+			if (!age.isNull() && !(age.isIntegralNumber() && age.canConvertToInt()
+				&& age.intValue() >= MIN_AGE && age.intValue() <= MAX_AGE)) {
+				throw new BusinessException(ErrorCode.INVALID_ANSWER);
+			}
+		}
+		JsonNode min = metadata.get("desiredAgeMin");
+		JsonNode max = metadata.get("desiredAgeMax");
+		if (!min.isNull() && !max.isNull() && min.intValue() > max.intValue()) {
+			throw new BusinessException(ErrorCode.INVALID_ANSWER);
+		}
+	}
+
+	// 옛 회차의 response_context 에는 answers·audit 같은 다른 키가 있을 수 있어, 그 키는 두고 metadata 만 바꾼다.
+	private ObjectNode contextOf(SurveyResponse response) {
+		if (response.getResponseContext() != null
+			&& jsonMapper.readTree(response.getResponseContext()) instanceof ObjectNode existing) {
+			return existing;
+		}
+		return jsonMapper.createObjectNode();
+	}
+
+	private JsonNode metadataOf(SurveyResponse response) {
+		if (response.getResponseContext() == null) {
+			return null;
+		}
+		JsonNode metadata = jsonMapper.readTree(response.getResponseContext()).get("metadata");
+		return metadata == null || metadata.isNull() ? null : metadata;
+	}
+
 	// 저장·삭제·완료는 회차 행을 잠근 뒤 처리한다. 남의·없는 회차는 404, 완료한 회차는 409.
 	private SurveyResponse lockedOwned(long userId, long sessionId) {
 		return surveyResponseRepository.findOwnedForUpdate(sessionId, userId)
@@ -275,6 +341,6 @@ public class SurveyService {
 			.orElse(null);
 		return new SurveySessionResponse(response.getId(), Manifest.of(definition),
 			response.isCompleted() ? "COMPLETED" : "DRAFT", answered.size(), definition.questionCount(),
-			nextQuestionId, answered, response.getCompletedAt());
+			nextQuestionId, answered, response.getCompletedAt(), response.getRevision(), metadataOf(response));
 	}
 }

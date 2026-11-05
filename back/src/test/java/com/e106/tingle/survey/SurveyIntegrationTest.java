@@ -12,6 +12,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -22,6 +23,7 @@ import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.context.annotation.Import;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.ResultActions;
+import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 
 import com.e106.tingle.IntegrationTestSupport;
 import com.e106.tingle.TestProtectedController;
@@ -60,15 +62,15 @@ class SurveyIntegrationTest extends IntegrationTestSupport {
 	void startAndResume() throws Exception {
 		JsonNode tokens = registeredMember();
 		JsonNode first = json(start(tokens, SURVEY_VERSION).andExpect(status().isCreated())
-			.andExpect(header().doesNotExist("ETag"))
+			.andExpect(header().string("ETag", "\"0\""))
 			.andExpect(jsonPath("$.status").value("DRAFT"))
-			.andExpect(jsonPath("$.revision").doesNotExist())
+			.andExpect(jsonPath("$.revision").value(0))
 			.andExpect(jsonPath("$.answeredCount").value(0))
 			.andExpect(jsonPath("$.questionCount").value(100))
 			.andExpect(jsonPath("$.nextQuestionId").value("Q001"))
 			.andExpect(jsonPath("$.sessionId").isNumber())
 			.andExpect(jsonPath("$.answers", hasSize(0)))
-			.andExpect(jsonPath("$.metadata").doesNotExist())
+			.andExpect(jsonPath("$.metadata").value(nullValue()))
 			.andExpect(jsonPath("$.completedAt").value(nullValue())));
 		long sessionId = first.get("sessionId").asLong();
 
@@ -289,6 +291,110 @@ class SurveyIntegrationTest extends IntegrationTestSupport {
 			.andExpect(jsonPath("$.answeredCount").value(4));
 		migrate(tokens, source, "TEST-Q-2", policyHash).andExpect(status().isCreated())
 			.andExpect(jsonPath("$.sessionId").value(migrated));
+	}
+
+	@Test
+	@DisplayName("선택 나이 정보는 If-Match 가 맞을 때만 저장하고 revision 을 올리며, 프로필·희망 조건은 바꾸지 않는다")
+	void savesMetadataWithRevision() throws Exception {
+		JsonNode tokens = registeredMember();
+		long userId = userIdOf(tokens);
+		long sessionId = json(start(tokens, SURVEY_VERSION)).get("sessionId").asLong();
+		Map<String, Object> before = profileAndPreferences(userId);
+
+		saveMetadata(tokens, sessionId, metadata(26, 25, 32), "\"0\"").andExpect(status().isOk())
+			.andExpect(header().string("ETag", "\"1\""))
+			.andExpect(jsonPath("$.revision").value(1))
+			.andExpect(jsonPath("$.metadata.ownAge").value(26))
+			.andExpect(jsonPath("$.metadata.desiredAgeMin").value(25))
+			.andExpect(jsonPath("$.metadata.desiredAgeMax").value(32));
+		perform(get(SESSIONS + "/" + sessionId), tokens, null).andExpect(status().isOk())
+			.andExpect(header().string("ETag", "\"1\""))
+			.andExpect(jsonPath("$.metadata.desiredAgeMax").value(32));
+		// 옛 ETag 로 저장하면 412, If-Match 가 없으면 428 이고 저장 값은 그대로다
+		saveMetadata(tokens, sessionId, metadata(30, null, null), "\"0\"").andExpect(status().is(412))
+			.andExpect(jsonPath("$.code").value("PRECONDITION_FAILED"));
+		saveMetadata(tokens, sessionId, metadata(30, null, null), null).andExpect(status().is(428))
+			.andExpect(jsonPath("$.code").value("PRECONDITION_REQUIRED"));
+		perform(get(SESSIONS + "/" + sessionId), tokens, null)
+			.andExpect(jsonPath("$.revision").value(1))
+			.andExpect(jsonPath("$.metadata.ownAge").value(26));
+		// 모르는 값은 null 로 비울 수 있다
+		saveMetadata(tokens, sessionId, metadata(null, 19, null), "\"1\"").andExpect(status().isOk())
+			.andExpect(jsonPath("$.revision").value(2))
+			.andExpect(jsonPath("$.metadata.ownAge").value(nullValue()))
+			.andExpect(jsonPath("$.metadata.desiredAgeMin").value(19));
+		assertThat(jdbc.queryForObject("select response_context->'metadata'->>'desiredAgeMin' from survey where id=?",
+			String.class, sessionId)).isEqualTo("19");
+		assertThat(profileAndPreferences(userId)).isEqualTo(before);
+	}
+
+	@Test
+	@DisplayName("옛 회차의 response_context 에 있던 다른 키는 두고 metadata 만 바꾼다")
+	void keepsLegacyContextKeys() throws Exception {
+		JsonNode tokens = registeredMember();
+		long sessionId = json(start(tokens, SURVEY_VERSION)).get("sessionId").asLong();
+		jdbc.update("update survey set response_context=cast(? as jsonb) where id=?",
+			"{\"metadata\":{\"ownAge\":25},\"audit\":{\"old\":\"keep\"}}", sessionId);
+
+		perform(get(SESSIONS + "/" + sessionId), tokens, null).andExpect(jsonPath("$.metadata.ownAge").value(25))
+			.andExpect(jsonPath("$.audit").doesNotExist());
+		saveMetadata(tokens, sessionId, metadata(27, null, null), "\"0\"").andExpect(status().isOk())
+			.andExpect(jsonPath("$.metadata.ownAge").value(27));
+		assertThat(jdbc.queryForObject("select response_context->'audit'->>'old' from survey where id=?",
+			String.class, sessionId)).isEqualTo("keep");
+	}
+
+	@Test
+	@DisplayName("나이 정보가 19~100 정수·null 이 아니거나 최소가 최대보다 크면 422, 완료 회차는 409, 남의·없는 회차는 404")
+	void rejectsInvalidMetadata() throws Exception {
+		JsonNode tokens = registeredMember();
+		long sessionId = json(start(tokens, SURVEY_VERSION)).get("sessionId").asLong();
+		String path = SESSIONS + "/" + sessionId + "/metadata";
+		for (String body : List.of("{\"ownAge\":18,\"desiredAgeMin\":null,\"desiredAgeMax\":null}",
+			"{\"ownAge\":101,\"desiredAgeMin\":null,\"desiredAgeMax\":null}",
+			"{\"ownAge\":26.5,\"desiredAgeMin\":null,\"desiredAgeMax\":null}",
+			"{\"ownAge\":\"26\",\"desiredAgeMin\":null,\"desiredAgeMax\":null}",
+			"{\"ownAge\":" + "9".repeat(30) + ",\"desiredAgeMin\":null,\"desiredAgeMax\":null}",
+			"{\"ownAge\":26,\"desiredAgeMin\":33,\"desiredAgeMax\":32}",
+			"{\"ownAge\":26,\"desiredAgeMin\":25}",
+			"{\"ownAge\":26,\"desiredAgeMin\":25,\"desiredAgeMax\":32,\"extra\":1}")) {
+			perform(put(path).header("If-Match", "\"0\""), tokens, body).andExpect(status().is(422))
+				.andExpect(jsonPath("$.code").value("INVALID_ANSWER"));
+		}
+		perform(put(path).header("If-Match", "\"0\""), tokens, "[26]").andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.code").value("INVALID_REQUEST"));
+		saveMetadata(registeredMember(), sessionId, metadata(26, 25, 32), "\"0\"").andExpect(status().isNotFound())
+			.andExpect(jsonPath("$.code").value("RESOURCE_NOT_FOUND"));
+		saveMetadata(tokens, Long.MAX_VALUE, metadata(26, 25, 32), "\"0\"").andExpect(status().isNotFound());
+		assertThat(jdbc.queryForMap("select revision, response_context from survey where id=?", sessionId))
+			.containsEntry("revision", 0L).containsEntry("response_context", null);
+
+		jdbc.update("update survey set completed_at=now() where id=?", sessionId);
+		saveMetadata(tokens, sessionId, metadata(26, 25, 32), "\"0\"").andExpect(status().isConflict())
+			.andExpect(jsonPath("$.code").value("SESSION_COMPLETED"));
+	}
+
+	private ResultActions saveMetadata(JsonNode tokens, long sessionId, Map<String, Object> body, String ifMatch)
+		throws Exception {
+		MockHttpServletRequestBuilder request = put(SESSIONS + "/" + sessionId + "/metadata");
+		if (ifMatch != null) {
+			request.header("If-Match", ifMatch);
+		}
+		return perform(request, tokens, toJson(body));
+	}
+
+	private static Map<String, Object> metadata(Integer ownAge, Integer desiredAgeMin, Integer desiredAgeMax) {
+		Map<String, Object> body = new HashMap<>();
+		body.put("ownAge", ownAge);
+		body.put("desiredAgeMin", desiredAgeMin);
+		body.put("desiredAgeMax", desiredAgeMax);
+		return body;
+	}
+
+	private Map<String, Object> profileAndPreferences(long userId) {
+		Map<String, Object> state = new HashMap<>(jdbc.queryForMap("select * from profile where user_id=?", userId));
+		state.put("preference", jdbc.queryForList("select * from matching_preference where user_id=?", userId));
+		return state;
 	}
 
 	private ResultActions migrate(JsonNode tokens, long sessionId, String target, String policyHash)
