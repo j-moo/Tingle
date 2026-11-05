@@ -316,7 +316,8 @@ public class ExternalCleanupService {
 			.map(reference -> new Target(reference, scopeHash(epoch, binding, approvalId, reference),
 				null, null, null, null, null)).toList();
 		return new ExternalCleanupState(1, epoch, approval, binding, Status.BLOCKED, 0,
-			null, null, targets, history, previous == null ? List.of() : previous.restorationIds(), null, null);
+			null, null, targets, history, previous == null ? List.of() : previous.restorationIds(), null, null,
+			previous == null ? null : previous.dbRestoreGeneration());
 	}
 
 	private ExternalCleanupState blocked(String failure) {

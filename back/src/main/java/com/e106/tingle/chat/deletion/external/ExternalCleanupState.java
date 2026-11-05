@@ -13,7 +13,16 @@ import com.e106.tingle.chat.deletion.external.ExternalCopyDeletionPort.Outcome;
 /** Only matching.chat_external_cleanup_state owns this document; the original DB deletion state is never replaced. */
 public record ExternalCleanupState(int schemaVersion, UUID epoch, Approval approval, Binding binding,
 	Status status, int attempt, Instant leaseUntil, Instant nextAttemptAt, List<Target> targets,
-	List<Evidence> history, List<String> restorationIds, String failureCode, Instant verifiedAt) {
+	List<Evidence> history, List<String> restorationIds, String failureCode, Instant verifiedAt,
+	UUID dbRestoreGeneration) {
+
+	/** Older persisted states have no restore progress and must be replayed conservatively. */
+	public ExternalCleanupState(int schemaVersion, UUID epoch, Approval approval, Binding binding,
+		Status status, int attempt, Instant leaseUntil, Instant nextAttemptAt, List<Target> targets,
+		List<Evidence> history, List<String> restorationIds, String failureCode, Instant verifiedAt) {
+		this(schemaVersion, epoch, approval, binding, status, attempt, leaseUntil, nextAttemptAt, targets,
+			history, restorationIds, failureCode, verifiedAt, null);
+	}
 
 	public ExternalCleanupState {
 		if (schemaVersion != 1 || epoch == null || status == null || attempt < 0
@@ -28,7 +37,7 @@ public record ExternalCleanupState(int schemaVersion, UUID epoch, Approval appro
 	public ExternalCleanupState progress(Status next, int nextAttempt, Instant lease, Instant retryAt,
 		List<Target> results, String code, Instant verified) {
 		return new ExternalCleanupState(schemaVersion, epoch, approval, binding, next, nextAttempt,
-			lease, retryAt, results, history, restorationIds, code, verified);
+			lease, retryAt, results, history, restorationIds, code, verified, dbRestoreGeneration);
 	}
 
 	public ExternalCleanupState invalidate(String code) {
@@ -37,14 +46,20 @@ public record ExternalCleanupState(int schemaVersion, UUID epoch, Approval appro
 			preserved.add(evidence());
 		}
 		return new ExternalCleanupState(schemaVersion, epoch, approval, binding, Status.BLOCKED, attempt,
-			null, null, targets, preserved, restorationIds, code, null);
+			null, null, targets, preserved, restorationIds, code, null, dbRestoreGeneration);
+	}
+
+	public ExternalCleanupState forDbRestore(UUID generation) {
+		ExternalCleanupState invalidated = invalidate("DB_RESTORED");
+		return new ExternalCleanupState(schemaVersion, epoch, approval, binding, invalidated.status(), attempt,
+			null, null, targets, invalidated.history(), restorationIds, "DB_RESTORED", null, generation);
 	}
 
 	public ExternalCleanupState restoredBy(String notificationId) {
 		List<String> ids = new ArrayList<>(restorationIds);
 		ids.add(notificationId);
 		return new ExternalCleanupState(schemaVersion, epoch, approval, binding, status, attempt, leaseUntil,
-			nextAttemptAt, targets, history, ids, "EXTERNAL_RESTORED", verifiedAt);
+			nextAttemptAt, targets, history, ids, "EXTERNAL_RESTORED", verifiedAt, dbRestoreGeneration);
 	}
 
 	public Evidence evidence() {

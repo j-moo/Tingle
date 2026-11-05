@@ -6,9 +6,10 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
-import java.util.concurrent.ConcurrentHashMap;
 
 import com.e106.tingle.chat.deletion.ChatDeletionReferenceSource;
 import com.e106.tingle.chat.deletion.external.ExternalCopyDeletionPort;
@@ -18,6 +19,7 @@ import tools.jackson.databind.json.JsonMapper;
 /** Reads trusted operator-owned metadata only. Never opens, restores or deletes a dump. */
 public final class FileBackupEvidence implements ChatDeletionReferenceSource, ExternalCopyDeletionPort {
 
+	private static final int MAX_EPOCH_CHECKS = 10000;
 	private final Path file;
 	private final Path generationFile;
 	private final String namespace;
@@ -25,7 +27,7 @@ public final class FileBackupEvidence implements ChatDeletionReferenceSource, Ex
 	private final String approvalId;
 	private final Clock clock;
 	private final JsonMapper mapper;
-	private final ConcurrentHashMap<UUID, Instant> epochChecks = new ConcurrentHashMap<>();
+	private final Map<EpochKey, Instant> epochChecks = new LinkedHashMap<>();
 
 	public FileBackupEvidence(Path file, Path generationFile, String namespace, String scopeId,
 		String approvalId, Clock clock, JsonMapper mapper) {
@@ -53,7 +55,7 @@ public final class FileBackupEvidence implements ChatDeletionReferenceSource, Ex
 		try {
 			Snapshot snapshot = read();
 			// A scope reference forces a fresh post-deletion scan even when the initial directory is empty.
-			List<String> ids = List.of(scopeReference(snapshot));
+			List<String> ids = List.of(scopeReference());
 			var approval = new BackupInventoryValidator.Approval(namespace, provider(), contractVersion(),
 				approvalId, snapshot.restoreGeneration(), Duration.ofMinutes(5));
 			var evidence = new BackupInventoryValidator.Evidence(1, namespace, provider(), contractVersion(),
@@ -67,19 +69,16 @@ public final class FileBackupEvidence implements ChatDeletionReferenceSource, Ex
 	@Override
 	public Result deleteAndVerify(Request request) {
 		try {
-			if (epochChecks.size() >= 10000 && !epochChecks.containsKey(request.epoch())) {
-				return result(request, Outcome.BLOCKED_UNRESOLVED, null, "BACKUP_EPOCH_LIMIT");
-			}
-			Instant epochStart = epochChecks.computeIfAbsent(request.epoch(), ignored -> clock.instant());
 			if (!provider().equals(request.reference().provider())
 				|| !contractVersion().equals(request.reference().contractVersion())
 				|| !approvalId.equals(request.approvalId())) {
 				return result(request, Outcome.BLOCKED_UNSUPPORTED, null, "BACKUP_SCOPE_MISMATCH");
 			}
 			Snapshot snapshot = read();
-			if (!scopeReference(snapshot).equals(request.reference().opaqueId())) {
+			if (!knownScopeReference(request.reference().opaqueId())) {
 				return result(request, Outcome.BLOCKED_UNRESOLVED, null, "BACKUP_ID_UNKNOWN");
 			}
+			Instant epochStart = epochStart(new EpochKey(request.epoch(), snapshot.restoreGeneration()));
 			// New dumps can start between inventory capture and DB deletion. Check the whole approved scope,
 			// not only the original file IDs. Filename time is a conservative lower bound on dump start.
 			if (snapshot.entries().stream().anyMatch(entry -> entry.present()
@@ -102,8 +101,33 @@ public final class FileBackupEvidence implements ChatDeletionReferenceSource, Ex
 		return new Result(outcome, request.reference(), request.scopeHash(), receipt, failure);
 	}
 
-	private String scopeReference(Snapshot snapshot) {
-		return scopeId + ":" + namespace + ":" + snapshot.restoreGeneration();
+	private String scopeReference() {
+		return scopeId + ":" + namespace;
+	}
+
+	private boolean knownScopeReference(String reference) {
+		String stable = scopeReference();
+		if (stable.equals(reference)) {
+			return true;
+		}
+		// Existing journals retain their original approval and generation-qualified reference.
+		// Accept only that exact scope; read() still requires evidence for the current generation.
+		String prefix = stable + ":";
+		return reference != null && reference.startsWith(prefix)
+			&& reference.substring(prefix.length()).matches("[A-Za-z0-9][A-Za-z0-9._:-]{0,99}");
+	}
+
+	private synchronized Instant epochStart(EpochKey key) {
+		Instant start = epochChecks.remove(key);
+		if (start == null) {
+			start = clock.instant();
+		}
+		if (epochChecks.size() >= MAX_EPOCH_CHECKS) {
+			epochChecks.remove(epochChecks.keySet().iterator().next());
+		}
+		// Eviction or generation rotation requires a new scan after the next request, never an older one.
+		epochChecks.put(key, start);
+		return start;
 	}
 
 	private Snapshot read() throws Exception {
@@ -143,5 +167,8 @@ public final class FileBackupEvidence implements ChatDeletionReferenceSource, Ex
 	}
 
 	public record Entry(String id, Boolean present, Instant expiresAt) {
+	}
+
+	private record EpochKey(UUID epoch, String restoreGeneration) {
 	}
 }

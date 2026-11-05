@@ -1,6 +1,7 @@
 package com.e106.tingle.chat.deletion.evidence;
 
 import static org.assertj.core.api.Assertions.*;
+import static org.mockito.BDDMockito.*;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -9,6 +10,7 @@ import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicReference;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -83,10 +85,71 @@ class FileBackupEvidenceTest {
 		assertThat(source.deleteAndVerify(request()).outcome()).isEqualTo(Outcome.BLOCKED_UNRESOLVED);
 	}
 
+	@Test
+	void legacyReferenceSurvivesRestoreButOldEvidenceAndPresentDumpsDoNot() throws Exception {
+		AtomicReference<Instant> now = new AtomicReference<>(NOW);
+		Clock clock = mock(Clock.class);
+		given(clock.instant()).willAnswer(invocation -> now.get());
+		FileBackupEvidence source = source(clock);
+		Request original = request();
+		Request legacy = withReference(original, "local-db:tingle_dev:restore-1");
+		write(NOW, false, "restore-1");
+		assertThat(source.deleteAndVerify(legacy).outcome()).isEqualTo(Outcome.ABSENT_CONFIRMED);
+		now.set(NOW.plusSeconds(1));
+		Files.writeString(directory.resolve("generation"), "restore-2");
+		assertThat(source.deleteAndVerify(legacy).outcome()).isEqualTo(Outcome.BLOCKED_UNRESOLVED);
+		write(NOW, false, "restore-2");
+		assertThat(source.deleteAndVerify(legacy).failureCode()).isEqualTo("BACKUP_SCAN_TOO_OLD");
+		write(now.get(), true, "restore-2");
+		assertThat(source.deleteAndVerify(legacy).outcome()).isEqualTo(Outcome.RETRYABLE_FAILED);
+		write(now.get(), false, "restore-2");
+		var result = source.deleteAndVerify(legacy);
+		assertThat(result.outcome()).isEqualTo(Outcome.ABSENT_CONFIRMED);
+		assertThat(result.reference()).isEqualTo(legacy.reference());
+		assertThat(result.scopeHash()).isEqualTo(legacy.scopeHash());
+		assertThat(source.inspect(CONTEXT).references()).containsExactly(reference());
+		for (String wrong : List.of("other:tingle_dev:restore-1", "local-db:tingle:restore-1",
+			"local-db:tingle_dev:")) {
+			assertThat(source.deleteAndVerify(withReference(original, wrong)).outcome())
+				.isEqualTo(Outcome.BLOCKED_UNRESOLVED);
+		}
+		assertThatThrownBy(() -> withReference(original, "local-db:tingle_dev:bad generation"))
+			.isInstanceOf(IllegalArgumentException.class);
+	}
+
+	@Test
+	void moreThanTenThousandEpochsRecoverAndEvictedEpochRequiresANewScan() throws Exception {
+		AtomicReference<Instant> now = new AtomicReference<>(NOW);
+		Clock clock = mock(Clock.class);
+		given(clock.instant()).willAnswer(invocation -> now.get());
+		FileBackupEvidence source = source(clock);
+		write(NOW, false, "restore-1");
+		Request first = request();
+		assertThat(source.deleteAndVerify(first).outcome()).isEqualTo(Outcome.ABSENT_CONFIRMED);
+		for (int index = 0; index < 10001; index++) {
+			assertThat(source.deleteAndVerify(request()).outcome()).isEqualTo(Outcome.ABSENT_CONFIRMED);
+		}
+		now.set(NOW.plusSeconds(1));
+		assertThat(source.deleteAndVerify(first).failureCode()).isEqualTo("BACKUP_SCAN_TOO_OLD");
+		write(now.get(), false, "restore-1");
+		assertThat(source.deleteAndVerify(first).outcome()).isEqualTo(Outcome.ABSENT_CONFIRMED);
+		assertThat(source.deleteAndVerify(request()).outcome()).isEqualTo(Outcome.ABSENT_CONFIRMED);
+	}
+
+	private Request withReference(Request request, String opaque) {
+		return new Request(request.matchingId(), request.epoch(), request.attempt(), request.dispatchId(),
+			request.binding(), request.approvalId(), new Reference("local-db-backup", "file-v1", opaque),
+			request.scopeHash());
+	}
+
 	private FileBackupEvidence source() throws Exception {
+		return source(Clock.fixed(NOW, ZoneOffset.UTC));
+	}
+
+	private FileBackupEvidence source(Clock clock) throws Exception {
 		Files.writeString(directory.resolve("generation"), "restore-1");
 		return new FileBackupEvidence(directory.resolve("inventory.json"), directory.resolve("generation"),
-			"tingle_dev", "local-db", "approval", Clock.fixed(NOW, ZoneOffset.UTC), mapper);
+			"tingle_dev", "local-db", "approval", clock, mapper);
 	}
 
 	private void write(Instant inspected, boolean present, String generation) throws Exception {
@@ -96,7 +159,7 @@ class FileBackupEvidenceTest {
 	}
 
 	private Reference reference() {
-		return new Reference("local-db-backup", "file-v1", "local-db:tingle_dev:restore-1");
+		return new Reference("local-db-backup", "file-v1", "local-db:tingle_dev");
 	}
 
 	private Request request() {
