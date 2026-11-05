@@ -2,6 +2,9 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
     <application>
+        <!-- MainActivity와 동일한 adjustResize + edge-to-edge 조합으로 실제 IME 간격을 검사한다. -->
+        <activity android:name="com.ssafy.e106.features.chat.ChatImeInsetsTestActivity" android:exported="true"
+            android:theme="@android:style/Theme.Material.Light.NoActionBar" android:windowSoftInputMode="adjustResize" />
         <!-- 실제 OS BLE 준비 상태와 회전 후 미연결 표시를 검증하는 테스트 전용 호스트. -->
         <activity android:name="com.ssafy.e106.features.keyring.BleProbeTestActivity" android:exported="true" />
         <!-- 설정 회전 중 입력 보존과 저장 완료를 검증하는 테스트 전용 호스트. -->

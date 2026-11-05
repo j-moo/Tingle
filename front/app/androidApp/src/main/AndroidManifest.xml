@@ -8,8 +8,11 @@
         android:label="${appLabel}"
         android:supportsRtl="true"
         android:theme="@android:style/Theme.Material.Light.NoActionBar">
+        <!-- 미지정 창 모드가 adjustPan을 선택하면 창 이동이 Compose의 IME 여백과 겹칠 수 있다.
+             크기/IME 경계를 전달받아 화면의 inset 처리에 맡겨 기종별 큰 빈칸을 방지한다. -->
         <activity
             android:name=".MainActivity"
+            android:windowSoftInputMode="adjustResize"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
