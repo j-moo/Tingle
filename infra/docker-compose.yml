@@ -128,6 +128,9 @@ services:
       APP_AI_SERVICE_BASE_URL: http://ai-dev:8000
       APP_AI_SERVICE_KEY_ID: be-dev-1
       APP_AI_SERVICE_PRIVATE_KEY_FILE: /run/secrets/tingle/ai-service-dev.pem
+      # Q040 개발 릴리스는 외부 승인된 파일을 양쪽 서비스에 동일하게 등록한다.
+      APP_ICEBREAKER_EXTERNAL_ENABLED: "${Q040_DEV_ENABLED:-false}"
+      APP_ICEBREAKER_MANIFEST_LOCATION: file:/run/tingle/q040-dev-release-v1/be-descriptor.json
       # 개발 1바이트 설정 서명. 실제 키 인계·공동 시험 승인 전에는 비활성이다.
       KEYRING_DEV_SETTINGS_ENABLED: "${KEYRING_DEV_SETTINGS_ENABLED:-false}"
       KEYRING_DEV_SETTINGS_PRIVATE_KEY_FILE: "${KEYRING_DEV_SETTINGS_PRIVATE_KEY_FILE:-/run/secrets/tingle/dev-settings-private.pem}"
@@ -135,6 +138,7 @@ services:
     volumes: # 개발 사진은 운영과 섞이지 않게 따로 둔다
       - /srv/tingle/secrets:/run/secrets/tingle:ro
       - /data/uploads/dev:/data/photos
+      - ${Q040_DEV_RELEASE_DIR:-/srv/tingle/releases/q040-dev-release-v1}:/run/tingle/q040-dev-release-v1:ro
     depends_on: [db]
     mem_limit: 1536m
     restart: unless-stopped
@@ -156,8 +160,11 @@ services:
     environment:
       APP_ENV: dev
       AI_SERVICE_PUBLIC_KEYS: '{"be-dev-1":"/run/ai-keys/be-dev-1.pub.pem"}' # back-dev 서명 키와 짝. 파일이 없으면 기동을 거절한다
+      ICEBREAKER_DEV_ENABLED: "${Q040_DEV_ENABLED:-false}"
+      ICEBREAKER_RELEASE_DESCRIPTOR_FILE: /run/tingle/q040-dev-release-v1/ai-descriptor.json
     volumes:
       - /srv/tingle/ai-keys/dev:/run/ai-keys:ro # 공개 키만 둔다(비밀값 아님). 컨테이너 사용자(uid 10001)가 읽도록 644
+      - ${Q040_DEV_RELEASE_DIR:-/srv/tingle/releases/q040-dev-release-v1}:/run/tingle/q040-dev-release-v1:ro
     mem_limit: 512m
     restart: unless-stopped
 
