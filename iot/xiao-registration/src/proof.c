@@ -173,8 +173,11 @@ bool kr_settings_valid(const struct kr_settings *s)
 	return !strcmp(hex, s->hash);
 }
 
-const char *kr_store(struct kr_core *core, const struct kr_settings *next, char signature[87])
+const char *kr_store(struct kr_core *core, const struct kr_settings *next,
+	const struct kr_settings_auth *auth, char signature[87])
 {
+	core->peer_after_stored.verified_time = 0;
+	core->stop_peer = false;
 	if (core->storage_error) { return "STORAGE_ERROR"; }
 	if (!kr_settings_valid(next)) { return "INVALID_SETTINGS"; }
 	const struct kr_settings *old = &core->current;
@@ -187,13 +190,21 @@ const char *kr_store(struct kr_core *core, const struct kr_settings *next, char 
 			strcmp(old->format, next->format))) { return "VERSION_CONFLICT"; }
 	}
 	if (!core->platform.authorize) { return "POLICY_UNRESOLVED"; }
-	const char *error = core->platform.authorize(core->platform.ctx, next);
+	struct kr_peer_plan plan = {0};
+	const char *error = core->platform.authorize(core->platform.ctx, next, auth, &plan);
 	if (error) { return error; }
+	if (plan.verified_time < 0 || plan.length > KR_DISCOVERY_MAX_BYTES ||
+		(plan.length && (plan.verified_time == 0 || plan.length < KR_DISCOVERY_UUID_BYTES))) {
+		return "INVALID_SETTINGS";
+	}
+	/* Stop advertising the old state even if the new setting's reply is lost. */
+	core->stop_peer = next->version != old->version || (plan.verified_time && !plan.length);
 	if (memcmp(old, next, sizeof(*next))) {
 		if (!core->platform.save || core->platform.save(core->platform.ctx, next)) {
 			/* An uncertain write may have committed. Stop serving mutable requests
 			 * until a reboot/readback resolves the authoritative state. */
 			core->storage_error = true;
+			core->stop_peer = true;
 			return "STORAGE_ERROR";
 		}
 		core->current = *next;
@@ -203,5 +214,18 @@ const char *kr_store(struct kr_core *core, const struct kr_settings *next, char 
 		"TINGLE-KEYRING-STORED\n%s\n%s\n%s\n%" PRId64 "\n%s\n%s\n%s\n%" PRId64 "\n%s\nSTORED\n",
 		KR_PROOF_VERSION, core->identity.key_id, core->identity.serial, next->device_id,
 		next->owner_generation, next->sync_run, next->nonce, next->version, next->hash);
-	return sign_text(&core->identity, transcript, n, signature) ? "PROOF_ERROR" : NULL;
+	if (sign_text(&core->identity, transcript, n, signature)) { return "PROOF_ERROR"; }
+	core->peer_after_stored = plan;
+	return NULL;
+}
+
+bool kr_peer_after_response(struct kr_core *core, bool sent, struct kr_peer_plan *out)
+{
+	bool start = sent && core->peer_after_stored.verified_time > 0 &&
+		core->peer_after_stored.length;
+	if (start) {
+		*out = core->peer_after_stored;
+	}
+	core->peer_after_stored.verified_time = 0;
+	return start;
 }

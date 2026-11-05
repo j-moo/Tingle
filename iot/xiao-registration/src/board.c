@@ -5,12 +5,15 @@
 #include <string.h>
 #include <stdio.h>
 #include <zephyr/device.h>
+#include <zephyr/bluetooth/uuid.h>
 #include <zephyr/drivers/adc.h>
 #include <zephyr/drivers/gpio.h>
 #include <zephyr/drivers/hwinfo.h>
 #include <zephyr/fs/nvs.h>
+#include <zephyr/kernel.h>
 #include <zephyr/random/random.h>
 #include <zephyr/storage/flash_map.h>
+#include <zephyr/sys/util.h>
 #include <hal/nrf_saadc.h>
 
 static struct nvs_fs fs;
@@ -19,6 +22,22 @@ static const struct device *gpio = DEVICE_DT_GET(DT_NODELABEL(gpio0));
 static const struct device *adc = DEVICE_DT_GET(DT_NODELABEL(adc));
 static const struct gpio_dt_spec led = GPIO_DT_SPEC_GET(DT_ALIAS(led2), gpios);
 static bool battery_ready;
+#ifdef KR_DEV_SERVER_KEY_HEX
+static uint8_t server_key[32];
+static struct kr_settings_nonce challenge;
+
+static const char *issue_settings_nonce(void *ctx, char out[44])
+{
+	(void)ctx;
+	uint8_t bytes[32];
+	if (sys_csrand_get(bytes, sizeof(bytes))) {
+		return "RANDOM_ERROR";
+	}
+	kr_issue_settings_nonce(&challenge, bytes, k_uptime_get());
+	memcpy(out, challenge.value, sizeof(challenge.value));
+	return NULL;
+}
+#endif
 BUILD_ASSERT(sizeof(struct kr_settings) < 3900, "Atomic NVS record must fit one erase sector");
 
 static int put(uint16_t key, const void *data, size_t length)
@@ -38,16 +57,37 @@ static int save(void *ctx, const struct kr_settings *next)
 	return 0;
 }
 
-static const char *authorize(void *ctx, const struct kr_settings *next)
+static const char *authorize(void *ctx, const struct kr_settings *next,
+	const struct kr_settings_auth *auth, struct kr_peer_plan *plan)
 {
+#ifdef KR_DEV_SERVER_KEY_HEX
+	const struct kr_core *core = ctx;
+	const char *error = kr_verify_dev_settings(&core->identity, next, auth,
+		&challenge, k_uptime_get(), KR_DEV_SERVER_KEY_ID, server_key, &plan->verified_time);
+	if (error) {
+		return error;
+	}
+	if (next->payload[0]) {
+		static const uint8_t uuid[] = {KR_DEV_DISCOVERY_UUID};
+		memcpy(plan->service_data, uuid, sizeof(uuid));
+		if (sys_csrand_get(plan->service_data + sizeof(uuid), KR_DEV_DISCOVERY_BYTES - sizeof(uuid))) {
+			return "RANDOM_ERROR";
+		}
+		plan->length = KR_DEV_DISCOVERY_BYTES;
+	}
+	return NULL;
+#else
 	(void)ctx;
 	(void)next;
+	(void)auth;
+	(void)plan;
 	/* S15P31E106-225 dependency: Notion sync-runs explicitly returns
 	 * POLICY_UNRESOLVED until the official payload provider exists.
 	 * No insecure runtime switch: replace this adapter only after agreement on
 	 * authenticated owner/server envelope, schema and verification vectors.
 	 * https://app.notion.com/p/3ffc91ccb66080d58b62dfbbf647b3b8 */
 	return "POLICY_UNRESOLVED";
+#endif
 }
 
 static int identity(struct kr_identity *id)
@@ -89,7 +129,14 @@ static int identity(struct kr_identity *id)
 
 int kr_board_open(struct kr_core *core)
 {
-	core->platform = (struct kr_platform){.save = save, .authorize = authorize};
+	core->platform = (struct kr_platform){.ctx = core, .save = save, .authorize = authorize};
+#ifdef KR_DEV_SERVER_KEY_HEX
+	const char *public_hex = KR_DEV_SERVER_KEY_HEX;
+	if (hex2bin(public_hex, strlen(public_hex), server_key, sizeof(server_key)) != sizeof(server_key)) {
+		return -EINVAL;
+	}
+	core->platform.issue_settings_nonce = issue_settings_nonce;
+#endif
 	if (gpio_is_ready_dt(&led)) { gpio_pin_configure_dt(&led, GPIO_OUTPUT_INACTIVE); }
 	/* Seeed: P0.14 LOW for VBAT measurement; never drive HIGH while charging.
 	 * P0.17 is charge-status input only. HIGH is not a reliable 'full' signal.

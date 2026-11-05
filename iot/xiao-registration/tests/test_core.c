@@ -14,6 +14,7 @@ static const char uuid[] = "11111111-1111-4111-8111-111111111111";
 static struct kr_settings disk;
 static int writes, fail_at;
 static bool authorized = true;
+static struct kr_peer_plan authorized_plan;
 
 static int save(void *ctx, const struct kr_settings *next)
 {
@@ -24,10 +25,13 @@ static int save(void *ctx, const struct kr_settings *next)
 	return fail_at == 2 ? -1 : 0; /* committed, but readback/response lost */
 }
 
-static const char *allow(void *ctx, const struct kr_settings *next)
+static const char *allow(void *ctx, const struct kr_settings *next,
+	const struct kr_settings_auth *auth, struct kr_peer_plan *plan)
 {
-	(void)ctx; (void)next;
-	return authorized ? NULL : "POLICY_UNRESOLVED";
+	(void)ctx; (void)next; (void)auth;
+	if (!authorized) { return "POLICY_UNRESOLVED"; }
+	*plan = authorized_plan;
+	return NULL;
 }
 
 static void init(struct kr_core *core)
@@ -117,33 +121,33 @@ static void persistence(void)
 {
 	struct kr_core core; init(&core);
 	struct kr_settings s = settings(12); char proof[87], previous[87];
-	assert(!kr_store(&core, &s, proof)); assert(writes == 1 && core.current.version == 12);
+	assert(!kr_store(&core, &s, NULL, proof)); assert(writes == 1 && core.current.version == 12);
 	strcpy(previous, proof);
-	init(&core); assert(!kr_store(&core, &s, proof));
+	init(&core); assert(!kr_store(&core, &s, NULL, proof));
 	assert(writes == 1 && !strcmp(previous, proof)); /* reconnect/reboot/lost ACK */
 	struct kr_settings changed = s; changed.version = 11;
-	assert(!strcmp(kr_store(&core, &changed, proof), "STALE_SETTINGS"));
+	assert(!strcmp(kr_store(&core, &changed, NULL, proof), "STALE_SETTINGS"));
 	changed = s; changed.owner_generation[0] = '4';
-	assert(!strcmp(kr_store(&core, &changed, proof), "OWNER_MISMATCH"));
+	assert(!strcmp(kr_store(&core, &changed, NULL, proof), "OWNER_MISMATCH"));
 	changed = s; changed.device_id++;
-	assert(!strcmp(kr_store(&core, &changed, proof), "OWNER_MISMATCH"));
+	assert(!strcmp(kr_store(&core, &changed, NULL, proof), "OWNER_MISMATCH"));
 	changed = s; strcpy(changed.format, "another-format");
-	assert(!strcmp(kr_store(&core, &changed, proof), "VERSION_CONFLICT"));
+	assert(!strcmp(kr_store(&core, &changed, NULL, proof), "VERSION_CONFLICT"));
 	changed = s; changed.payload[0] ^= 1;
-	assert(!strcmp(kr_store(&core, &changed, proof), "INVALID_SETTINGS"));
+	assert(!strcmp(kr_store(&core, &changed, NULL, proof), "INVALID_SETTINGS"));
 	uint8_t hash[32]; kr_hash(changed.payload, changed.payload_size, hash); kr_hex(hash, 32, changed.hash);
-	assert(!strcmp(kr_store(&core, &changed, proof), "VERSION_CONFLICT"));
+	assert(!strcmp(kr_store(&core, &changed, NULL, proof), "VERSION_CONFLICT"));
 	changed = s; changed.version = 13; authorized = false;
-	assert(!strcmp(kr_store(&core, &changed, proof), "POLICY_UNRESOLVED"));
+	assert(!strcmp(kr_store(&core, &changed, NULL, proof), "POLICY_UNRESOLVED"));
 	assert(core.current.version == 12 && writes == 1);
 	authorized = true; fail_at = 1;
-	assert(!strcmp(kr_store(&core, &changed, proof), "STORAGE_ERROR"));
+	assert(!strcmp(kr_store(&core, &changed, NULL, proof), "STORAGE_ERROR"));
 	assert(core.current.version == 12 && disk.version == 12);
 	init(&core); fail_at = 2;
-	assert(!strcmp(kr_store(&core, &changed, proof), "STORAGE_ERROR"));
+	assert(!strcmp(kr_store(&core, &changed, NULL, proof), "STORAGE_ERROR"));
 	assert(core.current.version == 12 && disk.version == 13);
 	init(&core); fail_at = 0; int count = writes;
-	assert(core.current.version == 13 && !kr_store(&core, &changed, proof) && writes == count);
+	assert(core.current.version == 13 && !kr_store(&core, &changed, NULL, proof) && writes == count);
 	disk.payload[0] ^= 1; assert(!kr_settings_valid(&disk)); disk.payload[0] ^= 1;
 }
 
@@ -205,19 +209,105 @@ static void request_tests(void)
 	strcpy(duplicate, frame); authorized = false;
 	kr_request(&core, frame, status, true, out);
 	assert(strstr(out, "POLICY_UNRESOLVED") && core.current.version == 13);
+	struct kr_peer_plan plan;
+	assert(!core.stop_peer && !kr_peer_after_response(&core, true, &plan));
+	authorized_plan = (struct kr_peer_plan){
+		.verified_time = 1793577900, .length = 17, .service_data = {1}
+	};
 	authorized = true; kr_request(&core, duplicate, status, true, out);
 	assert(strstr(out, "\"stored\":true,\"applied\":false,\"timeReady\":false"));
 	assert(core.current.version == 14 && core.current.device_id == INT64_C(9007199254740993));
+	assert(core.stop_peer && kr_peer_after_response(&core, true, &plan));
+	assert(plan.length == 17 && plan.verified_time == 1793577900 && plan.service_data[0] == 1);
+	assert(!kr_peer_after_response(&core, true, &plan));
+
+	init(&core); /* The persisted setting does not restore a verified clock. */
+	assert(!kr_peer_after_response(&core, true, &plan));
+	char proof[87];
+	assert(!kr_store(&core, &s, NULL, proof));
+	assert(!kr_peer_after_response(&core, false, &plan)); /* Notify failed */
+	assert(!kr_peer_after_response(&core, true, &plan));
+	assert(!kr_store(&core, &s, NULL, proof) && kr_peer_after_response(&core, true, &plan));
+
+	s.version = 15;
+	authorized_plan.verified_time = 0;
+	assert(!strcmp(kr_store(&core, &s, NULL, proof), "INVALID_SETTINGS"));
+	assert(!core.stop_peer && !kr_peer_after_response(&core, true, &plan));
+	authorized_plan.verified_time = 1793577900;
+	fail_at = 1;
+	assert(!strcmp(kr_store(&core, &s, NULL, proof), "STORAGE_ERROR"));
+	assert(core.stop_peer && !kr_peer_after_response(&core, true, &plan));
+	assert(disk.version == 14);
+	fail_at = 0;
+
+	init(&core);
+	authorized_plan.length = 0; /* Matching OFF */
+	assert(!kr_store(&core, &s, NULL, proof));
+	assert(core.stop_peer && !kr_peer_after_response(&core, true, &plan));
+	authorized_plan = (struct kr_peer_plan){0};
+}
+
+static void server_proof_tests(void)
+{
+	struct kr_core core; init(&core);
+	struct kr_settings s = settings(16);
+	strcpy(s.format, KR_DEV_PAYLOAD_FORMAT);
+	s.payload[0] = 1;
+	s.payload_size = 1;
+	uint8_t digest[32];
+	kr_hash(s.payload, s.payload_size, digest);
+	kr_hex(digest, sizeof(digest), s.hash);
+	struct kr_settings_nonce pending;
+	uint8_t nonce_bytes[32];
+	memset(nonce_bytes, 1, sizeof(nonce_bytes));
+	kr_issue_settings_nonce(&pending, nonce_bytes, 1000);
+	const char server_key_id[] = "dev-ed25519-d75a980182b10ab7";
+	/* Independent Node/OpenSSL vector, generated with the public RFC8032 fixture key. */
+	const struct kr_settings_auth auth = {
+		.protocol_version = KR_SETTINGS_PROOF_VERSION, .server_key_id = server_key_id,
+		.device_nonce = "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE",
+		.server_time = "2026-11-02T00:05:00.000Z",
+		.signature = "For4CM5G37aQcXNKSDMuJ4mGCTJNnjgfBs-NjMX90UJ0jZHtg_aexjL8mkSVMyry04KUm_BLuSgM2WlZS-1EDQ",
+	};
+	int64_t verified_time;
+	const uint8_t *server_key = core.identity.public_key;
+	assert(!strcmp(kr_verify_dev_settings(&core.identity, &s, &auth, &pending, 61000,
+		server_key_id, server_key, &verified_time), "SYNC_CHALLENGE_REQUIRED"));
+	struct kr_settings_auth wrong_time = auth;
+	wrong_time.server_time = "2026-11-02T00:05:01.000Z";
+	assert(!strcmp(kr_verify_dev_settings(&core.identity, &s, &wrong_time, &pending, 2000,
+		server_key_id, server_key, &verified_time), "INVALID_SERVER_PROOF"));
+	++s.device_id;
+	assert(!strcmp(kr_verify_dev_settings(&core.identity, &s, &auth, &pending, 2000,
+		server_key_id, server_key, &verified_time), "INVALID_SERVER_PROOF"));
+	--s.device_id;
+	s.owner_generation[0] = '4';
+	assert(!strcmp(kr_verify_dev_settings(&core.identity, &s, &auth, &pending, 2000,
+		server_key_id, server_key, &verified_time), "INVALID_SERVER_PROOF"));
+	s.owner_generation[0] = '3';
+	s.payload[0] = 0;
+	kr_hash(s.payload, s.payload_size, digest);
+	kr_hex(digest, sizeof(digest), s.hash);
+	assert(!strcmp(kr_verify_dev_settings(&core.identity, &s, &auth, &pending, 2000,
+		server_key_id, server_key, &verified_time), "INVALID_SERVER_PROOF"));
+	s.payload[0] = 1;
+	kr_hash(s.payload, s.payload_size, digest);
+	kr_hex(digest, sizeof(digest), s.hash);
+	assert(!kr_verify_dev_settings(&core.identity, &s, &auth, &pending, 60999,
+		server_key_id, server_key, &verified_time));
+	assert(verified_time == INT64_C(1793577900));
+	assert(!strcmp(kr_verify_dev_settings(&core.identity, &s, &auth, &pending, 60999,
+		server_key_id, server_key, &verified_time), "SYNC_CHALLENGE_REQUIRED"));
 }
 
 int main(int argc, char **argv)
 {
 	assert(argc == 2);
-	codecs(); parser(); framing(); persistence(); request_tests();
+	codecs(); parser(); framing(); persistence(); request_tests(); server_proof_tests();
 	memset(&disk, 0, sizeof(disk)); struct kr_core core; init(&core);
 	struct kr_settings s = settings(INT64_MAX); char registration[87], stored[87], key[44];
 	assert(!kr_registration_proof(&core.identity, uuid, nonce, INT64_C(1793577900), registration));
-	assert(!kr_store(&core, &s, stored));
+	assert(!kr_store(&core, &s, NULL, stored));
 	kr_base64_encode(core.identity.public_key, 32, key);
 	uint8_t signature[64]; char hex[129];
 	crypto_ed25519_sign(signature, core.identity.secret, (const uint8_t *)"", 0);
@@ -227,6 +317,6 @@ int main(int argc, char **argv)
 	FILE *file = fopen(argv[1], "wb"); assert(file);
 	fprintf(file, "publicKey=%s\nregistration=%s\nstored=%s\nhash=%s\n", key, registration, stored, s.hash);
 	assert(!fclose(file));
-	puts("PASS: codecs, strict JSON, RFC8032, persistence/replay/failure, request integration");
+	puts("PASS: codecs, strict JSON, RFC8032, persistence/replay/failure, request integration, server proof");
 	return 0;
 }

@@ -81,6 +81,7 @@ struct kr_io {
 	void (*feedback)(void *, const uint8_t id[16]);
 	enum kr_decision (*calculate)(void *, const struct kr_profile *,
 		const struct kr_profile *);
+	bool synthetic_only;
 	void *ctx;
 };
 
@@ -120,6 +121,7 @@ enum kr_result kr_radio_error(struct kr_engine *e, uint64_t source,
 	const uint8_t *raw, size_t len, enum kr_reason reason, uint64_t now);
 /* Run every runnable job immediately; radio-dependent phases never block others. */
 void kr_drain(struct kr_engine *e);
+void kr_expire_candidates(struct kr_engine *e, uint64_t now);
 size_t kr_advertisement(struct kr_engine *e, unsigned *cursor, uint8_t *out,
 	int *sent_slot);
 void kr_sent(struct kr_engine *e, int slot);

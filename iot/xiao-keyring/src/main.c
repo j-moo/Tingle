@@ -1,4 +1,5 @@
 #include "keyring.h"
+#include "nus.h"
 #include "phone.h"
 #include "storage.h"
 #include <errno.h>
@@ -10,9 +11,7 @@
 #include <zephyr/bluetooth/hci.h>
 #include <zephyr/drivers/gpio.h>
 #include <zephyr/drivers/hwinfo.h>
-#ifdef KR_DIAG_INTERACTIVE_BOOT
 #include <zephyr/drivers/uart.h>
-#endif
 #include <zephyr/init.h>
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
@@ -23,23 +22,30 @@ LOG_MODULE_REGISTER(keyring, LOG_LEVEL_INF);
 
 /* Separate UUIDs prevent this lab binary protocol being mistaken for NUS/JSON v1. */
 #define LAB_UUID(n) BT_UUID_128_ENCODE(0x8e8c0000U + (n), 0x67a0, 0x4d2f, 0x9c17, 0x120b4c80e106ULL)
+#define LAB_CONTROL_BODY_BYTES 65
 static struct bt_uuid_128 service_uuid = BT_UUID_INIT_128(LAB_UUID(1));
 static struct bt_uuid_128 rx_uuid = BT_UUID_INIT_128(LAB_UUID(2));
 static struct bt_uuid_128 tx_uuid = BT_UUID_INIT_128(LAB_UUID(3));
 static const uint8_t radio_uuid[16] = {LAB_UUID(4)};
 static struct kr_engine engine;
+static uint64_t device_id;
 static struct bt_le_ext_adv *phone_adv;
 static struct bt_le_ext_adv *peer_adv;
+static bool peer_scanning;
 static struct bt_conn *phone;
 static uint32_t connection_generation;
 static uint64_t utc_base;
 static int64_t uptime_base;
-static unsigned adv_cursor;
+static unsigned adv_cursor, adv_next_cursor;
 static int adv_slot = -1;
 static bool adv_active;
+enum adv_completion { ADV_PENDING, ADV_UNSENT, ADV_SENT };
 static atomic_t adv_finished;
 static atomic_t radio_dropped;
 static atomic_t restart_phone_adv;
+static atomic_t lab_enabled;
+static atomic_t service_scan_enabled;
+static atomic_t service_discoveries;
 static bool subscribed;
 static uint8_t rx_frame[KR_FRAME_MAX];
 static size_t rx_len;
@@ -75,13 +81,11 @@ static struct k_work_delayable led_off;
 
 enum boot_step {
 	BOOT_MAIN, BOOT_ID, BOOT_STORAGE, BOOT_BLUETOOTH, BOOT_SETTINGS,
-	BOOT_PHONE_CREATE, BOOT_PHONE_DATA, BOOT_PHONE_START, BOOT_PEER_CREATE,
-	BOOT_SCAN, BOOT_READY,
+	BOOT_PHONE_CREATE, BOOT_PHONE_DATA, BOOT_PHONE_START, BOOT_READY,
 };
 static const char *const boot_names[] = {
 	"main", "hardware-id", "storage", "bt_enable", "settings_load",
-	"phone-adv-create", "phone-adv-data", "phone-adv-start", "peer-adv-create",
-	"scan-start", "radio-ready",
+	"phone-adv-create", "phone-adv-data", "phone-adv-start", "radio-ready",
 };
 static atomic_t boot_step;
 static atomic_t boot_errno;
@@ -104,6 +108,9 @@ static void report_boot(struct k_work *work)
 	ARG_UNUSED(work);
 	LOG_INF("BOOT status: stage=%s error=%ld", boot_names[atomic_get(&boot_step)],
 		(long)atomic_get(&boot_errno));
+	if (atomic_get(&service_scan_enabled)) {
+		LOG_INF("Service discovery RX=%ld", (long)atomic_set(&service_discoveries, 0));
+	}
 	/* Diagnostic reporting only: never delays matching or synchronization queues. */
 	(void)k_work_reschedule(&boot_report, K_SECONDS(5));
 }
@@ -181,6 +188,9 @@ static ssize_t receive_phone(struct bt_conn *conn, const struct bt_gatt_attr *at
 	const void *buf, uint16_t len, uint16_t offset, uint8_t flags)
 {
 	ARG_UNUSED(attr);
+	if (!atomic_get(&lab_enabled)) {
+		return BT_GATT_ERR(BT_ATT_ERR_AUTHORIZATION);
+	}
 	if (offset || (flags & BT_GATT_WRITE_FLAG_PREPARE) || !len) {
 		return BT_GATT_ERR(BT_ATT_ERR_INVALID_OFFSET);
 	}
@@ -229,11 +239,8 @@ static void connected(struct bt_conn *conn, uint8_t err)
 	phone = bt_conn_ref(conn);
 	++connection_generation;
 	k_mutex_unlock(&phone_lock);
-	int result = bt_conn_set_security(conn, BT_SECURITY_L2);
-	if (result) {
-		LOG_ERR("Link encryption request failed: %d", result);
-		(void)bt_conn_disconnect(conn, BT_HCI_ERR_AUTH_FAIL);
-	}
+	/* The lab client requests pairing before using its encrypted service.
+	 * NUS can use the same link without triggering a pairing prompt. */
 }
 
 static void disconnected(struct bt_conn *conn, uint8_t reason)
@@ -362,6 +369,18 @@ struct assembly {
 	bool found;
 };
 
+static bool count_service_discovery(struct bt_data *data, void *user_data)
+{
+	ARG_UNUSED(user_data);
+	static const uint8_t uuid[] = {KR_DEV_DISCOVERY_UUID};
+	if (data->type == BT_DATA_SVC_DATA128 && data->data_len == KR_DEV_DISCOVERY_BYTES &&
+		!memcmp(data->data, uuid, sizeof(uuid))) {
+		atomic_inc(&service_discoveries);
+		return false;
+	}
+	return true;
+}
+
 static bool parse_ad(struct bt_data *data, void *user_data)
 {
 	struct assembly *a = user_data;
@@ -395,6 +414,12 @@ static bool parse_ad(struct bt_data *data, void *user_data)
 static void scan_received(const struct bt_le_scan_recv_info *info,
 	struct net_buf_simple *buffer)
 {
+	if (!atomic_get(&lab_enabled)) {
+		if (atomic_get(&service_scan_enabled)) {
+			bt_data_parse(buffer, count_service_discovery, NULL);
+		}
+		return;
+	}
 	/* Zephyr serializes these callbacks on the BT RX workqueue. The message is
 	 * copied into radio_rx before reuse; avoid a 1.2 KiB callback stack frame.
 	 */
@@ -408,6 +433,12 @@ static void scan_received(const struct bt_le_scan_recv_info *info,
 	}
 	message.malformed |= message.len != a.total ||
 		kr_crc32(message.data, message.len) != a.crc;
+	/* In a crowd, other pairs' valid control packets must not consume RX slots. */
+	if (!message.malformed && message.len == LAB_CONTROL_BODY_BYTES + 10 &&
+		message.data[3] == 2 && kr_packet_valid(message.data, message.len) &&
+		kr_get64(message.data + 14) != device_id) {
+		return;
+	}
 	if (k_msgq_put(&radio_rx, &message, K_NO_WAIT)) {
 		atomic_inc(&radio_dropped);
 	}
@@ -420,8 +451,7 @@ static void advertising_sent(struct bt_le_ext_adv *adv,
 	struct bt_le_ext_adv_sent_info *info)
 {
 	ARG_UNUSED(adv);
-	ARG_UNUSED(info);
-	atomic_set(&adv_finished, 1);
+	atomic_set(&adv_finished, info->num_sent ? ADV_SENT : ADV_UNSENT);
 	k_sem_give(&wake);
 }
 
@@ -432,14 +462,20 @@ static int advertise_next(void)
 	static uint8_t packet[KR_WIRE_MAX];
 	static uint8_t chunks[6][254];
 	static struct bt_data fields[6];
-	if (atomic_cas(&adv_finished, 1, 0)) {
+	atomic_val_t completed = atomic_set(&adv_finished, ADV_PENDING);
+	if (completed != ADV_PENDING) {
 		adv_active = false;
-		kr_sent(&engine, adv_slot);
+		if (completed == ADV_SENT) {
+			adv_cursor = adv_next_cursor;
+			kr_sent(&engine, adv_slot);
+		}
 	}
 	if (adv_active || !engine.ready) {
 		return 0;
 	}
-	size_t len = kr_advertisement(&engine, &adv_cursor, packet, &adv_slot);
+	unsigned next_cursor = adv_cursor;
+	int next_slot;
+	size_t len = kr_advertisement(&engine, &next_cursor, packet, &next_slot);
 	if (!len) {
 		return 0;
 	}
@@ -462,9 +498,39 @@ static int advertise_next(void)
 	struct bt_le_ext_adv_start_param start = {.num_events = 1};
 	result = bt_le_ext_adv_start(peer_adv, &start);
 	if (!result) {
+		adv_next_cursor = next_cursor;
+		adv_slot = next_slot;
 		adv_active = true;
 	}
 	return result;
+}
+
+static int phone_advertising_data(bool lab)
+{
+	const struct bt_data ad[] = {
+		BT_DATA_BYTES(BT_DATA_FLAGS, BT_LE_AD_GENERAL | BT_LE_AD_NO_BREDR),
+		BT_DATA_BYTES(BT_DATA_UUID128_ALL, KR_NUS_UUID(0x6e400001)),
+	};
+	const struct bt_data scan_response[] = {
+		BT_DATA(BT_DATA_NAME_COMPLETE, CONFIG_BT_DEVICE_NAME, sizeof(CONFIG_BT_DEVICE_NAME) - 1),
+	};
+	/* A legacy scan response has 31 bytes. The lab name and UUID fit together. */
+	const struct bt_data lab_scan_response[] = {
+		BT_DATA(BT_DATA_NAME_COMPLETE, "Tingle-Lab", sizeof("Tingle-Lab") - 1),
+		BT_DATA_BYTES(BT_DATA_UUID128_ALL, LAB_UUID(1)),
+	};
+	return bt_le_ext_adv_set_data(phone_adv, ad, ARRAY_SIZE(ad),
+		lab ? lab_scan_response : scan_response,
+		lab ? ARRAY_SIZE(lab_scan_response) : ARRAY_SIZE(scan_response));
+}
+
+static int sync_phone_advertising(void)
+{
+	if (!atomic_get(&lab_enabled) && !kr_nus_can_advertise()) {
+		return bt_le_ext_adv_stop(phone_adv);
+	}
+	int result = bt_le_ext_adv_start(phone_adv, BT_LE_EXT_ADV_START_DEFAULT);
+	return result == -EALREADY ? 0 : result;
 }
 
 static int radio_start(void)
@@ -489,23 +555,20 @@ static int radio_start(void)
 	if (result) {
 		return result;
 	}
-	const struct bt_data ad[] = {
-		BT_DATA_BYTES(BT_DATA_FLAGS, BT_LE_AD_GENERAL | BT_LE_AD_NO_BREDR),
-		BT_DATA_BYTES(BT_DATA_UUID128_ALL, LAB_UUID(1)),
-	};
-	const struct bt_data scan_response[] = {
-		BT_DATA(BT_DATA_NAME_COMPLETE, CONFIG_BT_DEVICE_NAME, sizeof(CONFIG_BT_DEVICE_NAME) - 1),
-	};
 	boot_progress(BOOT_PHONE_DATA);
-	result = bt_le_ext_adv_set_data(phone_adv, ad, ARRAY_SIZE(ad),
-		scan_response, ARRAY_SIZE(scan_response));
+	result = phone_advertising_data(false);
 	if (result) {
 		return result;
 	}
 	boot_progress(BOOT_PHONE_START);
-	result = bt_le_ext_adv_start(phone_adv, BT_LE_EXT_ADV_START_DEFAULT);
-	if (result) {
-		return result;
+	kr_nus_start_window();
+	return sync_phone_advertising();
+}
+
+static int prepare_peer_adv(void)
+{
+	if (peer_adv) {
+		return 0;
 	}
 	struct bt_le_adv_param extended = {
 		.id = BT_ID_DEFAULT, .sid = 1,
@@ -514,18 +577,96 @@ static int radio_start(void)
 		.interval_min = BT_GAP_ADV_FAST_INT_MIN_2,
 		.interval_max = BT_GAP_ADV_FAST_INT_MAX_2,
 	};
-	boot_progress(BOOT_PEER_CREATE);
-	result = bt_le_ext_adv_create(&extended, &adv_callbacks, &peer_adv);
-	if (result) {
-		return result;
+	return bt_le_ext_adv_create(&extended, &adv_callbacks, &peer_adv);
+}
+
+static int set_peer_scan(bool enable)
+{
+	if (enable == peer_scanning) {
+		return 0;
 	}
-	bt_le_scan_cb_register(&scan_callbacks);
 	struct bt_le_scan_param scan = {
 		.type = BT_LE_SCAN_TYPE_PASSIVE, .options = BT_LE_SCAN_OPT_NONE,
 		.interval = BT_GAP_SCAN_FAST_INTERVAL, .window = BT_GAP_SCAN_FAST_WINDOW,
 	};
-	boot_progress(BOOT_SCAN);
-	return bt_le_scan_start(&scan, NULL);
+	int result = enable ? bt_le_scan_start(&scan, NULL) : bt_le_scan_stop();
+	if (!result) {
+		peer_scanning = enable;
+	}
+	return result;
+}
+
+static int apply_service_peer(const struct kr_peer_plan *plan)
+{
+	/* Leave the synthetic engine and its persisted records isolated. */
+	int result = peer_adv ? bt_le_ext_adv_stop(peer_adv) : 0;
+	if (result) {
+		return result;
+	}
+	if (!plan->length) {
+		return set_peer_scan(false);
+	}
+	result = prepare_peer_adv();
+	if (result) {
+		return result;
+	}
+	const struct bt_data ad = BT_DATA(BT_DATA_SVC_DATA128, plan->service_data, plan->length);
+	result = bt_le_ext_adv_set_data(peer_adv, &ad, 1, NULL, 0);
+	if (!result) {
+		result = set_peer_scan(true);
+	}
+	if (!result) {
+		result = bt_le_ext_adv_start(peer_adv, BT_LE_EXT_ADV_START_DEFAULT);
+	}
+	return result;
+}
+
+static int enable_lab(void)
+{
+	if (engine.storage_error) {
+		return -EIO;
+	}
+	int result = prepare_peer_adv();
+	if (!result) {
+		result = set_peer_scan(true);
+	}
+	if (!result) {
+		result = phone_advertising_data(true);
+	}
+	if (result) {
+		(void)set_peer_scan(false);
+		return result;
+	}
+	atomic_set(&lab_enabled, 1);
+	atomic_set(&restart_phone_adv, 1);
+	return 0;
+}
+
+static bool lab_requested(void)
+{
+	static const char command[] = "LAB ENABLE";
+	static size_t matched;
+	static bool invalid, carriage_return;
+	const struct device *console = DEVICE_DT_GET(DT_CHOSEN(zephyr_console));
+	unsigned char byte;
+	for (unsigned i = 0; i < 64 && !uart_poll_in(console, &byte); ++i) {
+		if (byte == '\n') {
+			bool enable = !invalid && matched == sizeof(command) - 1;
+			matched = 0;
+			invalid = carriage_return = false;
+			if (enable) {
+				return true;
+			}
+		} else if (!invalid && !carriage_return && byte == '\r') {
+			carriage_return = true;
+		} else if (!invalid && !carriage_return && matched < sizeof(command) - 1 &&
+			byte == command[matched]) {
+			++matched;
+		} else {
+			invalid = true;
+		}
+	}
+	return false;
 }
 
 int main(void)
@@ -540,15 +681,22 @@ int main(void)
 		LOG_ERR("No hardware identity");
 		return 0;
 	}
-	uint64_t device_id = kr_get64(device_bytes) & INT64_MAX;
+	device_id = kr_get64(device_bytes) & INT64_MAX;
 	struct kr_io io = {
 		.config = kr_storage_config, .record = kr_storage_record,
 		.suppression = kr_storage_suppression, .random = random_bytes,
 		.feedback = feedback, .calculate = kr_always_match,
+		.synthetic_only = true,
 	};
 	kr_init(&engine, device_id, io);
 	boot_progress(BOOT_STORAGE);
-	int result = kr_storage_open(&engine);
+	int result = kr_nus_init(&wake);
+	if (result) {
+		atomic_set(&boot_errno, result);
+		LOG_ERR("Registration storage unavailable: %d", result);
+		return 0;
+	}
+	result = kr_storage_open(&engine);
 	if (result) {
 		engine.storage_error = true;
 		atomic_set(&boot_errno, result);
@@ -560,6 +708,7 @@ int main(void)
 		return 0;
 	}
 	k_work_init_delayable(&led_off, turn_led_off);
+	bt_le_scan_cb_register(&scan_callbacks);
 	result = radio_start();
 	if (result) {
 		atomic_set(&boot_errno, result);
@@ -569,11 +718,61 @@ int main(void)
 	boot_progress(BOOT_READY);
 	(void)gpio_pin_set_dt(&boot_red, engine.storage_error ? 1 : 0);
 	(void)gpio_pin_set_dt(&boot_green, 1);
-	LOG_INF("LAB ONLY: binary sync, extended advertising, always-match; awaiting time sync");
-	k_sem_give(&wake);
+	LOG_INF("NUS ready, registration window=60s. USB LAB ENABLE starts synthetic matching for this boot");
+	bool registration_expired = false;
+	bool service_mode = false, service_update = false;
+	struct kr_peer_plan service_plan;
+	int last_adv_error = 0;
 	for (;;) {
-		k_sem_take(&wake, K_FOREVER);
+		k_sem_take(&wake, K_MSEC(100));
+		kr_nus_poll_console(false);
+		if (kr_nus_take_peer_plan(&service_plan)) {
+			service_mode = service_update = true;
+			atomic_clear(&service_scan_enabled);
+			if (atomic_cas(&lab_enabled, 1, 0)) {
+				(void)k_work_cancel_delayable(&led_off);
+				(void)gpio_pin_set_dt(&led, 0);
+			}
+		}
+		if (service_update) {
+			result = apply_service_peer(&service_plan);
+			if (!result) {
+				result = phone_advertising_data(false);
+			}
+			if (!result) {
+				service_update = false;
+				atomic_set(&service_scan_enabled, service_plan.length != 0);
+				atomic_set(&restart_phone_adv, 1);
+				LOG_INF("Service discovery %s", service_plan.length ? "active" : "stopped");
+			} else if (result != last_adv_error) {
+				LOG_WRN("Service discovery update failed: %d; retrying", result);
+			}
+			last_adv_error = result;
+		}
+		if (!service_mode && !atomic_get(&lab_enabled) && lab_requested()) {
+			result = enable_lab();
+			if (result) {
+				LOG_ERR("Lab activation failed: %d", result);
+			} else {
+				LOG_INF("LAB ENABLED: binary sync, extended advertising, always-match; awaiting time sync");
+			}
+		}
+		if (!registration_expired && !kr_nus_can_advertise()) {
+			registration_expired = true;
+			atomic_set(&restart_phone_adv, 1);
+			LOG_INF("Registration window closed; reboot to reopen");
+		}
+		if (atomic_cas(&restart_phone_adv, 1, 0)) {
+			result = sync_phone_advertising();
+			if (result && result != -ENOMEM) {
+				LOG_ERR("Phone advertising update failed: %d", result);
+			}
+		}
+		if (!atomic_get(&lab_enabled)) {
+			continue;
+		}
 		handle_phone();
+		kr_expire_candidates(&engine, now_utc());
 		struct radio_message message;
 		/* Bound a dispatch pass so continuous scanning cannot starve the phone. */
 		for (unsigned n = 0; n < 4 && !k_msgq_get(&radio_rx, &message, K_NO_WAIT); ++n) {
@@ -593,17 +792,11 @@ int main(void)
 				KR_RADIO_OVERFLOW, now_utc());
 		}
 		kr_drain(&engine);
-		if (atomic_cas(&restart_phone_adv, 1, 0)) {
-			result = bt_le_ext_adv_start(phone_adv, BT_LE_EXT_ADV_START_DEFAULT);
-			if (result && result != -EALREADY) {
-				LOG_ERR("Phone advertising restart failed: %d", result);
-			}
-		}
 		result = advertise_next();
-		if (result) {
-			LOG_ERR("Extended advertising failed: %d", result);
-			engine.ready = false;
+		if (result && result != last_adv_error) {
+			LOG_WRN("Extended advertising start failed: %d; retrying", result);
 		}
+		last_adv_error = result;
 		send_phone();
 		if (k_msgq_num_used_get(&radio_rx)) {
 			k_sem_give(&wake);

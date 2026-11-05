@@ -19,8 +19,9 @@ struct disk {
 	enum kr_decision decision;
 };
 
-static struct disk disks[3];
-static struct kr_engine engines[3];
+#define TEST_DEVICES 10
+static struct disk disks[TEST_DEVICES];
+static struct kr_engine engines[TEST_DEVICES];
 static uint8_t packet[KR_WIRE_MAX];
 static uint8_t owner[16] = {1};
 static uint8_t token[16] = {2};
@@ -326,29 +327,70 @@ static void test_every_handshake_restart(void)
 	}
 }
 
-static void test_three_devices(void)
+static void test_many_devices(void)
 {
-	unsigned cursors[3] = {0};
-	for (unsigned i = 0; i < 3; ++i) {
+	unsigned cursors[TEST_DEVICES] = {0};
+	for (unsigned i = 0; i < TEST_DEVICES; ++i) {
 		setup(i);
 	}
-	for (unsigned round = 0; round < 80; ++round) {
-		for (unsigned source = 0; source < 3; ++source) {
+	for (unsigned round = 0; round < 500; ++round) {
+		/* Seven devices enter an area already occupied by three. */
+		unsigned active = round < 40 ? 3 : TEST_DEVICES;
+		for (unsigned source = 0; source < active; ++source) {
 			kr_drain(&engines[source]);
 			int sent;
 			size_t len = kr_advertisement(&engines[source], &cursors[source], packet, &sent);
-			for (unsigned target = 0; target < 3; ++target) {
-				if (source != target) {
+			for (unsigned target = 0; target < active; ++target) {
+				if (source != target && (round + 3 * source + target) % 7) {
 					(void)kr_receive(&engines[target], packet, len, source + 1, 1000 + source);
 				}
 			}
 			kr_sent(&engines[source], sent);
 		}
 	}
-	for (unsigned i = 0; i < 3; ++i) {
-		assert(kr_count(&engines[i], KR_CONFIRMED) == 2);
-		assert(disks[i].feedback == 2);
+	for (unsigned i = 0; i < TEST_DEVICES; ++i) {
+		assert(kr_count(&engines[i], KR_CONFIRMED) == TEST_DEVICES - 1);
+		assert(disks[i].feedback == TEST_DEVICES - 1);
+		for (unsigned slot = 0; slot < KR_RECORDS; ++slot) {
+			const struct kr_record *r = &engines[i].records[slot];
+			if (r->kind != KR_CONFIRMED) {
+				continue;
+			}
+			assert(r->peer > 0 && r->peer <= TEST_DEVICES && r->peer != i + 1);
+			const struct kr_engine *peer = &engines[r->peer - 1];
+			unsigned matching = 0;
+			for (unsigned p = 0; p < KR_RECORDS; ++p) {
+				const struct kr_record *other = &peer->records[p];
+				matching += other->kind == KR_CONFIRMED && other->peer == i + 1 &&
+					!memcmp(other->id, r->id, sizeof(r->id));
+			}
+			assert(matching == 1);
+		}
 	}
+}
+
+static void test_expired_candidates_free_capacity(void)
+{
+	setup(0);
+	setup(1);
+	exchange(50, false);
+	for (unsigned i = 0; i < KR_MATCH_LIMIT; ++i) {
+		size_t len = peer_packet(i + 3, 1);
+		assert(kr_receive(&engines[0], packet, len, i + 3, 2000) == KR_OK);
+	}
+	kr_drain(&engines[0]);
+	uint64_t expires = 2000 + engines[0].config.profile.opportunity_sec;
+	size_t len = peer_packet(KR_MATCH_LIMIT + 3, 1);
+	kr_expire_candidates(&engines[0], 0);
+	kr_expire_candidates(&engines[0], expires - 1);
+	assert(kr_receive(&engines[0], packet, len, KR_MATCH_LIMIT + 3, expires - 1) == KR_FULL);
+	kr_expire_candidates(&engines[0], expires);
+	assert(kr_count(&engines[0], KR_MATCH) == 0);
+	assert(kr_count(&engines[0], KR_CONFIRMED) == 1);
+	assert(kr_receive(&engines[0], packet, len, KR_MATCH_LIMIT + 3, expires) == KR_OK);
+	reboot(0);
+	assert(kr_count(&engines[0], KR_MATCH) == 1);
+	assert(kr_count(&engines[0], KR_CONFIRMED) == 1);
 }
 
 static void test_upload_before_final_radio_receipt(void)
@@ -420,6 +462,7 @@ static void test_sync_fixture(const char *path)
 	}
 	fclose(file);
 	setup(0);
+	engines[0].io.synthetic_only = true;
 	uint8_t response[KR_FRAME_MAX];
 	uint64_t utc;
 	assert(kr_phone_process(&engines[0], frame, len, response, &utc) > 0);
@@ -430,6 +473,11 @@ static void test_sync_fixture(const char *path)
 	for (unsigned i = 0; i < 1024; ++i) {
 		assert(engines[0].config.profile.data[i] == (uint8_t)i);
 	}
+	struct kr_profile arbitrary = engines[0].config.profile;
+	++arbitrary.revision;
+	arbitrary.data[0] ^= 1;
+	assert(kr_sync(&engines[0], &arbitrary) == KR_INVALID);
+	assert(engines[0].config.profile.revision == 7);
 	for (size_t i = 0; i < len; ++i) {
 		frame[i] ^= 1;
 		assert(kr_phone_process(&engines[0], frame, len, response, &utc) == 0);
@@ -446,14 +494,16 @@ int main(int argc, char **argv)
 	test_storage_failure();
 	test_phone_frames();
 	test_every_handshake_restart();
-	test_three_devices();
+	test_many_devices();
+	test_expired_candidates_free_capacity();
 	test_upload_before_final_radio_receipt();
 	test_review_backpressure_and_corrupt_restore();
 	if (argc > 1) {
 		test_sync_fixture(argv[1]);
 	}
 	printf("PASS: binary bounds/CRC, multi-device registration, durable sync, bilateral event, "
-		"12 restart cuts, 3 peers, immediate FIFO, three queues, failure evidence, "
+		"12 restart cuts, 10 devices with packet loss and staggered arrival, expiry, "
+		"immediate FIFO, three queues, failure evidence, "
 		"backpressure, corrupt storage, durable receipts, shared wire fixture\n");
 	return 0;
 }
