@@ -17,4 +17,9 @@ done
 tar czf "daily-uploads-$day.tar.gz" -C /data uploads
 # 업로드 사진은 DB 백업과 별도 수명이다. 기존 사진 정리 범위만 유지한다.
 find /backup -maxdepth 1 -type f -name 'daily-uploads-*.tar.gz' -mtime +6 -delete
+if [ -n "${BACKUP_EVIDENCE_DIR:-}" ]; then
+  if ! sh "$script_dir/backup-evidence-refresh.sh"; then
+    echo "backup evidence refresh failed; completed backups are retained" >&2
+  fi
+fi
 echo "$(date '+%F %T') 백업 완료: $(ls daily-*-$day.* | tr '\n' ' ')"

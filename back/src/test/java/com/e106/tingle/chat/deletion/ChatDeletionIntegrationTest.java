@@ -28,6 +28,9 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.ApplicationContext;
@@ -46,6 +49,9 @@ import com.e106.tingle.chat.deletion.ChatDeletionReferenceSource.Reference;
 import com.e106.tingle.chat.deletion.ChatDeletionService.Claim;
 import com.e106.tingle.chat.deletion.ChatDeletionService.Outcome;
 import com.e106.tingle.chat.deletion.ChatDeletionState.Status;
+import com.e106.tingle.chat.deletion.evidence.BackupInventoryValidator;
+import com.e106.tingle.chat.deletion.evidence.BackupInventoryValidator.Approval;
+import com.e106.tingle.chat.deletion.evidence.BackupInventoryValidator.Evidence;
 import com.e106.tingle.chat.deletion.external.ExternalCleanupRepository;
 import com.e106.tingle.chat.deletion.external.ExternalCleanupService;
 import com.e106.tingle.chat.deletion.restore.DeletionJournal;
@@ -206,6 +212,65 @@ class ChatDeletionIntegrationTest {
 		assertThat(count("chat", "id", fixture.chat())).isEqualTo(1);
 		assertThat(service.handoff(fixture.matching())).isEmpty();
 	}
+
+	@ParameterizedTest
+	@EnumSource(value = BackupFailure.class, names = "NONE", mode = EnumSource.Mode.EXCLUDE)
+	void backupEvidenceMustBeApprovedCurrentAndBoundBeforeDbDeletion(BackupFailure failure) {
+		Fixture fixture = fixture(NOW.minus(NORMAL_RETENTION), false);
+		useCandidateBackupEvidence(failure, false);
+		assertThat(service.claimNext()).isEmpty();
+		assertThat(repository.state(fixture.matching()).orElseThrow().status()).isEqualTo(Status.BLOCKED_REFERENCES);
+		assertThat(count("chat", "id", fixture.chat())).isEqualTo(1);
+		assertThat(count("chat_message", "chat_id", fixture.chat())).isEqualTo(1);
+		assertThat(service.handoff(fixture.matching())).isEmpty();
+
+		given(clock.instant()).willReturn(NOW.plusSeconds(300));
+		useCandidateBackupEvidence(BackupFailure.NONE, false);
+		assertThat(service.deleteClaim(service.claimNext().orElseThrow())).isEqualTo(Outcome.DELETED);
+		ChatDeletionState handoff = service.handoff(fixture.matching()).orElseThrow();
+		assertThat(handoff.inventory().approvalId()).isEqualTo("synthetic-backup-approval");
+		assertThat(handoff.inventory().references()).containsExactly(
+			new Reference("synthetic-backup", "candidate-v1", "dump-" + fixture.chat()));
+		assertThat(handoff.context().chatId()).isEqualTo(fixture.chat());
+		assertThat(count("chat_message", "chat_id", fixture.chat())).isZero();
+		assertThat(count("matching", "id", fixture.matching())).isEqualTo(1);
+		assertThat(count("users", "id", fixture.firstUser())).isEqualTo(1);
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = {true, false})
+	void backupInventoryDoesNotInventAnExternalDeletionProvider(boolean absence) {
+		Fixture fixture = fixture(NOW.minus(NORMAL_RETENTION), false);
+		useCandidateBackupEvidence(BackupFailure.NONE, absence);
+		assertThat(service.deleteClaim(service.claimNext().orElseThrow())).isEqualTo(Outcome.DELETED);
+		externalCleanup.claim(fixture.matching()).ifPresent(externalCleanup::execute);
+		assertThat(externalCleanup.inspect(fixture.matching()).orElseThrow().status()).isEqualTo(absence
+			? com.e106.tingle.chat.deletion.external.ExternalCleanupState.Status.VERIFIED
+			: com.e106.tingle.chat.deletion.external.ExternalCleanupState.Status.BLOCKED);
+		assertThat(service.handoff(fixture.matching()).orElseThrow().inventory().absenceConfirmed())
+			.isEqualTo(absence);
+	}
+
+	private void useCandidateBackupEvidence(BackupFailure failure, boolean absence) {
+		// Synthetic approval/evidence only: no production supplier, bean, endpoint or deletion adapter is registered.
+		doAnswer(invocation -> {
+			var expected = (ChatDeletionReferenceSource.Context)invocation.getArgument(0);
+			var context = failure == BackupFailure.OTHER_CHAT
+				? new ChatDeletionReferenceSource.Context(expected.matchingId(), expected.chatId() + 1,
+					expected.createdAt(), expected.closedAt(), expected.dueAt(), expected.sourceFingerprint())
+				: expected;
+			Approval approval = failure == BackupFailure.MISSING_APPROVAL ? null
+				: new Approval("tingle_dev", "synthetic-backup", "candidate-v1", "synthetic-backup-approval",
+					"restore-current", Duration.ofMinutes(5));
+			Instant inspected = failure == BackupFailure.STALE ? clock.instant().minusSeconds(301) : clock.instant();
+			Evidence evidence = new Evidence(1, "tingle_dev", "synthetic-backup", "candidate-v1",
+				"synthetic-backup-approval", failure == BackupFailure.OLD_RESTORE ? "restore-old" : "restore-current",
+				context, inspected, true, absence, absence ? List.of() : List.of("dump-" + expected.chatId()));
+			return new BackupInventoryValidator().validate(evidence, approval, expected, clock.instant());
+		}).when(references).inspect(any());
+	}
+
+	private enum BackupFailure { NONE, MISSING_APPROVAL, STALE, OTHER_CHAT, OLD_RESTORE }
 
 	@Test
 	void blocksDuplicateReferencesBeforeDeletingChatRows() {

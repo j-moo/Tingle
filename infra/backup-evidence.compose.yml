@@ -1,0 +1,20 @@
+# Manual development verification only; Jenkins does not apply this overlay.
+# INFRA owns persistent deployment integration in the base Compose/Jenkinsfile.
+# Opt-in development overlay. Provision the operator-owned metadata folder and
+# review all backup/log/photo scopes before enabling. Never mount /backup into BE.
+services:
+  back-dev:
+    environment:
+      APP_BACKUP_EVIDENCE_ENABLED: "true"
+      APP_BACKUP_EVIDENCE_FILE: /backup-evidence/tingle_dev.json
+      APP_BACKUP_EVIDENCE_GENERATION_FILE: /backup-evidence/tingle_dev.restore-generation
+      APP_BACKUP_EVIDENCE_NAMESPACE: tingle_dev
+      APP_BACKUP_EVIDENCE_SCOPE_ID: ${BACKUP_EVIDENCE_SCOPE_ID:?Scope approval required}
+      APP_BACKUP_EVIDENCE_APPROVAL_ID: ${BACKUP_EVIDENCE_APPROVAL_ID:?Approval required}
+    volumes:
+      - type: bind
+        source: ${BACKUP_EVIDENCE_DIR:?Trusted metadata directory required}
+        target: /backup-evidence
+        read_only: true
+        bind:
+          create_host_path: false
