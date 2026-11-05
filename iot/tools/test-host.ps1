@@ -1,12 +1,14 @@
 param(
     [string]$Zig = 'zig',
     [string]$Python = 'python',
+    [string]$TinyCrypt = '',
     [string]$Javac = 'javac',
     [string]$Java = 'java'
 )
 $ErrorActionPreference = 'Stop'
 $projectRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
-$buildRoot = Join-Path $projectRoot 'build/host-tests'
+$buildRoot = Join-Path $projectRoot 'build/tests/engine'
+if (!$TinyCrypt) { $TinyCrypt = Join-Path $projectRoot 'build/toolchain/modules/crypto/tinycrypt' }
 New-Item -ItemType Directory -Force -Path $buildRoot | Out-Null
 $env:ZIG_GLOBAL_CACHE_DIR = Join-Path $buildRoot 'zig-cache'
 $testExe = Join-Path $buildRoot 'test-engine.exe'
@@ -21,8 +23,10 @@ if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 & $Python -m unittest discover -s (Join-Path $projectRoot 'tests') -p test_lab_server.py -v
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 & $Javac --release 17 -encoding UTF-8 -d $buildRoot `
-    (Join-Path $projectRoot 'phone-app/src/main/java/com/e106/keyring/xiao/Wire.java') `
+    (Join-Path $projectRoot 'tools/phone-test/phone-app/src/main/java/com/e106/keyring/xiao/Wire.java') `
     (Join-Path $projectRoot 'tests/WireTest.java')
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 & $Java -cp $buildRoot WireTest $fixture
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+& (Join-Path $PSScriptRoot 'test-registration.ps1') -Zig $Zig -TinyCrypt $TinyCrypt -Javac $Javac -Java $Java
 exit $LASTEXITCODE

@@ -3,6 +3,11 @@ plugins {
 	id 'checkstyle'
 }
 
+allprojects {
+	layout.buildDirectory = rootProject.layout.projectDirectory.dir(
+		"../../build/apps/virtual-keyring/${project == rootProject ? 'root' : project.name}")
+}
+
 checkstyle {
 	toolVersion = '10.26.1'
 	configFile = file('config/checkstyle/naver-checkstyle-rules.xml')

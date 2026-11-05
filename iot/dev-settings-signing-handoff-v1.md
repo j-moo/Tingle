@@ -4,6 +4,35 @@
 
 `0.2.3-dev-signed`를 기준으로 한 개발 연동 제안이다. 이번 시험 범위는 매칭 ON/OFF 설정의 서버 서명 검증, 플래시 저장과 `STORED` 응답, 확장 광고·스캔 시작과 중지다. 실제 성향 데이터의 기기 간 교환과 매칭 계산은 별도 단계에서 검증한다.
 
+## 단일 펌웨어 프로젝트와 현재 빌드 경로
+
+2026-11-05부터 등록용·키링용 소스를 `iot/`의 Zephyr 프로젝트 하나로 통합했다.
+
+| 용도 | 저장소 기준 경로 |
+| --- | --- |
+| 빌드 진입점 | `iot/CMakeLists.txt`, `iot/prj.conf`, `iot/app.overlay` |
+| 통합 실행·등록·서명·저장·무선 코드 | `iot/src/`, `iot/include/` |
+| 팀 개발 서버 공개키 | `iot/config/dev-settings-public-key.hex` |
+| 빌드 명령 | `iot/tools/build-firmware.ps1` |
+| **보드에 복사할 유일한 UF2** | **`iot/build/zephyr.uf2`** |
+| SHA-256·기준 커밋·소스 변경 여부·소스별 해시 | `iot/build/firmware-manifest.json` |
+| 임시 컴파일 결과 / SDK | `iot/build/firmware/` / `iot/build/toolchain/` |
+| 통합 호스트 검사 | `iot/tools/test-host.ps1` |
+| Android 진단 앱 / 가상 키링 | `iot/tools/phone-test/` / `iot/tools/virtual-keyring/` |
+| 과거 Arduino 실습 | `iot/examples/` (제품 펌웨어 빌드에 포함하지 않음) |
+
+`build/`는 Git 제외 대상이다. 루트 `build/`, `iot/xiao-keyring/`, `iot/xiao-registration/`은 더 이상 빌드 경로로 사용하지 않는다. 빌드 스크립트는 성공한 UF2만 고정 경로로 이동하며, 실패하면 직전 UF2를 유지한다. 실패 후 남아 있는 파일을 새 빌드로 판단하지 말고 종료 코드와 manifest를 확인한다. ELF·맵·캐시 등은 재빌드·분석에 필요한 자동 생성 파일이며 보드에 복사하지 않는다.
+
+기본 빌드는 팀 서버 키 `dev-ed25519-799e2999c648fda3`를 포함한다. 공식 Zephyr 4.2.0 및 SDK 0.17.2를 사용한다. 실행 파일 경로는 각 개발 PC의 설치 위치를 지정한다.
+
+```powershell
+$env:PYTHONPATH = (Resolve-Path iot/build/toolchain/site).Path
+./iot/tools/build-firmware.ps1 -Python <python.exe> -CMake <cmake.exe> -Ninja <ninja.exe>
+./iot/tools/test-host.ps1 -Zig <zig.exe> -Python <python.exe> -Javac <javac.exe> -Java <java.exe>
+```
+
+SDK가 다른 경로에 있으면 `-ZephyrBase`와 `-ZephyrSdk`로 지정한다. 소스 통합으로 BLE 계약·기기 키 생성/복원·NVS 저장 영역은 바꾸지 않았다. 이번 빌드 검사는 실제 보드 탑재나 앱 종단 시험을 대신하지 않는다.
+
 ## FE팀에 전달할 메시지
 
 재준님, 순철님, FE171의 키링 등록 흐름에 설정 동기화를 연결하기 위한 개발 규격을 공유드립니다.
@@ -52,7 +81,14 @@ tingle-dev-settings-proof-v1
 
 ## 현재 UF2에 포함된 개발 검증용 공개키
 
-공개키 형식은 Ed25519 raw 32바이트 소문자 hex다. 키 ID는 `dev-ed25519-`와 공개키 첫 8바이트의 소문자 hex를 연결한 값이다. 아래 키는 현재 로컬 시험 빌드에 대응한다. 팀 개발 서버가 자체 서명키를 발급하면 서버 공개키에 맞춰 펌웨어를 다시 빌드한다.
+공개키 형식은 Ed25519 raw 32바이트 소문자 hex다. 키 ID는 `dev-ed25519-`와 공개키 첫 8바이트의 소문자 hex를 연결한 값이다. 현재 기본 빌드에는 BE247에서 전달받은 팀 개발 서버 공개키를 사용한다. 서버 비밀키는 펌웨어에 포함하지 않는다.
+
+```text
+serverKeyId = dev-ed25519-799e2999c648fda3
+publicKey   = 799e2999c648fda34a67ac0bce7bf353e3ead04b0e0927c3885b0bcc82ff30d9
+```
+
+아래 키는 이 문서의 과거 오프라인 검산 예시에만 해당한다. 현재 UF2가 허용하는 서버 키가 아니므로 예시 요청을 실기기로 보내면 검증에 실패한다. 실제 연동에서는 팀 서버로부터 새 서명을 받아야 한다.
 
 ```text
 serverKeyId = dev-ed25519-704492dbf4e64e2b

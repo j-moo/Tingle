@@ -1,6 +1,6 @@
 """Local synthetic-data receiver; not the production BE or its proof verifier.
 
-Run: python tools/lab_server.py --db build/lab-server.db
+Run from repository root: python iot/tools/lab_server.py
 Android USB forwarding: adb reverse tcp:8765 tcp:8765
 Only a committed SQLite row produces a STORED receipt. SERVER_REVIEW stays pending
 for the future algorithm; storing evidence is never a successful matching result.
@@ -127,7 +127,7 @@ def serve(store, host, port):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--db", default="build/lab-server.db")
+    parser.add_argument("--db", default=str(Path(__file__).resolve().parents[1] / "build/lab-server.db"))
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8765)
     args = parser.parse_args()

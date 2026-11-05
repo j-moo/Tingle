@@ -6,8 +6,8 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 $projectRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
-$repoRoot = (Resolve-Path (Join-Path $projectRoot '../..')).Path
-$buildRoot = Join-Path $projectRoot 'build/host-tests'
+$repoRoot = (Resolve-Path (Join-Path $projectRoot '..')).Path
+$buildRoot = Join-Path $projectRoot 'build/tests/registration'
 New-Item -ItemType Directory -Force -Path $buildRoot | Out-Null
 $env:ZIG_GLOBAL_CACHE_DIR = Join-Path $buildRoot 'zig-cache'
 $testExe = Join-Path $buildRoot 'test-core.exe'

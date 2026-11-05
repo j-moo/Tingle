@@ -15,4 +15,4 @@ manifest:
           - tinycrypt
           - mbedtls
   self:
-    path: xiao-keyring
+    path: iot
