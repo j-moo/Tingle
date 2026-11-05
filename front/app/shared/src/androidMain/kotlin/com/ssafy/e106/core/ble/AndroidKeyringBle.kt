@@ -33,6 +33,11 @@ class AndroidKeyringBle(context: Context) : KeyringBle {
     private var scanning = false
     private val candidates = mutableMapOf<String, BluetoothDevice>()
     private var active: AndroidNusLink? = null
+    // 재탐색 ID는 폐기하되 마지막 성공 기기는 RAM에서만 대조한다. MAC을 공통 계층/로그/디스크로 전달하지 않는다.
+    private var previousDevice: BluetoothDevice? = null
+
+    override fun isPreviousDevice(candidateId: String): Boolean =
+        candidates[candidateId]?.let { it == previousDevice } == true
 
     private fun checkAvailable() {
         val failure = when (context.bleAvailability()) {
@@ -99,6 +104,7 @@ class AndroidKeyringBle(context: Context) : KeyringBle {
                 opened = link
                 active = link
                 link.open(device)
+                previousDevice = device
                 NusBleConnection(link)
             }
         } catch (failure: Throwable) {
@@ -127,7 +133,7 @@ internal class AndroidNusLink(private val context: Context, private val handler:
 
     suspend fun open(device: BluetoothDevice) {
         try {
-            // autoConnect=false: 명시적 사용자 요청만 연결한다. 숨은 재연결을 시작하지 않는다.
+            // autoConnect=false: 호출자가 정한 연결만 수행한다. 전경 조정자의 제한 재시도와 OS의 숨은 재연결을 섞지 않는다.
             gatt = device.connectGatt(context, false, callback, BluetoothDevice.TRANSPORT_LE)
                 ?: throw BleException(BleFailure.ConnectFailed)
             if (withTimeoutOrNull(15_000) { ready.await(); true } != true) throw BleException(BleFailure.Timeout)

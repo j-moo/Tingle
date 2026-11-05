@@ -35,12 +35,13 @@ fun OnboardingRoute(
     profileAccess: DevelopmentProfileAccess = koinInject(),
     surveyAccess: SurveyAccess = koinInject(),
     settingsAccess: SettingsAccess = koinInject(),
+    managedKeyringConnection: Boolean = false,
 ) {
     val state by model.state.collectAsStateWithLifecycle()
     var developmentProfile by rememberSaveable(session.userId, session.status, session.isReady) { mutableStateOf(false) }
     val canSkip = profileAccess.canSkipKeyring(session)
     // 등록 전 계정도 개발 앱에서 실물 통신을 확인한다. 실제 귀속은 별도 확인창 수락과 서버 검증 뒤에만 진행한다.
-    // 계정/가입 단계 변경 시 진입 상태를 버리고, 회전 시 연결 정리는 BLE 화면의 ON_STOP 정책을 따른다.
+    // 계정/가입 단계 변경 시 진입 상태를 버린다. 연결은 서비스 호스트가 있으면 그 생명주기를 따른다.
     val canSync = profileAccess.canSyncKeyring(session)
     // 가입 입력이 끝나 SYNC_PENDING이 되면 연결/동기화 안내를 연다. 실제 탐색은 OS 권한 이후에 진행한다.
     var openBleProbe by rememberSaveable(session.userId, session.status) { mutableStateOf(canSync) }
@@ -53,8 +54,8 @@ fun OnboardingRoute(
     val canSettings = settingsAccess.allowed(session)
     when {
         state.session != session -> OnboardingPanel(stringResource(Res.string.onboarding_title)) { Text(stringResource(Res.string.onboarding_loading)) }
-        (canSkip || canSync) && openBleProbe -> ConnectedKeyringSetupRoute({ openBleProbe = false })
-        canSettings && openSettings -> ConnectedSettingsRoute(session, { openSettings = false })
+        (canSkip || canSync) && openBleProbe -> ConnectedKeyringSetupRoute({ openBleProbe = false }, managedConnection = managedKeyringConnection)
+        canSettings && openSettings -> ConnectedSettingsRoute(session, { openSettings = false }, showKeyringSync = managedKeyringConnection)
         canSurvey && openSurvey -> SurveyRoute(session, { openSurvey = false })
         canManage && manageProfile -> ProfileManagementRoute(session, { manageProfile = false })
         !session.isReady && session.status == OnboardingStatus.PROFILE_REQUIRED -> ProfileRoute(session)

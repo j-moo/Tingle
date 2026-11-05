@@ -7,6 +7,7 @@ import com.ssafy.e106.core.network.*
 import com.ssafy.e106.features.preferences.ui.*
 import com.ssafy.e106.features.settings.SettingsAccess
 import com.ssafy.e106.features.settings.data.*
+import com.ssafy.e106.features.keyring.data.KeyringSettingsChanges
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 
@@ -40,6 +41,7 @@ class MatchingSettingsViewModel(
     private val repository: MatchingSettingsRepository,
     private val sessions: SessionStore,
     private val access: SettingsAccess,
+    private val changes: KeyringSettingsChanges = KeyringSettingsChanges(),
 ) : ViewModel() {
     private val mutable = MutableStateFlow(ConnectedSettingsState())
     val state = mutable.asStateFlow()
@@ -126,7 +128,11 @@ class MatchingSettingsViewModel(
                 // 성공 본문과 ETag가 유효할 때만 서버 저장 완료다. 기기 동기화 완료는 만들지 않는다.
                 if (result.value.values != values || !validSettingsEtag(result.value.etag))
                     failed(AppError.Unknown(IllegalStateException("settings response mismatch")), true)
-                else { applyDocument(result.value); mutable.update { it.copy(saved = true) } }
+                else {
+                    applyDocument(result.value); mutable.update { it.copy(saved = true) }
+                    // 희망 나이/매칭 옵션 모두 서버 저장이 확정된 뒤 알린다. 실패·늦은 타 계정 응답은 전송하지 않는다.
+                    changes.saved(id)
+                }
             }
             is ApiResult.Fail -> if (valid(stamp)) failed(result.error, true)
         }

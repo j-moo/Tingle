@@ -98,14 +98,61 @@ class KeyringSyncTest {
         m.retry(syncRun.deviceId); runCurrent()
         assertEquals(server.creates[0], server.creates[1])
     }
-    @Test fun lostCreateResponseRestoresSameRequestKeyAcrossRecreation() = runTest(dispatcher) {
+    // 같은 BLE 연결에서 HTTP 응답만 잃으면 아직 유효한 challenge와 요청 키를 그대로 재사용한다.
+    @Test fun lostCreateResponseReusesKeyWithinSameConnection() = runTest(dispatcher) {
+        val server = SyncServer().apply { createAction = { ApiResult.Fail(AppError.Offline) } }
+        val store = KeyringSyncStore(SyncPrefs()); store.rememberTarget(1, syncRun.deviceId, "XIAO-test")
+        val m = model(server, store); var challenges = 0
+        m.attach("XIAO-test", { challenges++; "A".repeat(43) }) { stored(it) }; runCurrent()
+        val first = server.creates.single(); val body = server.bodies.single()
+        server.createAction = { ApiResult.Ok(server.run) }; m.retry(syncRun.deviceId); runCurrent()
+        assertEquals(1, challenges); assertEquals(listOf(first, first), server.creates)
+        assertEquals(listOf(body, body), server.bodies)
+        assertEquals(SyncPhase.Confirmed, m.state.value.items.single().phase)
+    }
+    // 새 모델에서는 예전 BLE 연결이 살아 있는지 알 수 없다. ACK 증명이 없는 발급은 새 challenge로 시작한다.
+    @Test fun lostCreateResponseRenewsChallengeAcrossRecreation() = runTest(dispatcher) {
         val server = SyncServer().apply { createAction = { ApiResult.Fail(AppError.Offline) } }
         val prefs = SyncPrefs(); val store = KeyringSyncStore(prefs); store.rememberTarget(1, syncRun.deviceId, "XIAO-test")
         val m = model(server, store); m.attach("XIAO-test") { stored(it) }; runCurrent(); val first = server.creates.single(); models.clear()
         server.createAction = { ApiResult.Ok(server.run) }
-        val second = model(server, KeyringSyncStore(prefs)); second.attach("XIAO-test", { error("HTTP replay must not replace nonce") }) { stored(it) }; runCurrent()
-        assertEquals(first, server.creates.last()); assertEquals(server.bodies.first(), server.bodies.last())
+        val second = model(server, KeyringSyncStore(prefs)); second.attach("XIAO-test", { "B".repeat(42) + "A" }) {
+            assertEquals("B".repeat(42) + "A", it.deviceNonce); stored(it)
+        }; runCurrent()
+        assertEquals(2, server.creates.size)
+        assertNotEquals(first.second, server.creates.last().second); assertNotEquals(server.bodies.first(), server.bodies.last())
         assertEquals(SyncPhase.Confirmed, second.state.value.items.single().phase)
+    }
+    // 서버 발급 대기 중 재부팅하면 RAM challenge가 사라진다. 55초가 지나지 않아도 자동 갱신해야 한다.
+    // 취소를 무시하고 늦게 도착한 구 연결 응답이 새 연결에 전송되는지도 함께 검사한다.
+    @Test fun rebootWhileCreatePendingUsesFreshChallengeAndIgnoresLateResponse() = runTest(dispatcher) {
+        val server = SyncServer(); val store = KeyringSyncStore(SyncPrefs())
+        val gate = CompletableDeferred<Unit>(); val sent = mutableListOf<String>()
+        val now = Instant.parse("2026-11-04T12:00:01Z")
+        store.rememberTarget(1, syncRun.deviceId, "XIAO-test")
+        server.createAction = {
+            val response = server.run
+            if (server.creates.size == 1) withContext(NonCancellable) { gate.await() }
+            ApiResult.Ok(response)
+        }
+        val m = KeyringSyncViewModel(server, store, server, TestSession(OnboardingStatus.SYNC_PENDING), now = { now })
+        models.put("sync", m); m.resume()
+        m.attach("XIAO-test", { "A".repeat(43) }) { error("Old connection must never transmit") }; runCurrent()
+        assertFalse(store.read(1).single().bleAttempted)
+        val oldKey = server.creates.single().second
+        m.detach()
+        m.attach("XIAO-test", { "B".repeat(42) + "A" }) {
+            if (it.deviceNonce != "B".repeat(42) + "A") throw BleCommandException("SYNC_CHALLENGE_REQUIRED")
+            sent += it.deviceNonce!!; stored(it)
+        }; runCurrent()
+        assertEquals(SyncPhase.Confirmed, m.state.value.items.single().phase)
+        assertEquals(listOf("B".repeat(42) + "A"), sent)
+        assertNotEquals(oldKey, server.creates.last().second)
+        val completed = store.read(1).single()
+        gate.complete(Unit); runCurrent()
+        assertEquals(completed, store.read(1).single())
+        assertEquals(2, server.creates.size); assertEquals(1, server.acks.size)
+        assertEquals(SyncPhase.Confirmed, m.state.value.items.single().phase)
     }
     @Test fun matchingBoardSendsServerPayloadAndAckOnlyAfterStored() = runTest(dispatcher) {
         val server = SyncServer(); val store = KeyringSyncStore(SyncPrefs()); store.rememberTarget(1, syncRun.deviceId, "XIAO-test")
@@ -139,13 +186,143 @@ class KeyringSyncTest {
         val m = model(server, store); m.attach("XIAO-test") { stored(it).let { result -> result.copy(ack = result.ack.copy(settingsVersion = 1)) } }; runCurrent()
         assertEquals(SyncPhase.Failed, m.state.value.items.single().phase); assertTrue(server.acks.isEmpty())
     }
-    @Test fun staleRunDoesNotSendOldPayloadAndExplicitLatestUsesNewKey() = runTest(dispatcher) {
+    @Test fun staleRunRetriesLatestOnceWithoutSendingOldPayloadOrLooping() = runTest(dispatcher) {
         val server = SyncServer().apply { run = run.copy(currentSettingsVersion = 3, stale = true) }
         val store = KeyringSyncStore(SyncPrefs()); store.rememberTarget(1, syncRun.deviceId, "XIAO-test")
         val m = model(server, store); m.attach("XIAO-test") { error("Old payload") }; runCurrent()
-        val first = server.creates.single().second
+        val first = server.creates.first().second
+        assertEquals(2, server.creates.size)
         assertEquals(SyncPhase.Stale, m.state.value.items.single().phase)
         m.latest(syncRun.deviceId); runCurrent(); assertNotEquals(first, server.creates.last().second)
+    }
+    @Test fun newConnectionReauthenticatesCompletedRunOnceAndSameBindingDoesNotRepeat() = runTest(dispatcher) {
+        val server = SyncServer(); val store = KeyringSyncStore(SyncPrefs())
+        store.rememberTarget(1, syncRun.deviceId, "XIAO-test")
+        val m = model(server, store); var sends = 0
+        m.attach("XIAO-test") { sends++; stored(it) }; runCurrent()
+        m.detach(); m.attach("XIAO-test", { "B".repeat(42) + "A" }) { sends++; stored(it) }; runCurrent()
+        m.attach("XIAO-test") { error("Same binding must remain") }; m.retry(syncRun.deviceId); runCurrent()
+        assertEquals(2, sends); assertEquals(2, server.creates.size)
+        assertEquals("B".repeat(42) + "A", server.bodies.last().deviceNonce)
+        assertEquals(SyncPhase.Confirmed, m.state.value.items.single().phase)
+    }
+    @Test fun savedSettingsWakesConnectedBoardButOtherAccountDoesNot() = runTest(dispatcher) {
+        val server = SyncServer(); val store = KeyringSyncStore(SyncPrefs()); val changes = KeyringSettingsChanges()
+        store.rememberTarget(1, syncRun.deviceId, "XIAO-test")
+        val m = KeyringSyncViewModel(server, store, server, TestSession(OnboardingStatus.READY), changes = changes)
+        models.put("sync", m); m.resume(); m.attach("XIAO-test") { stored(it) }; runCurrent()
+        changes.saved(2); runCurrent(); assertEquals(1, server.creates.size)
+        changes.saved(1); runCurrent(); assertEquals(2, server.creates.size)
+        assertNotEquals(server.creates.first().second, server.creates.last().second)
+        m.detach(); changes.saved(1); runCurrent()
+        assertEquals(SyncPhase.WaitingConnection, m.state.value.items.single().phase)
+        assertEquals(2, server.creates.size)
+        m.attach("XIAO-test") { stored(it) }; runCurrent(); assertEquals(3, server.creates.size)
+    }
+    @Test fun settingsChangeDuringTransmissionIsDeliveredAfterPreviousAck() = runTest(dispatcher) {
+        val server = SyncServer(); val store = KeyringSyncStore(SyncPrefs()); val changes = KeyringSettingsChanges()
+        val gate = CompletableDeferred<Unit>(); var sends = 0
+        store.rememberTarget(1, syncRun.deviceId, "XIAO-test")
+        val m = KeyringSyncViewModel(server, store, server, TestSession(OnboardingStatus.READY), changes = changes)
+        models.put("sync", m); m.resume()
+        m.attach("XIAO-test") { sends++; if (sends == 1) gate.await(); stored(it) }; runCurrent()
+        changes.saved(1); runCurrent(); gate.complete(Unit); runCurrent()
+        assertEquals(2, sends); assertEquals(2, server.acks.size)
+        assertEquals(SyncPhase.Confirmed, m.state.value.items.single().phase)
+    }
+    // BLE가 구버전을 저장하는 사이 서버 설정이 변경되면, 실제 서버처럼 이전 ACK를 409로 거절한다.
+    // 성공만 돌려주는 fixture로는 최신 버전으로 자동 전환되는지 검증할 수 없다.
+    @Test fun staleAckDuringTransmissionAutomaticallySendsNewSettings() = runTest(dispatcher) {
+        val server = SyncServer().apply { run = run.copy(settingsVersion = 1, currentSettingsVersion = 1) }
+        val store = KeyringSyncStore(SyncPrefs()); val changes = KeyringSettingsChanges()
+        val gate = CompletableDeferred<Unit>(); val sent = mutableListOf<Long>(); var version = 1L
+        server.createAction = {
+            server.run = server.run.copy(settingsVersion = version, currentSettingsVersion = version, stale = false, state = "PENDING")
+            ApiResult.Ok(server.run)
+        }
+        server.ackAction = {
+            if (server.acks.last().second.settingsVersion != version)
+                ApiResult.Fail(AppError.Server(409, "SYNC_VERSION_STALE", "최신 설정 필요"))
+            else { server.run = server.run.copy(state = "ACKED"); ApiResult.Ok(server.run) }
+        }
+        store.rememberTarget(1, syncRun.deviceId, "XIAO-test")
+        val m = KeyringSyncViewModel(server, store, server, TestSession(OnboardingStatus.READY), changes = changes)
+        models.put("sync", m); m.resume()
+        m.attach("XIAO-test", { if (sent.isEmpty()) "A".repeat(43) else "B".repeat(42) + "A" }) {
+            sent += it.settingsVersion; if (sent.size == 1) gate.await(); stored(it)
+        }; runCurrent()
+        version = 2; changes.saved(1); runCurrent(); gate.complete(Unit); runCurrent()
+        assertEquals(listOf(1L, 2L), sent)
+        assertEquals(listOf(1L, 2L), server.acks.map { it.second.settingsVersion })
+        assertEquals(2, server.creates.size)
+        assertNotEquals(server.creates.first().second, server.creates.last().second)
+        assertNotEquals(server.bodies.first().deviceNonce, server.bodies.last().deviceNonce)
+        assertNotEquals(server.acks.first().first, server.acks.last().first)
+        assertTrue(store.read(1).single().complete)
+        assertEquals(2L, store.read(1).single().ack!!.settingsVersion)
+        assertEquals(SyncPhase.Confirmed, m.state.value.items.single().phase)
+    }
+    // 응답을 신뢰할 수 없는 실패는 구버전 확정 거절과 다르다. 재시도에서도 같은 ACK를 보존한다.
+    @Test fun uncertainAckFailureKeepsOriginalProofAndKey() = runTest(dispatcher) {
+        for (failure in listOf(AppError.Offline, AppError.Server(503, "SERVICE_UNAVAILABLE", "wait"),
+            AppError.Server(500, "SYNC_VERSION_STALE", "not a confirmed rejection"),
+            AppError.Server(409, "INVALID_PROOF", "invalid"))) {
+            val server = SyncServer().apply { ackAction = { ApiResult.Fail(failure) } }
+            val store = KeyringSyncStore(SyncPrefs()); store.rememberTarget(1, syncRun.deviceId, "XIAO-test")
+            var sends = 0
+            val m = model(server, store); m.attach("XIAO-test") { sends++; stored(it) }; runCurrent()
+            val ticket = store.read(1).single(); val first = server.acks.single()
+            m.retry(syncRun.deviceId); runCurrent()
+            assertEquals(listOf(first, first), server.acks)
+            assertEquals(ticket, store.read(1).single())
+            assertFalse(ticket.complete); assertEquals(1, sends); assertEquals(1, server.creates.size)
+            models.clear()
+        }
+    }
+    // 앱 재생성 후에도 저장된 ACK의 확정 거절을 먼저 확인하고 새 보드 challenge를 요청한다.
+    @Test fun restoredPendingAckRenewsOnlyAfterConfirmedStaleRejection() = runTest(dispatcher) {
+        val server = SyncServer().apply { run = run.copy(settingsVersion = 1, currentSettingsVersion = 1)
+            ackAction = { ApiResult.Fail(AppError.Offline) } }
+        val prefs = SyncPrefs(); val store = KeyringSyncStore(prefs)
+        store.rememberTarget(1, syncRun.deviceId, "XIAO-test")
+        val first = model(server, store); first.attach("XIAO-test") { stored(it) }; runCurrent()
+        val original = server.acks.single(); models.clear()
+        server.run = server.run.copy(currentSettingsVersion = 2, stale = true)
+        server.ackAction = {
+            if (server.acks.last().second.settingsVersion == 1L) ApiResult.Fail(AppError.Server(409, "SYNC_VERSION_STALE", "stale"))
+            else { server.run = server.run.copy(state = "ACKED"); ApiResult.Ok(server.run) }
+        }
+        server.createAction = {
+            server.run = server.run.copy(settingsVersion = 2, currentSettingsVersion = 2, stale = false)
+            ApiResult.Ok(server.run)
+        }
+        val restored = model(server, KeyringSyncStore(prefs))
+        restored.attach("XIAO-test", {
+            assertEquals(original, server.acks.last()); assertEquals(2, server.acks.size)
+            "B".repeat(42) + "A"
+        }) { assertEquals(2L, it.settingsVersion); stored(it) }; runCurrent()
+        assertEquals(3, server.acks.size); assertEquals(2, server.creates.size)
+        assertEquals(SyncPhase.Confirmed, restored.state.value.items.single().phase)
+    }
+    // 최신 설정도 전송 중 다시 바뀔 수 있다. 한 진행에서 갱신 횟수를 제한해 무한 발급을 막는다.
+    @Test fun repeatedStaleAckStopsAfterOneRenewal() = runTest(dispatcher) {
+        val server = SyncServer().apply { ackAction = { ApiResult.Fail(AppError.Server(409, "SYNC_VERSION_STALE", "stale")) } }
+        val store = KeyringSyncStore(SyncPrefs()); store.rememberTarget(1, syncRun.deviceId, "XIAO-test")
+        val m = model(server, store); m.attach("XIAO-test") { stored(it) }; runCurrent()
+        assertEquals(2, server.creates.size); assertEquals(2, server.acks.size)
+        assertFalse(store.read(1).single().complete)
+        assertEquals(SyncPhase.Stale, m.state.value.items.single().phase)
+    }
+    @Test fun reconnectFinishesLostAckWithOriginalKeyBeforeFreshChallenge() = runTest(dispatcher) {
+        val server = SyncServer().apply { ackAction = { run = run.copy(state = "ACKED"); ApiResult.Fail(AppError.Offline) } }
+        val store = KeyringSyncStore(SyncPrefs()); store.rememberTarget(1, syncRun.deviceId, "XIAO-test")
+        val m = model(server, store); m.attach("XIAO-test") { stored(it) }; runCurrent()
+        val original = server.acks.single()
+        m.detach(); server.ackAction = { ApiResult.Ok(server.run) }
+        m.attach("XIAO-test", {
+            assertEquals(2, server.acks.size); assertEquals(original, server.acks.last()); "B".repeat(42) + "A"
+        }) { stored(it) }; runCurrent()
+        assertEquals(3, server.acks.size); assertEquals(SyncPhase.Confirmed, m.state.value.items.single().phase)
     }
     @Test fun accountSwitchDiscardsLateResultAndBoardBinding() = runTest(dispatcher) {
         val server = SyncServer(); val store = KeyringSyncStore(SyncPrefs()); store.rememberTarget(1, syncRun.deviceId, "XIAO-test")

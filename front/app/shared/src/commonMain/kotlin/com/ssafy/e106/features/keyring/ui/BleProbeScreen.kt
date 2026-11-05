@@ -16,21 +16,23 @@ import org.koin.compose.viewmodel.koinViewModel
 
 /** 읽기 진단은 단독 사용 가능하다. 개발 등록 경로에서만 별도 등록 모델을 받아 실제 귀속 확인 UI를 제공한다. */
 @Composable fun ConnectedBleProbeRoute(onBack: () -> Unit, model: BleProbeViewModel = koinViewModel(),
-    registration: KeyringRegistrationViewModel? = null, sync: KeyringSyncViewModel? = null) {
+    registration: KeyringRegistrationViewModel? = null, sync: KeyringSyncViewModel? = null,
+    managedConnection: Boolean = false) {
     val permission = rememberBlePermission()
     val state by model.state.collectAsStateWithLifecycle()
     val registrationBusy = registration?.state?.collectAsStateWithLifecycle()?.value?.busy == true
     val syncBusy = sync?.state?.collectAsStateWithLifecycle()?.value?.busy == true
     val registering = registrationBusy || syncBusy
     var settingsFailed by remember { mutableStateOf(false) }
-    // 회전도 종료 정책이다. 복귀 후 자동으로 주변 기기를 연결하지 않고 사용자 재시도를 기다린다.
+    // 서비스 호스트가 있으면 내부 화면 이동은 연결 종료가 아니다. 단독 진단 화면은 기존 종료 정책을 유지한다.
+    fun release() { registration?.pause(); if (!managedConnection) { sync?.detach(); model.leave() } }
     LifecycleEventEffect(Lifecycle.Event.ON_START) { registration?.restore(); sync?.resume() }
-    LifecycleEventEffect(Lifecycle.Event.ON_STOP) { sync?.detach(); registration?.pause(); model.leave() }
-    DisposableEffect(model, registration) { onDispose { sync?.detach(); registration?.pause(); model.leave() } }
+    LifecycleEventEffect(Lifecycle.Event.ON_STOP) { release() }
+    DisposableEffect(model, registration, managedConnection) { onDispose { release() } }
     LaunchedEffect(permission.availability) { if (permission.availability != BleAvailability.Ready) model.leave() }
-    ProfileBackHandler(true) { registration?.pause(); model.leave(); onBack() }
+    ProfileBackHandler(true) { release(); onBack() }
     OnboardingPanel(stringResource(Res.string.ble_probe_title)) {
-        TextButton(onClick = { registration?.pause(); model.leave(); onBack() }) { Text(stringResource(Res.string.owned_keyrings_back)) }
+        TextButton(onClick = { release(); onBack() }) { Text(stringResource(Res.string.owned_keyrings_back)) }
         Text(stringResource(if (registration == null) Res.string.ble_probe_description else Res.string.registration_live_description))
         Text(stringResource(when (permission.availability) {
             BleAvailability.Unsupported -> Res.string.ble_unsupported
@@ -81,6 +83,6 @@ import org.koin.compose.viewmodel.koinViewModel
             variant = AppButtonVariant.Secondary, enabled = !registering, onClick = model::leave)
         // 동기화 중 다른 명령을 막고 등록 결과와 설정 상태를 같은 화면에 표시한다.
         registration?.let { KeyringRegistrationPanel(it, model, state, syncBusy) }
-        sync?.let { KeyringSyncPanel(it, model, state, registrationBusy) }
+        sync?.let { KeyringSyncPanel(it, model, state, registrationBusy, managedConnection = managedConnection) }
     }
 }

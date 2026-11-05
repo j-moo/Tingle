@@ -16,7 +16,8 @@ val keyringModule = module {
     single { KeyringRegistrationStore(get()) }
     single<KeyringSyncRepository> { HttpKeyringSyncRepository(get()) }
     single { KeyringSyncStore(get()) }
-    viewModel { KeyringSyncViewModel(get(), get(), get(), get()) }
+    single { com.ssafy.e106.features.keyring.data.KeyringSettingsChanges() }
+    viewModel { KeyringSyncViewModel(get(), get(), get(), get(), changes = get()) }
     viewModel { KeyringRegistrationViewModel(get(), get(), get(), get(), get()) }
     viewModel { OwnedKeyringsViewModel(get(), get()) }
     viewModel { BleProbeViewModel(get(), get()) }

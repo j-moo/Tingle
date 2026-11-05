@@ -16,13 +16,15 @@ import com.ssafy.e106.features.onboarding.ui.OnboardingPanel
 import com.ssafy.e106.features.preferences.ui.AgePreferenceScreen
 import com.ssafy.e106.features.profile.ui.ProfileBackHandler
 import com.ssafy.e106.features.settings.data.SettingsKind
+import com.ssafy.e106.features.keyring.ui.KeyringSyncViewModel
+import com.ssafy.e106.features.keyring.ui.KeyringSyncProgressList
 import com.ssafy.e106.resources.*
 import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.viewmodel.koinViewModel
 
 /** 메뉴를 여는 것만으로 PUT 하지 않는다. 화면 복귀 시 GET으로 버전과 접근 권한을 다시 확인한다. */
 @Composable fun ConnectedSettingsRoute(session: Session.SignedIn, onBack: () -> Unit,
-    model: MatchingSettingsViewModel = koinViewModel()) {
+    model: MatchingSettingsViewModel = koinViewModel(), showKeyringSync: Boolean = false) {
     val state by model.state.collectAsStateWithLifecycle()
     // 화면 재생성은 실제 나가기가 아니다. 선택 화면을 복원하고 ViewModel의 입력/저장을 유지한다.
     var selected by rememberSaveable(session) { mutableStateOf(false) }
@@ -78,6 +80,13 @@ import org.koin.compose.viewmodel.koinViewModel
                 state.matching?.photoRequired, state.editable) { model.editMatching(photoRequired = it) }
             Text(stringResource(Res.string.settings_existing_help))
             Text(stringResource(Res.string.settings_api_sync_unconfirmed))
+            // 서버 설정 저장과 보드 저장/ACK는 별개다. 개발 전경 연결의 실제 진행만 표시한다.
+            if (showKeyringSync) {
+                val sync: KeyringSyncViewModel = koinViewModel()
+                val progress by sync.state.collectAsStateWithLifecycle()
+                if (progress.owner == session.userId)
+                    KeyringSyncProgressList(progress, {}, {}, showActions = false)
+            }
             AppButton(stringResource(Res.string.settings_api_save), enabled = state.canSave,
                 loading = state.saving, onClick = model::save)
             AppButton(stringResource(Res.string.settings_refresh), enabled = !state.busy,

@@ -16,7 +16,7 @@ data class BleProbeState(val candidates: List<BleCandidate> = emptyList(), val s
 
 /**
  * 첫 연동 진단: 발견/Notify 구독/기기 정보/상태를 분리한다. 서버 계정 귀속은 변경하지 않는다.
- * 화면 중지(회전 포함)에는 명시적으로 닫는다. 회전 중 연결 보존이나 백그라운드 재연결은 아직 제공하지 않는다.
+ * 서비스 화면 사이 이동은 연결을 유지한다. 실제 앱 중지(회전 포함)에는 닫으며 백그라운드 재연결은 하지 않는다.
  */
 class BleProbeViewModel(private val ble: KeyringBle, private val sessions: SessionStore) : ViewModel() {
     private val mutable = MutableStateFlow(BleProbeState())
@@ -25,6 +25,11 @@ class BleProbeViewModel(private val ble: KeyringBle, private val sessions: Sessi
     private var work: Job? = null
     private var watcher: Job? = null
     private var connection: BleConnection? = null
+    private var foreground = false
+    private var reconnect: Job? = null
+
+    /** 전경 호스트만 자동 복구를 허용한다. 중지·권한 상실·명시적 연결 해제는 재탐색도 함께 취소한다. */
+    fun setForeground(value: Boolean) { foreground = value; if (!value) leave() }
 
     init { viewModelScope.launch(start = CoroutineStart.UNDISPATCHED) {
         // 같은 회원의 가입 단계 갱신은 연결 종료 사유가 아니다. 계정 경계만 감시하고,
@@ -49,7 +54,10 @@ class BleProbeViewModel(private val ble: KeyringBle, private val sessions: Sessi
         }
     }
 
-    fun stopScan() { if (mutable.value.scanning) { work?.cancel(); mutable.value = mutable.value.copy(scanning = false) } }
+    fun stopScan() {
+        if (reconnect?.isActive == true) leave()
+        else if (mutable.value.scanning) { work?.cancel(); mutable.value = mutable.value.copy(scanning = false) }
+    }
 
     fun connect(id: String) {
         if (mutable.value.busy || connection != null || mutable.value.candidates.none { it.id == id } || sessions.state.value !is Session.SignedIn) return
@@ -67,16 +75,60 @@ class BleProbeViewModel(private val ble: KeyringBle, private val sessions: Sessi
                 val info = readInfo(channel)
                 if (stamp != generation) return@launch
                 mutable.value = mutable.value.copy(connected = true, info = info)
-                watcher = viewModelScope.launch {
-                    channel.state.first { it == BleLinkState.Closed }
-                    if (stamp == generation) {
-                        connection = null
-                        mutable.value = mutable.value.copy(connected = false, info = null, status = null, error = BleFailure.Disconnected)
-                    }
-                }
+                watch(channel, stamp, info.serial)
             } catch (cancelled: CancellationException) { throw cancelled }
             catch (failure: Exception) { if (stamp == generation) { connection?.close(); connection = null; showFailure(failure) } }
             finally { if (stamp == generation) mutable.value = mutable.value.copy(busy = false) }
+        }
+    }
+
+    /** 재부팅으로 링크가 끊긴 경우에만 이전 선택 기기를 제한적으로 다시 찾는다. 이름이 같은 다른 보드는 선택하지 않는다. */
+    private fun watch(channel: BleConnection, stamp: Long, serial: String) {
+        watcher = viewModelScope.launch {
+            channel.state.first { it == BleLinkState.Closed }
+            if (stamp != generation) return@launch
+            connection = null
+            mutable.update { it.copy(connected = false, info = null, status = null, error = BleFailure.Disconnected) }
+            if (!foreground) return@launch
+            val previous = work
+            reconnect = viewModelScope.launch {
+                try {
+                    previous?.join()
+                    repeat(3) { attempt ->
+                        delay(1_000L shl attempt)
+                        if (stamp != generation || !foreground) return@launch
+                        // 이전 탐색 후보 버튼도 지운다. 사용자가 만료된 ID로 자동 복구 중간에 연결하지 않도록 한다.
+                        mutable.update { it.copy(scanning = true, busy = false, candidates = emptyList()) }
+                        // first가 탐색 Flow의 finally까지 마친 뒤 연결한다. 플랫폼의 탐색/연결 락을 겹치지 않는다.
+                        // 세션 ID는 매 스캔마다 바뀐다. 플랫폼이 RAM에서 대조한 후보의 새 ID만 사용한다.
+                        // 정상 탐색 종료로 후보가 없어도 예외로 빠지지 않고 다음 제한 시도로 진행한다.
+                        val found = withTimeoutOrNull(15_000) {
+                            ble.scan().map { devices -> devices.firstOrNull { ble.isPreviousDevice(it.id) } }.filterNotNull().firstOrNull()
+                        }
+                        if (stamp != generation || !foreground) return@launch
+                        mutable.update { it.copy(scanning = false) }
+                        if (found == null) return@repeat
+                        var next: BleConnection? = null
+                        try {
+                            mutable.update { it.copy(busy = true) }
+                            next = ble.connect(found.id)
+                            val info = readInfo(next)
+                            // 주소가 재사용되거나 계정이 바뀐 경우 저장된 기기 대응을 재사용하지 않는다.
+                            if (stamp != generation || !foreground) { next.close(); return@launch }
+                            if (info.serial != serial) {
+                                next.close(); showFailure(BleException(BleFailure.InvalidFrame)); return@launch
+                            }
+                            connection = next
+                            mutable.update { it.copy(connected = true, info = info, error = null, commandError = null) }
+                            watch(next, stamp, serial)
+                            return@launch
+                        } catch (cancelled: CancellationException) { next?.close(); throw cancelled }
+                        catch (failure: Exception) { next?.close(); if (stamp == generation) showFailure(failure) }
+                    }
+                } catch (cancelled: CancellationException) { throw cancelled }
+                catch (failure: Exception) { if (stamp == generation) showFailure(failure) }
+                finally { if (stamp == generation) mutable.update { it.copy(scanning = false, busy = false) } }
+            }
         }
     }
 
@@ -180,10 +232,10 @@ class BleProbeViewModel(private val ble: KeyringBle, private val sessions: Sessi
         } finally { if (stamp == generation) mutable.update { it.copy(busy = false) } }
     }
 
-    /** 화면 이탈/권한 상실/계정 변경 시 같은 정리 경로를 사용해 뒤늦은 응답을 차단한다. */
+    /** 실제 앱 중지/권한 상실/계정 변경/사용자 해제 시 뒤늦은 응답과 재연결을 함께 차단한다. */
     fun leave() {
         generation++
-        work?.cancel(); watcher?.cancel()
+        work?.cancel(); watcher?.cancel(); reconnect?.cancel()
         connection?.close(); connection = null
         mutable.value = BleProbeState()
     }

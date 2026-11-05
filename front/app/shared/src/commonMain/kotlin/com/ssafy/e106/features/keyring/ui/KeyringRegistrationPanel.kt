@@ -9,8 +9,9 @@ import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.viewmodel.koinViewModel
 
 /** 개발 앱의 실제 서버 등록 경로. 기존 읽기 화면 테스트/Preview에는 등록 모델을 강제하지 않는다. */
-@Composable fun ConnectedKeyringSetupRoute(onBack: () -> Unit) {
-    ConnectedBleProbeRoute(onBack, koinViewModel(), koinViewModel<KeyringRegistrationViewModel>(), koinViewModel<KeyringSyncViewModel>())
+@Composable fun ConnectedKeyringSetupRoute(onBack: () -> Unit, managedConnection: Boolean = false) {
+    // 호스트가 연결을 관리하는 경우 화면을 나가도 설정 저장/가입 단계 전환까지 같은 연결을 사용한다.
+    ConnectedBleProbeRoute(onBack, koinViewModel(), koinViewModel<KeyringRegistrationViewModel>(), koinViewModel<KeyringSyncViewModel>(), managedConnection)
 }
 
 /** 재시도는 새 등록이 아니라 보관한 동일 요청의 결과 확인이다. 자동으로 서버 등록을 시작하지 않는다. */

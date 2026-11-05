@@ -18,6 +18,9 @@ class BleException(val reason: BleFailure) : Exception(reason.name)
 interface KeyringBle {
     fun scan(): Flow<List<BleCandidate>>
     suspend fun connect(candidateId: String): BleConnection
+    /** 현재 탐색 후보가 이 프로세스에서 마지막으로 연결한 기기인지 플랫폼 안에서만 대조한다.
+     * 탐색 ID는 매번 바뀌므로 화면이 예전 ID를 비교하면 안 된다. 주소를 노출/저장하지 않으며 소유 인증을 대신하지 않는다. */
+    fun isPreviousDevice(candidateId: String): Boolean = false
 }
 
 interface BleConnection {
