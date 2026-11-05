@@ -1,7 +1,8 @@
+/* 상자 안에 16:9 로 넣고(잘리지 않게), 남는 곳은 같은 영상 썸네일을 크게 흐려 깔고 가장자리를 검정으로 흐림 */
 .box {
   position: relative;
   overflow: hidden;
-  background: var(--neutral-150);
+  background: #000;
   container-type: size;
 }
 
@@ -12,20 +13,7 @@
   border: 0;
   object-fit: cover;                     /* 썸네일(hqdefault 는 4:3 에 검은 띠) → 16:9 로 잘라 띠 없앰 */
   transform: translate(-50%, -50%);
-  pointer-events: none;                  /* 배경 영상: 클릭 · 일시정지 막음 */
-}
-
-/* 꽉 채움: 상자보다 크게 16:9 로 키워 가운데 맞춤(넘치는 쪽 잘림) */
-.cover .frame {
-  width: max(100cqw, 177.78cqh);
-  height: max(100cqh, 56.25cqw);
-}
-
-/* 잘리지 않게: 상자 안에 16:9 로 넣고, 남는 곳은 같은 영상 썸네일을 크게 흐려 깔고 가장자리를 검정으로 흐림 */
-.contain {
-  background: #000;
-}
-.contain .frame {
+  pointer-events: none;                  /* 썸네일은 클릭을 통과시킴(부모 화면의 재생 버튼 · 누르기) */
   z-index: 1;                            /* 흐린 배경 · 가장자리 그라데이션(::after) 위 — 영상 자체는 어둡게 하지 않음 */
   width: min(100cqw, 177.78cqh);
   height: min(100cqh, 56.25cqw);
@@ -39,7 +27,7 @@
   filter: blur(48px) saturate(1.2);
   opacity: 0.55;
 }
-.contain::after {
+.box::after {
   position: absolute;
   inset: 0;
   background: radial-gradient(ellipse at center, transparent 45%, rgb(0 0 0 / 85%) 100%);
@@ -47,30 +35,20 @@
   pointer-events: none;
 }
 
-/* player: 미리 만든 플레이어 위를 덮는 큰 썸네일 */
-.frame.poster {                          /* .contain .frame(z 1) 보다 위 */
+/* 미리 만든 플레이어 위를 덮는 큰 썸네일 */
+.frame.poster {                          /* .frame(z 1) 보다 위 */
   z-index: 2;
 }
-/* player: 유튜브 컨트롤을 쓸 수 있게 */
-.player iframe.frame {
+/* 유튜브 컨트롤을 쓸 수 있게 */
+iframe.frame {
   pointer-events: auto;
 }
 /* 썸네일(poster)이 덮고 있는 동안은 뒤 플레이어를 누를 수 없게 — 썸네일은 클릭을 통과시켜서, 막지 않으면 가려진 영상이 재생됨 */
-.player .poster ~ iframe.frame {
+.poster ~ iframe.frame {
   pointer-events: none;
 }
-.empty {
-  position: absolute;
-  inset: 0;
-  z-index: 2;
-  display: grid;
-  place-items: center;
-  color: var(--text-secondary);
-  font-size: 14px;
-  font-weight: 600;
-}
 
-/* player: 눌렀는데 플레이어가 아직 준비 전 — 썸네일 위 가운데 도는 고리, 준비되면 사라지며 재생 */
+/* 눌렀는데 플레이어가 아직 준비 전 — 썸네일 위 가운데 도는 고리, 준비되면 사라지며 재생 */
 .loading {
   position: absolute;
   z-index: 3;
