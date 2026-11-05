@@ -4,7 +4,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.doAnswer;
 
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.sql.Timestamp;
 import java.time.Clock;
 import java.time.Duration;
@@ -18,12 +21,14 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
 import java.util.function.UnaryOperator;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -44,12 +49,17 @@ import com.e106.tingle.chat.deletion.ChatDeletionReferenceSource.Reference;
 import com.e106.tingle.chat.deletion.ChatDeletionRepository;
 import com.e106.tingle.chat.deletion.ChatDeletionService;
 import com.e106.tingle.chat.deletion.ChatDeletionState;
+import com.e106.tingle.chat.deletion.evidence.FileBackupEvidence;
+import com.e106.tingle.chat.deletion.evidence.FileBackupEvidence.Snapshot;
 import com.e106.tingle.chat.deletion.external.ExternalCleanupService.Claim;
 import com.e106.tingle.chat.deletion.external.ExternalCleanupState.Status;
 import com.e106.tingle.chat.deletion.external.ExternalCopyDeletionPort.Outcome;
 import com.e106.tingle.chat.deletion.external.ExternalCopyDeletionPort.Request;
 import com.e106.tingle.chat.deletion.external.ExternalCopyDeletionPort.Result;
 import com.e106.tingle.chat.deletion.restore.DeletionJournal;
+import com.e106.tingle.chat.deletion.restore.FileDeletionJournal;
+import com.e106.tingle.chat.deletion.restore.RestoreReplayService;
+import com.e106.tingle.chat.deletion.restore.RestoreServingGateFilter;
 
 import tools.jackson.databind.json.JsonMapper;
 
@@ -310,6 +320,96 @@ class ExternalCleanupIntegrationTest {
 			&& evidence.targets().stream().allMatch(target -> target.receipt() != null));
 		assertThat(first.requests).hasSize(2);
 		assertThat(second.requests).hasSize(2);
+	}
+
+	@Test
+	void restoredLegacyBackupScopeRecoversWithFreshEvidenceWithoutReplacingItsApproval(@TempDir Path temporary)
+		throws Exception {
+		AtomicReference<Instant> time = new AtomicReference<>(NOW);
+		given(clock.instant()).willAnswer(invocation -> time.get());
+		Path journalDirectory = Files.createDirectory(temporary.resolve("journal"));
+		FileDeletionJournal.initialize(journalDirectory);
+		FileDeletionJournal durableJournal = new FileDeletionJournal(journalDirectory.toString(), mapper);
+		doAnswer(invocation -> {
+			durableJournal.record(invocation.getArgument(0));
+			return null;
+		}).when(journal).record(any());
+		String previousGeneration = UUID.randomUUID().toString();
+		Reference legacy = new Reference("local-db-backup", "file-v1", "local-db:tingle_dev:" + previousGeneration);
+		Fixture fixture = fixture(inventory(legacy), true);
+		Path generation = temporary.resolve("restore-generation");
+		Path inventory = temporary.resolve("inventory.json");
+		Files.writeString(generation, previousGeneration);
+		Files.writeString(inventory, mapper.writeValueAsString(new Snapshot(1, "tingle_dev", "local-db",
+			previousGeneration, NOW, true, List.of())));
+		FileBackupEvidence evidence = new FileBackupEvidence(inventory, generation, "tingle_dev", "local-db",
+			"test-approval", clock, mapper);
+		ExternalCleanupService backupCleanup = new ExternalCleanupService(repository, List.of(evidence),
+			clock, transactions);
+		backupCleanup.execute(backupCleanup.claim(fixture.matching()).orElseThrow());
+		ExternalCleanupState original = backupCleanup.inspect(fixture.matching()).orElseThrow();
+		assertThat(original.status()).isEqualTo(Status.VERIFIED);
+		String fingerprint = durableJournal.snapshot().fingerprint();
+
+		restore(fixture);
+		String restoredGeneration = UUID.randomUUID().toString();
+		Files.writeString(generation, restoredGeneration);
+		time.set(NOW.plusSeconds(10));
+		Files.writeString(inventory, mapper.writeValueAsString(new Snapshot(1, "tingle_dev", "local-db",
+			restoredGeneration, NOW.plusSeconds(9), true, List.of())));
+		Path marker = temporary.resolve("serving.marker");
+		RestoreServingGateFilter gate = new RestoreServingGateFilter(restoredGeneration, marker.toString(),
+			mapper, durableJournal);
+		RestoreReplayService replay = new RestoreReplayService(deletions, repository, backupCleanup,
+			durableJournal, clock, transactions, restoredGeneration, marker.toString());
+		assertThat(replay.replayAndVerify(fingerprint)).isFalse();
+		assertThat(gate.servingAllowed()).isFalse();
+		ExternalCleanupState waiting = backupCleanup.inspect(fixture.matching()).orElseThrow();
+		assertThat(waiting.targets().getFirst().failureCode()).isEqualTo("BACKUP_SCAN_TOO_OLD");
+		assertThat(waiting.approval()).isEqualTo(original.approval());
+
+		// A periodic scan completes after the first restore attempt, before its next verification call.
+		time.set(NOW.plusSeconds(70));
+		Files.writeString(inventory, mapper.writeValueAsString(new Snapshot(1, "tingle_dev", "local-db",
+			restoredGeneration, time.get(), true, List.of())));
+		time.set(NOW.plusSeconds(71));
+		backupCleanup.execute(backupCleanup.claim(fixture.matching()).orElseThrow());
+		ExternalCleanupState recovered = backupCleanup.inspect(fixture.matching()).orElseThrow();
+		assertThat(recovered.status()).isEqualTo(Status.VERIFIED);
+		assertThat(recovered.approval()).isEqualTo(original.approval());
+		assertThat(recovered.targets().getFirst().reference()).isEqualTo(legacy);
+		assertThat(gate.servingAllowed()).isFalse();
+		time.set(NOW.plusSeconds(72));
+		RestoreReplayService restarted = new RestoreReplayService(deletions, repository, backupCleanup,
+			durableJournal, clock, transactions, restoredGeneration, marker.toString());
+		assertThat(restarted.replayAndVerify(fingerprint)).isTrue();
+		assertThat(gate.servingAllowed()).isTrue();
+		assertThat(deletions.state(fixture.matching()).orElseThrow().inventory().references()).containsExactly(legacy);
+		assertThat(Files.readString(marker))
+			.isEqualTo("RESTORE_VERIFIED_V2\n" + restoredGeneration + "\n" + fingerprint + "\n");
+		assertThat(Files.exists(Path.of(marker + ".pending"))).isFalse();
+
+		// Even without restored chat rows, another restore generation cannot reuse this verification.
+		String nextGeneration = UUID.randomUUID().toString();
+		Files.writeString(generation, nextGeneration);
+		time.set(NOW.plusSeconds(80));
+		Files.writeString(inventory, mapper.writeValueAsString(new Snapshot(1, "tingle_dev", "local-db",
+			nextGeneration, NOW.plusSeconds(79), true, List.of())));
+		RestoreReplayService anotherRestore = new RestoreReplayService(deletions, repository, backupCleanup,
+			durableJournal, clock, transactions, nextGeneration, marker.toString());
+		RestoreServingGateFilter nextGate = new RestoreServingGateFilter(nextGeneration, marker.toString(),
+			mapper, durableJournal);
+		assertThat(anotherRestore.replayAndVerify(fingerprint)).isFalse();
+		assertThat(nextGate.servingAllowed()).isFalse();
+		ExternalCleanupState next = backupCleanup.inspect(fixture.matching()).orElseThrow();
+		assertThat(next.status()).isEqualTo(Status.BLOCKED);
+		assertThat(next.epoch()).isNotEqualTo(recovered.epoch());
+		assertThat(next.binding().dbAttempt()).isGreaterThan(recovered.binding().dbAttempt());
+		assertThat(next.dbRestoreGeneration()).isEqualTo(UUID.fromString(nextGeneration));
+		assertThat(next.approval()).isEqualTo(original.approval());
+		assertThat(next.targets().getFirst().reference()).isEqualTo(legacy);
+		assertThat(next.targets().getFirst().failureCode()).isEqualTo("BACKUP_SCAN_TOO_OLD");
+		assertThat(Files.exists(Path.of(marker + ".pending"))).isTrue();
 	}
 
 	@Test
