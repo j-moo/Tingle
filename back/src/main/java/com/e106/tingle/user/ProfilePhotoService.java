@@ -116,7 +116,8 @@ public class ProfilePhotoService {
 			return Files.readAllBytes(resolve(key));
 		} catch (NoSuchFileException e) {
 			// 막 교체돼 이전 파일이 지워진 순간이거나 파일이 유실된 경우. 다시 요청하면 새 사진을 받는다.
-			log.warn("DB에 있는 프로필 사진 파일이 없습니다: {}", key);
+			// 사진 키·경로는 사진 접근 정보라 로그에 남기지 않는다. 회원 번호로 DB 값을 찾아 대조한다.
+			log.warn("DB에 있는 프로필 사진 파일이 없습니다 userId={}", userId);
 			throw new BusinessException(ErrorCode.PHOTO_REMOVED);
 		} catch (IOException e) {
 			throw new UncheckedIOException(e);
@@ -165,7 +166,8 @@ public class ProfilePhotoService {
 		try {
 			Files.deleteIfExists(path);
 		} catch (IOException e) {
-			log.warn("프로필 사진 파일을 지우지 못했습니다: {}", path, e);
+			// 경로와 예외 메시지(경로 포함)는 남기지 않고 실패 종류만 남긴다.
+			log.warn("프로필 사진 파일을 지우지 못했습니다 failure={}", e.getClass().getSimpleName());
 		}
 	}
 

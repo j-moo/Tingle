@@ -23,11 +23,13 @@ import org.springframework.stereotype.Component;
 import com.e106.tingle.global.error.BusinessException;
 import com.e106.tingle.global.error.ErrorCode;
 
+import lombok.extern.slf4j.Slf4j;
 import tools.jackson.core.StreamReadFeature;
 import tools.jackson.databind.DeserializationFeature;
 import tools.jackson.databind.json.JsonMapper;
 
 /** 허용된 AI 주소와 경로에만 새 서비스 토큰을 보낸다. 재시도 예산은 도메인이 소유한다. */
+@Slf4j
 @Component
 public class AiInternalClient {
 
@@ -77,6 +79,20 @@ public class AiInternalClient {
 
 	private <T> T execute(String path, Object body, Class<T> responseType, UUID requestId,
 		Duration budget, int maxResponseBytes, boolean matching) {
+		UUID trace = requestId == null ? UUID.randomUUID() : requestId;
+		try {
+			return exchange(path, body, responseType, trace, budget, maxResponseBytes, matching);
+		} catch (AiCallException failure) {
+			// AI 서버 로그와 맞춰 볼 수 있게 경로와 보낸 X-Request-Id만 남긴다. 본문·토큰·응답 원문은 남기지 않는다.
+			log.warn("event=ai_call_failed path={} aiRequestId={} httpStatus={} retryable={}",
+				path != null && (PATHS.contains(path) || MATCHING_PATH.equals(path)) ? path : "unknown", trace,
+				failure.httpStatus(), failure.retryable());
+			throw failure;
+		}
+	}
+
+	private <T> T exchange(String path, Object body, Class<T> responseType, UUID trace,
+		Duration budget, int maxResponseBytes, boolean matching) {
 		try {
 			requireAvailable();
 			if (path == null || !(matching ? MATCHING_PATH.equals(path) : PATHS.contains(path))
@@ -87,7 +103,6 @@ public class AiInternalClient {
 			}
 			Duration bounded = budget.compareTo(Duration.ofSeconds(10)) > 0 ? Duration.ofSeconds(10) : budget;
 			long deadline = System.nanoTime() + bounded.toNanos();
-			UUID trace = requestId == null ? UUID.randomUUID() : requestId;
 			String serialized = json.writeValueAsString(body);
 			for (int attempt = 0; attempt < 2; attempt++) {
 				HttpResponse<byte[]> response = send(path, serialized, trace, deadline, maxResponseBytes, matching);
