@@ -13,7 +13,7 @@ import kotlin.time.Instant
 import kotlin.uuid.ExperimentalUuidApi
 import kotlin.uuid.Uuid
 
-enum class RegistrationIssue { Storage, ExpiredChallenge, InvalidResponse, Device, NotInOwnedList }
+enum class RegistrationIssue { Storage, ExpiredChallenge, InvalidResponse, Device, NotInOwnedList, ResetPending }
 data class LiveRegistrationState(val owner: Long? = null, val loaded: Boolean = false, val busy: Boolean = false,
     val pending: PendingKeyringRegistration? = null, val confirmed: OwnedKeyring? = null,
     val issue: RegistrationIssue? = null, val error: AppError? = null, val canRestart: Boolean = false)
@@ -26,6 +26,7 @@ data class LiveRegistrationState(val owner: Long? = null, val loaded: Boolean = 
 class KeyringRegistrationViewModel(private val api: KeyringRegistrationRepository,
     private val owned: OwnedKeyringRepository, private val store: KeyringRegistrationStore,
     private val sessions: SessionStore, private val syncStore: KeyringSyncStore,
+    private val resets: KeyringResetStore,
     private val now: () -> Instant = { Clock.System.now() }) : ViewModel() {
     private val mutable = MutableStateFlow(LiveRegistrationState())
     val state = mutable.asStateFlow()
@@ -56,6 +57,7 @@ class KeyringRegistrationViewModel(private val api: KeyringRegistrationRepositor
     fun start(serial: String, proof: suspend (KeyringChallenge) -> RegisterKeyringBody) {
         if (!mutable.value.loaded || mutable.value.pending != null || mutable.value.confirmed != null || !KeyringRegistrationProtocol.serial(serial)) return
         runAction { operation ->
+            operation.requireResetFinished(serial)
             // 한 회원의 여러 키링 등록을 허용한다. 기존 소유 목록이 있다는 이유로 막거나
             // 기존 관계를 해제하지 않으며, 이번 기기의 등록 자격은 서버가 검증한다.
             val pending = PendingKeyringRegistration(operation.owner, serial, Uuid.random().toString(), Uuid.random().toString())
@@ -70,6 +72,7 @@ class KeyringRegistrationViewModel(private val api: KeyringRegistrationRepositor
         if (!mutable.value.loaded) return
         runAction { operation ->
             if (pending.owner != operation.owner) throw CancellationException()
+            operation.requireResetFinished(pending.serial)
             if (pending.receipt != null) checkOwned(operation, pending)
             else if (pending.body != null) send(operation, pending)
             else {
@@ -98,6 +101,7 @@ class KeyringRegistrationViewModel(private val api: KeyringRegistrationRepositor
     }
 
     private suspend fun send(operation: Operation, pending: PendingKeyringRegistration) {
+        operation.requireResetFinished(pending.serial)
         val response = api.register(pending.registerKey, requireNotNull(pending.body))
         operation.ensure()
         if (response is ApiResult.Fail) {
@@ -114,6 +118,7 @@ class KeyringRegistrationViewModel(private val api: KeyringRegistrationRepositor
     }
 
     private suspend fun checkOwned(operation: Operation, pending: PendingKeyringRegistration) {
+        operation.requireResetFinished(pending.serial)
         val receipt = requireNotNull(pending.receipt)
         val match = operation.unwrap(owned.list()).find { it.deviceId == receipt.deviceId }
             ?: throw RegistrationProblem(RegistrationIssue.NotInOwnedList)
@@ -139,6 +144,16 @@ class KeyringRegistrationViewModel(private val api: KeyringRegistrationRepositor
     }
 
     private inner class Operation(val owner: Long, val stamp: Long) {
+        /** 초기화 완료 응답 유실 상태에서 재등록하면 옛 대상 정리가 새 등록까지 지울 수 있다.
+         * 같은 실물의 기존 실행을 먼저 복구하게 한다. 저장소 손상도 등록 허용으로 바꾸지 않는다. */
+        suspend fun requireResetFinished(serial: String) {
+            val entries = try { resets.read(owner) }
+            catch (cancelled: CancellationException) { throw cancelled }
+            catch (_: Exception) { throw RegistrationProblem(RegistrationIssue.Storage) }
+            ensure()
+            if (entries.any { it.serial == serial && it.run?.state != "COMPLETED" })
+                throw RegistrationProblem(RegistrationIssue.ResetPending)
+        }
         fun ensure() {
             if (stamp != generation || (sessions.state.value as? Session.SignedIn)?.userId != owner) throw CancellationException()
         }

@@ -26,7 +26,8 @@ import org.koin.compose.viewmodel.koinViewModel
     var settingsFailed by remember { mutableStateOf(false) }
     // 서비스 호스트가 있으면 내부 화면 이동은 연결 종료가 아니다. 단독 진단 화면은 기존 종료 정책을 유지한다.
     fun release() { registration?.pause(); if (!managedConnection) { sync?.detach(); model.leave() } }
-    LifecycleEventEffect(Lifecycle.Event.ON_START) { registration?.restore(); sync?.resume() }
+    // 호스트가 초기화 복구/권한 상태를 보고 일시 중지한 경우 내부 화면 진입으로 다시 켜지 않는다.
+    LifecycleEventEffect(Lifecycle.Event.ON_START) { registration?.restore(); if (!managedConnection) sync?.resume() }
     LifecycleEventEffect(Lifecycle.Event.ON_STOP) { release() }
     DisposableEffect(model, registration, managedConnection) { onDispose { release() } }
     LaunchedEffect(permission.availability) { if (permission.availability != BleAvailability.Ready) model.leave() }

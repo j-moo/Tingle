@@ -39,7 +39,7 @@ internal object BleProbeProtocol {
             } ?: throw BleException(BleFailure.InvalidFrame)
         } ?: listOf(KeyringRegistrationProtocol.VERSION)
         return BleDeviceInfo(serial, version, "GET_STATUS" in functions, "GET_REGISTRATION_PROOF" in functions,
-            epoch, owner, versions)
+            epoch, owner, versions, value.string("resetContractVersion"), functions)
     }
 
     fun status(value: JsonObject) = BleDeviceStatus(
@@ -55,7 +55,12 @@ internal object BleProbeProtocol {
 class BleCommandException(val code: String) : Exception("BLE command failed")
 data class BleDeviceInfo(val serial: String, val firmware: String, val supportsStatus: Boolean, val supportsRegistration: Boolean = false,
     val ownershipEpoch: Long? = null, val ownerState: String? = null,
-    val supportedProofProtocolVersions: List<String> = listOf("tingle-device-proof-v1")) {
+    val supportedProofProtocolVersions: List<String> = listOf("tingle-device-proof-v1"),
+    val resetContractVersion: String? = null, val supportedFunctions: List<String> = emptyList()) {
+    // 버전 이름만으로 삭제 명령 지원을 추측하지 않는다. 세 명령과 순번을 모두 확인해야 복구에 진입한다.
+    internal val supportsReset get() = resetContractVersion == KeyringResetProtocol.VERSION &&
+        ownershipEpoch != null && ownershipEpoch >= 0 && ownerState in setOf("BOUND", "UNOWNED", "RESETTING") &&
+        supportedFunctions.containsAll(listOf("GET_RESET_CHALLENGE", "RESET_DEVICE", "GET_RESET_RESULT"))
     /** v2 명령은 펌웨어 이름이 아니라 실제 응답의 지원 규격·소유 순번으로 판단한다. */
     internal fun supportsProof(version: String) = version in supportedProofProtocolVersions &&
         ownerState !in setOf("RESETTING", "UNKNOWN") && when (version) {

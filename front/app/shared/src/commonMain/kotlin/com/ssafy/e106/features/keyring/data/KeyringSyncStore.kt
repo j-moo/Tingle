@@ -56,6 +56,18 @@ class KeyringSyncStore(private val prefs: AppPrefs) {
         check(entries.any { it.deviceId == ticket.deviceId && it.serial == ticket.serial })
         write(owner, entries.filterNot { it.deviceId == ticket.deviceId } + ticket)
     }
+    /** BE가 동일 초기화 실행의 증명 검증·소유 해제를 완료했을 때만 옛 설정 자동 전송 대상을 제거한다. */
+    suspend fun afterReset(owner: Long, run: KeyringResetRun, serial: String) = lock.withLock {
+        check(KeyringResetProtocol.valid(run) && run.state == "COMPLETED")
+        val entries = read(owner)
+        val previous = entries.find { it.deviceId == run.deviceId } ?: return@withLock
+        check(previous.serial == serial)
+        // 완료 화면을 다시 열었을 때 이미 새 소유 순번으로 등록·동기화한 대상은 지우지 않는다.
+        if (previous.identity?.let { it.ownerGeneration != run.ownerGeneration ||
+                (it.ownershipEpoch ?: 0) > run.fromOwnershipEpoch } == true) return@withLock
+        write(owner, entries.filterNot { it.deviceId == run.deviceId })
+        changes.value++
+    }
     /** 이전 APK 대상 선택을 잘못했을 때 경로만 고친다. 실행·멱등키·이미 받은 증명은 절대 새로 만들지 않는다. */
     @OptIn(ExperimentalUuidApi::class)
     suspend fun selectTarget(owner: Long, deviceId: Long, serial: String) = lock.withLock {

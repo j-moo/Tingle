@@ -63,6 +63,34 @@ private class RegistrationServer : KeyringRegistrationRepository, OwnedKeyringRe
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class KeyringRegistrationTest {
+    /** MR230 재현: 초기화 ACK 유실 → 재등록 시도는 새 challenge/POST 전에 막고 기존 대상도 보존한다. */
+    @Test fun pendingResetBlocksRegistrationUntilSameRunIsRecovered() = runTest(dispatcher) {
+        val server = RegistrationServer(); val prefs = RegistrationPrefs(); val resets = KeyringResetStore(prefs)
+        val sync = KeyringSyncStore(prefs); sync.rememberTarget(1, resetRun.deviceId, resetSerial)
+        val ticket = ResetTicket(resetRun.deviceId, resetSerial, resetId, ResetStartBody(false, resetChallenge), resetRun, resetProof)
+        resets.insert(1, ticket)
+        val m = model(server, prefs); runCurrent()
+        m.start(resetSerial) { error("초기화 결과 확인 전에는 BLE도 금지") }; runCurrent()
+        assertEquals(RegistrationIssue.ResetPending, m.state.value.issue)
+        assertTrue(server.challenges.isEmpty()); assertTrue(server.sent.isEmpty())
+        assertEquals(resetRun.deviceId, sync.read(1).single().deviceId)
+        // 실제 복구와 같은 순서로 옛 대상 정리 후 완료를 기록해야 재등록을 허용한다.
+        sync.afterReset(1, resetDone(), resetSerial); resets.save(1, ticket.copy(run = resetDone()))
+        m.start(resetSerial) { proofBody(it) }; runCurrent()
+        assertEquals(1, server.sent.size); assertEquals(server.receipt, m.state.value.confirmed)
+        assertEquals(server.receipt.deviceId, sync.read(1).single().deviceId)
+    }
+    @Test fun restoredRegistrationCannotBypassPendingOrUnreadableReset() = runTest(dispatcher) {
+        val server = RegistrationServer(); val prefs = RegistrationPrefs()
+        KeyringRegistrationStore(prefs).save(1, PendingKeyringRegistration(1, resetSerial, resetId, resetGeneration, proofBody()))
+        val m = model(server, prefs); runCurrent()
+        KeyringResetStore(prefs).insert(1, ResetTicket(resetRun.deviceId, resetSerial, resetId, ResetStartBody(false, resetChallenge)))
+        m.retry { error("저장된 등록 본문을 재전송하지 않는다") }; runCurrent()
+        assertEquals(RegistrationIssue.ResetPending, m.state.value.issue); assertTrue(server.sent.isEmpty())
+        prefs.fault = PrefRead.Corrupt
+        m.retry { error("손상 기록을 허용으로 바꾸지 않는다") }; runCurrent()
+        assertEquals(RegistrationIssue.Storage, m.state.value.issue); assertTrue(server.sent.isEmpty())
+    }
     /** 앱 재생성 뒤에도 v2 epoch·UNOWNED·멱등키를 보존하며 BLE 증명을 다시 발급하지 않는다. */
     @Test fun v2LostResponseRestoresSameBodyAndRejectsVersionDowngrade() = runTest(dispatcher) {
         val server = RegistrationServer().apply { challenge = challengeValue.copy(proofProtocolVersion = "tingle-device-proof-v2") }
@@ -83,7 +111,7 @@ class KeyringRegistrationTest {
     @AfterTest fun after() { models.clear(); Dispatchers.resetMain() }
     private fun model(server: RegistrationServer, prefs: RegistrationPrefs = RegistrationPrefs(),
         session: TestSession = TestSession(OnboardingStatus.KEYRING_REQUIRED), name: String = "registration") =
-        KeyringRegistrationViewModel(server, server, KeyringRegistrationStore(prefs), session, KeyringSyncStore(prefs),
+        KeyringRegistrationViewModel(server, server, KeyringRegistrationStore(prefs), session, KeyringSyncStore(prefs), KeyringResetStore(prefs),
             { Instant.parse("2026-11-04T12:00:00Z") }).also { models.put(name, it) }
 
     @Test fun readyScreenNeverRegistersUntilExplicitStartAndChecksOwnership() = runTest(dispatcher) {

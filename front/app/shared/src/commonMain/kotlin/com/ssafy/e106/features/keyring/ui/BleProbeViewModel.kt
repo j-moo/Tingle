@@ -247,6 +247,29 @@ class BleProbeViewModel(private val ble: KeyringBle, private val sessions: Sessi
         } finally { if (stamp == generation) mutable.update { it.copy(busy = false) } }
     }
 
+    /** 초기화 통신마다 실물 식별·지원 명령을 재확인한다. 같은 연결의 다른 작업과 응답이 섞이지 않게 한다. */
+    internal suspend fun <T> resetExchange(serial: String, action: suspend (BleConnection, BleDeviceInfo) -> T): T {
+        val channel = connection ?: throw BleException(BleFailure.Disconnected)
+        check(!mutable.value.busy && mutable.value.info?.serial == serial)
+        val stamp = generation
+        mutable.update { it.copy(busy = true) }
+        try {
+            // 초기화/증명 재조회도 같은 연결 락·계정 경계를 사용한다. 다른 등록/설정 전송과 겹치지 않는다.
+            val info = readInfo(channel)
+            check(stamp == generation && channel === connection && info.serial == serial && info.supportsReset)
+            mutable.update { it.copy(info = info) }
+            val result = action(channel, info)
+            check(stamp == generation && channel === connection)
+            return result
+        } catch (failure: Exception) {
+            if (stamp == generation && failure !is BleCommandException) {
+                watcher?.cancel(); channel.close(); connection = null
+                mutable.update { it.copy(connected = false, info = null, error = BleFailure.Disconnected) }
+            }
+            throw failure
+        } finally { if (stamp == generation) mutable.update { it.copy(busy = false) } }
+    }
+
     /** 실제 앱 중지/권한 상실/계정 변경/사용자 해제 시 뒤늦은 응답과 재연결을 함께 차단한다. */
     fun leave() {
         generation++
