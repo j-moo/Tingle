@@ -13,12 +13,12 @@
     <string name="reset_device_processing">기기를 초기화하고 있어요</string>
     <string name="reset_server_processing">계정 연결 해제를 확인하고 있어요</string>
     <string name="reset_processing_help">기기와 서버의 처리 결과를 확인할 때까지 기다려 주세요.</string>
-    <string name="reset_partial">초기화가 아직 모두 끝나지 않았어요</string>
-    <string name="reset_partial_help">일부 단계만 확인됐어요. 현재 처리 결과를 조회해 남은 단계를 이어가야 해요.</string>
+    <string name="reset_partial">키링 초기화 완료 · 서버 반영 대기</string>
+    <string name="reset_partial_help">키링의 초기화는 확인했지만 계정 연결 해제는 아직 확인하지 못했어요. 기존 작업의 결과를 확인해 이어갈게요.</string>
     <string name="reset_failed">초기화를 진행하지 못했어요</string>
     <string name="reset_failed_help">확인된 실패에 대해 다시 시도할 수 있어요. 기기 연결을 확인해 주세요.</string>
     <string name="reset_unknown">초기화 결과 확인이 필요해요</string>
-    <string name="reset_unknown_help">성공 여부를 단정할 수 없어요. 새 요청을 만들기 전에 기존 처리 결과를 확인해 주세요.</string>
+    <string name="reset_unknown_help">연결이 끊기거나 시간이 초과돼도 초기화가 진행됐을 수 있어요. 새 초기화를 시작하지 않고 기존 작업의 결과를 확인해 주세요.</string>
     <string name="reset_complete">키링 초기화를 완료했어요</string>
     <string name="reset_complete_help">기기 초기화와 계정 연결 해제를 모두 확인했어요. 이제 양도하거나 다시 등록할 수 있어요.</string>
     <string name="reset_unavailable">초기화 대상을 확인할 수 없어요</string>
@@ -36,4 +36,21 @@
     <string name="reset_close">키링 관리로</string>
     <string name="reset_wait">확인 중이에요</string>
     <string name="reset_cancel">돌아가기</string>
+    <string name="reset_preparing">초기화 요청을 준비하고 있어요</string>
+    <string name="reset_preparing_help">대상 키링의 초기화 작업을 서버에 요청하고 있어요.</string>
+    <string name="reset_recovering">진행하던 초기화를 확인하고 있어요</string>
+    <string name="reset_recovering_help">앱을 다시 열었거나 연결이 끊겼어요. 같은 키링인지 확인한 뒤 기존 작업의 결과를 조회해요.</string>
+    <string name="reset_records_unknown">미전송 만남 기록 확인이 필요해요</string>
+    <string name="reset_records_unknown_help">기록을 확인하기 전에는 초기화를 시작할 수 없어요.</string>
+    <string name="reset_records_refresh">미전송 기록 다시 확인</string>
+    <string name="reset_records_empty">미전송 만남 기록이 없어요</string>
+    <string name="reset_records_empty_help">서버에 이미 저장된 만남 기록은 이 초기화로 삭제하지 않아요.</string>
+    <string name="reset_records_pending">미전송 만남 기록 %1$d개가 있어요</string>
+    <string name="reset_records_help">키링에만 남아 있는 기록을 어떻게 처리할지 선택해 주세요. 지금 초기화하지 않으려면 돌아가기를 누르세요.</string>
+    <string name="reset_records_upload_choice">기록을 먼저 보내고 초기화하기</string>
+    <string name="reset_records_delete_choice">미전송 기록을 삭제하고 초기화하기</string>
+    <string name="reset_records_upload">만남 기록 먼저 보내기</string>
+    <string name="reset_records_delete_help">서버에 보내지 않은 기록은 삭제하면 되돌릴 수 없어요.</string>
+    <string name="reset_records_delete_accept">미전송 만남 기록 삭제에 동의해요.</string>
+    <string name="reset_preview_notice">검토용 Preview · 서버·키링 작업은 실행되지 않아요</string>
 </resources>
