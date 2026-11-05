@@ -25,7 +25,7 @@ class ResetApiException(val error: AppError) : Exception("Reset API failed")
 /**
  * 한 번의 사용자 조작에 한 단계 복구를 수행하며 자동 무한 재시도를 하지 않는다.
  * 호출 코루틴의 취소/계정 변경은 후속 I/O를 중단한다. 이미 저장한 요청은 앱 재시작 후 같은 계정에서 이어간다.
- * 미전송 조회 계약이 없는 현재 화면은 start에 진입시키지 않는다. null 개수를 0으로 바꾸는 경로가 없다.
+ * 건수 미확인은 0으로 바꾸지 않는다. 별도 삭제 동의가 있을 때만 DISCARD_WITH_CONSENT로 요청한다.
  */
 class KeyringResetRecovery(private val api: KeyringResetRepository, private val store: KeyringResetStore,
     private val owned: OwnedKeyringRepository, private val sessions: SessionStore, private val syncStore: KeyringSyncStore) {
@@ -41,15 +41,15 @@ class KeyringResetRecovery(private val api: KeyringResetRepository, private val 
     suspend fun start(owner: Long, deviceId: Long, serial: String, accepted: Boolean,
         pendingRecordCount: Long?, discardAccepted: Boolean, device: ResetDevicePort): ResetRecoveryResult = lock.withLock {
         ensure(owner)
-        // 삭제 동의가 있어도 개수 미확인 정책을 우회하지 않는다. HTTP/BLE 요청 전 차단한다.
-        require(accepted && pendingRecordCount != null && pendingRecordCount >= 0 &&
+        // 11/5 확정 정책: 조회 미지원인 null도 별도 삭제 동의가 있어야 한다. 잘못된 음수는 계속 거부한다.
+        require(accepted && (pendingRecordCount == null || pendingRecordCount >= 0) &&
             (pendingRecordCount == 0L || discardAccepted))
         check(store.read(owner).none { it.deviceId == deviceId }); ensure(owner)
         check(unwrap(owned.list(), owner).any { it.deviceId == deviceId })
         val challenge = device.challenge(serial); ensure(owner)
         require(KeyringResetProtocol.challenge(challenge) && challenge.deviceSerial == serial)
         val ticket = ResetTicket(deviceId, serial, Uuid.random().toString(),
-            ResetStartBody(pendingRecordCount > 0 && discardAccepted, challenge))
+            ResetStartBody(pendingRecordCount != 0L && discardAccepted, challenge))
         store.insert(owner, ticket); ensure(owner)
         // 최초 POST보다 본문·키를 먼저 저장한다. 응답 유실을 새 초기화 실행으로 대체하지 않는다.
         val saved = accept(owner, ticket, unwrap(api.start(deviceId, ticket.requestKey, ticket.start), owner))

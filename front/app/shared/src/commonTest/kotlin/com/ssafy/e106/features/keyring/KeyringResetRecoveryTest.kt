@@ -41,8 +41,13 @@ internal class ResetServer : KeyringResetRepository, OwnedKeyringRepository {
     val starts = mutableListOf<Pair<String, ResetStartBody>>()
     val acknowledgements = mutableListOf<ResetAckBody>()
     var commands = 0; var reads = 0; var ownershipReads = 0
+    // 실행 기록 생성 전 소유 조회 실패와 같은 연결에서의 재시도를 재현한다.
+    var ownershipFailure: AppError? = null
     var startAction: suspend () -> ApiResult<KeyringResetRun> = { ApiResult.Ok(run) }
-    var ackAction: suspend () -> ApiResult<KeyringResetRun> = { run = resetDone(); ApiResult.Ok(run) }
+    // 요청의 삭제 정책을 보존한 완료를 반환한다. false로 고정하면 별도 동의 계약 검사가 무의미해진다.
+    var ackAction: suspend () -> ApiResult<KeyringResetRun> = {
+        run = run.copy(state = "COMPLETED", deviceCommand = null, completedAt = "2026-11-05T12:00:10Z"); ApiResult.Ok(run)
+    }
     override suspend fun start(deviceId: Long, key: String, body: ResetStartBody): ApiResult<KeyringResetRun> {
         starts += key to body; return startAction()
     }
@@ -54,7 +59,8 @@ internal class ResetServer : KeyringResetRepository, OwnedKeyringRepository {
         acknowledgements += body; return ackAction()
     }
     override suspend fun list(): ApiResult<List<OwnedKeyring>> {
-        ownershipReads++; return ApiResult.Ok(listOf(OwnedKeyring(run.deviceId, "REGISTERED", "test")))
+        ownershipReads++; ownershipFailure?.let { return ApiResult.Fail(it) }
+        return ApiResult.Ok(listOf(OwnedKeyring(run.deviceId, "REGISTERED", "test")))
     }
 }
 internal class ResetBoard : ResetDevicePort {
@@ -78,12 +84,28 @@ internal class ResetFixture {
 
 /** 파괴 작업의 복구 순서와 내구 저장을 검사한다. 성공 화면만 검사하는 테스트가 아니다. */
 class KeyringResetRecoveryTest {
-    @Test fun unknownRecordsNeverStartEvenWithDeletionConsent() = runTest {
+    @Test fun unknownRecordsRequireBothConsentsAndInvalidCountNeverStarts() = runTest {
         val f = ResetFixture()
-        for (discard in listOf(false, true)) assertFailsWith<IllegalArgumentException> {
-            f.model().start(1, resetRun.deviceId, resetSerial, true, null, discard, f.board)
+        for ((accepted, count, discard) in listOf(Triple(true, null, false), Triple(false, null, true), Triple(true, -1L, true))) {
+            assertFailsWith<IllegalArgumentException> {
+                f.model().start(1, resetRun.deviceId, resetSerial, accepted, count, discard, f.board)
+            }
         }
         assertEquals(0, f.server.ownershipReads); assertEquals(0, f.board.challenges); assertTrue(f.server.starts.isEmpty())
+    }
+    @Test fun unknownRecordsPersistExplicitDiscardAndReplayItAfterLostStart() = runTest {
+        val f = ResetFixture(); f.server.run = resetRun.copy(discardUnsentConfirmed = true)
+        f.server.startAction = { ApiResult.Fail(AppError.Offline) }
+        assertFailsWith<ResetApiException> {
+            f.model().start(1, resetRun.deviceId, resetSerial, true, null, true, f.board)
+        }
+        val first = f.server.starts.single()
+        assertTrue(first.second.discardUnsentConfirmed)
+        assertEquals(first.second, f.store.read(1).single().start)
+        f.server.startAction = { ApiResult.Ok(f.server.run) }
+        assertEquals(ResetRecoveryPhase.Completed, f.model().resume(1, resetRun.deviceId, f.board).phase)
+        assertEquals(listOf(first, first), f.server.starts)
+        assertTrue(f.store.read(1).single().run!!.discardUnsentConfirmed)
     }
     @Test fun corruptJournalOrUnpersistedRequestStopsBeforePost() = runTest {
         for (fault in listOf(PrefRead.Corrupt, PrefRead.Unreadable, null)) {

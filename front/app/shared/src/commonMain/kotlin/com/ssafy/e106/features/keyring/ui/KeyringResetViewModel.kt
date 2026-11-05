@@ -18,14 +18,17 @@ class KeyringResetViewModel(private val recovery: KeyringResetRecovery, private 
     private var pending: ResetTicket? = null
     private var target: Long? = null
     private var connected = false
+    // 동의한 실물과 실행 직전 연결이 달라지지 않도록 serial을 화면 수명 동안만 유지한다.
+    private var connectedSerial: String? = null
     init { viewModelScope.launch(start = CoroutineStart.UNDISPATCHED) {
         sessions.state.map { (it as? Session.SignedIn)?.userId }.distinctUntilChanged().collect { pause(); mutable.value = KeyringResetState() }
     } }
 
-    fun load(deviceId: Long, connected: Boolean) {
+    fun load(deviceId: Long, connected: Boolean, serial: String? = null) {
         if (work?.isActive == true || deviceId <= 0) return
         target = deviceId
         this.connected = connected
+        connectedSerial = serial
         execute(KeyringResetStage.Loading) { owner, stamp ->
             val ticket = recovery.inspect(owner, deviceId); ensure(owner, stamp)
             pending = ticket
@@ -34,19 +37,47 @@ class KeyringResetViewModel(private val recovery: KeyringResetRecovery, private 
                 val result = owned.list(); ensure(owner, stamp)
                 if (result is ApiResult.Fail) throw ResetApiException(result.error)
                 val belongs = (result as ApiResult.Ok).value.any { it.deviceId == deviceId }
-                mutable.value = KeyringResetState(stage = KeyringResetStage.Ready, deviceLabel = "#$deviceId",
-                    ownershipConfirmed = belongs, connected = connected)
+                mutable.value = KeyringResetState(stage = KeyringResetStage.Ready,
+                    deviceLabel = listOfNotNull("#$deviceId", connectedSerial).joinToString(" · "),
+                    ownershipConfirmed = belongs, connected = this.connected)
             }
         }
     }
     fun confirm() { if (pending == null && state.value.displayStage == KeyringResetStage.Ready) mutable.update { it.copy(stage = KeyringResetStage.Confirm) } }
     fun accepted(value: Boolean) { if (!state.value.busy) mutable.update { it.copy(accepted = value) } }
-    fun cancel() { if (!state.value.busy && pending == null) mutable.update { it.copy(stage = KeyringResetStage.Ready, accepted = false) } }
-    // 미전송 조회·정책 확정 전에는 start API 진입 자체를 제공하지 않는다. Preview 값도 이 모델에 주입하지 않는다.
+    fun cancel() { if (!state.value.busy && pending == null) mutable.update { it.copy(stage = KeyringResetStage.Ready,
+        accepted = false, recordChoice = null, recordDeletionAccepted = false) } }
+    /** 연결 대상 변경/끊김은 두 동의를 취소한다. 진행 중 실행의 내구 기록이나 서버 결과는 지우지 않는다. */
+    fun connectionChanged(isConnected: Boolean, serial: String?) {
+        val changed = connected != isConnected || connectedSerial != serial
+        connected = isConnected; connectedSerial = serial
+        mutable.update { it.copy(connected = isConnected, accepted = if (changed) false else it.accepted,
+            recordDeletionAccepted = if (changed) false else it.recordDeletionAccepted,
+            deviceLabel = if (pending == null && target != null) listOfNotNull("#$target", serial).joinToString(" · ") else it.deviceLabel) }
+    }
+    fun recordChoice(value: ResetRecordChoice) { if (!state.value.busy && pending == null) mutable.update {
+        it.copy(recordChoice = value, recordDeletionAccepted = if (it.recordChoice == value) it.recordDeletionAccepted else false)
+    } }
+    fun recordDeletionAccepted(value: Boolean) { if (!state.value.busy && pending == null) mutable.update { it.copy(recordDeletionAccepted = value) } }
+
+    /** 사용자 두 동의 후에만 시작한다. 서버 소유 확인·기기 challenge 검증은 recovery에서 다시 수행한다. */
+    fun start(device: ResetDevicePort) {
+        val id = target ?: return
+        val serial = connectedSerial?.takeIf(KeyringRegistrationProtocol::serial) ?: return
+        val confirmed = state.value
+        if (work?.isActive == true || pending != null || !confirmed.canConfirm) return
+        execute(KeyringResetStage.Preparing) { owner, stamp ->
+            val result = recovery.start(owner, id, serial, confirmed.accepted, confirmed.pendingRecordCount?.toLong(),
+                confirmed.recordChoice == ResetRecordChoice.Delete && confirmed.recordDeletionAccepted, device)
+            ensure(owner, stamp); pending = result.ticket; showTicket(owner, stamp, result.ticket)
+        }
+    }
     fun recover(device: ResetDevicePort?) {
         val id = target ?: return
         if (work?.isActive == true) return
-        if (pending == null) { load(id, connected); return }
+        // 아직 실행 기록이 없는 조회 실패는 같은 실물 연결로 다시 읽는다. serial을 누락하면
+        // 연결 이벤트가 다시 오지 않는 동안 활성화된 시작 버튼이 아무 동작도 하지 않게 된다.
+        if (pending == null) { load(id, connected, connectedSerial); return }
         connected = device != null
         execute(KeyringResetStage.Recovering) { owner, stamp ->
             val result = recovery.resume(owner, id, device); ensure(owner, stamp)
@@ -86,6 +117,6 @@ class KeyringResetViewModel(private val recovery: KeyringResetRecovery, private 
         currentCoroutineContext().ensureActive()
         if (generation != stamp || (sessions.state.value as? Session.SignedIn)?.userId != owner) throw CancellationException()
     }
-    fun pause() { generation++; work?.cancel(); work = null; pending = null; mutable.value = KeyringResetState() }
+    fun pause() { generation++; work?.cancel(); work = null; pending = null; connectedSerial = null; mutable.value = KeyringResetState() }
     override fun onCleared() { pause() }
 }
