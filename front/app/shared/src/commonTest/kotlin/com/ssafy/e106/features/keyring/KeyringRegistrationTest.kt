@@ -63,6 +63,20 @@ private class RegistrationServer : KeyringRegistrationRepository, OwnedKeyringRe
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class KeyringRegistrationTest {
+    /** 앱 재생성 뒤에도 v2 epoch·UNOWNED·멱등키를 보존하며 BLE 증명을 다시 발급하지 않는다. */
+    @Test fun v2LostResponseRestoresSameBodyAndRejectsVersionDowngrade() = runTest(dispatcher) {
+        val server = RegistrationServer().apply { challenge = challengeValue.copy(proofProtocolVersion = "tingle-device-proof-v2") }
+        val prefs = RegistrationPrefs(); val m = model(server, prefs); runCurrent()
+        m.start("XIAO-test") { proofBody(challengeValue) }; runCurrent()
+        assertTrue(server.sent.isEmpty()); assertEquals(RegistrationIssue.InvalidResponse, m.state.value.issue)
+        server.onSend = { ApiResult.Fail(AppError.Offline) }
+        m.retry { proofBody(it).copy(ownershipEpoch = 9007199254740993L, ownerState = "UNOWNED") }; runCurrent()
+        val sent = server.sent.single(); models.clear()
+        val restored = model(server, prefs); runCurrent()
+        server.onSend = { server.items = listOf(server.receipt); ApiResult.Ok(server.receipt) }
+        restored.retry { error("Must replay persisted v2 body") }; runCurrent()
+        assertEquals(sent, server.sent.last()); assertEquals(server.receipt, restored.state.value.confirmed)
+    }
     private val dispatcher = StandardTestDispatcher()
     private val models = ViewModelStore()
     @BeforeTest fun before() = Dispatchers.setMain(dispatcher)
