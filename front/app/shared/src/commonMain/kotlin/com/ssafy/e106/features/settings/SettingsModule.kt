@@ -16,5 +16,6 @@ class SettingsAccess(private val development: Boolean = false) {
 fun settingsModule(development: Boolean = false) = module {
     single { SettingsAccess(development) }
     single<MatchingSettingsRepository> { HttpMatchingSettingsRepository(get()) }
-    viewModel { MatchingSettingsViewModel(get(), get(), get()) }
+    // 같은 계정의 서버 저장 성공을 전경 키링 조정자와 공유한다.
+    viewModel { MatchingSettingsViewModel(get(), get(), get(), get()) }
 }

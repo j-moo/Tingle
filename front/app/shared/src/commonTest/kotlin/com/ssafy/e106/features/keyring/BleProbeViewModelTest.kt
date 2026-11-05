@@ -17,8 +17,14 @@ private class ProbeFixture : KeyringBle {
     var connections = 0
     var delayResponse: suspend () -> Unit = {}
     var wrongRequest = false
+    var serial = "XIAO-test"
+    var visible = true
+    var scans = 0
+    var currentId = "a"
+    var finiteScan = false
+    val linkState = MutableStateFlow(BleLinkState.Ready)
     val link = object : BleConnection {
-        override val state = MutableStateFlow(BleLinkState.Ready)
+        override val state = linkState
         override suspend fun exchange(request: ByteArray, maxResponseBytes: Int, responseTimeoutMillis: Long): ByteArray {
             delayResponse()
             val input = Json.parseToJsonElement(request.decodeToString()).jsonObject
@@ -26,7 +32,7 @@ private class ProbeFixture : KeyringBle {
                 put("protocolVersion", 1)
                 put("requestId", if (wrongRequest) JsonPrimitive("wrong") else input.getValue("requestId"))
                 if (input["type"] == JsonPrimitive("GET_DEVICE_INFO")) {
-                    put("type", "DEVICE_INFO"); put("deviceSerial", "XIAO-test"); put("firmwareVersion", "0.1.0-registration")
+                    put("type", "DEVICE_INFO"); put("deviceSerial", serial); put("firmwareVersion", "0.1.0-registration")
                     put("supportedFunctions", JsonArray(listOf(JsonPrimitive("GET_STATUS"))))
                 } else { put("type", "STATUS"); put("batteryPercent", JsonNull) }
             }.toString().encodeToByteArray()
@@ -35,14 +41,23 @@ private class ProbeFixture : KeyringBle {
     }
     override fun scan() = flow {
         scanning = true
-        try { emit(listOf(BleCandidate("a", "Test", -50))); awaitCancellation() }
+        scans++
+        // 실물 Android처럼 두 번째 탐색부터 ID가 바뀐다. 이전 ID 비교로는 재연결 시험을 통과할 수 없다.
+        currentId = if (scans == 1) "a" else "scan-$scans"
+        try {
+            emit(if (visible) listOf(BleCandidate(currentId, "Test", -50)) else emptyList())
+            if (!finiteScan) awaitCancellation()
+        }
         finally { scanning = false }
     }
     override suspend fun connect(candidateId: String): BleConnection {
         assertFalse(scanning, "스캔 정리를 기다린 뒤 연결해야 한다")
+        assertEquals(currentId, candidateId, "이전 탐색의 ID를 재사용하면 안 된다")
         connections++
+        linkState.value = BleLinkState.Ready
         return link
     }
+    override fun isPreviousDevice(candidateId: String) = connections > 0 && candidateId == currentId
 }
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -108,5 +123,38 @@ class BleProbeViewModelTest {
         vm.readStatus(); runCurrent(); assertNotNull(vm.state.value.status)
         session.state.value = Session.SignedOut; runCurrent()
         assertFalse(vm.state.value.connected); assertEquals(BleLinkState.Closed, port.link.state.value)
+    }
+    @Test fun foregroundDisconnectReconnectsSameVerifiedBoard() = runTest(dispatcher) {
+        val port = ProbeFixture(); val vm = model(port); vm.setForeground(true)
+        vm.scan(); runCurrent(); vm.connect("a"); runCurrent()
+        port.link.close(); runCurrent(); assertFalse(vm.state.value.connected)
+        advanceUntilIdle()
+        assertEquals(2, port.connections); assertTrue(vm.state.value.connected)
+        assertEquals("XIAO-test", vm.state.value.info?.serial)
+    }
+    @Test fun missingBoardHasThreeAttemptsAndManualStopCancelsRecovery() = runTest(dispatcher) {
+        val port = ProbeFixture(); val vm = model(port); vm.setForeground(true)
+        vm.scan(); runCurrent(); vm.connect("a"); runCurrent()
+        port.visible = false; port.finiteScan = true; port.link.close(); advanceUntilIdle()
+        assertEquals(4, port.scans); assertFalse(vm.state.value.scanning); assertEquals(1, port.connections)
+        port.visible = true; vm.scan(); runCurrent(); vm.connect(port.currentId); runCurrent()
+        port.link.close(); runCurrent(); vm.leave(); advanceUntilIdle()
+        assertEquals(2, port.connections); assertEquals(BleProbeState(), vm.state.value)
+    }
+    @Test fun backgroundOrLogoutCancelsPendingReconnect() = runTest(dispatcher) {
+        val port = ProbeFixture(); val session = TestSession(OnboardingStatus.READY); val vm = model(port, session)
+        vm.setForeground(true); vm.scan(); runCurrent(); vm.connect("a"); runCurrent()
+        port.link.close(); runCurrent(); vm.setForeground(false); advanceUntilIdle()
+        assertEquals(1, port.connections)
+        vm.setForeground(true); vm.scan(); runCurrent(); vm.connect(port.currentId); runCurrent()
+        port.link.close(); runCurrent(); session.state.value = Session.SignedOut; advanceUntilIdle()
+        assertEquals(2, port.connections); assertEquals(BleProbeState(), vm.state.value)
+    }
+    @Test fun sameAddressWithDifferentSerialIsRejectedWithoutAutomaticRetry() = runTest(dispatcher) {
+        val port = ProbeFixture(); val vm = model(port); vm.setForeground(true)
+        vm.scan(); runCurrent(); vm.connect("a"); runCurrent()
+        port.serial = "XIAO-other"; port.link.close(); advanceUntilIdle()
+        assertFalse(vm.state.value.connected); assertNull(vm.state.value.info)
+        assertEquals(BleFailure.InvalidFrame, vm.state.value.error); assertEquals(2, port.connections)
     }
 }

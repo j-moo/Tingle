@@ -25,7 +25,7 @@ import com.ssafy.e106.features.settings.ui.ConnectedSettingsRoute
 import com.ssafy.e106.features.survey.ui.SurveyRoute
 import com.ssafy.e106.features.keyring.ui.ConnectedOwnedKeyringsRoute
 import com.ssafy.e106.features.keyring.ui.ConnectedKeyringSetupRoute
-import com.ssafy.e106.features.keyring.ui.KeyringSyncViewModel
+import com.ssafy.e106.features.keyring.ui.KeyringForegroundSync
 import com.ssafy.e106.resources.*
 import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.koinInject
@@ -52,12 +52,7 @@ internal enum class ServicePage { Home, Proposals, Menu, Chats, Safety, Report, 
     val uri = LocalUriHandler.current
     // 같은 Activity의 동기화 모델을 BLE 화면에서도 공유한다. 가입 화면이 바뀌어도 대상 기록은 유지하며,
     // 개발 앱의 전경에서만 자동 발급을 시작한다. 회전/백그라운드에서는 취소 후 내구 기록으로 복구한다.
-    if (access.development) {
-        val sync: KeyringSyncViewModel = koinViewModel()
-        LifecycleEventEffect(Lifecycle.Event.ON_START) { sync.resume() }
-        LifecycleEventEffect(Lifecycle.Event.ON_STOP) { sync.pause() }
-        DisposableEffect(sync) { sync.resume(); onDispose { sync.pause() } }
-    }
+    if (access.development) KeyringForegroundSync()
     fun go(destination: ServicePage) { model.leave(); page = destination }
     fun chats(room: Long? = null) { roomId = room; go(ServicePage.Chats) }
     fun proposals() { proposalId = null; go(ServicePage.Proposals) }
@@ -85,7 +80,7 @@ internal enum class ServicePage { Home, Proposals, Menu, Chats, Safety, Report, 
 
     if (!opened || !access.allowed(session)) {
         Column(Modifier.fillMaxSize()) {
-            Box(Modifier.weight(1f)) { OnboardingRoute(session) }
+            Box(Modifier.weight(1f)) { OnboardingRoute(session, managedKeyringConnection = access.development) }
             if (access.development && access.allowed(session)) AppButton(stringResource(Res.string.proposals_development_entry),
                 Modifier.fillMaxWidth().navigationBarsPadding().padding(AppSpacing.Medium), onClick = { page = ServicePage.Home; opened = true })
         }
@@ -133,13 +128,13 @@ internal enum class ServicePage { Home, Proposals, Menu, Chats, Safety, Report, 
                 })
                 ServicePage.Profile -> ProfileManagementRoute(session, { go(ServicePage.Menu) })
                 ServicePage.Survey -> SurveyRoute(session, { go(ServicePage.Menu) })
-                ServicePage.Settings -> ConnectedSettingsRoute(session, { go(ServicePage.Menu) })
+                ServicePage.Settings -> ConnectedSettingsRoute(session, { go(ServicePage.Menu) }, showKeyringSync = access.development)
                 // 소유 정보 확인만 수행하므로 메뉴를 열었다고 등록/동기화를 요청하지 않는다.
                 ServicePage.Keyrings -> ConnectedOwnedKeyringsRoute(session, { go(if (keyringFromMenu) ServicePage.Menu else ServicePage.Home) },
                     onBleProbe = if (access.development) ({ go(ServicePage.BleProbe) }) else null)
                 // 진단 메뉴는 개발 앱 전용이다. 서버 가입 상태/소유 관계를 변경하지 않는다.
                 // 개발 등록 시험도 서버 권한을 그대로 사용하며 가입 완료 계정의 기존 기기를 임의 해제하지 않는다.
-                ServicePage.BleProbe -> if (access.development) ConnectedKeyringSetupRoute({ go(ServicePage.Keyrings) })
+                ServicePage.BleProbe -> if (access.development) ConnectedKeyringSetupRoute({ go(ServicePage.Keyrings) }, managedConnection = true)
                 ServicePage.Menu -> AccountMenuScreen(state.account, onAction = { action -> when (action) {
                     AccountMenuAction.Refresh -> model.account()
                     AccountMenuAction.Home -> go(ServicePage.Home)

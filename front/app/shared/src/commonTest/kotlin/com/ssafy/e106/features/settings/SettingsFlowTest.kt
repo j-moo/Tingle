@@ -7,6 +7,7 @@ import com.ssafy.e106.features.onboarding.TestSession
 import com.ssafy.e106.features.preferences.ui.*
 import com.ssafy.e106.features.settings.data.*
 import com.ssafy.e106.features.settings.ui.*
+import com.ssafy.e106.features.keyring.data.KeyringSettingsChanges
 import kotlinx.coroutines.*
 import kotlinx.coroutines.test.*
 import kotlin.test.*
@@ -95,5 +96,21 @@ class SettingsFlowTest {
     @Test fun productionEntryDoesNotAllowKeyringSkip() {
         val s = Session.SignedIn(1, OnboardingStatus.KEYRING_REQUIRED, false)
         assertFalse(SettingsAccess().allowed(s)); assertTrue(SettingsAccess(true).allowed(s))
+    }
+    @Test fun onlyConfirmedSaveSignalsCurrentOwnersKeyring() = runTest(dispatcher) {
+        val server = SettingsServer(); val changes = KeyringSettingsChanges(); val session = TestSession(OnboardingStatus.READY)
+        val m = MatchingSettingsViewModel(server, session, SettingsAccess(true), changes).also { models.put("settings", it) }
+        m.load(); runCurrent(); assertTrue(changes.state.value.isEmpty())
+        m.change(); server.saveError = AppError.Offline; m.save(); runCurrent()
+        assertTrue(changes.state.value.isEmpty())
+        m.leave(); server.saveError = null; m.load(); runCurrent(); m.change(); m.save(); runCurrent()
+        assertEquals(mapOf(1L to 1L), changes.state.value)
+        // 실패 응답/로그아웃 뒤의 응답으로 다른 계정의 기기 전송을 시작하면 안 된다.
+        server.doc = SettingsDocument(ConflictValues.Age(20, 30), "\"3\"")
+        m.leave(); m.load(); runCurrent(); m.change()
+        val gate = CompletableDeferred<ApiResult<SettingsDocument>>(); server.pending = gate
+        m.save(); runCurrent(); session.state.value = Session.SignedOut; runCurrent()
+        gate.complete(ApiResult.Ok(SettingsDocument(ConflictValues.Age(any = true), "\"4\""))); runCurrent()
+        assertEquals(mapOf(1L to 1L), changes.state.value)
     }
 }
