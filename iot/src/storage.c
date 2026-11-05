@@ -59,6 +59,32 @@ static int restore(uint16_t id, void *value, size_t len)
 	return result == (ssize_t)len ? 0 : -EILSEQ;
 }
 
+static int remove_value(uint16_t id)
+{
+	int result = nvs_delete(&fs, id);
+	if (result < 0 && result != -ENOENT) { return result; }
+	uint8_t byte;
+	return nvs_read(&fs, id, &byte, sizeof(byte)) == -ENOENT ? 0 : -EIO;
+}
+
+int kr_storage_clear_owner(struct kr_engine *e)
+{
+	if (!mounted) { return -EIO; }
+	int result = remove_value(1);
+	for (unsigned i = 0; !result && i < KR_RECORDS; ++i) {
+		result = remove_value((uint16_t)(100 + i));
+	}
+	for (unsigned i = 0; !result && i < KR_SUPPRESSIONS; ++i) {
+		result = remove_value((uint16_t)(200 + i));
+	}
+	if (!result) {
+		uint64_t device = e->config.device;
+		struct kr_io io = e->io;
+		kr_init(e, device, io);
+	}
+	return result;
+}
+
 int kr_storage_open(struct kr_engine *e)
 {
 	const struct device *flash = FIXED_PARTITION_DEVICE(keyring_store);

@@ -13,5 +13,14 @@ bool kr_nus_take_peer_plan(struct kr_peer_plan *out);
 void kr_nus_start_window(void);
 bool kr_nus_can_advertise(void);
 void kr_nus_poll_console(bool blink);
+bool kr_nus_reset_pending(void);
+bool kr_nus_lab_allowed(void);
+const char *kr_nus_finish_reset(void);
+/* Main engine mutations and reset policy checks share this lock. */
+void kr_runtime_owner_lock(void);
+void kr_runtime_owner_unlock(void);
+int kr_runtime_pending_records(void);
+void kr_runtime_reset_block(void);
+int kr_runtime_clear_owner_data(void);
 
 #endif

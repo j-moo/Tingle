@@ -20,6 +20,7 @@ iot/
 │  ├─ request.c                      # 기기 정보·등록·설정·상태 요청 처리
 │  ├─ proof.c                        # 등록·STORED 증명과 공통 검증 처리
 │  ├─ settings_auth.c                # 서버 설정 서명·기기 challenge 검증
+│  ├─ reset.c                        # 초기화 인증·영속 저널·완료 증명·소유 순번
 │  ├─ board.c                        # 기기 식별 키·설정 NVS 연결·보드 상태 읽기
 │  ├─ engine.c                       # 합성 시험용 키링 간 처리·큐·중복 억제
 │  ├─ storage.c                      # 합성 시험 엔진의 비휘발성 저장
@@ -92,11 +93,13 @@ Get-Content ./iot/build/firmware-manifest.json
 
 ## 현재 개발 빌드 범위
 
-- 기본 버전은 `0.2.3-dev-signed`다. 팀 서버 검증키는 `config/dev-settings-public-key.hex`, 키 ID는 `dev-ed25519-799e2999c648fda3`다. 서버 비밀키는 보드에 넣지 않는다.
+- 기본 버전은 `0.3.0-dev-signed`다. 팀 서버 검증키는 `config/dev-settings-public-key.hex`, 키 ID는 `dev-ed25519-799e2999c648fda3`다. 서버 비밀키는 보드에 넣지 않는다.
 - 실제 앱의 NUS JSON 기기 정보 조회·등록 challenge 서명·설정 검증/영구 저장·서명된 `STORED` 응답 경로를 포함한다.
 - 현재 개발 설정은 매칭 ON/OFF의 **1바이트 payload**다. 정상 저장 후 `LAB ENABLE` 없이 확장 광고·스캔을 제어한다. 전체 성향 적용·신뢰 시각 준비·실제 양방향 매칭 완료와는 구분한다.
 - `LAB ENABLE`, 바이너리 진단 앱, 가상 키링은 합성 시험 경로다. 이 경로의 통과를 실제 앱·서버의 만남 검증 완료로 보고하지 않는다.
 - 공통 UF2를 여러 보드에서 사용할 수 있다. 보드별 기존 식별 키는 유지하며, 공통 펌웨어 탑재와 서버의 기기 신뢰/소유 등록은 별개다. 보드 업데이트 때 초기화·전체 erase·키 재생성을 함께 실행하지 않는다.
+- 서버 서명으로 허가한 `GET_RESET_CHALLENGE` → `RESET_DEVICE` → `GET_RESET_RESULT` 경로를 추가했다. 삭제 착수 저널·증가한 `ownershipEpoch`를 먼저 저장하고, 소유 데이터·설정·페어링을 논리적으로 정리한 뒤 기기 서명 `CLEARED`를 저장한다. serial·기기 키·keyId는 보존하며 전원 차단 후 같은 작업을 복구한다. 상세 규격과 BE/FE 후속은 [BLE 계약 6절](keyring-app-ble-contract-v1.md#6-초기화등록-해제양도)과 해당 절의 구현 현황을 따른다.
+- 기존 기기는 epoch=0의 v1 등록·설정을 계속 사용한다. **실제 서비스 초기화 후(epoch≥1)에는 등록·설정·STORED의 v2가 필수**다. BE/FE의 초기화 API·v2 연결 전에는 앱의 초기화를 활성화하지 않는다. 펌웨어 파일 교체만으로 초기화를 실행하지 않는다. epoch를 모르는 과거 펌웨어로 되돌리는 절차는 지원하지 않는다.
 - 배터리 비율·기록 용량·미전송 건수 등은 `null` 또는 `UNKNOWN`일 수 있다. 미측정 값을 0이나 정상으로 바꾸어 표시하지 않는다.
 
 ## 검사와 관련 문서
@@ -106,7 +109,7 @@ Get-Content ./iot/build/firmware-manifest.json
 ./iot/tools/build-phone.ps1 -Java java
 ```
 
-호스트 검사는 엔진·큐·저장/재시작·바이너리 호환성, Python 수신 서버, Ed25519/설정 서명, 실제 Java BE 검증기와의 호환성을 확인한다. 기본 TinyCrypt 경로는 `build/toolchain/modules/crypto/tinycrypt`이며 다른 위치는 `-TinyCrypt`로 지정한다. Android 빌드는 JDK·Android SDK·Gradle 의존성이 별도로 필요하다.
+호스트 검사는 엔진·큐·저장/재시작·바이너리 호환성, Python 수신 서버, Ed25519/설정 서명, 실제 Java BE v1 검증기와의 호환성을 확인한다. 초기화는 모의 영속 저장소의 단계별 전원 차단·응답 유실·기기 키 보존·옛 실행 재조회·소유 순번 차단을 검사하고, 별도 JDK Ed25519 검증기로 초기화 및 등록/STORED v2 원문을 검산한다. 이 v2 검산은 BE의 새 API 구현 완료를 뜻하지 않는다. 기본 TinyCrypt 경로는 `build/toolchain/modules/crypto/tinycrypt`이며 다른 위치는 `-TinyCrypt`로 지정한다. Android 빌드는 JDK·Android SDK·Gradle 의존성이 별도로 필요하다.
 
 빌드·호스트 검사·Android lint 성공은 실물 탑재나 앱 종단 시험 완료를 뜻하지 않는다. 실물 시험에서는 보드 식별값, 실제 펌웨어 버전, 등록→설정 전달→STORED→서버 ACK, 전원 재시작 후 저장 버전과 키 유지, ON/OFF와 연결 복구를 따로 기록한다.
 

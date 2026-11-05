@@ -17,6 +17,7 @@ static struct k_sem *peer_wake;
 static struct kr_peer_plan peer_plan;
 static bool peer_pending;
 static atomic_t has_settings;
+static atomic_t reset_pending, reset_history, reset_recovery;
 static int64_t window_deadline;
 static struct bt_conn *peer;
 static uint32_t generation;
@@ -113,7 +114,26 @@ int kr_nus_init(struct k_sem *wake)
 	printk("BOOT %s stage=storage\n", KR_FIRMWARE_VERSION);
 	int result = kr_board_open(&core);
 	atomic_set(&has_settings, core.current.magic != 0);
+	atomic_set(&reset_pending, core.reset.phase == KR_RESETTING);
+	atomic_set(&reset_history, core.reset.ownership_epoch != 0);
+	atomic_set(&reset_recovery, core.reset.ownership_epoch && !core.current.magic);
 	return result;
+}
+
+bool kr_nus_reset_pending(void) { return atomic_get(&reset_pending) != 0; }
+bool kr_nus_lab_allowed(void) { return !atomic_get(&reset_history) && !atomic_get(&reset_pending); }
+
+/* Called by main only after stopping peer radio and disabling the synthetic engine. */
+const char *kr_nus_finish_reset(void)
+{
+	k_mutex_lock(&core_lock, K_FOREVER);
+	const char *error = kr_reset_resume(&core);
+	atomic_set(&reset_pending, core.reset.phase == KR_RESETTING);
+	atomic_set(&has_settings, core.current.magic != 0);
+	atomic_set(&reset_recovery, core.reset.ownership_epoch && !core.current.magic);
+	if (!error) { kr_nus_start_window(); }
+	k_mutex_unlock(&core_lock);
+	return error;
 }
 
 static void publish_peer_plan(const struct kr_peer_plan *plan)
@@ -147,7 +167,8 @@ void kr_nus_start_window(void)
 
 bool kr_nus_can_advertise(void)
 {
-	return atomic_get(&has_settings) || k_uptime_get() < window_deadline;
+	return atomic_get(&has_settings) || atomic_get(&reset_pending) ||
+		atomic_get(&reset_recovery) || k_uptime_get() < window_deadline;
 }
 
 void kr_nus_poll_console(bool blink)
@@ -206,6 +227,9 @@ static void process_requests(void *a, void *b, void *c)
 		kr_request(&core, frame, kr_board_status(), !core.current.magic &&
 			k_uptime_get() < window_deadline, response);
 		atomic_set(&has_settings, core.current.magic != 0);
+		atomic_set(&reset_pending, core.reset.phase == KR_RESETTING);
+		atomic_set(&reset_history, core.reset.ownership_epoch != 0);
+		atomic_set(&reset_recovery, core.reset.ownership_epoch && !core.current.magic);
 		int64_t stored_version = core.current.version;
 		bool stop_peer = core.stop_peer;
 		k_mutex_unlock(&core_lock);

@@ -2,12 +2,15 @@
 #define TINGLE_REGISTRATION_H
 
 #include "peer_plan.h"
+#include "reset.h"
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 
 #define KR_PROOF_VERSION "tingle-device-proof-v1"
 #define KR_SETTINGS_PROOF_VERSION "tingle-dev-settings-proof-v1"
+#define KR_PROOF_VERSION_2 "tingle-device-proof-v2"
+#define KR_SETTINGS_PROOF_VERSION_2 "tingle-dev-settings-proof-v2"
 #define KR_DEV_PAYLOAD_FORMAT "tingle-dev-settings-v1"
 #define KR_SETTINGS_CHALLENGE_SECONDS 60
 #ifndef KR_FIRMWARE_VERSION
@@ -47,6 +50,8 @@ struct kr_settings_auth {
 	const char *device_nonce;
 	const char *server_time;
 	const char *signature;
+	int64_t ownership_epoch;
+	bool version2;
 };
 
 struct kr_settings_nonce {
@@ -64,6 +69,11 @@ struct kr_platform {
 	const char *(*authorize)(void *ctx, const struct kr_settings *next,
 		const struct kr_settings_auth *auth, struct kr_peer_plan *plan);
 	const char *(*issue_settings_nonce)(void *ctx, char out[44]);
+	const char *(*issue_reset_challenge)(void *ctx, char signature[87]);
+	const char *(*begin_reset)(void *ctx, const struct kr_reset_record *next);
+	int (*save_reset)(void *ctx, const struct kr_reset_record *next);
+	const char *(*erase_owner)(void *ctx);
+	const char *(*accept_reset)(void *ctx, const struct kr_json *json);
 };
 
 struct kr_core {
@@ -73,6 +83,8 @@ struct kr_core {
 	bool storage_error;
 	bool stop_peer;
 	struct kr_peer_plan peer_after_stored;
+	struct kr_reset_record reset;
+	struct kr_reset_challenge reset_challenge;
 };
 
 void kr_hash(const void *data, size_t len, uint8_t out[32]);
@@ -87,6 +99,8 @@ bool kr_epoch(const char *iso, int64_t *out);
 bool kr_settings_valid(const struct kr_settings *settings);
 int kr_registration_proof(const struct kr_identity *id, const char *challenge,
 	const char *nonce, int64_t expires, char signature[87]);
+int kr_registration_proof_v2(const struct kr_identity *id, const char *challenge,
+	const char *nonce, int64_t expires, int64_t ownership_epoch, char signature[87]);
 const char *kr_store(struct kr_core *core, const struct kr_settings *next,
 	const struct kr_settings_auth *auth, char signature[87]);
 void kr_issue_settings_nonce(struct kr_settings_nonce *challenge, const uint8_t bytes[32], int64_t now_ms);

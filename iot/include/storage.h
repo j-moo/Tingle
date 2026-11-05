@@ -5,4 +5,5 @@ int kr_storage_open(struct kr_engine *e);
 int kr_storage_config(void *ctx, const struct kr_config *config);
 int kr_storage_record(void *ctx, unsigned slot, const struct kr_record *record);
 int kr_storage_suppression(void *ctx, unsigned slot, const struct kr_suppression *s);
+int kr_storage_clear_owner(struct kr_engine *e);
 #endif
