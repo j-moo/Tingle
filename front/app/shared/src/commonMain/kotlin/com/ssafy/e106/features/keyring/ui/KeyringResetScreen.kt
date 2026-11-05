@@ -13,7 +13,7 @@ import com.ssafy.e106.resources.*
 import org.jetbrains.compose.resources.stringResource
 
 @Composable
-// 화면은 상태와 사용자 의도만 전달한다. 서버/BLE 호출 및 복구 자료 저장은 아직 연결하지 않는다.
+// 화면은 상태와 사용자 의도만 전달한다. 실제 조회/복구는 Route와 모델이 수행하며 Preview와 구분한다.
 fun KeyringResetScreen(state: KeyringResetState, onAccepted: (Boolean) -> Unit, onAction: (KeyringResetAction) -> Unit,
     onRecordChoice: (ResetRecordChoice) -> Unit = {}, onRecordDeletionAccepted: (Boolean) -> Unit = {},
     showPreviewNotice: Boolean = false) {
@@ -25,6 +25,11 @@ fun KeyringResetScreen(state: KeyringResetState, onAccepted: (Boolean) -> Unit, 
             AppTopBar(stringResource(Res.string.reset_title), onBack = if (state.busy) null else ({ onAction(KeyringResetAction.Back) }))
             Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()).padding(screenPaddingValues()),
                 verticalArrangement = Arrangement.spacedBy(AppSpacing.Large)) {
+                state.errorMessage?.let { Text(it, color = AppColors.Error) }
+                // 응답 유실 후에는 소유 목록에서 사라질 수도 있다. 결과 조회와 실물 재연결을 각각 제공한다.
+                if (phase == KeyringResetStage.Unknown && !state.connected) {
+                    AppButton(stringResource(Res.string.reset_connect), onClick = { onAction(KeyringResetAction.CheckConnection) })
+                }
                 if (phase == KeyringResetStage.Ready || phase == KeyringResetStage.Confirm) {
                     Text(stringResource(Res.string.reset_question), style = MaterialTheme.typography.headlineSmall)
                     StatusCard(stringResource(Res.string.reset_target), state.deviceLabel.orEmpty())

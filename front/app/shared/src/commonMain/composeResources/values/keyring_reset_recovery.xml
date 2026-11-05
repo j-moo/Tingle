@@ -1,0 +1,5 @@
+<resources>
+    <string name="registration_reset_pending">이 키링의 초기화 결과를 먼저 확인해 주세요. 내 키링의 초기화 작업 확인에서 이어갈 수 있어요.</string>
+    <string name="reset_recovery_entry">키링 #%1$s 초기화 작업 확인</string>
+    <string name="reset_recovery_unreadable">저장된 초기화 작업을 읽지 못했어요. 새 초기화를 진행하지 말고 다시 확인해 주세요.</string>
+</resources>
