@@ -11,6 +11,8 @@ class Settings(BaseSettings):
     icebreaker_release_descriptor_file: str = ""
     icebreaker_dev_enabled: bool = False
     risk_release_descriptor_file: str = ""
+    risk_local_rules_enabled: bool = False
+    risk_local_rules_descriptor_sha256: str = ""
     explanation_release_descriptor_files: list[str] = []
 
     model_config = SettingsConfigDict(

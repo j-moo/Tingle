@@ -1,0 +1,3 @@
+# Optional only for RISK_LOCAL_RULES_ENABLED in local/test/dev.
+# Load a supplied local tokenizer.json; no model/provider/download at runtime.
+tokenizers==0.22.2
