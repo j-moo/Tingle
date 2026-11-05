@@ -135,10 +135,19 @@ services:
       KEYRING_DEV_SETTINGS_ENABLED: "${KEYRING_DEV_SETTINGS_ENABLED:-false}"
       KEYRING_DEV_SETTINGS_PRIVATE_KEY_FILE: "${KEYRING_DEV_SETTINGS_PRIVATE_KEY_FILE:-/run/secrets/tingle/dev-settings-private.pem}"
       KEYRING_DEV_SETTINGS_PUBLIC_KEY_FILE: "${KEYRING_DEV_SETTINGS_PUBLIC_KEY_FILE:-/run/secrets/tingle/dev-settings-public.pem}"
+      # 채팅 삭제 뒤 백업 사본 확인(S15P31E106-202 · 250). 서버 cron 이 1분마다 /srv/tingle/backup-evidence 에 쓰는 메타데이터만 읽는다(/backup 은 붙이지 않음).
+      # 켜는 값은 서버 /srv/tingle/.env 의 BACKUP_EVIDENCE_ENABLED=true. 범위 · 승인 ID 는 공개 식별자(docs/specifications/functional-spec-v3/backup-evidence-v1.md)
+      APP_BACKUP_EVIDENCE_ENABLED: "${BACKUP_EVIDENCE_ENABLED:-false}"
+      APP_BACKUP_EVIDENCE_FILE: /backup-evidence/tingle_dev.json
+      APP_BACKUP_EVIDENCE_GENERATION_FILE: /backup-evidence/tingle_dev.restore-generation
+      APP_BACKUP_EVIDENCE_NAMESPACE: tingle_dev
+      APP_BACKUP_EVIDENCE_SCOPE_ID: tingle-dev-db-dumps-v1
+      APP_BACKUP_EVIDENCE_APPROVAL_ID: S15P31E106-202-DEV-DB-V1-20261105
     volumes: # 개발 사진은 운영과 섞이지 않게 따로 둔다
       - /srv/tingle/secrets:/run/secrets/tingle:ro
       - /data/uploads/dev:/data/photos
       - ${Q040_DEV_RELEASE_DIR:-/srv/tingle/releases/q040-dev-release-v1}:/run/tingle/q040-dev-release-v1:ro
+      - /srv/tingle/backup-evidence:/backup-evidence:ro # 백업 증거 메타데이터(소유 ubuntu, 0750/0640). 컨테이너는 uid 1000 이라 호스트 ubuntu 가 1000 이어야 읽힘(아니면 group_add). 없으면 배포 때 root 소유로 생김 → 준비 때 chown
     depends_on: [db]
     mem_limit: 1536m
     restart: unless-stopped

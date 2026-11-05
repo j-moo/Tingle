@@ -91,9 +91,10 @@ uid 1000이 호스트 소유자와 같다고 가정하지 않는다. 세대 파�
 JSON의 추가 nullable 필드는 기존 상태를 읽을 수 있으며, 구형 실행 프로그램은 새 필드를 무시하더라도
 이 재시도 개선을 제공하지 않으므로 복원 작업 중 구형 버전으로 되돌리지 않는다.
 
-`backup-evidence.compose.yml`은 **개발 수동 확인용** opt-in overlay다.
-Jenkins의 기본 Compose 배포에는 적용되지 않는다. 지속 배포의 마운트·환경변수 반영은 INFRA 담당이다.
-승인 ID·scope·실존 폴더가 필요하며 자동 디렉터리 생성이나 기본 Compose 변경·자동 삭제 활성화는 없다.
+개발 BE 의 마운트 · 환경변수는 기본 `infra/docker-compose.yml` 의 `back-dev` 에 있다(S15P31E106-250).
+기본 꺼짐이며 서버 `/srv/tingle/.env` 의 `BACKUP_EVIDENCE_ENABLED=true` 로 켠다. 갱신 cron 은 `backup-evidence-refresh.sh` 주석,
+복원은 `infra/restore-db.sh` 를 쓴다.
+켜기 전에 메타데이터 폴더 · 세대 파일 · 그룹 권한을 준비한다. 백업 자동 삭제 활성화는 없다.
 실제 인프라 권한·주기 실행·복원 시 세대 갱신 및 운영 로그 내용은 아직 별도 검증 대상이다.
 
 ## 복원 세대와 INFRA 적용 기준

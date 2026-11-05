@@ -1,5 +1,13 @@
 #!/bin/sh
 # Also run periodically (e.g. every minute); daily-only snapshots fail the 5m freshness guard.
+# 서버 ubuntu 계정 crontab (S15P31E106-250). 지금은 개발(tingle_dev)만. 로그는 /backup 밖에 둔다(/backup 의 모르는 파일은 보관 정리를 막는다):
+#   * * * * * BACKUP_EVIDENCE_DIR=/srv/tingle/backup-evidence BACKUP_EVIDENCE_NAMESPACES=tingle_dev BACKUP_EVIDENCE_SCOPE_ID=tingle-dev-db-dumps-v1 flock -n /srv/tingle/backup-evidence/.refresh.lock sh /srv/tingle/repo/infra/backup-evidence-refresh.sh >> /srv/tingle/logs/backup-evidence.log 2>&1
+# 처음 한 번 준비(ubuntu, 순서대로):
+#   sudo install -d -o ubuntu -g ubuntu -m 750 /srv/tingle/backup-evidence   # 배포로 root 소유로 먼저 생겼어도 소유자 · 권한을 맞춤
+#   mkdir -p /srv/tingle/logs
+#   cat /proc/sys/kernel/random/uuid > /srv/tingle/backup-evidence/tingle_dev.restore-generation && chmod 640 /srv/tingle/backup-evidence/tingle_dev.restore-generation
+# 운영은 별도 승인 후(Loki 범위 확인 포함) namespace · 범위 ID · lock 을 나눈 줄을 따로 둔다(같은 lock 이면 한쪽이 매번 건너뜀):
+#   * * * * * BACKUP_EVIDENCE_DIR=/srv/tingle/backup-evidence BACKUP_EVIDENCE_NAMESPACES=tingle BACKUP_EVIDENCE_SCOPE_ID=tingle-prod-db-dumps-v1 flock -n /srv/tingle/backup-evidence/.refresh-tingle.lock sh /srv/tingle/repo/infra/backup-evidence-refresh.sh >> /srv/tingle/logs/backup-evidence.log 2>&1
 # Run after completed retention and backups, never before a restore generation is rotated.
 set -eu
 umask 027
@@ -7,7 +15,7 @@ umask 027
 : "${BACKUP_EVIDENCE_SCOPE_ID:?Approved scope required}"
 script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 status=0
-for namespace in tingle tingle_dev; do
+for namespace in ${BACKUP_EVIDENCE_NAMESPACES:-tingle tingle_dev}; do
   if ! python3 "$script_dir/backup-evidence.py" --directory /backup \
     --output "$BACKUP_EVIDENCE_DIR/$namespace.json" \
     --generation-file "$BACKUP_EVIDENCE_DIR/$namespace.restore-generation" \

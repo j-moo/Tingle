@@ -3,7 +3,7 @@
 #   0 19 * * * sh /srv/tingle/repo/infra/backup-daily.sh >> /backup/daily.log 2>&1   (서버는 UTC — 한국 시각 04:00)
 # 운영 · 개발 DB(pg_dump) 와 업로드 사진(/data/uploads) 을 /backup 에 받고 7일치만 남긴다.
 # 두 DB 백업 계열은 생성 후 최대 7일. Python 3가 필요하며 만료 처리 실패 시 중단한다.
-# 복원: docker exec -i tingle-db-1 pg_restore -U 106hclk -d <DB> --clean < 파일
+# 복원: sh infra/restore-db.sh dev|prod <덤프 파일> (BE 멈춤 · 백업 증거 세대 교체 · pg_restore · BE 다시 켬)
 set -eu
 umask 077
 script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
