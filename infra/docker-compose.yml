@@ -233,6 +233,8 @@ services:
     volumes:
       - ./monitoring/grafana/datasources:/etc/grafana/provisioning/datasources:ro
       - ./monitoring/grafana/dashboards:/etc/grafana/provisioning/dashboards:ro # tingle.json
+      # 개발 비동기 관측 규칙만 등록한다. 수신 채널 승인 전에는 모든 규칙을 paused로 유지한다.
+      - ./monitoring/grafana/alerting:/etc/grafana/provisioning/alerting:ro
       - grafana:/var/lib/grafana
     depends_on: [prometheus, loki]
     mem_limit: 192m
