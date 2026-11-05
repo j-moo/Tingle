@@ -2,6 +2,9 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
     <application>
+        <!-- 신고 권한 재조회 실패 이후 실제 버튼 복구를 검사하는 서버와 분리된 호스트. -->
+        <activity android:name="com.ssafy.e106.features.report.ReportEvidenceTestActivity" android:exported="true"
+            android:theme="@android:style/Theme.Material.Light.NoActionBar" />
         <!-- 초기화 복구 UI 전용. 실제 개발 앱 계정·키링에는 접근하지 않는다. -->
         <activity android:name="com.ssafy.e106.features.keyring.KeyringResetTestActivity" android:exported="true"
             android:theme="@android:style/Theme.Material.Light.NoActionBar" />

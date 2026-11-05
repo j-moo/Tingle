@@ -31,7 +31,8 @@ fun ReportScreen(state: ReportState, onReason: (ReportReason) -> Unit, onDetail:
                     }
                     // 방이 종료돼도 이미 보낸 신고의 결과 화면을 '신고 불가' 안내로 덮지 않는다.
                     if (!state.available && !state.showsSubmissionStatus) {
-                        item { StatusCard(stringResource(Res.string.report_unavailable), stringResource(Res.string.report_unavailable_help)) }
+                        item { StatusCard(stringResource(if(state.accessRetryAvailable) Res.string.report_evidence_failed else Res.string.report_unavailable),
+                            stringResource(if(state.accessRetryAvailable) Res.string.report_access_retry_help else Res.string.report_unavailable_help)) }
                     } else when (state.step) {
                         ReportStep.Form -> {
                             item(key = "reasons") {
@@ -114,7 +115,13 @@ private fun ReportActions(state: ReportState, onAction: (ReportAction) -> Unit) 
     val busy = state.step == ReportStep.Sending
     Column(Modifier.fillMaxWidth().padding(AppSpacing.Medium), verticalArrangement = Arrangement.spacedBy(AppSpacing.Small)) {
         // 같은 요청을 다시 보내 영수증을 확인하는 버튼은 새 신고 입력 권한에 종속시키지 않는다.
-        if (!state.available && !state.showsSubmissionStatus) AppButton(stringResource(Res.string.report_back), Modifier.fillMaxWidth(), onClick = { onAction(ReportAction.Close) })
+        if (!state.available && !state.showsSubmissionStatus) {
+            // 일시 실패에서도 사용자가 현재 화면의 버튼으로 권한을 다시 확인할 수 있어야 한다.
+            // 재조회가 성공하기 전에는 신규 신고나 증거 본문을 공개하지 않는다.
+            if(state.accessRetryAvailable) AppButton(stringResource(Res.string.report_reload), Modifier.fillMaxWidth(),
+                enabled = state.evidenceLoad != EvidenceLoad.Loading, onClick = { onAction(ReportAction.ReloadEvidence) })
+            AppButton(stringResource(Res.string.report_back), Modifier.fillMaxWidth(), onClick = { onAction(ReportAction.Close) })
+        }
         else {
             val action = when (state.step) {
                 ReportStep.Form -> ReportAction.NextEvidence

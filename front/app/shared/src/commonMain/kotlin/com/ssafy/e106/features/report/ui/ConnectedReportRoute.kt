@@ -32,7 +32,8 @@ import org.koin.compose.viewmodel.koinViewModel
         return
     }
     Column {
-        state.error?.let { Text(it.message) }
+        // 권한 재조회 오류는 안전영역 안의 상태 카드가 설명한다. 화면 위에 같은 오류를 중복 출력하지 않는다.
+        if(!state.ui.accessRetryAvailable) state.error?.let { Text(it.message) }
         state.storageIssue?.let { issue ->
             Text(stringResource(if(issue == ReportStorageIssue.Corrupt) Res.string.report_storage_corrupt else Res.string.report_restore_failed))
         }
