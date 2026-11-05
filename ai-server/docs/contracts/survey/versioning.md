@@ -41,4 +41,4 @@
 
 이전 공개 UUID·revision/ETag 설계와 MR !57의 정적 확인은 당시 구현 이력이다. 현재 숫자 ID·문항별 답 저장·상태 조회로 코드나 기존 데이터 이관이 완료됐다는 증거가 아니다. 자세한 과거 확인 커밋은 [설문 API 계약](../api/survey-sessions.md)의 구현 증거 절을 따른다.
 
-이전 rule_artifacts/rule_releases/release_artifacts 및 관리자 초안·검증·승인·게시·current 전환/롤백 9개 API는 현재 구현 대상으로 요구하지 않는다. 기존 노션의 타담당·제외 페이지와 이력은 보존한다. 관리자 실시간 편집이 필요해지면 권한·버전 영속성·승인 계약과 저장 구조를 별도 설계한다.
+2026-11-04(S15P31E106-57~60): 관리자 초안·검증·승인·게시·current 전환/롤백 API를 `/api/admin/v1/...` 경로로 다시 구현했다. 저장은 rule_artifact·rule_release·rule_channel·rule_audit 4표다. 서버가 검사·사용하는 형식은 설문(QUESTIONNAIRE/questionnaire-1)과 이관 규칙(MIGRATION/migration-1)이며 나머지 종류는 형식 합의 전 422다. 파일 버전은 그대로 쓰고, 게시한 설문·이관 규칙은 파일처럼 버전 이름으로 찾는다(파일 우선). current 채널이 비어 있으면 새 회차는 app.survey.current-version 파일 버전을 쓴다. 이미 시작한 회차는 시작 때 버전을 유지한다. 계산·분석 규칙(analysis_version)은 여전히 서버 설정·AI 서버 파일 기준이다.

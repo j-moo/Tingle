@@ -79,7 +79,8 @@ class SurveyLoadIntegrationTest extends IntegrationTestSupport {
 			members.get(i), "{\"value\":\"unknown\"}").andExpect(status().isOk()));
 		measure("GET_SESSION", 5, i -> perform(get(SESSIONS + sessions.get(i)), members.get(i), null)
 			.andExpect(status().isOk()).andExpect(jsonPath("$.answeredCount").value(99)));
-		measure("ONBOARDING_SURVEY_REQUIRED", 14, i -> perform(get(me(members.get(i), "/onboarding")),
+		// 가입 단계 조회는 새 회차 기본 조합(rule_channel 한 줄)을 매번 읽어 210 측정 때보다 1건 많다(서버 여러 대가 같은 값을 보게).
+		measure("ONBOARDING_SURVEY_REQUIRED", 15, i -> perform(get(me(members.get(i), "/onboarding")),
 			members.get(i), null).andExpect(status().isOk()).andExpect(jsonPath("$.answeredCount").value(99)));
 		measureOnce("COMPLETE", 13, i -> {
 			perform(put(SESSIONS + sessions.get(i) + "/answers/Q100"), members.get(i), "{\"value\":\"unknown\"}")
@@ -105,7 +106,7 @@ class SurveyLoadIntegrationTest extends IntegrationTestSupport {
 			completeOnboarding(tokens);
 			ready.add(tokens);
 		}
-		measure("ONBOARDING_READY", 21, i -> perform(get(me(ready.get(i), "/onboarding")), ready.get(i), null)
+		measure("ONBOARDING_READY", 22, i -> perform(get(me(ready.get(i), "/onboarding")), ready.get(i), null)
 			.andExpect(status().isOk()).andExpect(jsonPath("$.nextStep").value("READY")));
 	}
 

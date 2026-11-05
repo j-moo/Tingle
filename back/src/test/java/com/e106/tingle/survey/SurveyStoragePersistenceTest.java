@@ -29,6 +29,8 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
 
 import com.e106.tingle.global.error.BusinessException;
 import com.e106.tingle.global.error.ErrorCode;
+import com.e106.tingle.rule.RuleArtifact;
+import com.e106.tingle.rule.RuleArtifactRepository;
 import com.e106.tingle.survey.dto.SurveySessionResponse;
 import com.e106.tingle.user.User;
 import com.e106.tingle.user.UserRepository;
@@ -48,8 +50,9 @@ class SurveyStoragePersistenceTest {
 
 	@Configuration(proxyBeanMethods = false)
 	@EnableAutoConfiguration
-	@EntityScan(basePackageClasses = {User.class, SurveyResponse.class})
-	@EnableJpaRepositories(basePackageClasses = {UserRepository.class, SurveyResponseRepository.class})
+	@EntityScan(basePackageClasses = {User.class, SurveyResponse.class, RuleArtifact.class})
+	@EnableJpaRepositories(basePackageClasses = {UserRepository.class, SurveyResponseRepository.class,
+		RuleArtifactRepository.class})
 	@Import({SurveyService.class, SurveyCatalog.class})
 	static class Config {
 		@Bean
@@ -87,7 +90,7 @@ class SurveyStoragePersistenceTest {
 		assertThat(session.answers()).isEmpty();
 		assertThat(session.questionCount()).isEqualTo(100);
 		assertThat(jdbc.queryForObject("select count(*) from information_schema.tables where table_schema='public' "
-			+ "and table_type='BASE TABLE'", Integer.class)).isEqualTo(26);
+			+ "and table_type='BASE TABLE'", Integer.class)).isEqualTo(30);
 		assertThat(jdbc.queryForObject("select to_regclass('public.survey_responses')::text", String.class))
 			.isNull();
 		assertThat(jdbc.queryForMap("select legacy_public_id,client_request_id,response_context,definition_snapshot,"

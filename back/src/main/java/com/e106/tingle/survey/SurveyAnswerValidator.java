@@ -51,6 +51,41 @@ public final class SurveyAnswerValidator {
 		return value.isNumber() || (value.isString() && !value.asString().isBlank());
 	}
 
+	/**
+	 * responseSchema 가 이 검사기가 아는 규칙만 쓰는지 미리 확인한다(관리자가 올린 설문 정의 검사용).
+	 * 문제가 있으면 그 위치(path)를 problems 에 더한다. 알 수 없는 규칙·코드·주소 같은 것은 모두 거절된다.
+	 */
+	public static void collectSchemaProblems(JsonNode schema, String path, List<String> problems) {
+		if (schema == null || !schema.isObject() || schema.isEmpty()) {
+			problems.add(path);
+			return;
+		}
+		for (String keyword : schema.propertyNames()) {
+			JsonNode value = schema.get(keyword);
+			String at = path + "." + keyword;
+			boolean ok = switch (keyword) {
+				case "oneOf" -> value.isArray() && !value.isEmpty();
+				case "enum" -> value.isArray() && !value.isEmpty()
+					&& value.valueStream().allMatch(SurveyAnswerValidator::isScalar);
+				case "const" -> isScalar(value);
+				case "type" -> "array".equals(value.asString(""));
+				case "items" -> true;
+				case "minItems", "maxItems" -> value.isIntegralNumber() && value.asInt() >= 0;
+				case "uniqueItems" -> value.isBoolean();
+				default -> false;
+			};
+			if (!ok) {
+				problems.add(at);
+			} else if ("oneOf".equals(keyword)) {
+				for (int i = 0; i < value.size(); i++) {
+					collectSchemaProblems(value.get(i), at + "[" + i + "]", problems);
+				}
+			} else if ("items".equals(keyword)) {
+				collectSchemaProblems(value, at, problems);
+			}
+		}
+	}
+
 	static boolean matches(JsonNode schema, JsonNode value) {
 		if (!schema.isObject() || schema.isEmpty()) {
 			throw new IllegalStateException("설문 파일의 responseSchema 가 비어 있습니다");

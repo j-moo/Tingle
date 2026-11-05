@@ -32,15 +32,15 @@ class KeyringAdditiveDdlTest {
 	private DataSource dataSource;
 
 	@Test
-	void canonicalDdlCreatesExactlyTwentySixTablesAndAllColumnsWithoutPhysicalReferences() throws Exception {
+	void canonicalDdlCreatesExactlyThirtyTablesAndAllColumnsWithoutPhysicalReferences() throws Exception {
 		inDisposableSchema(jdbc -> {
 			jdbc.execute(new ClassPathResource("database/schema.sql")
 				.getContentAsString(StandardCharsets.UTF_8));
 			assertThat(jdbc.queryForObject("select count(*) from information_schema.tables "
 				+ "where table_schema=current_schema() and table_type='BASE TABLE'", Integer.class))
-				.isEqualTo(26);
+				.isEqualTo(30);
 			assertThat(jdbc.queryForObject("select count(*) from information_schema.columns "
-				+ "where table_schema=current_schema()", Integer.class)).isEqualTo(234);
+				+ "where table_schema=current_schema()", Integer.class)).isEqualTo(272);
 			assertThat(jdbc.queryForObject("select count(*) from information_schema.table_constraints "
 				+ "where constraint_schema=current_schema() and constraint_type='FOREIGN KEY'", Integer.class))
 				.isZero();

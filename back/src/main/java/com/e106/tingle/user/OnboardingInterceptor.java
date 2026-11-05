@@ -30,7 +30,8 @@ public class OnboardingInterceptor implements HandlerInterceptor, WebMvcConfigur
 
 	@Override
 	public void addInterceptors(InterceptorRegistry registry) {
-		registry.addInterceptor(this).addPathPatterns("/api/**");
+		// 운영자 API(/api/admin/**)는 회원 가입 단계와 무관하다. 인증·운영자 확인은 보안 설정과 서비스가 한다.
+		registry.addInterceptor(this).addPathPatterns("/api/**").excludePathPatterns("/api/admin/**");
 	}
 
 	// ponytail: 요청마다 약관·프로필 조회 2건. 트래픽이 커지면 단계를 캐시하거나 저장해 둔다.
