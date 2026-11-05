@@ -17,6 +17,8 @@ import kotlin.test.*
 internal class ExtraServer : ChatExtrasRepository {
     var result: ApiResult<IcebreakerResult> = ApiResult.Fail(AppError.Server(404, "RESOURCE_NOT_FOUND", ""))
     var onQuestions: (suspend () -> ApiResult<IcebreakerResult>)? = null
+    // 안내 지연/실패도 질문 요청과 독립적으로 재현한다. 실제 앱의 Repository에는 넣지 않는다.
+    var onNotices: (suspend () -> ApiResult<ChatNotices>)? = null
     var requests = 0; var queries = 0; var acks = 0
     val consentWrites = mutableListOf<RiskConsentBody>()
     var consent = RiskConsentRecord(true, "v1", "2026-11-03T00:00:00Z")
@@ -25,7 +27,7 @@ internal class ExtraServer : ChatExtrasRepository {
         requests++; return ApiResult.Ok(IcebreakerTask(room,"ICEBREAKERS","PENDING","/api/chat-rooms/$room/icebreakers",null,false,2))
     }
     override suspend fun questions(room: Long): ApiResult<IcebreakerResult> { queries++; return onQuestions?.invoke() ?: result }
-    override suspend fun notices(room: Long) = ApiResult.Ok(ChatNotices(listOf(ChatNoticeRecord("notice", "ONE_HOUR_BEFORE_END",
+    override suspend fun notices(room: Long) = onNotices?.invoke() ?: ApiResult.Ok(ChatNotices(listOf(ChatNoticeRecord("notice", "ONE_HOUR_BEFORE_END",
         "2026-11-03T00:00:00Z", "2026-11-10T00:00:00Z", "곧 종료", null))))
     override suspend fun acknowledge(room: Long, id: String, key: String): ApiResult<ChatNoticeAck> { acks++; return ApiResult.Ok(ChatNoticeAck("2026-11-03T00:00:00Z")) }
     override suspend fun consent(user: Long) = ApiResult.Ok(consent)
@@ -49,6 +51,64 @@ class ChatSafetyFlowTest {
     @AfterTest fun teardown() { store.clear(); Dispatchers.resetMain() }
     private fun test(block: suspend TestScope.() -> Unit) = runTest(dispatcher) { try { block() } finally { store.clear() } }
     private fun session() = TestSession(OnboardingStatus.READY)
+    /** 방 확인 이후 도착한 안내가 방 종료를 넘어 잠깐이라도 화면에 노출되면 안 된다. */
+    @Test fun delayedNoticeRechecksRoomBeforePublishingOrRequestingQuestions() = test {
+        val gate = CompletableDeferred<Unit>(); val chats = ChatTestServer(); val api = ExtraServer()
+        val original = api.notices(20)
+        api.onNotices = { gate.await(); original }
+        api.onQuestions = { awaitCancellation() }
+        val m = ChatExtrasViewModel(api,chats,session()).also { store.put("e",it) }
+        m.bind(20,true); runCurrent()
+        chats.roomRecord = chats.roomRecord.copy(status="CLOSED")
+        gate.complete(Unit); runCurrent()
+        assertTrue(m.state.value.notices.isEmpty())
+        assertNull(m.state.value.room); assertEquals(0,api.queries)
+    }
+    /** 질문 GET의 통신 실패는 자동 반복을 끝내고, 재생성 없이 사용자의 재조회로 복구한다. */
+    @Test fun questionPollingFailureStopsAndManualCheckRecovers() = test {
+        val api = ExtraServer().apply { result = ApiResult.Ok(IcebreakerResult("PENDING",emptyList(),null,null)) }
+        val m = ChatExtrasViewModel(api,ChatTestServer(),session()).also { store.put("e",it) }
+        m.bind(20,true); runCurrent(); m.generate(); runCurrent()
+        api.result = ApiResult.Fail(AppError.Offline)
+        advanceTimeBy(2_000); runCurrent()
+        assertFalse(m.state.value.busy)
+        assertEquals(AppError.Offline,m.state.value.error)
+        val queries = api.queries; advanceTimeBy(10_000); runCurrent()
+        assertEquals(queries,api.queries)
+        api.result = ApiResult.Ok(IcebreakerResult("SUCCEEDED",listOf("하나","둘","셋"),"GENERAL_FALLBACK","v1"))
+        m.check(); runCurrent()
+        assertEquals(3,m.state.value.questions.size); assertEquals(1,api.requests)
+    }
+    /** 방 조회 직후 질문 API가 종료/동의 철회를 알리면 이전 안내도 즉시 제거한다. */
+    @Test fun questionAccessRevocationClearsRoomAndNotices() = test {
+        for (error in listOf(AppError.Server(410,"CHAT_CLOSED",""),
+            AppError.Server(403,"AI_RISK_CONSENT_REQUIRED",""),AppError.SessionExpired)) {
+            val api = ExtraServer().apply { result = ApiResult.Fail(error) }
+            val m = ChatExtrasViewModel(api,ChatTestServer(),session()).also { store.put("e",it) }
+            m.bind(20,true); runCurrent()
+            assertNull(m.state.value.room); assertTrue(m.state.value.notices.isEmpty())
+            assertTrue(m.state.value.questions.isEmpty()); assertFalse(m.state.value.busy)
+        }
+    }
+    /** 안내 API가 종료를 반환하면 질문 요청/표시 ACK를 추가로 보내지 않는다. */
+    @Test fun noticeRevocationStopsOtherExtrasRequests() = test {
+        val api = ExtraServer().apply { onNotices = { ApiResult.Fail(AppError.Server(410,"CHAT_CLOSED","")) } }
+        val m = ChatExtrasViewModel(api,ChatTestServer(),session()).also { store.put("e",it) }
+        m.bind(20,true); runCurrent(); m.displayedNotice("notice"); runCurrent()
+        assertNull(m.state.value.room); assertEquals(0,api.queries); assertEquals(0,api.acks)
+    }
+    /** 질문 미생성 404는 방 접근이 유효할 때만 생성 버튼을 허용한다. */
+    @Test fun missingQuestionsKeepsGenerationButMissingRoomDoesNot() = test {
+        val api = ExtraServer(); val chats = ChatTestServer()
+        val m = ChatExtrasViewModel(api,chats,session()).also { store.put("e",it) }
+        m.bind(20,true); runCurrent()
+        assertEquals(20L,m.state.value.room); assertFalse(m.state.value.accessRetryRequired)
+        m.generate(); runCurrent(); assertEquals(1,api.requests)
+        // 시작 후 참가 권한을 잃은 404는 질문 미생성으로 되돌리지 않는다.
+        chats.roomFailure = AppError.Server(404,"RESOURCE_NOT_FOUND","")
+        advanceTimeBy(2_000); runCurrent()
+        assertNull(m.state.value.room); assertFalse(m.state.value.busy)
+    }
     @Test fun noticeFailureOffersReloadAndRecoveryStillRequiresExplicitConsent() = test {
         for (failure in listOf(AppError.Offline, AppError.Server(503,"SERVICE_UNAVAILABLE","잠시 후 다시 시도해 주세요"))) {
             val api = ExtraServer().apply { consent = consent.copy(enabled=false) }

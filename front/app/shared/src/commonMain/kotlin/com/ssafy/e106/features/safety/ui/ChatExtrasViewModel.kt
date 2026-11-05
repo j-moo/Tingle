@@ -78,9 +78,21 @@ class ChatExtrasViewModel(private val api: ChatExtrasRepository, private val cha
     }.getOrDefault(false)
     fun check() = work { room, owner, stamp ->
         val notices = api.notices(room)
-        if (valid(stamp, owner, room) && notices is ApiResult.Ok) mutable.update { it.copy(notices = notices.value.items.filter {
-            it.type == "ONE_HOUR_BEFORE_END" && it.acknowledgedAt == null && it.text.isNotBlank() && it.noticeId !in acked && noticeCurrent(it)
-        }) }
+        if (!valid(stamp, owner, room)) return@work
+        // 요청 시작 때의 권한으로 지연 안내를 공개하지 않는다. 질문 조회가 느려도 안내는 먼저 보호한다.
+        when (notices) {
+            is ApiResult.Ok -> {
+                if (!allowed(room, owner, stamp)) return@work
+                mutable.update { it.copy(notices = notices.value.items.filter {
+                    it.type == "ONE_HOUR_BEFORE_END" && it.acknowledgedAt == null && it.text.isNotBlank() && it.noticeId !in acked && noticeCurrent(it)
+                }) }
+            }
+            is ApiResult.Fail -> {
+                if (notices.error.revokesChat()) { clear(); return@work }
+                // 안내 조회 실패는 이전 안내를 재사용하지 않으며, 독립 기능인 질문 조회는 계속한다.
+                mutable.update { it.copy(notices = emptyList()) }
+            }
+        }
         result(api.questions(room), stamp, owner, room)
     }
     fun generate() {
@@ -88,7 +100,10 @@ class ChatExtrasViewModel(private val api: ChatExtrasRepository, private val cha
         work { room, owner, stamp ->
             val requestKey = key ?: Uuid.random().toString().also { key = it }
             when(val task = api.requestQuestions(room, requestKey)) {
-                is ApiResult.Fail -> if(valid(stamp, owner, room)) mutable.update { it.copy(error = task.error) }
+                is ApiResult.Fail -> if(valid(stamp, owner, room)) {
+                    // 생성 응답의 권한 거절도 방 조회 결과보다 최신인 종료 신호로 처리한다.
+                    if (task.error.revokesChat()) clear() else mutable.update { it.copy(error = task.error) }
+                }
                 is ApiResult.Ok -> {
                     val t = task.value
                     require(t.chatRoomId == room && t.kind == "ICEBREAKERS" && t.statusUrl == "/api/chat-rooms/$room/icebreakers")
@@ -100,7 +115,8 @@ class ChatExtrasViewModel(private val api: ChatExtrasRepository, private val cha
                     repeat(if(t.status == "PENDING") 30 else 1) {
                         if (t.status == "PENDING") delay(t.pollAfterSeconds.toLong() * 1000L)
                         if(!allowed(room, owner, stamp)) return@work
-                        result(api.questions(room), stamp, owner, room)
+                        // HTTP 실패를 PENDING으로 오인해 최대 30회 반복하지 않는다. 수동 GET으로 복구한다.
+                        if (!result(api.questions(room), stamp, owner, room)) return@work
                         if(mutable.value.status != "PENDING") return@work
 
                     }
@@ -108,10 +124,20 @@ class ChatExtrasViewModel(private val api: ChatExtrasRepository, private val cha
             }
         }
     }
-    private suspend fun result(response: ApiResult<IcebreakerResult>, stamp: Long, owner: Session.SignedIn, room: Long) {
-        if(!valid(stamp, owner, room)) return
+    /** false는 조회 중단을 뜻한다. 실패를 안전/성공 상태로 바꾸거나 생성 POST를 자동 반복하지 않는다. */
+    private suspend fun result(response: ApiResult<IcebreakerResult>, stamp: Long, owner: Session.SignedIn, room: Long): Boolean {
+        if(!valid(stamp, owner, room)) return false
         when(response) {
-            is ApiResult.Fail -> mutable.update { it.copy(error = response.error, questions = emptyList()) }
+            is ApiResult.Fail -> {
+                val error = response.error
+                // 질문 GET의 404는 아직 생성하지 않은 경우에도 온다. 방 권한 재확인 후에만 생성 진입을 유지한다.
+                val missing = error is AppError.Server && error.status == 404 && error.code == "RESOURCE_NOT_FOUND"
+                if (missing) {
+                    if (!allowed(room, owner, stamp)) return false
+                } else if (error.revokesChat()) { clear(); return false }
+                mutable.update { it.copy(error = error, questions = emptyList(), accessRetryRequired = !missing) }
+                return false
+            }
             is ApiResult.Ok -> {
                 val value = response.value
                 require(value.status in setOf("PENDING", "SUCCEEDED", "FAILED"))
@@ -120,11 +146,12 @@ class ChatExtrasViewModel(private val api: ChatExtrasRepository, private val cha
                     require(value.questions.size == 3 && value.questions.all { it.isNotBlank() } && value.questions.distinct().size == 3)
                 } else require(value.questions.isEmpty())
                 // AI 지연 중 방이 끝났을 수 있으므로 내용 반영 직전에도 현재 방을 검사한다.
-                if(!allowed(room, owner, stamp)) return
+                if(!allowed(room, owner, stamp)) return false
                 if(valid(stamp, owner, room)) mutable.update { it.copy(status = value.status, questions = value.questions,
                     error = null, retryable = if(value.status == "FAILED") false else it.retryable) }
             }
         }
+        return valid(stamp, owner, room)
     }
     fun displayedNotice(id: String) {
         val s = mutable.value; val room = s.room ?: return; val owner = s.owner ?: return
