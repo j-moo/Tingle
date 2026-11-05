@@ -24,6 +24,8 @@ data class ConnectedProposalState(
     val selectedId: Long? = null,
     val chatRoomId: Long? = null,
     val busy: Boolean = false,
+    // 자동 GET 중에는 기존 대기 안내를 유지한다. busy는 중복 요청만 막고 목록 복귀는 허용한다.
+    val refreshingResult: Boolean = false,
     val error: AppError? = null,
     val pending: PendingDecision? = null,
     val storageIssue: Boolean = false,
@@ -48,6 +50,26 @@ class ProposalViewModel(
     private var nextCursor: String? = null
     private var started = false
     private var reviewRequired = false
+    private var resultUpdates: Job? = null
+
+    /** 화면이 보이는 동안 확정 대기 결과만 조회한다. 미확인 쓰기는 자동으로 재전송하지 않는다. */
+    private fun startResultUpdates() {
+        if (resultUpdates?.isActive == true) return
+        resultUpdates = viewModelScope.launch {
+            mutable.map { s ->
+                s.selectedId.takeIf { !s.storageIssue && s.pending == null && s.error == null &&
+                    s.page == ProposalPageMode.Result && s.result?.stage in setOf(
+                        ProposalDecisionStage.Waiting, ProposalDecisionStage.MatchedPreparing) }
+            }.distinctUntilChanged().collectLatest { id ->
+                if (id != null) while (currentCoroutineContext().isActive) {
+                    // 기기 시각으로 만료를 추정하지 않는다. 응답 완료 뒤 5초를 기다리므로 느린 요청도 겹치지 않는다.
+                    delay(5_000)
+                    if (!mutable.value.busy) checkResult(automatic = true)
+                    job?.join()
+                }
+            }
+        }
+    }
 
     init {
         viewModelScope.launch(start = CoroutineStart.UNDISPATCHED) {
@@ -61,11 +83,11 @@ class ProposalViewModel(
     private fun invalid() = AppError.Unknown(IllegalStateException("Invalid proposal response"))
     private fun inaccessible(error: AppError) = error is AppError.Server &&
         (error.status == 404 || error.code == "PROPOSAL_EXPIRED")
-    private fun work(block: suspend (Long, Long) -> Unit) {
+    private fun work(automatic: Boolean = false, block: suspend (Long, Long) -> Unit) {
         val s = mutable.value; val session = s.session ?: return
         if (s.busy || session != sessions.state.value || !access.allowed(session)) return
         val stamp = ++generation
-        mutable.update { it.copy(busy = true, error = null) }
+        mutable.update { it.copy(busy = true, refreshingResult = automatic, error = null) }
         job = viewModelScope.launch {
             try { block(session.userId, stamp) }
             catch (e: CancellationException) { throw e }
@@ -73,11 +95,13 @@ class ProposalViewModel(
                 list = it.list.copy(load = ProposalListLoad.Failed),
                 review = it.review?.copy(stage = ProposalReviewStage.Failed, latest = null, confirmation = null),
                 result = if (writing) ProposalDecisionState(ProposalDecisionStage.Unknown) else it.result) } }
-            finally { if (valid(stamp)) { writing = false; mutable.update { it.copy(busy = false) } } }
+            finally { if (valid(stamp)) { writing = false; mutable.update { it.copy(busy = false, refreshingResult = false) } } }
         }
     }
 
     fun resume() {
+        // 회전 중 쓰기가 진행 중이어도 새 화면의 조회 수명은 복구한다. 쓰기 자체는 기존 작업이 마친다.
+        startResultUpdates()
         if (mutable.value.busy) return
         if (!started) {
             work { user, stamp ->
@@ -105,15 +129,26 @@ class ProposalViewModel(
     }
 
     fun pause() {
+        // 실제 화면 이탈/백그라운드에서는 예약된 조회도 중지한다. 회전 후 resume에서 다시 시작한다.
+        resultUpdates?.cancel(); resultUpdates = null
         // 사진/확인 창은 숨겨진 동안 보존하지 않는다. 진행 중인 쓰기는 ViewModel에서 계속 받는다.
-        if (!writing) { generation++; job?.cancel(); mutable.update { it.copy(busy = false) } }
+        if (!writing) { generation++; job?.cancel(); mutable.update { it.copy(busy = false, refreshingResult = false) } }
         mutable.update { s -> s.copy(list = s.list.copy(items = emptyList()), review = s.review?.copy(latest = null, confirmation = null)) }
     }
     private fun storageFailed() {
         started = false
         mutable.update { it.copy(storageIssue = true, list = ProposalListState(ProposalListLoad.Failed)) }
     }
-    fun refresh() { if (!started) resume() else work { _, stamp -> readList(null, stamp) } }
+    fun refresh() {
+        // 사용자가 누르지 않은 자동 조회 때문에 이동을 막지 않는다. 목록 조회를 시작하기 전에
+        // 이전 응답 세대를 무효화해 취소를 늦게 처리하는 GET도 결과 화면을 다시 열지 못하게 한다.
+        // 수락/거절 쓰기와 수동 복구는 refreshingResult가 아니므로 기존 busy 보호를 유지한다.
+        if (mutable.value.refreshingResult) {
+            generation++; job?.cancel(); job = null
+            mutable.update { it.copy(busy = false, refreshingResult = false) }
+        }
+        if (!started) resume() else work { _, stamp -> readList(null, stamp) }
+    }
     fun more() {
         val cursor = nextCursor ?: return
         work { _, stamp -> readList(cursor, stamp) }
@@ -312,11 +347,15 @@ class ProposalViewModel(
         // 응답 유실 복구는 동일 키/동일 본문으로만 한다. 새 수락으로 바꾸지 않는다.
         work { user, stamp -> if (p.owner == user) send(p, stamp) }
     }
-    fun checkResult() {
+    fun checkResult() = checkResult(automatic = false)
+
+    private fun checkResult(automatic: Boolean) {
+        // 자동 갱신은 GET만 허용한다. 저장/응답 유실 복구는 사용자의 명시적 재시도로 남긴다.
+        if (automatic && (!started || mutable.value.storageIssue || mutable.value.pending != null)) return
         if (!started || mutable.value.storageIssue) { resume(); return }
         if (mutable.value.pending != null) { recover(); return }
         val id = mutable.value.selectedId ?: return
-        work { _, stamp -> when (val response = repository.get(id)) {
+        work(automatic = automatic) { _, stamp -> when (val response = repository.get(id)) {
             is ApiResult.Ok -> if (valid(stamp)) {
                 if (response.value.proposalId == id) showResult(response.value) else mutable.update { it.copy(error = invalid()) }
             }
