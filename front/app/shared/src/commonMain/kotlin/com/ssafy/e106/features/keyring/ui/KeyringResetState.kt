@@ -18,6 +18,9 @@ data class KeyringResetState(
     val pendingRecordCount: Int? = null,
     val recordChoice: ResetRecordChoice? = null,
     val recordDeletionAccepted: Boolean = false,
+    // 현재 펌웨어의 앱용 조회·선업로드는 미지원이다. 버전 이름만으로 켜지 않고 실제 연동 확인 후 전달한다.
+    val recordQueryAvailable: Boolean = false,
+    val recordUploadAvailable: Boolean = false,
 ) {
     val displayStage: KeyringResetStage get() = when {
         stage == KeyringResetStage.Complete && !(deviceResetConfirmed && ownershipReleased) -> KeyringResetStage.Unknown
@@ -34,4 +37,7 @@ data class KeyringResetState(
         (pendingRecordCount != null && pendingRecordCount > 0 &&
             recordChoice == ResetRecordChoice.Delete && recordDeletionAccepted)
     val canConfirm: Boolean get() = displayStage == KeyringResetStage.Confirm && accepted && recordsResolved
+    val canQueryRecords: Boolean get() = displayStage == KeyringResetStage.Confirm && recordQueryAvailable
+    val canUploadRecords: Boolean get() = displayStage == KeyringResetStage.Confirm && recordUploadAvailable &&
+        pendingRecordCount != null && pendingRecordCount > 0 && recordChoice == ResetRecordChoice.UploadFirst
 }

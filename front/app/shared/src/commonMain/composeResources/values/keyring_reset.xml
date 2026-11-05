@@ -50,6 +50,9 @@
     <string name="reset_records_upload_choice">기록을 먼저 보내고 초기화하기</string>
     <string name="reset_records_delete_choice">미전송 기록을 삭제하고 초기화하기</string>
     <string name="reset_records_upload">만남 기록 먼저 보내기</string>
+    <string name="reset_records_preparing">연결 준비 중</string>
+    <string name="reset_records_query_unavailable">현재 미전송 기록 조회 기능은 연결 준비 중이에요. 기록이 없는 것으로 처리하지 않아요.</string>
+    <string name="reset_records_upload_unavailable">기록을 먼저 보내는 기능은 연결 준비 중이에요. 지금은 기록을 업로드할 수 없어요.</string>
     <string name="reset_records_delete_help">서버에 보내지 않은 기록은 삭제하면 되돌릴 수 없어요.</string>
     <string name="reset_records_delete_accept">미전송 만남 기록 삭제에 동의해요.</string>
     <string name="reset_preview_notice">검토용 Preview · 서버·키링 작업은 실행되지 않아요</string>

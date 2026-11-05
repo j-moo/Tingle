@@ -72,7 +72,8 @@ private val resetSample = KeyringResetState(stage = KeyringResetStage.Ready,
 @Composable fun KeyringResetRecoveryPreview() = KeyringResetPreview(resetSample.copy(stage = KeyringResetStage.Recovering,
     connected = false, deviceResetConfirmed = true))
 
-@Preview(name = "20 먼저 보내기", group = "초기화 검토안 · 분리 동의", widthDp = 390, heightDp = 844, locale = "ko")
+// 현재 IoT 회신 기준 선업로드는 미지원이다. 예시 개수가 있어도 버튼을 활성화하지 않는다.
+@Preview(name = "20 선업로드 연결 준비 중", group = "초기화 검토안 · 분리 동의", widthDp = 390, heightDp = 844, locale = "ko")
 @Composable fun KeyringResetUploadPreview() = KeyringResetPreview(resetSample.copy(stage = KeyringResetStage.Confirm,
     pendingRecordCount = 3, recordChoice = ResetRecordChoice.UploadFirst))
 
