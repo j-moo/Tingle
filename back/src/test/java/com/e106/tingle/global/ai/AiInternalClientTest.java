@@ -23,6 +23,9 @@ import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.springframework.boot.test.system.CapturedOutput;
+import org.springframework.boot.test.system.OutputCaptureExtension;
 
 import com.e106.tingle.global.error.BusinessException;
 import com.e106.tingle.global.error.ErrorCode;
@@ -34,6 +37,7 @@ import tools.jackson.core.StreamReadFeature;
 import tools.jackson.databind.DeserializationFeature;
 import tools.jackson.databind.json.JsonMapper;
 
+@ExtendWith(OutputCaptureExtension.class)
 class AiInternalClientTest {
 
 	private final AiServiceTokenProvider tokens = mock(AiServiceTokenProvider.class);
@@ -171,6 +175,33 @@ class AiInternalClientTest {
 			server.removeContext("/internal/ai/risk-detections");
 		}
 		assertThat(calls.get()).isEqualTo(5);
+	}
+
+	@Test
+	void failureLogCarriesOnlyThePathAndSentRequestIdNeverBodiesOrTokens(CapturedOutput output) {
+		String answer = "synthetic-raw-survey-answer-" + UUID.randomUUID();
+		String providerError = "synthetic-provider-error-" + UUID.randomUUID();
+		server.createContext("/internal/ai/personal-analyses", exchange -> {
+			exchange.getRequestBody().readAllBytes();
+			byte[] content = ("{\"code\":\"INTERNAL_ERROR\",\"detail\":\"" + providerError + "\"}")
+				.getBytes(StandardCharsets.UTF_8);
+			exchange.sendResponseHeaders(500, content.length);
+			exchange.getResponseBody().write(content);
+			exchange.close();
+		});
+		UUID id = UUID.randomUUID();
+		assertThatThrownBy(() -> client("test", base)
+			.post("/internal/ai/personal-analyses", Map.of("answer", answer), Map.class, id))
+			.isInstanceOf(AiCallException.class);
+		assertThat(output.getAll())
+			.contains("event=ai_call_failed path=/internal/ai/personal-analyses aiRequestId=" + id
+				+ " httpStatus=500 retryable=true")
+			.doesNotContain(answer).doesNotContain(providerError).doesNotContain("synthetic-service-jwt");
+
+		// 잘못된(null) 경로도 원래 분류(AiCallException)를 유지하고 로그에는 경로 대신 unknown 만 남긴다.
+		assertThatThrownBy(() -> client("test", base).post(null, Map.of(), Map.class, id))
+			.isInstanceOf(AiCallException.class);
+		assertThat(output.getAll()).contains("event=ai_call_failed path=unknown aiRequestId=" + id);
 	}
 
 	@Test

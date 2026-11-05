@@ -28,9 +28,12 @@ import javax.imageio.ImageIO;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.system.CapturedOutput;
+import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
@@ -56,6 +59,7 @@ import tools.jackson.databind.JsonNode;
 @AutoConfigureMockMvc
 @ActiveProfiles({"test", "erd"})
 @Import(TestcontainersConfiguration.class)
+@ExtendWith(OutputCaptureExtension.class)
 class ProfilePhotoIntegrationTest extends IntegrationTestSupport {
 
 	// 1×1 WebP(손실 압축). 자바 기본 ImageIO 로는 WebP 를 만들 수 없어 고정 바이트를 쓴다.
@@ -279,6 +283,22 @@ class ProfilePhotoIntegrationTest extends IntegrationTestSupport {
 		perform(get(me(me, "/profile/photo")), me, null).andExpect(status().isGone())
 			.andExpect(jsonPath("$.code").value("PHOTO_REMOVED"));
 		perform(get(me(me, "/profile")), me, null).andExpect(jsonPath("$.hasProfilePhoto").value(false));
+	}
+
+	@Test
+	@DisplayName("사진 파일 유실 경고는 요청 추적 번호와 함께 남고, 사진 키·액세스 토큰은 남지 않는다")
+	void missingPhotoFileLogCarriesRequestIdWithoutPhotoKey(CapturedOutput output) throws Exception {
+		upload(me, image("jpg", 100, 100, BufferedImage.TYPE_INT_RGB)).andExpect(status().isOk());
+		String key = photoKey(me);
+		Files.delete(photoDir.resolve(key));
+		String requestId = UUID.randomUUID().toString();
+
+		perform(get(me(me, "/profile/photo")).header("X-Request-Id", requestId), me, null)
+			.andExpect(status().isGone()).andExpect(header().string("X-Request-Id", requestId));
+
+		assertThat(output.getAll()).containsPattern("\\[" + requestId + "\\] .*DB에 있는 프로필 사진 파일이 없습니다")
+			.doesNotContain(key).doesNotContain(key.substring(key.lastIndexOf('/') + 1))
+			.doesNotContain(me.path("accessToken").asString());
 	}
 
 	@Test

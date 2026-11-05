@@ -17,6 +17,10 @@ spring:
     url: ${SPRING_DATASOURCE_URL:}
     username: ${SPRING_DATASOURCE_USERNAME:}
     password: ${SPRING_DATASOURCE_PASSWORD:}
+    hikari:
+      data-source-properties:
+        # DB 오류 메시지에 입력값(예: "Key (email)=(...) already exists", 배치 SQL 값)을 넣지 않는다. 예외가 로그로 나가도 개인정보가 남지 않게 한다.
+        logServerErrorDetail: false
   servlet:
     multipart:
       # 프로필 사진 원본 최대 10MB. 넘으면 400 PHOTO_INVALID (서비스도 같은 한도를 다시 확인한다).
@@ -42,6 +46,11 @@ spring:
         dialect: com.e106.tingle.global.jpa.NoColumnCheckPostgreSqlDialect
         hbm2ddl:
           halt_on_error: true
+
+logging:
+  pattern:
+    # 로그 줄마다 추적 번호를 붙인다. 요청이면 응답 헤더 X-Request-Id 와 같은 값, 예약 작업이면 실행마다 새 값(global/trace).
+    correlation: "[%X{requestId:-}] "
 
 # 서버 상태 확인(배포·Jenkins 가 호출). DB 연결까지 확인해 정상이면 200 {"status":"UP"}, 아니면 503.
 # health 하나만 열고, 세부 정보(DB 종류 등)는 응답에 넣지 않는다.
