@@ -16,13 +16,14 @@
 | GET `/api/survey-sessions/{sessionId}/questionnaire` | 200 Questionnaire | 본인 회차의 `survey.survey_version`에 고정된 파일 |
 | PUT `/api/survey-sessions/{sessionId}/answers/{questionId}` | `{value}` → 200 SurveySession | 미완료 회차의 `survey_answer` 문항별 저장·갱신 |
 | DELETE 같은 문항 경로 | 본문 없음 → 200 SurveySession | 해당 답 행 삭제. 이미 없으면 현재 상태를 그대로 반환 |
+| PUT `/api/survey-sessions/{sessionId}/metadata` | `If-Match` + `{ownAge, desiredAgeMin, desiredAgeMax}` → 200 SurveySession | 미완료 회차의 `survey.response_context.metadata` 저장, `survey.revision` +1 |
 | POST `/api/survey-sessions/{sessionId}/complete` | 본문 없음 → 200 SurveySession | 전체 문항 검사 후 `survey.completed_at` 최초 기록 |
 | GET `/api/survey-sessions/{sessionId}/migration-plan` | 필수 `targetSurveyVersion` 쿼리 → 200 MigrationPlan | 원본 답과 서버 이관 규칙 파일 비교. DB 쓰기 없음 |
 | POST `/api/survey-sessions/{sessionId}/migrations` | `{targetSurveyVersion, policyHash}` → 201 SurveySession | 원본을 보존하고 새 회차에 보존 가능한 답만 복사 |
 | POST `/api/survey-sessions/{sessionId}/analyses` | 본문 없음 → 202 AnalysisReceipt | 서버 분석 파일 선택 후 `personality` 생성·재사용 |
 | GET `/api/analysis-results/{resultId}` | 200 AnalysisResult | `personality.survey_id → survey.user_id` 본인 검사 후 상태·공개 결과 |
 
-현재 노션의 설문 계약은 `Idempotency-Key`, `If-Match`, `ETag`, `revision`, `sessionRevision`, `releaseId`를 요구하지 않는다. 분석 접수는 `jobId` 대신 `resultId`를 돌려준다. 아래 제외·합의 항목과 과거 구현 이력을 현재 활성 계약으로 혼동하지 않는다.
+현재 설문 계약은 `Idempotency-Key`, `sessionRevision`, `releaseId`를 요구하지 않는다. `revision`·`ETag`·`If-Match`는 아래 선택 나이 정보 저장에만 쓴다. 분석 접수는 `jobId` 대신 `resultId`를 돌려준다. 아래 제외·합의 항목과 과거 구현 이력을 현재 활성 계약으로 혼동하지 않는다.
 
 ## 설문 회차·답변·완료
 
@@ -33,6 +34,17 @@
 - `status`, `answeredCount`, `questionCount`, `nextQuestionId`는 별도 DB 칸이 아니다. 각각 `completed_at`, 답 행 수, 고정 파일의 문항 수와 순서로 계산한다.
 - 완료에는 모든 문항의 유효한 답이 필요하다. `unknown`도 답으로 센다. 완료 요청을 반복해도 최초 `completed_at`을 바꾸지 않는다. 완료 뒤 답 저장·삭제는 `409 SESSION_COMPLETED`이며 재응답은 새 회차다. 제출 완료와 분석 성공은 별개다.
 - 현재/회차 문항 정의의 노션 예시는 전체 100문항 중 Q001만, 완료 응답은 100개 답 중 Q001·Q002·Q100만 발췌한 것이다. 기계 판독용 완료 예시는 100개 전체를 담아 답변 수와 배열 길이를 일치시킨다.
+
+## 선택 나이 정보(metadata)
+
+2026-11-04 S15P31E106-112로 MVP 제외에서 되돌려 구현했다. 새 표·칸을 만들지 않고 기존 `survey.response_context`(jsonb)의 `metadata` 키와 `survey.revision`을 쓴다. 옛 회차의 다른 키(answers·audit 등)는 보존하고 응답에는 `metadata`만 보인다.
+
+- 본문은 `ownAge`, `desiredAgeMin`, `desiredAgeMax` 세 칸 모두 필수이며 모르는 값은 null이다. 각 값은 19~100 정수다. 최소·최대가 모두 있으면 최소 <= 최대여야 한다. 한쪽만 있으면 열린 범위로 저장한다. 설문 파일에 `metadataSchema`가 없어 모든 버전에 같은 규칙을 쓴다.
+- 본문이 객체가 아니면 `400 INVALID_REQUEST`, 빠진 칸·모르는 칸·범위·정수·최소>최대 위반은 `422 INVALID_ANSWER`.
+- `If-Match`는 회차 생성·조회·metadata 저장 응답의 `ETag`(따옴표 포함 revision, 예: `"0"`)다. 없으면 `428 PRECONDITION_REQUIRED`, 현재 revision과 다르면 `412 PRECONDITION_FAILED`. 저장에 성공하면 revision이 1 오르고 새 ETag를 돌려준다. 답 저장·삭제·완료는 revision을 바꾸지 않는다.
+- 남의 회차와 없는 회차는 같은 `404 RESOURCE_NOT_FOUND`, 완료 회차는 `409 SESSION_COMPLETED`. 저장은 회차 행을 잠근 뒤 처리한다.
+- `profile.birth_date`와 `matching_preference`는 읽거나 바꾸지 않는다. 가입 나이·희망 조건과 서로 자동 동기화하지 않는다.
+- 모든 SurveySession 응답은 `revision`과 `metadata`(저장 전 null)를 포함하고, 회차 생성(201)·조회·metadata 저장 응답은 `ETag` 헤더를 준다.
 
 ## 원본 보존 이관
 
@@ -61,7 +73,6 @@
 
 ## 제외·보류 계약
 
-- PUT `/api/survey-sessions/{sessionId}/metadata`는 현재 노션에서 이미 제외 상태다. `survey`·`survey_answer`에 나이 metadata 칸을 만들지 않는다. 본인 나이는 `profile.birth_date`, 희망 조건은 별도 `matching_preference` 계약을 따른다.
 - GET `/api/jobs/{jobId}`도 현재 노션에서 이미 제외 상태다. `background_job` 표가 없으므로 설문 분석의 진행 상태는 반환된 `resultId`로 개인 결과 조회를 호출한다. 이를 다른 도메인에 존재하지 않는 공용 작업 저장소를 보장하는 근거로 쓰지 않는다.
 - 관리자 규칙/릴리스 게시 9개 페이지는 담당 가을·제외 상태의 기존 설계 이력으로 보존한다. 21개 테이블에는 해당 관리자 게시 저장소가 없다. 사용자 담당으로 확인되지 않은 페이지의 경로·속성·원문을 임의 변경하지 않는다.
 

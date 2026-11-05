@@ -29,7 +29,7 @@
 
 | 범위 | ERD21 계약과 제한 |
 | --- | --- |
-| 설문·답변 | `survey`·`survey_answer` 문항별 저장. 설문 버전 최대30자·문항ID 최대50자·저장 답값 최대100자. scalar 답만 현재 형식에 포함. revision·If-Match/ETag·별도 metadata 없음. 완료와 분석 성공은 별개 |
+| 설문·답변 | `survey`·`survey_answer` 문항별 저장. 설문 버전 최대30자·문항ID 최대50자·저장 답값 최대100자. scalar 답만 현재 형식에 포함. 선택 나이 정보는 새 칸 없이 `survey.response_context.metadata`, 그 저장만 `survey.revision`·If-Match/ETag로 검사(S15P31E106-112). 완료와 분석 성공은 별개 |
 | 분석 | `personality` 상태·결과와 `profile.active_personality_id`. 유효한 최신 SUCCEEDED만 결과·포인터·설정 버전을 원자 전환. 대기·부족·실패 중 기존 적용 값 유지. AnalysisManifest는2필드, 설문 SurveyManifest는3필드이며 공유 Manifest11필드는 보존 |
 | 만남·제안 | `matching`·`matching_participant`. 제안 createdAt은 서버 생성 최초 확정 `proposed_at`, expiresAt은 그+24시간. 푸시 시각으로 바꾸거나 재전송으로 연장하지 않음. 상대 선행 응답·차단 이유를 본인 DTO에 누설하지 않음 |
 | 수락·거절·방 생성 | matching 잠금·기한/권한 재검사. 응답 최초 확정 뒤 변경 불가. 상호 수락과 `chat`·두 참여자 생성은 원자 처리. 키 저장 대안·기존30일 대 ERD영구 재매칭 제한 충돌은 미합의 |
@@ -77,6 +77,7 @@ Spring Boot·JPA·PostgreSQL 운영 기준과 인증·프로필·키링 담당 �
 | POST | `/api/v1/keyrings/{deviceId}/sync-runs/{syncRunId}/ack` | ackSync | 다른 담당 기존 계약 |
 | PUT | `/api/survey-sessions/{sessionId}/answers/{questionId}` | saveSurveyAnswer | 영빈 ERD21 검토 |
 | DELETE | `/api/survey-sessions/{sessionId}/answers/{questionId}` | deleteSurveyAnswer | 영빈 ERD21 검토 |
+| PUT | `/api/survey-sessions/{sessionId}/metadata` | setSurveyMetadata | 가을 2026-11-04 구현(S15P31E106-112) |
 | GET | `/api/v1/chat-rooms/{chatRoomId}/partner-profile` | getChatProfile | 다른 담당 기존 계약 |
 | GET | `/api/v1/chat-rooms/{chatRoomId}/partner-photo` | getPartnerPhoto | 다른 담당 기존 계약 |
 | GET | `/api/v1/match-proposals/{proposalId}/partner-photo` | getProposalPhoto | 다른 담당 기존 계약 |
@@ -143,7 +144,6 @@ Spring Boot·JPA·PostgreSQL 운영 기준과 인증·프로필·키링 담당 �
 | POST | `/admin/v1/releases/{releaseId}/approvals` | approveRelease | 기존 제외 이력 유지 |
 | PUT | `/admin/v1/release-channels/current` | activateRelease | 기존 제외 이력 유지 |
 | POST | `/api/v1/auth/signup` | completeProfile | 기존 제외 이력 유지 |
-| PUT | `/api/survey-sessions/{sessionId}/metadata` | setSurveyMetadata | 이번 담당 제외·후속 |
 | POST | `/api/reports` | createReport | 이번 담당 제외·후속 |
 | POST | `/api/match-proposals/{proposalId}/cancel` | cancelProposalAcceptance | 이번 담당 제외·후속 |
 

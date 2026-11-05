@@ -16607,6 +16607,369 @@
           "새 숫자 ID와21개 테이블 계약의 FE/BE 이관·기존 행 처리 및 미확정 저장 대안 검증"
         ]
       }
+    },
+    "/api/survey-sessions/{sessionId}/metadata": {
+      "put": {
+        "operationId": "setSurveyMetadata",
+        "summary": "설문 선택 나이 정보 저장",
+        "description": "본인 미완료 회차에 설문 중 고른 선택 나이 정보(본인 나이·희망 나이 범위)를 통째로 저장한다. survey.response_context의 metadata 키에 저장하고(다른 키는 보존) survey.revision을 1 올린다. If-Match가 현재 revision ETag와 같을 때만 저장한다. 세 칸은 모두 보내야 하며 모르는 값은 null. 모든 설문 버전에 같은 규칙(19~100 정수 또는 null, 최소 <= 최대)을 쓴다. profile.birth_date와 matching_preference는 읽거나 바꾸지 않는다. 남의 회차와 없는 회차는 동일 404, 완료 회차는 409 SESSION_COMPLETED. 검사 순서: 본문이 JSON으로 읽히지 않으면 400 → If-Match 누락 428 → 본문이 객체가 아니면 400·규칙 위반 422 → 404 → 409 → 412.",
+        "tags": [
+          "SUR"
+        ],
+        "x-functional-ids": [
+          "SUR-01"
+        ],
+        "x-auth-role": "user",
+        "parameters": [
+          {
+            "name": "sessionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1,
+              "maximum": 9223372036854775807
+            },
+            "description": "양의 숫자 ID. 소유 회원과 요청 인증 주체를 별도 검사한다."
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "직전 회차 생성·조회·metadata 저장 응답의 따옴표 포함 ETag(예: \"0\"). 누락 428, 불일치 412"
+          },
+          {
+            "$ref": "#/components/parameters/AcceptLanguage"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SurveyMetadata"
+              },
+              "example": {
+                "ownAge": 26,
+                "desiredAgeMin": 25,
+                "desiredAgeMax": 32
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "저장 후 회차. ETag는 올라간 revision",
+            "headers": {
+              "X-Request-Id": {
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              },
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "민감 응답 no-store"
+              },
+              "ETag": {
+                "description": "따옴표로 감싼 revision 값. 예: \"0\"",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SurveySession"
+                },
+                "example": {
+                  "sessionId": 1024,
+                  "manifest": {
+                    "surveyVersion": "SIS-Q-1.1-100",
+                    "wordingVersion": "SIS-WORDING-20261020-1",
+                    "contentHash": "0000000000000000000000000000000000000000000000000000000000000000"
+                  },
+                  "status": "DRAFT",
+                  "answeredCount": 0,
+                  "questionCount": 100,
+                  "nextQuestionId": "Q001",
+                  "answers": [],
+                  "completedAt": null,
+                  "revision": 1,
+                  "metadata": {
+                    "ownAge": 26,
+                    "desiredAgeMin": 25,
+                    "desiredAgeMax": 32
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "INVALID_REQUEST",
+            "headers": {
+              "X-Request-Id": {
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              },
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "민감 응답 no-store"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "code": "INVALID_REQUEST",
+                  "message": "INVALID_REQUEST",
+                  "requestId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+                  "retryable": false,
+                  "fields": []
+                }
+              }
+            },
+            "x-error-codes": [
+              "INVALID_REQUEST"
+            ]
+          },
+          "401": {
+            "description": "AUTH_REQUIRED / ACCESS_TOKEN_EXPIRED / ACCESS_TOKEN_INVALID / SESSION_REVOKED",
+            "headers": {
+              "X-Request-Id": {
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              },
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "민감 응답 no-store"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "code": "AUTH_REQUIRED",
+                  "message": "AUTH_REQUIRED",
+                  "requestId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+                  "retryable": false,
+                  "fields": []
+                }
+              }
+            },
+            "x-error-codes": [
+              "AUTH_REQUIRED",
+              "ACCESS_TOKEN_EXPIRED",
+              "ACCESS_TOKEN_INVALID",
+              "SESSION_REVOKED"
+            ]
+          },
+          "404": {
+            "description": "RESOURCE_NOT_FOUND",
+            "headers": {
+              "X-Request-Id": {
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              },
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "민감 응답 no-store"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "code": "RESOURCE_NOT_FOUND",
+                  "message": "RESOURCE_NOT_FOUND",
+                  "requestId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+                  "retryable": false,
+                  "fields": []
+                }
+              }
+            },
+            "x-error-codes": [
+              "RESOURCE_NOT_FOUND"
+            ]
+          },
+          "409": {
+            "description": "SESSION_COMPLETED",
+            "headers": {
+              "X-Request-Id": {
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              },
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "민감 응답 no-store"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "code": "SESSION_COMPLETED",
+                  "message": "SESSION_COMPLETED",
+                  "requestId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+                  "retryable": false,
+                  "fields": []
+                }
+              }
+            },
+            "x-error-codes": [
+              "SESSION_COMPLETED"
+            ]
+          },
+          "412": {
+            "description": "PRECONDITION_FAILED",
+            "headers": {
+              "X-Request-Id": {
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              },
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "민감 응답 no-store"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "code": "PRECONDITION_FAILED",
+                  "message": "PRECONDITION_FAILED",
+                  "requestId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+                  "retryable": false,
+                  "fields": []
+                }
+              }
+            },
+            "x-error-codes": [
+              "PRECONDITION_FAILED"
+            ]
+          },
+          "422": {
+            "description": "INVALID_ANSWER: 세 칸 중 빠진 칸·모르는 칸, 19~100 정수/null이 아닌 값, desiredAgeMin > desiredAgeMax",
+            "headers": {
+              "X-Request-Id": {
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              },
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "민감 응답 no-store"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "code": "INVALID_ANSWER",
+                  "message": "INVALID_ANSWER",
+                  "requestId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+                  "retryable": false,
+                  "fields": []
+                }
+              }
+            },
+            "x-error-codes": [
+              "INVALID_ANSWER"
+            ]
+          },
+          "428": {
+            "description": "PRECONDITION_REQUIRED",
+            "headers": {
+              "X-Request-Id": {
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              },
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "민감 응답 no-store"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "code": "PRECONDITION_REQUIRED",
+                  "message": "PRECONDITION_REQUIRED",
+                  "requestId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+                  "retryable": false,
+                  "fields": []
+                }
+              }
+            },
+            "x-error-codes": [
+              "PRECONDITION_REQUIRED"
+            ]
+          }
+        },
+        "x-notion-page": "https://app.notion.com/p/3ffc91ccb6608036a4acd5fb6579f674",
+        "x-change-history": [
+          {
+            "date": "2026-10-21",
+            "updatedAtKst": "2026-10-21 11:23",
+            "previousDescription": "100문항 외 선택 메타데이터. 실제 가입birthDate·희망조건과자동동기화 금지. mock의19~100 범위는설문metadata에만 적용.",
+            "revised": "회차의 response_json 안에서 해당 문항 또는 metadata만 변경함. 삭제는 응답 JSON의 해당 키를 없애는 것이며 unknown 값과 구분함. 미완료 회차와 revision이 일치할 때만 원자 갱신하고 revision을 증가시킴. 전체 필수 응답 검증 후 completed_at을 기록하며 이후 원응답은 수정하지 않음. 상태는 완료 시각으로 계산하고 재응답은 새 회차로 만듦. 문항 수·값 타입·선택지는 고정된 버전 파일로 검사함.",
+            "apiImpact": "경로·기존 요청/응답은 유지하고 내부 저장 방식만 변경함."
+          },
+          {
+            "date": "2026-11-04",
+            "revised": "MVP 제외에서 구현으로 되돌림(S15P31E106-112). 새 칸 없이 survey.response_context.metadata·survey.revision을 사용하고 숫자 sessionId·SESSION_COMPLETED·INVALID_ANSWER로 맞춤.",
+            "apiImpact": "경로 /api/v1 → /api, sessionId UUID → 숫자. 409는 REVISION_CONFLICT 대신 SESSION_COMPLETED."
+          }
+        ]
+      }
     }
   },
   "components": {
@@ -18431,7 +18794,7 @@
       },
       "SurveyMetadata": {
         "type": "object",
-        "additionalProperties": true,
+        "additionalProperties": false,
         "properties": {
           "ownAge": {
             "anyOf": [
@@ -18475,7 +18838,7 @@
           "desiredAgeMin",
           "desiredAgeMax"
         ],
-        "description": "최신 목업의 선택 메타데이터. 실제 가입·매칭의 birthDate 및 Preferences와 분리하며 자동 덮어쓰기하지 않는다. 선언한 현재 필드 외의 확장은 release별 metadataSchema로 검증한다.",
+        "description": "설문 중 고른 선택 나이 정보. 세 칸 모두 필수(모르면 null), 각 19~100 정수, desiredAgeMin <= desiredAgeMax. 가입 birthDate·희망 조건과 분리하며 서로 자동 덮어쓰지 않는다. 다른 칸은 받지 않는다(422).",
         "examples": [
           {
             "ownAge": 26,
@@ -18552,10 +18915,18 @@
             "type": "integer",
             "format": "int64",
             "minimum": 0,
-            "description": "survey.revision 동시 저장 검사 번호. 현재 조회·생성 응답 ETag와 같다."
+            "description": "survey.revision. 선택 나이 정보를 저장할 때마다 1 오른다(답 저장·완료는 그대로). 회차 생성·조회·metadata 저장 응답의 ETag와 같다."
           },
           "metadata": {
-            "description": "기존 선택 메타데이터와 확장 문맥. survey.response_context에 JSON 원형 보존. 가입 프로필·희망 조건을 자동 변경하지 않는다."
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SurveyMetadata"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "survey.response_context의 metadata 키. 저장한 적 없으면 null. 가입 프로필·희망 조건을 자동 변경하지 않는다."
           }
         },
         "required": [
@@ -18588,7 +18959,7 @@
             "metadata": null
           }
         ],
-        "description": "survey·survey_answer 진행 상태와 승인된 22표 보존 필드 revision/response_context. 답 저장·완료 등 미구현 HTTP의 개발 완료를 뜻하지 않는다."
+        "description": "survey·survey_answer 진행 상태와 survey.revision·response_context.metadata."
       },
       "MigrationPlan": {
         "type": "object",
@@ -27049,344 +27420,6 @@
           "PATCH /api/v1/users/me/profile"
         ]
       }
-    },
-    {
-      "operationId": "setSurveyMetadata",
-      "method": "PUT",
-      "path": "/api/survey-sessions/{sessionId}/metadata",
-      "reason": "현재 Notion에서 이미 제외. survey/survey_answer에 metadata 저장 칸이 없다.",
-      "replacedBy": [
-        "profile.birth_date",
-        "/api/users/{userId}/preferences"
-      ],
-      "notionPage": "3ffc91ccb6608036a4acd5fb6579f674",
-      "operation": {
-        "operationId": "setSurveyMetadata",
-        "summary": "선택 나이 메타데이터 저장 (수정 2026-10-21 11:23)",
-        "description": "현재 MVP 제외. survey 및 survey_answer에는 별도 metadata 저장 칸이 없으며 나이는 profile.birth_date, 희망 범위는 matching_preference를 사용한다. 아래 요청·응답과 Historical 스키마는 기존 계약 이력이며 현재 저장·성공·API 제공을 보장하지 않는다.",
-        "tags": [
-          "SUR"
-        ],
-        "x-functional-ids": [
-          "SUR-01"
-        ],
-        "x-auth-role": "user",
-        "parameters": [
-          {
-            "name": "sessionId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            },
-            "description": "survey_responses.public_id UUID; 내부 response_id는 유지하고 소유권을 별도 검사한다."
-          },
-          {
-            "name": "If-Match",
-            "in": "header",
-            "required": true,
-            "schema": {
-              "type": "string"
-            },
-            "description": "직전 GET의 따옴표 포함 revision ETag. 428 누락, 412 불일치"
-          },
-          {
-            "$ref": "#/components/parameters/AcceptLanguage"
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "정상 응답",
-            "headers": {
-              "X-Request-Id": {
-                "schema": {
-                  "type": "string",
-                  "format": "uuid"
-                }
-              },
-              "Cache-Control": {
-                "schema": {
-                  "type": "string"
-                },
-                "description": "민감 응답 no-store"
-              },
-              "ETag": {
-                "schema": {
-                  "type": "string"
-                },
-                "description": "현재 자원 revision strong ETag"
-              }
-            },
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HistoricalSurveySession"
-                },
-                "example": {
-                  "sessionId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
-                  "manifest": {
-                    "surveyVersion": "SIS-Q-1.1-100",
-                    "wordingVersion": "SIS-WORDING-20261020-1",
-                    "contentHash": "0000000000000000000000000000000000000000000000000000000000000000"
-                  },
-                  "status": "DRAFT",
-                  "revision": 0,
-                  "answeredCount": 0,
-                  "questionCount": 100,
-                  "nextQuestionId": "Q001",
-                  "answers": [],
-                  "metadata": {
-                    "ownAge": 19,
-                    "desiredAgeMin": 19,
-                    "desiredAgeMax": 19
-                  },
-                  "completedAt": null
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "INVALID_REQUEST",
-            "headers": {
-              "X-Request-Id": {
-                "schema": {
-                  "type": "string",
-                  "format": "uuid"
-                }
-              },
-              "Cache-Control": {
-                "schema": {
-                  "type": "string"
-                },
-                "description": "민감 응답 no-store"
-              }
-            },
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                },
-                "example": {
-                  "code": "INVALID_REQUEST",
-                  "message": "INVALID_REQUEST",
-                  "requestId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
-                  "retryable": false,
-                  "fields": []
-                }
-              }
-            },
-            "x-error-codes": [
-              "INVALID_REQUEST"
-            ]
-          },
-          "401": {
-            "description": "AUTH_REQUIRED / ACCESS_TOKEN_EXPIRED / ACCESS_TOKEN_INVALID / SESSION_REVOKED. ACCESS_TOKEN_EXPIRED만 토큰 갱신 1회, 위조·폐기 시 재로그인.",
-            "headers": {
-              "X-Request-Id": {
-                "schema": {
-                  "type": "string",
-                  "format": "uuid"
-                }
-              },
-              "Cache-Control": {
-                "schema": {
-                  "type": "string"
-                },
-                "description": "민감 응답 no-store"
-              }
-            },
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                },
-                "example": {
-                  "code": "AUTH_REQUIRED",
-                  "message": "로그인이 필요합니다.",
-                  "requestId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
-                  "retryable": false,
-                  "fields": []
-                }
-              }
-            },
-            "x-error-codes": [
-              "AUTH_REQUIRED",
-              "ACCESS_TOKEN_EXPIRED",
-              "ACCESS_TOKEN_INVALID",
-              "SESSION_REVOKED"
-            ]
-          },
-          "404": {
-            "description": "RESOURCE_NOT_FOUND",
-            "headers": {
-              "X-Request-Id": {
-                "schema": {
-                  "type": "string",
-                  "format": "uuid"
-                }
-              },
-              "Cache-Control": {
-                "schema": {
-                  "type": "string"
-                },
-                "description": "민감 응답 no-store"
-              }
-            },
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                },
-                "example": {
-                  "code": "RESOURCE_NOT_FOUND",
-                  "message": "RESOURCE_NOT_FOUND",
-                  "requestId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
-                  "retryable": false,
-                  "fields": []
-                }
-              }
-            },
-            "x-error-codes": [
-              "RESOURCE_NOT_FOUND"
-            ]
-          },
-          "409": {
-            "description": "REVISION_CONFLICT",
-            "headers": {
-              "X-Request-Id": {
-                "schema": {
-                  "type": "string",
-                  "format": "uuid"
-                }
-              },
-              "Cache-Control": {
-                "schema": {
-                  "type": "string"
-                },
-                "description": "민감 응답 no-store"
-              }
-            },
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                },
-                "example": {
-                  "code": "REVISION_CONFLICT",
-                  "message": "REVISION_CONFLICT",
-                  "requestId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
-                  "retryable": false,
-                  "fields": []
-                }
-              }
-            },
-            "x-error-codes": [
-              "REVISION_CONFLICT"
-            ]
-          },
-          "412": {
-            "description": "PRECONDITION_FAILED",
-            "headers": {
-              "X-Request-Id": {
-                "schema": {
-                  "type": "string",
-                  "format": "uuid"
-                }
-              },
-              "Cache-Control": {
-                "schema": {
-                  "type": "string"
-                },
-                "description": "민감 응답 no-store"
-              }
-            },
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                },
-                "example": {
-                  "code": "PRECONDITION_FAILED",
-                  "message": "PRECONDITION_FAILED",
-                  "requestId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
-                  "retryable": false,
-                  "fields": []
-                }
-              }
-            },
-            "x-error-codes": [
-              "PRECONDITION_FAILED"
-            ]
-          },
-          "428": {
-            "description": "PRECONDITION_REQUIRED",
-            "headers": {
-              "X-Request-Id": {
-                "schema": {
-                  "type": "string",
-                  "format": "uuid"
-                }
-              },
-              "Cache-Control": {
-                "schema": {
-                  "type": "string"
-                },
-                "description": "민감 응답 no-store"
-              }
-            },
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                },
-                "example": {
-                  "code": "PRECONDITION_REQUIRED",
-                  "message": "PRECONDITION_REQUIRED",
-                  "requestId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
-                  "retryable": false,
-                  "fields": []
-                }
-              }
-            },
-            "x-error-codes": [
-              "PRECONDITION_REQUIRED"
-            ]
-          }
-        },
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/SurveyMetadata"
-              },
-              "example": {
-                "ownAge": 26,
-                "desiredAgeMin": 25,
-                "desiredAgeMax": 32
-              }
-            }
-          }
-        },
-        "x-notion-page": "https://app.notion.com/p/3ffc91ccb6608036a4acd5fb6579f674",
-        "x-contract-status": "EXCLUDED",
-        "x-storage-design": "erd21-excluded-no-metadata",
-        "x-reviewed-at": "2026-10-21 11:47 KST",
-        "x-confirmation-required": [
-          "ERD의 bigint는 내부 저장 타입이다. 기존 API의 UUID 표현을 자동으로 숫자 ID로 바꾸지 않으며 외부 식별자 형식·매핑은 호출자와 확정해야 한다."
-        ],
-        "x-change-history": [
-          {
-            "date": "2026-10-21",
-            "updatedAtKst": "2026-10-21 11:23",
-            "previousDescription": "100문항 외 선택 메타데이터. 실제 가입birthDate·희망조건과자동동기화 금지. mock의19~100 범위는설문metadata에만 적용.",
-            "revised": "회차의 response_json 안에서 해당 문항 또는 metadata만 변경함. 삭제는 응답 JSON의 해당 키를 없애는 것이며 unknown 값과 구분함. 미완료 회차와 revision이 일치할 때만 원자 갱신하고 revision을 증가시킴. 전체 필수 응답 검증 후 completed_at을 기록하며 이후 원응답은 수정하지 않음. 상태는 완료 시각으로 계산하고 재응답은 새 회차로 만듦. 문항 수·값 타입·선택지는 고정된 버전 파일로 검사함.",
-            "apiImpact": "경로·기존 요청/응답은 유지하고 내부 저장 방식만 변경함."
-          }
-        ]
-      },
-      "oldPath": "/api/survey-sessions/{sessionId}/metadata"
     },
     {
       "oldPath": "/api/v1/reports",
