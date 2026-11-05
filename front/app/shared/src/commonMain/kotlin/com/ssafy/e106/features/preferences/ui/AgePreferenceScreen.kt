@@ -35,46 +35,56 @@ fun AgePreferenceScreen(
 ) {
     state.conflict?.let { SettingsConflictScreen(it, onConflictAction); return }
     val editable = !state.saving
+    // 가로+키보드에서는 저장 버튼도 스크롤에 포함한다. 서버 저장 여부·버튼 활성 조건은 바꾸지 않는다.
+    val submit: @Composable () -> Unit = {
+        Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+            AppButton(submitLabel ?: stringResource(if (state.saveFailed) Res.string.age_preference_retry else Res.string.age_preference_continue),
+                modifier = Modifier.widthIn(max = 640.dp).fillMaxWidth()
+                    .padding(horizontal = screenGutter(), vertical = AppSpacing.Large),
+                enabled = state.canContinue && submitEnabled, loading = state.saving,
+                loadingText = stringResource(Res.string.age_preference_saving), onClick = onContinue)
+        }
+    }
     Surface(modifier.fillMaxSize(), color = AppColors.Background) {
-        Column(Modifier.fillMaxSize().safeDrawingPadding().imePadding()) {
-            AppTopBar(stringResource(Res.string.age_preference_title), onBack = onBack)
-            Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.TopCenter) {
-                Column(Modifier.widthIn(max = 640.dp).fillMaxWidth()
-                    .verticalScroll(rememberScrollState()).padding(screenPaddingValues()),
-                    verticalArrangement = Arrangement.spacedBy(AppSpacing.Large)) {
-                    Text(stringResource(Res.string.age_preference_heading),
-                        style = MaterialTheme.typography.headlineMedium, modifier = Modifier.semantics { heading() })
-                    Text(stringResource(Res.string.age_preference_intro),
-                        style = MaterialTheme.typography.bodyMedium, color = AppColors.TextSecondary)
-                    Column(Modifier.selectableGroup(), verticalArrangement = Arrangement.spacedBy(AppSpacing.Small)) {
-                        AgePreferenceMode.entries.forEach { mode ->
-                            AppRadio(state.mode == mode,
-                                { onStateChange(state.copy(mode = mode, saveFailed = false)) },
-                                stringResource(if (mode == AgePreferenceMode.Any) Res.string.age_preference_any else Res.string.age_preference_range),
-                                Modifier.background(if (state.mode == mode) AppColors.SelectionContainer else AppColors.SurfaceMuted, AppShapes.Control),
-                                enabled = editable)
+        BoxWithConstraints(Modifier.fillMaxSize().safeDrawingPadding().imePadding()) {
+            val compactHeight = maxHeight < 320.dp
+            Column(Modifier.fillMaxSize()) {
+                if (!compactHeight) AppTopBar(stringResource(Res.string.age_preference_title), onBack = onBack)
+                Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.TopCenter) {
+                    Column(Modifier.widthIn(max = 640.dp).fillMaxWidth()
+                        .verticalScroll(rememberScrollState()).padding(screenPaddingValues()),
+                        verticalArrangement = Arrangement.spacedBy(AppSpacing.Large)) {
+                        // 같은 입력 컴포지션을 유지한다. 키보드가 나타나도 입력값·포커스를 새로 만들지 않는다.
+                        if (compactHeight) AppTopBar(stringResource(Res.string.age_preference_title), onBack = onBack)
+                        Text(stringResource(Res.string.age_preference_heading),
+                            style = MaterialTheme.typography.headlineMedium, modifier = Modifier.semantics { heading() })
+                        Text(stringResource(Res.string.age_preference_intro),
+                            style = MaterialTheme.typography.bodyMedium, color = AppColors.TextSecondary)
+                        Column(Modifier.selectableGroup(), verticalArrangement = Arrangement.spacedBy(AppSpacing.Small)) {
+                            AgePreferenceMode.entries.forEach { mode ->
+                                AppRadio(state.mode == mode,
+                                    { onStateChange(state.copy(mode = mode, saveFailed = false)) },
+                                    stringResource(if (mode == AgePreferenceMode.Any) Res.string.age_preference_any else Res.string.age_preference_range),
+                                    Modifier.background(if (state.mode == mode) AppColors.SelectionContainer else AppColors.SurfaceMuted, AppShapes.Control),
+                                    enabled = editable)
+                            }
                         }
-                    }
-                    when (state.mode) {
-                        AgePreferenceMode.Range -> AgeRangeEditor(state, onStateChange)
-                        AgePreferenceMode.Any -> Text(stringResource(Res.string.age_preference_any_help),
-                            color = AppColors.OnSelection, style = MaterialTheme.typography.bodyLarge)
-                        null -> Text(stringResource(Res.string.age_preference_select_help),
+                        when (state.mode) {
+                            AgePreferenceMode.Range -> AgeRangeEditor(state, onStateChange)
+                            AgePreferenceMode.Any -> Text(stringResource(Res.string.age_preference_any_help),
+                                color = AppColors.OnSelection, style = MaterialTheme.typography.bodyLarge)
+                            null -> Text(stringResource(Res.string.age_preference_select_help),
+                                style = MaterialTheme.typography.bodySmall, color = AppColors.TextSecondary)
+                        }
+                        Text(stringResource(Res.string.age_preference_apply_help),
                             style = MaterialTheme.typography.bodySmall, color = AppColors.TextSecondary)
+                        if (state.saveFailed) Text(stringResource(Res.string.age_preference_save_failed),
+                            style = MaterialTheme.typography.bodyMedium, color = AppColors.Error,
+                            modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite })
+                        if (compactHeight) submit()
                     }
-                    Text(stringResource(Res.string.age_preference_apply_help),
-                        style = MaterialTheme.typography.bodySmall, color = AppColors.TextSecondary)
-                    if (state.saveFailed) Text(stringResource(Res.string.age_preference_save_failed),
-                        style = MaterialTheme.typography.bodyMedium, color = AppColors.Error,
-                        modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite })
                 }
-            }
-            Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-                AppButton(submitLabel ?: stringResource(if (state.saveFailed) Res.string.age_preference_retry else Res.string.age_preference_continue),
-                    modifier = Modifier.widthIn(max = 640.dp).fillMaxWidth()
-                        .padding(horizontal = screenGutter(), vertical = AppSpacing.Large),
-                    enabled = state.canContinue && submitEnabled, loading = state.saving,
-                    loadingText = stringResource(Res.string.age_preference_saving), onClick = onContinue)
+                if (!compactHeight) submit()
             }
         }
     }
