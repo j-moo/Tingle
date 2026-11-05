@@ -130,3 +130,85 @@ Nginx 접근 로그 형식에는 요청 본문이 없고 현재 채팅 코드도
 Loki의 336시간 보관 설정만으로 과거·실서버 본문 부재를 증명할 수 없다.
 실제 로깅 설정·합성 본문 검사·과거 로그 취급 기준을 BE·INFRA가 확인하기 전에는
 Loki 제외나 전체 외부 사본의 부재를 승인하지 않는다. 필요 시 로그 사본 공급 계약을 추가한다.
+
+## 복원 운영 실행기
+
+BE 실행 JAR는 첫 인자가 `chat-restore`일 때만 별도의 운영 명령으로 진입한다.
+이 경로는 Spring 애플리케이션·HTTP 서버·JPA/DDL·자동 작업·AI 호출을 시작하지 않는다.
+복원에 필요한 JDBC 저장소와 파일 증거 공급자만 명시적으로 구성한다. 일반 앱 실행은 그대로다.
+
+| 명령 | 동작 | 필수 인자 |
+| --- | --- | --- |
+| `journal-init` | 운영자가 미리 만든 빈 디렉터리에만 저널과 namespace를 최초 생성 | `--namespace=tingle_dev` 또는 `tingle` |
+| `journal-status` | 파일 체인을 검증한 fingerprint·논리 기록 수만 출력, DB 접근 없음 | 동일 namespace |
+| `verify` | 현재 DB·복원 세대 확인 후 재삭제·외부 부재 재검증, 성공에만 marker 작성 | namespace, restore-generation, expected-fingerprint, fence-confirmed |
+
+예: `java -jar app.jar chat-restore journal-status --namespace=tingle_dev`.
+검증 명령의 인자 형식은 `verify --namespace=tingle_dev --restore-generation=<UUID>`
+`--expected-fingerprint=<고정한 SHA-256> --fence-confirmed=true --wait-seconds=180 --poll-seconds=5`다.
+인자는 `--이름=값` 형식만 받고 중복·알 수 없는 인자·잘못된 범위를 거부한다.
+자격 증명은 명령행이나 출력에 넣지 않고 컨테이너의 기존 환경변수로만 전달한다.
+
+공통 환경변수는 `TINGLE_CHAT_DELETION_JOURNAL_DIRECTORY`다. 절대 경로·symlink 없는 경로를 요구한다.
+`journal-init`은 기존 저널을 덮어쓰거나 누락된 파일을 자동 복구하지 않는다.
+POSIX에서는 journal 디렉터리0700·파일0600으로 초기화한다. namespace 파일로 환경을 고정한다.
+구형 저널에 namespace 표식이 없다면 임의로 초기화·덮어쓰지 않고 별도 조정을 거친다.
+
+`verify`는 추가로 아래 값을 요구한다.
+
+- `TINGLE_CHAT_RESTORE_GENERATION`: 명령행 UUID와 같아야 한다.
+- `TINGLE_CHAT_RESTORE_MARKER_FILE`: 저널 디렉터리와 분리한 절대 파일 경로, 부모 폴더 사전 준비.
+- `SPRING_DATASOURCE_URL/USERNAME/PASSWORD`: PostgreSQL 연결. 실제 `current_database()`가 namespace와
+  일치하는지 먼저 검사하며 다르면 DB 재삭제·marker 변경을 시작하지 않는다.
+- `APP_BACKUP_EVIDENCE_ENABLED=true` 및 기존 `FILE/GENERATION_FILE/NAMESPACE/SCOPE_ID/APPROVAL_ID`.
+  증거 세대 파일도 같은 UUID여야 한다. 연결/소켓/쿼리/트랜잭션에는 별도 고정 시간 제한을 둔다.
+  JDBC URL의 사용자·비밀번호·timeout 재정의는 받지 않는다.
+
+결과는 한 줄 JSON이다. 초기화·조회 성공은 `status:OK`, 검증 성공은 `status:VERIFIED`와 exit0이다.
+조회에만 `fingerprint`·`entries`를 포함한다. 형식/설정 오류는 exit2, 검증 미완료·운영 실패는 exit3이다.
+stderr/JSON에 자격 증명·경로·저널 내용·예외 원문을 출력하지 않는다.
+시간 초과·실패를 성공으로 바꾸거나 marker를 수동 조작하지 않는다.
+
+검증은 동일 프로세스·공급자·epoch 기준으로 새 cron 검사를 기다릴 수 있다.
+`wait-seconds`는 재시도 대기 예산(기본180,0~900), `poll-seconds`는 검사 간격(기본5,1~30)이며
+진행 중 JDBC 작업까지 즉시 중단하는 전체 wall-clock 제한은 아니다. 예산 소진 시 pending을 유지한다.
+매번 새 프로세스를 즉시 재실행하는 방식으로 새 검사 시각 조건을 우회하지 않는다.
+별도 `restore.lock`을 unlink하지 않고 잠가 동시 검증을 막으며, 세대 변경 시 검증을 중단한다.
+
+### 권한과 INFRA 연결 기준
+
+개발 호스트의 `/srv/tingle/state/chat-retention/dev/journal`을 `/run/tingle/chat-journal`에 연결한다.
+저널은 신뢰된 BE 삭제 프로세스(uid1000)와 운영 복원 도구만 RW로 사용한다. 일반 사용자·다른 서비스의
+쓰기를 허용하지 않는다. 현재 snapshot도 lock을 WRITE로 열기 때문에 journal 전체 RO는 동작하지 않는다.
+여기서 privileged는 허용된 신뢰 작성 프로세스라는 뜻이며 OS root 실행을 필수로 요구하지 않는다.
+
+별도 `/srv/tingle/state/chat-retention/dev/restore`를 `/run/tingle/chat-restore`에 연결하고
+`TINGLE_CHAT_RESTORE_MARKER_FILE=/run/tingle/chat-restore/serving.marker`로 둔다.
+일반 BE에는 이 폴더를 RO, 제한된 일회성 복원 도구에만 RW로 제공한다. 운영은 prod 경로로 분리한다.
+CLI를 실행할 때 HTTP service port를 공개하거나 Docker socket을 마운트할 필요가 없다.
+기본 Compose·서버 ACL·환경변수 전달·DB 복원 orchestration은 INFRA 적용 범위이며 이 BE 구현이
+자동으로 생성·활성화하지 않는다.
+
+INFRA는 요청·자동 작업·배포를 먼저 차단한 뒤 `journal-status`의 검증된 fingerprint를 DB 밖에 고정한다.
+`--fence-confirmed=true`는 그 절차를 완료했다는 운영자 확인이며 도구가 외부 ingress를 차단했다는 증명이 아니다.
+새 환경 UUID를 세대 파일·BE 시작 설정·복원 도구에 동일하게 반영하고 pg_restore를 수행한다.
+원샷 `verify`가 exit0이고 같은 UUID·fingerprint의 gate를 통과한 뒤에만 사용자 접근을 재개한다.
+그 전에는 일반 BE를 시작하거나 generation을 비워 우회하지 않는다. 검증 중 실패하면 차단을 유지한다.
+현재 저널이 추가되면 기존 marker는 자동으로 승인 범위를 넓히지 않으며 재검증이 필요하다.
+본 변경은 실서버 DB 복원·기능 활성화·운영 적용·자동 정리 활성화를 수행한 증거가 아니다.
+
+### 재개 전 읽기 전용 gate 판정
+
+`gate-status`는 `verify`와 같은 필수 인자(namespace·restore-generation·expected-fingerprint·fence-confirmed)를
+받고 저널·marker·증거 세대 파일만 검사한다. DB 연결이나 marker 쓰기는 하지 않는다.
+일반 BE와 같은 RO marker 마운트에서 현재 세대 파일·고정 fingerprint·실제 `RestoreServingGateFilter`가
+모두 일치할 때만 exit0/`status:ALLOWED`를 반환한다. 불일치는 exit3/`status:BLOCKED`이며
+잘못된 설정은 exit2다. 이 명령의 성공은 실제 BE 컨테이너 설정과 외부 요청·worker 차단을 증명하지 않는다.
+
+복원 작업의 UUID·복원 전 고정 fingerprint·선택 dump·단계는 DB 밖의 제한된 작업 기록에 보관한다.
+도구 실패/중단 후에는 같은 작업의 UUID와 fingerprint로 재시도하고, DB 복원이 이미 끝났으면
+불필요하게 다시 복원하지 않는다. DB 복원이 중단됐으면 fence를 유지한 채 같은 dump부터 다시 수행한다.
+다른 dump로 새 작업을 시작할 때는 새 UUID를 사용한다. 도구 lock은 전체 복원 작업 직렬화를 대신하지 않는다.
+요청·worker·자동 배포 차단 → 최신 저널 fingerprint 고정 → 동일 UUID 설정·DB 복원 → 재삭제·외부 확인 →
+marker → RO gate 판정 → fence 안에서 BE 제한 기동·실제 gate/readiness 확인 → 승인된 서비스 재개 순서를 따른다.
+모든 worker와 자동 배포를 확실히 차단할 수단이 확인되지 않으면 실제 서비스 재개를 진행하지 않는다.

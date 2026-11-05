@@ -57,6 +57,14 @@ public class RestoreReplayService {
 	}
 
 	/** Caller must already drain requests/workers and hold the infrastructure serving fence. */
+	public void fenceServing() throws IOException {
+		if (markerFile.isEmpty()) {
+			throw new IOException("Restore marker is not configured");
+		}
+		invalidateProof(safeMarker());
+	}
+
+	/** Caller must already drain requests/workers and hold the infrastructure serving fence. */
 	public boolean replayAndVerify(String expectedFingerprint) {
 		try {
 			if (markerFile.isEmpty()) {

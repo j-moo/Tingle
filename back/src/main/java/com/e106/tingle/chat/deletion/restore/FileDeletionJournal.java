@@ -30,6 +30,8 @@ import tools.jackson.databind.json.JsonMapper;
 /**
  * Metadata-only intent ledger outside the restored database. The directory and its parents must be writable
  * only by the privileged journal/restore process. Hashes detect accidental damage, not a malicious owner.
+ * Here privileged means the trusted retention application identity and operator restore tool, not necessarily root.
+ * Ordinary API clients cannot provision a journal. Snapshot readers also need WRITE access to journal.lock.
  * Missing files, interrupted append/head updates and damaged chains block deletion and restore verification.
  */
 @Component
