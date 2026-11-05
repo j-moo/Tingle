@@ -56,7 +56,43 @@ static size_t tx_len;
 static size_t tx_offset;
 static bool tx_inflight;
 K_MUTEX_DEFINE(phone_lock);
+K_MUTEX_DEFINE(owner_data_lock);
 K_SEM_DEFINE(wake, 0, 1);
+
+void kr_runtime_owner_lock(void) { k_mutex_lock(&owner_data_lock, K_FOREVER); }
+void kr_runtime_owner_unlock(void) { k_mutex_unlock(&owner_data_lock); }
+
+int kr_runtime_pending_records(void)
+{
+	if (engine.storage_error) { return -EIO; }
+	int count = 0;
+	for (unsigned i = 0; i < KR_RECORDS; ++i) {
+		if (engine.records[i].kind == KR_CONFIRMED || engine.records[i].kind == KR_REVIEW) { ++count; }
+	}
+	return count;
+}
+
+void kr_runtime_reset_block(void)
+{
+	atomic_clear(&lab_enabled);
+	atomic_clear(&service_scan_enabled);
+}
+
+int kr_runtime_clear_owner_data(void)
+{
+	int result = kr_storage_clear_owner(&engine);
+	if (!result) {
+		k_mutex_lock(&phone_lock, K_FOREVER);
+		memset(rx_frame, 0, sizeof(rx_frame));
+		memset(tx_frame, 0, sizeof(tx_frame));
+		rx_len = tx_len = tx_offset = 0;
+		command_pending = command_busy = tx_inflight = false;
+		k_mutex_unlock(&phone_lock);
+		utc_base = 0;
+		uptime_base = 0;
+	}
+	return result;
+}
 
 struct radio_message {
 	uint64_t source;
@@ -723,6 +759,7 @@ int main(void)
 	bool service_mode = false, service_update = false;
 	struct kr_peer_plan service_plan;
 	int last_adv_error = 0;
+	const char *last_reset_error = NULL;
 	for (;;) {
 		k_sem_take(&wake, K_MSEC(100));
 		kr_nus_poll_console(false);
@@ -733,6 +770,14 @@ int main(void)
 				(void)k_work_cancel_delayable(&led_off);
 				(void)gpio_pin_set_dt(&led, 0);
 			}
+		}
+		if (kr_nus_reset_pending()) {
+			service_mode = service_update = true;
+			memset(&service_plan, 0, sizeof(service_plan));
+			kr_runtime_reset_block();
+			(void)k_work_cancel_delayable(&led_off);
+			(void)gpio_pin_set_dt(&led, 0);
+			k_msgq_purge(&radio_rx);
 		}
 		if (service_update) {
 			result = apply_service_peer(&service_plan);
@@ -749,7 +794,16 @@ int main(void)
 			}
 			last_adv_error = result;
 		}
-		if (!service_mode && !atomic_get(&lab_enabled) && lab_requested()) {
+		if (kr_nus_reset_pending() && !service_update) {
+			const char *error = kr_nus_finish_reset();
+			if (error && (!last_reset_error || strcmp(last_reset_error, error))) {
+				LOG_ERR("Reset recovery pending: %s", error);
+			}
+			last_reset_error = error;
+			atomic_set(&restart_phone_adv, 1);
+		}
+		kr_runtime_owner_lock();
+		if (!service_mode && kr_nus_lab_allowed() && !atomic_get(&lab_enabled) && lab_requested()) {
 			result = enable_lab();
 			if (result) {
 				LOG_ERR("Lab activation failed: %d", result);
@@ -757,6 +811,7 @@ int main(void)
 				LOG_INF("LAB ENABLED: binary sync, extended advertising, always-match; awaiting time sync");
 			}
 		}
+		kr_runtime_owner_unlock();
 		if (!registration_expired && !kr_nus_can_advertise()) {
 			registration_expired = true;
 			atomic_set(&restart_phone_adv, 1);
@@ -769,6 +824,11 @@ int main(void)
 			}
 		}
 		if (!atomic_get(&lab_enabled)) {
+			continue;
+		}
+		kr_runtime_owner_lock();
+		if (!atomic_get(&lab_enabled)) {
+			kr_runtime_owner_unlock();
 			continue;
 		}
 		handle_phone();
@@ -798,6 +858,7 @@ int main(void)
 		}
 		last_adv_error = result;
 		send_phone();
+		kr_runtime_owner_unlock();
 		if (k_msgq_num_used_get(&radio_rx)) {
 			k_sem_give(&wake);
 		}

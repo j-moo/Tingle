@@ -20,8 +20,11 @@ static const char *settings(struct kr_core *core, const struct kr_json *json, ch
 {
 	memset(&candidate, 0, sizeof(candidate));
 	candidate.magic = KR_RECORD_MAGIC;
+	bool version2 = equal(kr_json_string(json, "proofProtocolVersion"), KR_PROOF_VERSION_2);
+	int64_t ownership_epoch = 0;
 	if (!equal(kr_json_string(json, "payloadEncoding"), "base64url") ||
-		!equal(kr_json_string(json, "proofProtocolVersion"), KR_PROOF_VERSION) ||
+		(!version2 && !equal(kr_json_string(json, "proofProtocolVersion"), KR_PROOF_VERSION)) ||
+		(version2 && !kr_nonnegative(kr_json_number(json, "ownershipEpoch"), &ownership_epoch)) ||
 		!equal(kr_json_string(json, "keyId"), core->identity.key_id) ||
 		!kr_positive(kr_json_number(json, "deviceId"), &candidate.device_id) ||
 		!kr_positive(kr_json_number(json, "settingsVersion"), &candidate.version) ||
@@ -41,8 +44,32 @@ static const char *settings(struct kr_core *core, const struct kr_json *json, ch
 		.device_nonce = kr_json_string(json, "deviceNonce"),
 		.server_time = kr_json_string(json, "serverTime"),
 		.signature = kr_json_string(json, "serverSignature"),
+		.version2 = version2, .ownership_epoch = ownership_epoch,
 	};
 	return kr_store(core, &candidate, &auth, signature);
+}
+
+static void reset_result(const struct kr_core *core, const char *request, char response[KR_RESPONSE_MAX])
+{
+	const struct kr_reset_record *r = &core->reset;
+	if (r->phase == KR_RESETTING) {
+		snprintf(response, KR_RESPONSE_MAX,
+			"{\"protocolVersion\":1,\"type\":\"RESET_RESULT\",\"requestId\":%s,"
+			"\"resetRunId\":\"%s\",\"state\":\"RESETTING\",\"result\":\"PENDING\"}\n",
+			request, r->run_id);
+		return;
+	}
+	snprintf(response, KR_RESPONSE_MAX,
+		"{\"protocolVersion\":1,\"type\":\"RESET_RESULT\",\"requestId\":%s,"
+		"\"deviceSerial\":\"%s\",\"deviceId\":%" PRId64 ",\"resetRunId\":\"%s\","
+		"\"ownerGeneration\":\"%s\",\"fromOwnershipEpoch\":%" PRId64 ","
+		"\"toOwnershipEpoch\":%" PRId64 ",\"resetNonce\":\"%s\","
+		"\"deletionScope\":\"%s\",\"recordPolicy\":\"%s\",\"dataErasure\":\"LOGICAL\","
+		"\"state\":\"RESET_DONE\",\"result\":\"CLEARED\","
+		"\"proof\":{\"protocolVersion\":\"%s\",\"keyId\":\"%s\",\"signature\":\"%s\"}}\n",
+		request, core->identity.serial, r->device_id, r->run_id, r->owner_generation,
+		r->from_epoch, r->ownership_epoch, r->nonce, KR_RESET_SCOPE, kr_reset_policy_name(r->policy),
+		KR_RESET_VERSION, core->identity.key_id, r->signature);
 }
 
 void kr_request(struct kr_core *core, char *frame, struct kr_status status,
@@ -66,17 +93,54 @@ void kr_request(struct kr_core *core, char *frame, struct kr_status status,
 		snprintf(response, KR_RESPONSE_MAX,
 			"{\"protocolVersion\":1,\"type\":\"DEVICE_INFO\",\"requestId\":%s,"
 			"\"deviceSerial\":\"%s\",\"firmwareVersion\":\"%s\",\"supportedProtocolVersions\":[1],"
-			"\"supportedFunctions\":[\"GET_DEVICE_INFO\",\"GET_REGISTRATION_PROOF\",\"GET_STATUS\"%s],"
+			"\"supportedFunctions\":[\"GET_DEVICE_INFO\",\"GET_REGISTRATION_PROOF\",\"GET_STATUS\"%s%s],"
+			"\"ownershipEpoch\":%" PRId64 ",\"resetContractVersion\":\"%s\",\"ownerState\":\"%s\","
+			"\"supportedProofProtocolVersions\":[%s],"
 			"\"maxFrameBytes\":%u,\"maxPayloadBytes\":%u,\"settingsPolicy\":\"%s\","
 			"\"storedSettingsVersion\":%" PRId64 ",\"storedPayloadHash\":\"%s\","
 			"\"storageHealthy\":%s,\"applied\":false,\"timeReady\":false}\n",
 			request, core->identity.serial, KR_FIRMWARE_VERSION,
 			settings_ready ? ",\"GET_SYNC_CHALLENGE\",\"SYNC_SETTINGS\"" : "",
+			core->platform.accept_reset ? ",\"GET_RESET_CHALLENGE\",\"RESET_DEVICE\",\"GET_RESET_RESULT\"" : "",
+			core->reset.ownership_epoch, core->platform.accept_reset ? KR_RESET_VERSION : "UNSUPPORTED",
+			core->storage_error ? "UNKNOWN" : core->reset.phase == KR_RESETTING ? "RESETTING" :
+				core->current.magic ? "BOUND" : "UNOWNED",
+			core->reset.ownership_epoch ? "\"" KR_PROOF_VERSION_2 "\"" :
+				"\"" KR_PROOF_VERSION "\",\"" KR_PROOF_VERSION_2 "\"",
 			KR_FRAME_MAX, KR_PAYLOAD_MAX, settings_ready ? "DEV_SIGNED_V1" : "UNRESOLVED",
 			core->current.version, core->current.hash, core->storage_error ? "false" : "true");
 		return;
 	}
+	if (equal(type, "GET_RESET_CHALLENGE")) {
+		error = core->platform.issue_reset_challenge ?
+			core->platform.issue_reset_challenge(core->platform.ctx, signature) : "RESET_UNSUPPORTED";
+		if (error) { goto fail; }
+		snprintf(response, KR_RESPONSE_MAX,
+			"{\"protocolVersion\":1,\"type\":\"RESET_CHALLENGE\",\"requestId\":%s,"
+			"\"resetProtocolVersion\":\"%s\",\"keyId\":\"%s\",\"deviceSerial\":\"%s\","
+			"\"ownershipEpoch\":%" PRId64 ",\"localOwnerGeneration\":\"%s\","
+			"\"challengeId\":\"%s\",\"deviceNonce\":\"%s\",\"expiresInSeconds\":60,\"signature\":\"%s\"}\n",
+			request, KR_RESET_VERSION, core->identity.key_id, core->identity.serial,
+			core->reset.ownership_epoch, core->current.magic ? core->current.owner_generation : "NONE",
+			core->reset_challenge.id, core->reset_challenge.nonce, signature);
+		return;
+	}
+	if (equal(type, "RESET_DEVICE")) {
+		error = core->platform.accept_reset ?
+			core->platform.accept_reset(core->platform.ctx, &json) : "RESET_UNSUPPORTED";
+		if (error) { goto fail; }
+		reset_result(core, request, response);
+		return;
+	}
+	if (equal(type, "GET_RESET_RESULT")) {
+		if (!kr_reset_query_matches(core, kr_json_string(&json, "resetRunId"),
+			kr_json_string(&json, "resetNonce"))) { error = "RESET_NOT_FOUND"; goto fail; }
+		reset_result(core, request, response);
+		return;
+	}
 	if (equal(type, "GET_SYNC_CHALLENGE")) {
+		if (core->storage_error) { error = "STORAGE_ERROR"; goto fail; }
+		if (core->reset.phase == KR_RESETTING) { error = "RESET_IN_PROGRESS"; goto fail; }
 		char nonce[44];
 		error = core->platform.issue_settings_nonce ?
 			core->platform.issue_settings_nonce(core->platform.ctx, nonce) : "POLICY_UNRESOLVED";
@@ -100,17 +164,29 @@ void kr_request(struct kr_core *core, char *frame, struct kr_status status,
 		return;
 	}
 	if (equal(type, "GET_REGISTRATION_PROOF")) {
+		if (core->storage_error) { error = "STORAGE_ERROR"; goto fail; }
+		if (core->reset.phase == KR_RESETTING) { error = "RESET_IN_PROGRESS"; goto fail; }
 		if (!registration_open) { error = "REGISTRATION_WINDOW_CLOSED"; goto fail; }
+		bool version2 = equal(kr_json_string(&json, "proofProtocolVersion"), KR_PROOF_VERSION_2);
+		if (core->reset.ownership_epoch && !version2) { error = "PROTOCOL_UPGRADE_REQUIRED"; goto fail; }
+		if (version2 && core->current.magic) { error = "OWNER_MISMATCH"; goto fail; }
 		int64_t expires;
-		if (!equal(kr_json_string(&json, "proofProtocolVersion"), KR_PROOF_VERSION) ||
-			!kr_epoch(kr_json_string(&json, "expiresAt"), &expires) ||
-			kr_registration_proof(&core->identity, kr_json_string(&json, "challengeId"),
-				kr_json_string(&json, "nonce"), expires, signature)) { goto fail; }
+		if ((!version2 && !equal(kr_json_string(&json, "proofProtocolVersion"), KR_PROOF_VERSION)) ||
+			!kr_epoch(kr_json_string(&json, "expiresAt"), &expires)) { goto fail; }
+		int result = version2 ? kr_registration_proof_v2(&core->identity,
+			kr_json_string(&json, "challengeId"), kr_json_string(&json, "nonce"), expires,
+			core->reset.ownership_epoch, signature) : kr_registration_proof(&core->identity,
+			kr_json_string(&json, "challengeId"), kr_json_string(&json, "nonce"), expires, signature);
+		if (result) { goto fail; }
+		char binding[96] = "";
+		if (version2) { snprintf(binding, sizeof(binding),
+			"\"ownershipEpoch\":%" PRId64 ",\"ownerState\":\"UNOWNED\",", core->reset.ownership_epoch); }
 		/* Expiry and single-use remain server checks while no trusted clock exists. */
 		snprintf(response, KR_RESPONSE_MAX,
 			"{\"protocolVersion\":1,\"type\":\"REGISTRATION_PROOF\",\"requestId\":%s,"
-			"\"deviceSerial\":\"%s\",\"proof\":{\"protocolVersion\":\"%s\",\"keyId\":\"%s\","
-			"\"signature\":\"%s\"}}\n", request, core->identity.serial, KR_PROOF_VERSION,
+			"\"deviceSerial\":\"%s\",%s\"proof\":{\"protocolVersion\":\"%s\",\"keyId\":\"%s\","
+			"\"signature\":\"%s\"}}\n", request, core->identity.serial, binding,
+			version2 ? KR_PROOF_VERSION_2 : KR_PROOF_VERSION,
 			core->identity.key_id, signature);
 		return;
 	}
@@ -122,7 +198,8 @@ void kr_request(struct kr_core *core, char *frame, struct kr_status status,
 			"\"syncRunId\":\"%s\",\"settingsVersion\":%" PRId64 ",\"payloadHash\":\"%s\","
 			"\"stored\":true,\"applied\":false,\"timeReady\":false,"
 			"\"proof\":{\"protocolVersion\":\"%s\",\"keyId\":\"%s\",\"signature\":\"%s\"}}\n",
-			request, candidate.sync_run, candidate.version, candidate.hash, KR_PROOF_VERSION,
+			request, candidate.sync_run, candidate.version, candidate.hash,
+			equal(kr_json_string(&json, "proofProtocolVersion"), KR_PROOF_VERSION_2) ? KR_PROOF_VERSION_2 : KR_PROOF_VERSION,
 			core->identity.key_id, signature);
 		return;
 	}

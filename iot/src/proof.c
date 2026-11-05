@@ -158,6 +158,17 @@ int kr_registration_proof(const struct kr_identity *id, const char *challenge,
 	return sign_text(id, transcript, n, signature);
 }
 
+int kr_registration_proof_v2(const struct kr_identity *id, const char *challenge,
+	const char *nonce, int64_t expires, int64_t ownership_epoch, char signature[87])
+{
+	if (!kr_uuid(challenge) || !kr_nonce(nonce) || expires <= 0 || ownership_epoch < 0) { return -1; }
+	char text[640];
+	int size = snprintf(text, sizeof(text),
+		"TINGLE-KEYRING-REGISTER\n%s\n%s\n%s\n%s\n%s\n%" PRId64 "\n%" PRId64 "\nUNOWNED\n",
+		KR_PROOF_VERSION_2, id->key_id, id->serial, challenge, nonce, expires, ownership_epoch);
+	return sign_text(id, text, size, signature);
+}
+
 bool kr_settings_valid(const struct kr_settings *s)
 {
 	/* Check termination before calling string routines on persisted bytes. */
@@ -179,7 +190,15 @@ const char *kr_store(struct kr_core *core, const struct kr_settings *next,
 	core->peer_after_stored.verified_time = 0;
 	core->stop_peer = false;
 	if (core->storage_error) { return "STORAGE_ERROR"; }
+	if (core->reset.phase == KR_RESETTING) { return "RESET_IN_PROGRESS"; }
+	bool version2 = auth && auth->version2;
+	if (core->reset.ownership_epoch && !version2) { return "PROTOCOL_UPGRADE_REQUIRED"; }
+	if (version2 && auth->ownership_epoch != core->reset.ownership_epoch) {
+		return "OWNERSHIP_EPOCH_MISMATCH";
+	}
 	if (!kr_settings_valid(next)) { return "INVALID_SETTINGS"; }
+	if (core->reset.phase == KR_RESET_DONE &&
+		!strcmp(next->owner_generation, core->reset.owner_generation)) { return "OWNER_MISMATCH"; }
 	const struct kr_settings *old = &core->current;
 	if (old->magic) {
 		if (old->device_id != next->device_id || strcmp(old->owner_generation, next->owner_generation)) {
@@ -212,8 +231,13 @@ const char *kr_store(struct kr_core *core, const struct kr_settings *next,
 	char transcript[640];
 	int n = snprintf(transcript, sizeof(transcript),
 		"TINGLE-KEYRING-STORED\n%s\n%s\n%s\n%" PRId64 "\n%s\n%s\n%s\n%" PRId64 "\n%s\nSTORED\n",
-		KR_PROOF_VERSION, core->identity.key_id, core->identity.serial, next->device_id,
+		version2 ? KR_PROOF_VERSION_2 : KR_PROOF_VERSION,
+		core->identity.key_id, core->identity.serial, next->device_id,
 		next->owner_generation, next->sync_run, next->nonce, next->version, next->hash);
+	if (version2 && n >= 0 && n < (int)sizeof(transcript)) {
+		n += snprintf(transcript + n, sizeof(transcript) - (size_t)n,
+			"%" PRId64 "\n", core->reset.ownership_epoch);
+	}
 	if (sign_text(&core->identity, transcript, n, signature)) { return "PROOF_ERROR"; }
 	core->peer_after_stored = plan;
 	return NULL;

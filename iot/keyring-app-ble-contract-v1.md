@@ -2,16 +2,16 @@
 
 | 항목 | 내용 |
 | --- | --- |
-| 버전·변경일 | v0.1.2-draft / 2026-11-04 · 등록·동기화 시험 펌웨어 대조 |
+| 버전·변경일 | v0.1.6-draft / 2026-11-05 · FE 복구 상태·예시·완료 증명 보관·미전송 기록 미지원 범위 명시 |
 | 작성자 | 김종무(IoT) |
-| 관련 Story | [S15P31E106-224](https://ssafy.atlassian.net/browse/S15P31E106-224) — 앱·키링 연동 계약 정리 |
-| 구현 후속 | 등록·동기화 225, 매칭 226, 상태 조회 227, 기록 전달 228, 실물 통합 검증 230 |
+| 관련 Story | [S15P31E106-251](https://ssafy.atlassian.net/browse/S15P31E106-251) — 초기화·인증키 보존·완료 증명 재조회·복구. 기존 계약 근거: 224 |
+| 구현 후속 | 초기화 251·BE249·FE171, 등록·동기화 225, 매칭 226, 상태 조회 227, 기록 전달 228, 실물 통합 검증 230 |
 | 영향·검토 | IoT 김종무 · FE 이재준/황순철 · BE 김영빈/가을 · 매칭 입력/규칙 AI 황성현 |
 | 우선순위 | 탐색·등록·본인 기기 확인 → 설정·시간 동기화 → 오프라인 매칭·기록·서버 접수 확인 |
 | 이번 테스트 | 별도 사용자 버튼이 없는 키링을 가정. 초기화·등록 해제·양도는 후속으로 분리 |
 | 문서 상태 | 로컬 협의 초안. 팀 공유 외부 원본의 위치·버전 연결과 관련 파트 승인 필요. 펌웨어 구현·실물 연동 완료를 뜻하지 않음 |
 
-**현재 빌드는 `0.2.3-dev-signed`, 통합 소스는 `iot/`, 보드에 복사할 파일은 `iot/build/zephyr.uf2`다.** 현재 설정 서명·저장 흐름과 빌드 방법은 [개발 설정 연동 안내](dev-settings-signing-handoff-v1.md)를 따른다. 아래 `0.1.0-registration` 표기와 MR !172의 검증 결과는 이전 등록 전용 펌웨어의 기록이다. JSON 예시는 읽기 위한 들여쓰기다. 실제 전송은 JSON 한 줄 뒤에 LF를 붙이고, 문자열 값과 payload 원본 바이트는 보존한다.
+**현재 빌드는 `0.3.0-dev-signed`, 통합 소스는 `iot/`, 보드에 복사할 파일은 `iot/build/zephyr.uf2`다.** 현재 설정 서명·저장 흐름과 빌드 방법은 [개발 설정 연동 안내](dev-settings-signing-handoff-v1.md)를 따른다. 초기화의 IoT 로컬 구현·검증 현황은 6.10절에 구분한다. 아래 `0.1.0-registration` 표기와 MR !172의 검증 결과는 이전 등록 전용 펌웨어의 기록이다. JSON 예시는 읽기 위한 들여쓰기다. 실제 전송은 JSON 한 줄 뒤에 LF를 붙이고, 문자열 값과 payload 원본 바이트는 보존한다.
 
 ## 기준과 이번에 확인한 결정
 
@@ -25,7 +25,7 @@
 | 항목 | 확인한 내용 |
 | --- | --- |
 | 실물 후보 | 이전 USB 부팅·BLE 탐색에 사용한 Seeed XIAO nRF52840 Sense 1대. 부트로더 ID `Seeed_XIAO_nRF52840_Sense`, 버전 `0.6.1`. 시험 직전에 보드 사용 가능 여부와 현재 설치 버전을 확인한다. |
-| 앱 연동 이미지 | 현재 `0.2.3-dev-signed` / Zephyr 4.2.0 / `xiao_ble/nrf52840`. 빌드 산출물은 `iot/build/zephyr.uf2`. |
+| 앱 연동 이미지 | 현재 `0.3.0-dev-signed` / Zephyr 4.2.0 / `xiao_ble/nrf52840`. 빌드 산출물은 `iot/build/zephyr.uf2`. |
 | 확인 범위 | UF2 빌드 및 호스트에서 C·Java 서명 호환성 검증 통과. 기존 `Tingle-Lab` 검색은 별도 바이너리 펌웨어의 실물 기록이다. 등록용 UF2의 실물 탑재·앱 종단 연동은 미확인이다. |
 | 첫 합동 시험 | IoT는 XIAO·UF2·USB 로그, FE는 테스트 앱·BLE 로그, BE는 테스트 계정과 기기 공개키 등록을 준비한다. 15~20분으로 제안하며 일정은 FE·BE·IoT가 조율한다. |
 
@@ -542,22 +542,528 @@ POST /api/keyrings/{deviceId}/sync-runs/{syncRunId}/ack → 기기 저장 증명
 - 별도로 신뢰할 시각으로 원래 만남 기회 만료를 확인한 원본은 서버 미접수여도 자동 정리한다. 시간 불확실 시 보존 후 시간 동기화로 재판정한다.
 - 서버의 상대 기록 대기 마감은 `min(당시 만남 시각+기회 기간, 첫 유효 접수+상대 기록 대기 기간)`. 현재 각 기간은 7일, 제안은 생성부터 별도 24시간이다. 서버 원본 보관과 로컬 정리/미전송 건수는 다른 상태다.
 
-## 6. 초기화·등록 해제·양도 — 이번 테스트 후속
+## 6. 초기화·등록 해제·양도
 
 | 항목 | 기준 / 남은 내용 |
 | --- | --- |
 | 시작 조건 | 현재 소유 계정 로그인·대상 실물 보유. 버튼/고유번호만으로 해제 불가 |
-| 앱 요청·키링 응답 | 이번 시험 빌드에서 초기화·등록 해제·양도 명령과 성공 ACK는 미지원이다. 앱은 해당 기능을 미지원으로 표시한다. |
+| 앱 요청·키링 응답 | `0.3.0-dev-signed`에 초기화 BLE 명령·기기 완료 증명을 로컬 구현했다. BE API·FE 연결·v2 계약/종단 확인 전에는 앱의 초기화를 활성화하지 않는다. |
 | 완료 판단 | 기기 초기화 **및** 서버 소유 관계 해제를 모두 확인해야 완료. 그 뒤 다른 계정 등록 허용 |
 | 미전송 기록 | 삭제 동의 / 먼저 휴대폰·서버로 동기화 / 취소를 구분. 명시적 삭제 동의가 없으면 먼저 동기화하고, 실패/미연결 상태에서 강제 삭제하지 않음 |
 | 삭제 범위 | 기기 내부의 이전 소유 연결·개인 성향/설정·만남 원본의 삭제/보존 범위와 고정 기기 식별/차단 유지 방식은 후속 합의 |
 | 계정에 남는 것 | 서버 계정·프로필·설문·저장된 ON/OFF·기존 유효 제안/채팅 유지. 마지막 키링 초기화 후에는 새 매칭만 준비 대기하며 계정 탈퇴로 처리하지 않음 |
-| 실패·재시도 | 한쪽만 성공/연결 끊김은 초기화 완료·양도 가능으로 표시하지 않음. 실행 순서·멱등 키·부분 성공 조회·재개 방식 미정 |
+| 실패·재시도 | 한쪽만 성공/연결 끊김은 초기화 완료·양도 가능으로 표시하지 않음. 실행 순서·멱등 키·부분 성공 조회·재개 방식은 아래 검토안으로 제안 |
 | 연결·물리 확인 | 현재 보유 기기와의 안전한 처리 경로 필요. 연결 필수 조건·버튼 없는 물리 확인 대안·별도 재인증은 후속 미정 |
 | 분실 영구 차단 | 서비스팀 확인 후 서버가 영구 사용 불가로 관리. 초기화·재등록·탈퇴로 차단이 사라지면 안 됨. 기기 전파/차단 증명은 미정, 오프라인 즉시 중지 보장 없음 |
-| 구현·실물 검증 | 본 문서에서 완료로 확인하지 않음. 이번 테스트 통과를 초기화·양도 완료로 확대하지 않음 |
+| 구현·실물 검증 | IoT 로컬 구현·호스트 검사·빌드는 6.10절에 기록. 실물 초기화·새 소유자 등록의 종단 검증은 미실시 |
 
 XIAO 전원 재시작·RESET은 로컬 설정이 없는 시험 보드의 등록 창을 다시 여는 용도다. 서비스 초기화에는 기기 데이터 처리와 서버 소유 해제를 검증하는 별도 절차가 필요하다.
+
+### 6.1 초기화 계약 제안 v1의 범위와 결정안
+
+2026-11-05 김종무(IoT) 작성. 아래 API·BLE 이름·필드·서명 규격은 **FE 이재준/황순철·BE 김영빈/가을 검토를 위한 제안**이다. `0.3.0-dev-signed`에 이 제안의 IoT 코드를 로컬 구현·빌드했다. BE/FE의 공급·승인과 실제 보드/앱 종단 시험은 후속으로 추적한다. 초기화 구현은 Story 251, BE는 249, FE는 171에서 연결하며 기존 Story 224·225는 선행 근거다. 담당 일정·포인트는 별도 합의한다.
+
+| 항목 | 제안하는 기준 |
+| --- | --- |
+| 처리 순서 | BE 소유 확인·작업 생성·서명 허가 → FE의 BLE 전달 → 기기 검증·초기화·영구 완료 증명 → BE 증명 검증·소유 해제·실행 완료 |
+| 소유자 인증 | 유효한 로그인 세션과 서버의 현재 소유 관계 확인 후, 대상 기기의 새 challenge에 결속된 Ed25519 초기화 허가 발급 |
+| 완료 | 기기 삭제 증명과 서버 소유 해제를 같은 resetRunId로 확인한 서버 응답/조회 결과가 COMPLETED |
+| 기기 식별 | serial·기기 개인키/공개키·keyId 보존. 서비스 사용자 데이터는 아래 고정 범위로 초기화 |
+| 이전 소유자 차단 | 삭제 전 영구 저장하는 단조 증가 ownershipEpoch와 새 ownerGeneration을 등록·설정 서명에 결속 |
+| 미전송 기록 | 기본 REQUIRE_SYNCED. 별도 삭제 동의가 있을 때만 DISCARD_WITH_CONSENT. 집계 불명은 UNKNOWN으로 처리 |
+| 데이터 삭제 의미 | OWNER_DATA_V1은 서비스가 읽거나 복원할 수 있는 사용자 데이터의 논리적 초기화 범위. 증명에 dataErasure=LOGICAL을 포함 |
+
+현재 NVS에는 기기 키와 설정이 같은 registration-store에 있으므로 해당 파티션 전체 erase를 초기화 명령으로 사용하지 않는다. 논리적 삭제의 완료 조건은 모든 사용자 데이터 접근·부팅 복원 경로가 비활성화/정리되고 읽기 검증을 통과하는 것이다. 플래시의 과거 물리 바이트까지 복구 불가하게 지우는 별도 요건은 저장 구조·이행 설계를 추가 검토한다. UI와 증명은 이 차이에 맞춰 서비스 초기화 완료를 표시한다.
+
+**BE 제안에 대한 IoT 구현:** `src/board.c`는 registration-store의 NVS key 1에 기기 identity, key 2에 생성 마커, key 10에 설정을 저장한다. 키를 보존하는 선택 정리와 별도 초기화 저널/완료 증명 저장, 부팅 복구, 오래된 설정 차단을 추가했다. 앞선 v0.1.3의 서버 해제 토큰·기기 재확인 단계는 이번 제안에서 제외하고, BE의 완료 트랜잭션과 새 등록 증명의 epoch 대조로 등록 허용을 결정한다. 아래는 해당 흐름으로 맞춘 검토안이다.
+
+저장 위치는 파티션과 항목 ID를 함께 식별한다. 현재 합성 엔진의 keyring-store에도 key 1 설정 항목이 있지만 registration-store의 identity key 1과 다른 데이터다. 초기화 구현에서는 registration-store의 1·2는 보존하고 10은 설정 삭제 대상으로 삼는다. keyring-store의 사용자 설정·기록·억제 상태는 별도로 정리한다. 초기화 저널은 registration-store의 key 20, 이행 완료 마커는 key 21이며 별도 magic으로 저장 형식을 식별한다. 이행 이후 저널이 사라지거나 손상되면 epoch=0으로 되돌리지 않고 부팅을 중단한다.
+
+### 6.2 삭제·보존 범위 OWNER_DATA_V1
+
+서버와 펌웨어가 같은 삭제 범위 식별자 OWNER_DATA_V1을 지원해야 한다. 미지원 범위는 변경 전 거절한다.
+
+| 구분 | 초기화 처리 |
+| --- | --- |
+| 기기 고유번호·hardware ID | 보존. 같은 실물 기기로 계속 식별 |
+| 기기 Ed25519 개인키·공개키·keyId, 키 생성 완료 마커 | 보존. 서버의 기존 credential·공개키 신뢰 관계 유지 |
+| 부트로더·펌웨어·서버 검증용 공개키 | 보존 |
+| 현재 로컬 소유 연결·사용자 토큰·ownerGeneration | 사용자 연결에서 제거. 이전 generation은 재시도 증명용 최소 저널에만 보존 |
+| 성향/희망 조건·설정 payload·버전/hash·동기화 실행 정보 | 제거. 저장 버전 없음·applied=false·timeReady=false로 전환 |
+| 기기 시간 동기화 준비·임시 인증/challenge·전송 버퍼 | 무효화. 초기화 복구용 최소 nonce·작업 증명만 별도 보존 |
+| 후보·알고리즘 큐·확정/검증 대기 큐·원본 기록·재전송 outbox | REQUIRE_SYNCED이면 서버 접수 증명 확인 후 정리. DISCARD_WITH_CONSENT이면 동의한 대상의 미전송 기록도 정리 |
+| 이전 소유자의 반복 억제·상대 캐시·사용자별 관계 사본·알림 예약 | 제거. 이전 안내 재생·부팅 시 옛 snapshot 복원 중지 |
+| 기기 Bluetooth bond·LTK/IRK 등 저장된 모든 휴대폰 페어링 | 제거. 연결 중 단절될 수 있으므로 결과는 재연결하여 조회 가능하게 저장 |
+| BLE 동작 | 삭제 착수 시 새 매칭·peer 광고/스캔·진동/매칭 LED 중지. 새 소유자의 등록과 정상 설정 동기화 전까지 중지 상태 유지. 복구/등록용 앱 NUS 광고·접속·조회는 제공 |
+| 최소 초기화 제어 기록 | ownershipEpoch·진행 단계·최근 resetRunId·이전 ownerGeneration·resetNonce·삭제 범위/정책·서명 결과 보존. 다음 유효 초기화가 이를 대체하며 서버에는 작업 이력을 별도 유지 |
+| 서버의 사용자 계정·프로필·설문·ON/OFF·제안·채팅 | 유지. 새 매칭 준비는 등록/최신 동기화 조건으로 다시 평가 |
+| 서버의 기존 만남 기록·관계 제한·영구 기기 사용 불가 | 기존 보관/제한 정책 유지. 정상 초기화로 영구 기기 차단 해제 금지 |
+
+논리적으로 삭제한 사용자 snapshot을 장애 복구·재부팅·구버전 레코드 탐색에서 다시 채택하지 않는다. 키/저널을 보존하며 사용자 데이터만 정리하는 NVS 이행과 Bluetooth settings 정리도 기기 완료 판정에 포함한다. 저장소 오류 시 임의 format·키 재생성으로 복구하지 않고 작업을 복구 대기로 유지한다.
+
+### 6.3 소유자 인증과 영구 소유 순번
+
+- 서버가 로그인 JWT·현재 유효 세션·기기 소유자·ownerGeneration·기기 credential/차단 상태를 확인한다. 초기화는 가입/매칭 준비가 해제된 회원도 제품 정책에서 허용한 초기화 전용 경로로 접근한다.
+- 앱은 연결한 기기의 serial/keyId를 서버 대상과 대조한 뒤 GET_RESET_CHALLENGE로 기기 서명이 붙은 challenge를 얻는다. 서버는 사전 신뢰한 기기 공개키로 이 증명을 검증한다.
+- 서버만 초기화 허가에 서명한다. 허가는 resetRunId·기기·현재 소유 세대·ownershipEpoch 전후 값·기기 challenge·삭제 범위·기록 처리 정책에 결속한다. 앱의 사용자 ID 문자열이나 BLE 페어링만으로 삭제 권한을 부여하지 않는다.
+- ownershipEpoch는 기기의 비휘발성 0 이상 int64 순번이다. 최초 지원 펌웨어 이행에서 기존 키·유효 설정을 보존하며 0으로 초기화하고 서버와 대조한다. 새 작업은 fromOwnershipEpoch가 현재 값이고 toOwnershipEpoch=fromOwnershipEpoch+1인지 검사한다. 첫 초기화 시 0→1, 다음은 1→2로 증가하며 저장 오류/오버플로 때 중단한다. 같은 작업의 재시도는 저장된 전후 값을 유지한다.
+- 기기는 현재 유효 설정이 있으면 허가의 ownerGeneration이 그 값과 같은지 검사한다. 서버 등록 직후 아직 설정이 없는 유효한 빈 기기는 challenge에 localOwnerGeneration=NONE을 서명하고, 서버가 현재 등록 관계를 확인해 허가한다. 손상된 설정을 빈 상태로 추정하지 않는다.
+- 초기화 착수의 영구 저널과 증가한 epoch를 삭제보다 먼저 원자적으로 저장한다. 그 이후 부팅은 같은 작업을 재개하며 이전 소유자의 설정·서명을 적용하지 않는다.
+- 기기 challenge의 유효기간은 발급 부팅의 monotonic uptime으로 60초를 제안한다. 반복 읽기는 유효한 같은 challenge를 반환하며, 만료·소비·전원 재시작 후 새 challenge가 필요하다. 서버 허가의 유효성도 이 challenge에 결속하므로 신뢰 UTC가 준비되기 전에도 적용 가능하다.
+
+삭제 착수 시점에는 요청 처리·설정 저장·기록 생성·서버 접수 반영을 직렬화하고 대기 중인 이전 명령을 취소한다. REQUIRE_SYNCED는 잠금 상태에서 실제 미접수 원본이 0인지 다시 확인한다. 미접수 기록이 남았거나 집계가 불명확하면 데이터를 보존하고 PENDING_RECORDS 또는 RECORD_STATE_UNKNOWN을 반환한다. 앱은 기록 접수 후 같은 초기화 실행을 이어간다.
+
+### 6.4 서버 API 제안
+
+기본 경로는 `/api`다. 개발 앱은 기존 base URL과 `/dev` 프록시 규칙을 적용한다. 모든 응답은 JSON, Cache-Control은 no-store, 추적은 X-Request-Id를 사용한다. POST는 UUID Idempotency-Key를 필수로 받는다. deviceId는 양수 int64, epoch는 0 이상 int64 숫자, 실행/소유 세대/challenge ID는 canonical 소문자 UUID다.
+
+| API | 입력·역할 | 성공 |
+| --- | --- | --- |
+| POST /api/keyrings/{deviceId}/reset-runs | ownerGeneration·recordPolicy·discardConfirmed·challenge·선택 resetRunId. 소유 확인·실행 생성·등록/설정 변경 잠금·서명된 초기화 허가 반환 | 최초 201, 기존 실행/멱등 재사용 200 |
+| GET /api/keyrings/{deviceId}/reset-runs/{resetRunId} | 작업 상태·기기 삭제 증명 확인 여부·소유 해제 여부·마지막 오류·다음 단계 조회 | 200 |
+| POST /api/keyrings/{deviceId}/reset-runs/{resetRunId}/device-ack | 삭제 완료 proof 전달. 원문 대조 후 증명 저장·현재 소유 해제·관련 sync 실행 무효화·epoch 갱신·실행 완료를 한 트랜잭션으로 처리 | 200, COMPLETED |
+| GET /api/keyring-reset-runs?state=IN_PROGRESS | 로컬 작업 식별정보를 잃은 앱의 복구 조회. 요청 계정이 시작한 미완료 실행만 반환 | 200, items 배열 |
+
+device-ack의 요청 본문은 다음 proof 객체다. 서버는 URL의 실행에 저장한 불변 필드로 CLEARED 원문을 재구성해 검증한다. 클라이언트가 보낸 상태 플래그나 다른 실행의 필드를 끼워 넣어 완료를 만들지 않는다.
+
+```json
+{
+  "proof": {
+    "protocolVersion": "tingle-keyring-reset-v1",
+    "keyId": "ed25519-0000000000000001",
+    "signature": "<device Ed25519 CLEARED signature>"
+  }
+}
+```
+
+소유 해제 뒤에도 원래 요청 계정의 유효한 재로그인 세션은 해당 작업 조회·증명 전달을 할 수 있어야 한다. resetRun에 고정한 initiatorUserId와 이전 ownerGeneration으로 권한을 검사한다. 현재 ownerUserId가 null이라는 이유로 이 복구 경로를 끊지 않는다. 작업은 계정과 기기에 귀속하며 새로운 로그인 family로 복구할 때도 현재 세션을 다시 검증한다.
+
+초기화 시작 입력의 구조 예시다. 예시의 `<...>`는 실기기·서버가 발급한 값으로 채우며 서명 검산 벡터와 구분한다.
+
+```json
+{
+  "ownerGeneration": "11111111-1111-4111-8111-111111111111",
+  "recordPolicy": "REQUIRE_SYNCED",
+  "discardConfirmed": false,
+  "challenge": {
+    "protocolVersion": "tingle-keyring-reset-v1",
+    "keyId": "ed25519-0000000000000001",
+    "deviceSerial": "XIAO-0000000000000001",
+    "ownershipEpoch": 0,
+    "localOwnerGeneration": "11111111-1111-4111-8111-111111111111",
+    "challengeId": "33333333-3333-4333-8333-333333333333",
+    "deviceNonce": "<32-byte canonical base64url>",
+    "expiresInSeconds": 60,
+    "signature": "<device Ed25519 signature>"
+  }
+}
+```
+
+DISCARD_WITH_CONSENT는 discardConfirmed=true를 필수로 요구하고 서버가 요청 계정·대상·동의 시각·고정 삭제 범위를 기록한다. 초기화 시작을 확인하는 일반 동의와 미전송 기록 삭제 동의를 별도로 표시한다. 같은 실행의 정책을 뒤늦게 바꾸지 않는다. REQUIRE_SYNCED로 시작했다면 기록을 접수한 뒤 그 실행을 계속한다.
+
+서버는 실행별 resetNonce 32바이트를 한 번 생성하고 보존한다. 시작/허가 갱신 응답에는 상태 View와 BLE로 옮길 평면 객체 deviceCommand를 포함한다. View의 구조 예시는 다음과 같다.
+
+```json
+{
+  "resetRunId": "22222222-2222-4222-8222-222222222222",
+  "deviceId": 4,
+  "state": "AWAITING_DEVICE",
+  "fromOwnershipEpoch": 0,
+  "toOwnershipEpoch": 1,
+  "deviceResetConfirmed": false,
+  "ownershipReleased": false,
+  "registrationAllowed": false,
+  "nextAction": "SEND_RESET_DEVICE",
+  "lastError": null
+}
+```
+
+| 서버 상태 | 확인한 사실·FE 동작 |
+| --- | --- |
+| AWAITING_DEVICE | 소유 관계와 작업 잠금 유지. deviceCommand를 전달하거나 기기 결과 재조회. 초기화 확인 전 기존 소유자 표시를 제거하지 않음 |
+| COMPLETED | 기기 삭제 증명 검증·서버 소유 해제·이전 sync 실행 무효화·새 epoch 저장을 원자적으로 완료. 영구 차단 등의 추가 제한이 없으면 registrationAllowed=true |
+
+중간 실패는 고정 작업 상태에 lastError를 붙여 복구한다. 시간 초과로 소유를 자동 해제하거나 COMPLETED로 전환하지 않는다. 서버는 상태값에서 확인 플래그를 계산하며 FE가 전달한 true만으로 단계를 올리지 않는다.
+
+nextAction은 SEND_RESET_DEVICE, REFRESH_DEVICE_CHALLENGE, SUBMIT_DEVICE_ACK, NONE 중 하나다. 기기의 완료 증명을 앱이 이미 보유하면 같은 proof를 device-ack에 재전송할 수 있다. lastError는 null 또는 code·message 객체다. registrationAllowed는 현재 기기가 소유 해제·같은 epoch이고 활성 초기화/사용 불가 제한이 없을 때만 true다. 이후 다른 등록이나 새 초기화가 진행되면 과거 실행의 COMPLETED 기록은 유지하면서 registrationAllowed를 false로 표시한다.
+
+### 6.5 BLE 명령·응답 제안
+
+기존 NUS 서비스·RX Write with response·TX Notify, JSON 한 줄+LF를 사용한다. 요청은 현재 파서와 맞게 평면 문자열·정수로 전달한다. BLE protocolVersion은 정수 1, resetProtocolVersion은 별도 문자열 `tingle-keyring-reset-v1`이다. 각 요청은 requestId를 가지며 업무 멱등성은 resetRunId로 판단한다.
+
+| 요청 → 응답 | 필수 필드·의미 |
+| --- | --- |
+| GET_RESET_CHALLENGE → RESET_CHALLENGE | 응답에 deviceSerial·keyId·ownershipEpoch·localOwnerGeneration·challengeId·deviceNonce·expiresInSeconds·signature. 유효한 빈 소유 상태는 문자열 NONE |
+| RESET_DEVICE → RESET_RESULT | 아래 deviceCommand의 서버 서명을 검증하고 영구 저널 기록·사용자 데이터 정리. 완료 시 state=RESET_DONE, result=CLEARED와 기기 proof 반환 |
+| GET_RESET_RESULT → RESET_RESULT | resetRunId·resetNonce로 최근 작업의 저장된 결과 조회. 동일 작업의 기존 증명만 반환하며 현재 새 소유자 정보를 포함하지 않음 |
+
+`0.3.0-dev-signed`는 DEVICE_INFO.supportedFunctions에 위 세 요청을 추가하고 resetContractVersion=`tingle-keyring-reset-v1`, ownershipEpoch, ownerState(`BOUND`/`UNOWNED`/`RESETTING`/`UNKNOWN`), supportedProofProtocolVersions를 반환한다. epoch=0은 v1·v2, epoch≥1은 v2를 지원한다. `0.2.3-dev-signed`의 목록과 구분하며 FE는 지원 버전 확인 후 실행한다. 삭제 도중 RESETTING에서는 같은 작업의 복구·상태 조회를 제공하고 등록·설정/challenge는 거절한다. RESET_DONE에서는 복구 조회와 새 epoch의 등록/설정 경로를 열되 서버가 소유 해제 전 등록·설정 발급을 잠근다. peer 광고/스캔은 새 소유자의 정상 설정 저장 전까지 중지한다.
+
+GET_RESET_CHALLENGE 요청은 protocolVersion·type·requestId 세 필드다. GET_RESET_RESULT 요청은 이에 resetRunId·resetNonce를 추가한다. 기존 요청 프레임 한도 4,096바이트(LF 포함), 평면 필드 최대 24개·Notify 응답 한도 1,536바이트를 유지하며 새 명령의 최대 필드 길이로 경계를 검증한다.
+
+서버가 공급할 deviceCommand의 구조 예시다. 앱은 protocolVersion·type·requestId를 지정하고 서명 결속 필드는 그대로 옮긴다.
+
+```json
+{
+  "protocolVersion": 1,
+  "type": "RESET_DEVICE",
+  "requestId": "reset-01",
+  "resetProtocolVersion": "tingle-keyring-reset-v1",
+  "serverKeyId": "dev-ed25519-799e2999c648fda3",
+  "keyId": "ed25519-0000000000000001",
+  "deviceSerial": "XIAO-0000000000000001",
+  "deviceId": 4,
+  "ownerGeneration": "11111111-1111-4111-8111-111111111111",
+  "resetRunId": "22222222-2222-4222-8222-222222222222",
+  "fromOwnershipEpoch": 0,
+  "toOwnershipEpoch": 1,
+  "challengeId": "33333333-3333-4333-8333-333333333333",
+  "deviceNonce": "<32-byte canonical base64url>",
+  "resetNonce": "<server 32-byte canonical base64url>",
+  "deletionScope": "OWNER_DATA_V1",
+  "recordPolicy": "REQUIRE_SYNCED",
+  "serverSignature": "<server Ed25519 signature>"
+}
+```
+
+RESET_RESULT의 CLEARED 응답에는 deviceId·resetRunId·ownerGeneration·fromOwnershipEpoch·toOwnershipEpoch·resetNonce·deletionScope·recordPolicy·dataErasure=LOGICAL·result=CLEARED와 proof 객체(protocolVersion/keyId/signature)를 포함한다. 서명은 6.6의 CLEARED 원문에 대응한다. 최초 RESET_DEVICE는 저널 확정 후 state=RESETTING·result=PENDING으로 응답하고 메인 루프에서 무선 중지·삭제를 수행한다. 진행 중 재조회도 PENDING이며 완료 proof는 정리가 끝난 뒤에만 제공한다. 페어링 정리 시 기존 연결을 끊으므로 FE는 재연결한 뒤 GET_RESET_RESULT에서 CLEARED를 확인한다. 완료 후 같은 RESET_DEVICE의 재전송도 저장된 CLEARED를 반환한다.
+
+기기 완료는 RESET_DONE, 현재 로컬 소유 상태는 UNOWNED로 함께 영구 저장한다. 서버는 이 증명을 받은 뒤 자신의 소유 관계를 해제한다. 기기가 서버 반영 여부를 추정하여 매칭을 재개하지 않으며 새 소유자의 등록·서명 설정 저장으로만 다시 준비한다.
+
+최소 완료 기록에는 resetRunId·resetNonce·대상 serial/keyId/deviceId·이전 ownerGeneration·전후 epoch·삭제 범위/정책·dataErasure·CLEARED 서명과 저장 형식/진행 단계를 보존한다. 서명과 단계의 저장·읽기 검증 후 완료 응답을 반환한다. 같은 실행 조회는 이 결과를 반환하고 초기화를 다시 수행하지 않는다. 새 소유자로 결속한 뒤에도 과거 실행의 조회 결과와 현재 소유 상태를 분리한다.
+
+페어링 삭제로 응답 전에 BLE가 끊겨도 FE는 service 탐색·Notify 재구독·serial/keyId 대조 후 GET_RESET_RESULT를 보낸다. resetRunId·resetNonce는 서버의 권한 있는 작업 조회에서 복구한다. 결과 조회는 읽기 기능이며 해당 실행의 nonce가 맞는 경우에만 최소 저장 결과를 반환한다. 공유 로그에는 nonce·토큰·전체 서명을 남기지 않는다.
+
+NUS 광고 조건에는 has_settings·부팅 등록 창 외에 RESETTING 또는 epoch≥1이고 현재 설정이 없는 복구 상태를 추가했다. 복구용 앱 접속과 등록 증명의 60초 창은 분리한다. 매칭용 peer 광고·스캔 중지 상태에서도 완료 증명 재조회가 가능하다. 새 소유자의 설정 저장 뒤에는 has_settings로 광고하며 이전 실행의 저장 결과도 유지한다.
+
+### 6.6 인증·완료 증명 원문
+
+Ed25519를 사용한다. UTF-8, 아래 필드 순서, 줄마다 LF 하나, 마지막 줄 뒤 LF 하나다. UUID는 소문자 canonical 문자열, int64는 선행 0 없는 십진수이며 epoch는 0을 허용한다. keyId·serverKeyId·deviceSerial은 기존 식별자 규칙 `[A-Za-z0-9._-]{1,64}`를 적용한다. nonce는 32바이트, 서명은 64바이트의 패딩 없는 canonical Base64url이다. localOwnerGeneration의 NONE·고정 result 문자열도 서명에 포함한다. requestId·JSON 공백·표시용 시각은 원문에 넣지 않는다. 초기화 원문 버퍼는 필드 최대 길이에 맞춰 별도로 계산하며 현재 등록 증명의 640바이트 제한을 그대로 재사용하지 않는다.
+
+각 원문의 첫 줄이 서명 용도를 구분한다. 기기 증명은 기존 기기 키, 서버 허가는 펌웨어에 고정된 서버 공개키에 대응하는 비밀키로 서명한다. 각 필드의 의미는 6.3~6.5를 따른다.
+
+```text
+# 기기 challenge 증명
+TINGLE-KEYRING-RESET-CHALLENGE
+tingle-keyring-reset-v1
+{keyId}
+{deviceSerial}
+{ownershipEpoch}
+{localOwnerGeneration}
+{challengeId}
+{deviceNonce}
+60
+```
+
+```text
+# 서버 초기화 허가
+TINGLE-KEYRING-RESET-AUTH
+tingle-keyring-reset-v1
+{serverKeyId}
+{keyId}
+{deviceSerial}
+{deviceId}
+{ownerGeneration}
+{resetRunId}
+{fromOwnershipEpoch}
+{toOwnershipEpoch}
+{challengeId}
+{deviceNonce}
+{resetNonce}
+OWNER_DATA_V1
+{recordPolicy}
+```
+
+```text
+# 기기 삭제 완료 증명
+TINGLE-KEYRING-RESET-CLEARED
+tingle-keyring-reset-v1
+{keyId}
+{deviceSerial}
+{deviceId}
+{ownerGeneration}
+{resetRunId}
+{fromOwnershipEpoch}
+{toOwnershipEpoch}
+{resetNonce}
+OWNER_DATA_V1
+{recordPolicy}
+LOGICAL
+CLEARED
+```
+
+위 코드 블록의 `# 설명` 줄은 안내용으로 서명 바이트에서 제외한다. 동일 실행의 재조회/재전송은 캐시된 CLEARED 증명을 반환하며, 현재 새 소유 연결을 다시 제거하지 않는다. 다른 작업·소유 순번의 허가는 거절한다.
+
+### 6.7 정상 처리·실패 복구·멱등성
+
+1. FE가 대상 기기 정보와 초기화 지원을 확인하고 초기화/기록 삭제 동의를 구분한다. 초기화 실행 전 취소하면 화면을 종료한다.
+2. 기기 challenge를 받아 reset-runs를 생성한다. 서버는 현재 소유 세대와 대상 행을 잠그고 기기별 활성 초기화 실행 하나를 보장한다. 이 시점부터 새 등록·일반 설정 발급/저장 ACK를 보류한다. 기존 기록의 서버 접수는 허용한다.
+3. FE가 RESET_DEVICE를 전송한다. 기기는 허가·소유·epoch·미접수 기록을 확인한 뒤 새 매칭/출력 중지, epoch 증가와 RESETTING 저널 저장, 사용자 데이터와 페어링 정리, 읽기 검증, CLEARED 증명 저장 순서로 처리한다.
+4. FE가 CLEARED 증명을 device-ack에 전송한다. 서버는 현재 실행·기기 credential·원문을 대조하고, 증명 저장·원본 소유 연결 해제·이전 sync 실행 무효화·epoch 갱신·COMPLETED·등록 잠금 해제를 같은 트랜잭션에서 확정한다. FE는 응답/결과 조회에서 두 확인 플래그와 COMPLETED를 확인한 뒤 완료·재등록 가능 상태를 표시한다.
+
+| 실패 지점 | 복구 기준 |
+| --- | --- |
+| 시작 API 응답 유실 | 같은 Idempotency-Key·같은 본문 재요청. 새 키라도 같은 기기의 같은 소유 세대/정책인 활성 작업을 재사용 |
+| 기기 challenge 만료·전원 재시작, 삭제 미착수 | 새 challenge와 새 HTTP 키, 기존 resetRunId로 허가를 갱신. resetNonce·전후 epoch·삭제 정책은 유지 |
+| 기기 삭제 중 전원 차단 | 저장된 RESETTING 저널로 재개. 이전 설정/매칭 복원 차단. 완료 전 서명된 CLEARED 반환 금지 |
+| 기기 삭제 완료·BLE 응답 유실 | 저장된 동일 작업 결과 재조회. 페어링을 다시 잡아도 기기 키·epoch와 작업은 보존 |
+| 기기 삭제 성공·서버 오류/미연결 | 기기는 RESET_DONE/UNOWNED, 서버는 기존 소유 관계와 잠금 유지. CLEARED를 재전송하고 새 소유자 등록은 대기 |
+| 서버 해제·완료 성공, HTTP 응답 유실 | 같은 device-ack 재전송 또는 서버 결과 재조회. 새 ownerGeneration/새 epoch를 추가 생성하지 않음 |
+| 완료 후 늦은 과거 reset/ack 도착 | 같은 실행에는 저장된 과거 결과를 반환. 현재 새 소유자/설정은 갱신하지 않음. 다른 실행의 과거 epoch는 거절 |
+
+Idempotency-Key의 범위는 요청 계정·HTTP 동작·대상 경로다. 같은 키에 다른 본문은 409 IDEMPOTENCY_CONFLICT다. 앱은 API별 키·deviceId·resetRunId를 실행 완료까지 로컬에 보존한다. requestId는 BLE 요청 대응용으로 매번 새로 생성할 수 있다.
+
+서버는 미완료 작업의 고정 소유 세대·삭제 정책을 변경하지 않는다. 서로 다른 실행이 있으면 409 RESET_IN_PROGRESS와 권한 있는 기존 실행 조회 경로를 반환한다. 시작 이후 취소/자동 시간 만료로 잠금을 푸는 동작은 v1에 포함하지 않으며, FE의 중간 이탈은 같은 작업의 결과 확인/이어하기로 처리한다. 분실이나 계정 접근 불가 복구는 KEY-04의 서비스팀 절차로 연결한다.
+
+### 6.8 재등록과 이전 소유자 설정 차단
+
+- 서버 resetRun=COMPLETED이고 기기 UNOWNED·동일 ownershipEpoch임을 새 등록 증명으로 대조한 뒤 새 소유자 등록을 허용한다. 영구 차단·credential 폐기·타인 소유·활성 초기화가 있으면 해당 제한을 먼저 적용한다.
+- 새 소유 연결 때 새 ownerGeneration을 발급한다. 기기 키는 유지하고, 새 서명 설정을 비휘발성 저장한 뒤 매칭 준비 조건을 평가한다. 새 사용자의 설정 버전은 새 소유 세대에 속하며 이전 소유자의 높은 버전으로 새 값을 거부하지 않는다.
+- ownershipEpoch가 1 이상인 기기의 등록·설정은 epoch를 서명에 결속하는 신규 규격을 요구한다. 기존 `tingle-device-proof-v1`·`tingle-dev-settings-proof-v1`에는 이 필드가 없으므로 초기화 이후 경로에서는 거절한다.
+- 등록/설정 v2 제안은 기존 등록·STORED·서버 설정 원문의 protocol 문자열을 각각 `tingle-device-proof-v2`, `tingle-dev-settings-proof-v2`로 바꾼 뒤, 기존 순서와 마지막 LF를 포함한 문자열 끝에 **ownershipEpoch의 십진수 문자열과 LF를 추가**한다. v2 등록은 이어서 고정 문자열 `UNOWNED`와 LF를 추가하고 해당 기기 상태에서만 발급한다. v1 원문 자체는 변경하지 않는다.
+- 새 설정 요청의 ownershipEpoch는 기기의 현재 값과 같아야 한다. 기기가 이미 소유 세대에 연결돼 있으면 ownerGeneration도 같아야 한다. UNOWNED 상태의 첫 정상 v2 서명 설정으로 새 generation·설정을 원자적으로 결속한다. 서버는 현재 새 소유자에게만 해당 epoch의 설정을 발급한다.
+- RESETTING에서는 모든 SYNC_SETTINGS를 보류한다. RESET_DONE/UNOWNED에서는 새 epoch의 정상 v2 서명 설정만 결속한다. 서버는 초기화 실행이 COMPLETED되기 전 신규 설정 발급을 막는다. 옛 epoch·옛 generation·옛 v1 서명은 유효한 기기/서버 키로 서명했더라도 이전 소유자 설정으로 판단한다.
+- 서버의 늦은 등록/동기화 응답은 그 실행의 소유 세대·epoch·상태에만 적용한다. 과거 STORED 서명으로 새 소유자의 syncedSettingsVersion·준비 상태를 갱신하지 않는다.
+
+이 규격은 reset 기능과 함께 FE·BE·펌웨어가 적용해야 하는 호환성 변경이다. 기존 사용 중인 epoch=0 기기는 현재 등록·개발 설정 v1 경로를 유지하고, 새 초기화 기능을 사용할 때 필요한 v2 공급 여부를 사전 확인한다. RESET 이후 v2 공급이 준비되기 전에는 재등록 가능 완료를 안내하지 않는다.
+
+### 6.9 오류·시간 초과 형식
+
+HTTP 오류 본문은 현재 BE ErrorResponse와 같은 code·message 두 필드다. 추적 ID는 X-Request-Id 헤더로 반환하고 FE는 code로 분기한다. 다음 reset 전용 코드는 제안이며 구현 시 ErrorCode와 함께 추가한다.
+
+```json
+{"code":"RESET_IN_PROGRESS","message":"진행 중인 키링 초기화 결과를 확인해 주세요."}
+```
+
+| HTTP | 코드 제안·처리 |
+| --- | --- |
+| 400 | INVALID_REQUEST, INVALID_RESET_PROOF — 입력 또는 서명 원문/필드 불일치 |
+| 401 | 기존 인증 오류 — 재로그인 후 같은 계정의 실행 복구 |
+| 403 | NOT_DEVICE_OWNER, DEVICE_BLOCKED — 시작 권한/기기 사용 불가 |
+| 404 | RESET_NOT_FOUND — 타 계정 실행도 이 응답으로 숨김 |
+| 409 | RESET_IN_PROGRESS, RESET_STATE_CONFLICT, OWNER_GENERATION_MISMATCH, OWNERSHIP_EPOCH_MISMATCH, IDEMPOTENCY_CONFLICT |
+| 422 | RESET_UNSUPPORTED, RESET_CONTRACT_UNAVAILABLE — 기기 버전·서명/등록 v2·필수 의존 공급 미준비 |
+| 500 | 기존 INTERNAL_ERROR — 결과 조회 후 같은 실행의 상태 확인 |
+| 503 | RESET_TEMPORARILY_UNAVAILABLE — 일시 장애 후 같은 실행으로 재시도 |
+
+BLE 오류는 기존 공통 ERROR 틀에 요청 ID를 대응시킨다. 성공하지 않은 요청의 응답 구조 예시는 다음과 같다.
+
+```json
+{"protocolVersion":1,"type":"ERROR","requestId":"reset-01","code":"RESET_CHALLENGE_REQUIRED"}
+```
+
+추가 코드는 RESET_UNSUPPORTED, INVALID_RESET_PROOF, RESET_CHALLENGE_REQUIRED, OWNER_GENERATION_MISMATCH, OWNERSHIP_EPOCH_MISMATCH, PENDING_RECORDS, RECORD_STATE_UNKNOWN, RESET_IN_PROGRESS, RESET_NOT_FOUND, STORAGE_ERROR, PROTOCOL_UPGRADE_REQUIRED다. BOND_CLEAR_PENDING/BOND_CLEAR_FAILED는 현재 메인 루프의 복구 로그이며 결과 조회는 PENDING을 유지한다. RESET_STATE_CONFLICT는 서버 계약 제안이다. 오류별로 기기 삭제 진행 여부는 GET_RESET_RESULT로 확인한다. 재전송 권한을 오류의 message에서 추론하지 않는다.
+
+FE 응답 대기는 기존 조회 기준과 맞춰 완전 요청 전송 후 10초를 초기 제안값으로 사용한다. 삭제가 계속되면 RESETTING/PENDING 응답과 재조회로 진행하며, 응답 유실/시간 초과는 결과 미확인으로 표시한다. 시간 초과를 완료나 삭제 실패의 증명으로 사용하지 않는다. 재연결/수동 재조회에 같은 실행을 유지하고 자동 재시도 횟수·대기 간격은 실물 측정 후 FE와 정한다.
+
+### 6.10 적용 순서·팀별 작업·완료 검증
+
+| 담당 | 후속 작업 |
+| --- | --- |
+| BE | resetRun 영구 상태·멱등/잠금·소유 해제 트랜잭션·서명 발급/검증·복구 조회·등록/설정 epoch v2·이전 실행 무효화 구현 |
+| IoT | 아래 기능 로컬 구현·호스트 검사·UF2 빌드 완료. 실제 보드의 QSPI/bond 삭제·전원 차단·앱 종단 시험과 팀 검토 남음 |
+| FE | 지원 확인·대상 대조·미전송 기록 동의·API/BLE 단계 연결·작업 식별자 보존·재로그인/재연결 복구·상태별 완료 판정 구현 |
+| 공동 | 서명 정상/변조/개행/소유 세대/epoch 검산 벡터, 실제 앱·서버·보드 순서 시험, 삭제/보존 범위 확인 |
+
+검토와 v2 서명 원문/검산 벡터 확정 → BE 호환 지원·기능 플래그 준비 → IoT 실물 검증 → FE 단계 연결 → 실제 A 초기화/B 재등록 합동 시험 순서로 적용한다. 지원 준비가 확인된 조합에서 초기화 시작 UI를 활성화한다. IoT 로컬 구현을 FE/BE 구현 완료나 실물 탑재 완료로 안내하지 않는다.
+
+**2026-11-05 로컬 구현·검증 현황**
+
+- `src/reset.c`: 기기 서명 challenge·고정 서버 공개키의 허가 검증·epoch 저널·CLEARED 서명·최근 결과 재조회. `src/request.c`/`nus.c`: NUS 명령, 비동기 PENDING/재조회와 등록 창/복구 광고 연결.
+- `src/board.c`/`storage.c`/`main.c`: 기기 identity와 기존 설정 레코드 형식 보존, 선택 삭제·읽기 확인, peer 무선 중지, 시간/버퍼/후보/기록/억제 상태 정리. 페어링은 연결 정리와 `bt_unpair` 뒤에 실제 영속 settings의 keys/ccc/sc/cf 부재까지 확인한다. 전체 플래시 erase는 하지 않는다.
+- 미전송 판정은 현재 엔진의 CONFIRMED/REVIEW 원본 수를 소유 데이터 잠금 아래 확인한다. 엔진 저장소 오류는 UNKNOWN으로 거절한다. 공개 GET_STATUS.pendingRecordCount의 null을 0으로 간주하지 않는다. 새 제품 기록 저장소가 추가되면 이 집계와 삭제 범위에 함께 반영해야 한다.
+- `tests/test_reset.c`: 모의 영속 저장소의 intent/정리/proof 저장 전후 장애, 재부팅 복구, 동일 실행 재조회, 새 소유자 설정 보존, 잘못된 서명/대상/nonce/challenge, 미전송/UNKNOWN, epoch 경계·v2 설정 JSON·최대 길이 검증.
+- `tests/ResetInterop.java`: C가 생성한 합성 공개 벡터의 초기화 AUTH/CHALLENGE/CLEARED·등록/STORED v2를 JDK Ed25519로 별도 검산. LF 누락·CRLF·변조 거부. 기존 실제 BE v1 검증기와의 회귀 검사도 유지한다. 합성 테스트 키는 펌웨어 대상에 포함하지 않는다.
+- `tools/test-host.ps1` 및 UF2 빌드 통과. 로그는 로컬 `build/reset-host-tests.log`, `build/reset-registration-tests.log`, `build/reset-build.log`, 공개 합성 벡터는 검사 시 `build/tests/registration/reset-vectors.properties`에 생성한다. 최신 버전·해시·기준 커밋/미커밋 여부는 `build/firmware-manifest.json`에서 확인한다.
+- 현재 USB에서 XIAO 실행 장치/부트로더 드라이브를 확인하지 못했으므로 이 작업에서 실물 플래시·서비스 초기화·기기 키 재생성은 실행하지 않았다. FE/BE 코드는 수정하지 않았다.
+
+필수 합동 시험은 다음과 같다.
+
+1. 정상 소유자 A의 초기화 완료 후 B 등록/설정 저장 성공, serial/keyId/공개키 동일 확인.
+2. 타인 요청·잘못된 기기·변조 서명·옛 challenge·만료 challenge 거부.
+3. 미전송 기록 없음/있음/UNKNOWN, 접수 실패, 별도 삭제 동의·취소 조합.
+4. 저널 저장·각 데이터 정리·bond 삭제·증명 저장·서버 해제/완료 트랜잭션의 각 경계에서 전원/연결 차단 후 같은 실행 복구.
+5. 서버의 원자적 소유 해제/COMPLETED 전 B 등록 차단, 이후 허용. 옛 ownerGeneration·epoch·설정·STORED 및 초기화 허가 재전송으로 B 상태 변경 차단.
+6. 서버/기기 중복 요청·응답 유실·앱 종료·재로그인·로컬 실행 ID 유실 복구. 지연 응답과 다른 실행 혼용 거부.
+7. 기존 유효 제안·채팅·계정 설정 유지, 마지막 기기 초기화 후 새 매칭 준비 해제, 영구 차단 기기의 재등록 거부.
+
+### 6.11 FE 화면 준비를 위한 연동 확인서
+
+2026-11-05 FE의 다섯 확인 항목에 대한 현재 근거다. **IoT 로컬 구현 사실, BE !211의 선행 구현, 최종 합의가 필요한 항목을 구분한다.** 이 절을 추가한 것만으로 팀 계약·서버 배포·지원 APK·실물 검증이 완료된 것은 아니다. 초기화 수정 소스와 이 문서는 Story 251 작업 브랜치의 검토 대상이며 승인·develop 병합 상태와 구분한다.
+
+#### 6.11.1 HTTP와 BLE 요청·응답
+
+BE 확인 기준은 [MR !211](https://lab.ssafy.com/s15-final/S15P31E106/-/merge_requests/211)의 `d4c3a572`와 `docs/specifications/functional-spec-v3/keyring-reset-v1.md`다. 실제 서명 어댑터는 미구현이고 기본 OFF다. 아래는 그 선행 코드의 API이며, 6.4의 `/device-ack`·`AWAITING_DEVICE`는 IoT가 먼저 작성한 제안이다. **현재 BE 코드의 `/ack`·`PENDING_DEVICE`와 최종 명칭을 FE·BE가 하나로 확정해야 한다.** FE는 두 이름을 임의로 혼용하지 않는다.
+
+| 동작 | BE !211의 현재 경로 | 현재 입력 / 결과 | 실제 연결 전 남은 항목 |
+| --- | --- | --- | --- |
+| 시작 | POST /api/keyrings/{deviceId}/reset-runs | Idempotency-Key UUID, `{"discardUnsentConfirmed":false}`. 최초 201 / 동일 요청 200 | 기기 서명 challenge·현재 epoch 입력과 검증, 삭제 정책 결속 |
+| 결과 조회 | GET /api/keyrings/{deviceId}/reset-runs/{resetRunId} | 기존 실행 View, 200 | resetNonce·전후 epoch·완료 판정/현재 재등록 허용 정보의 제공 규격 |
+| 허가 갱신 | POST /api/keyrings/{deviceId}/reset-runs/{resetRunId}/command | 현재 본문 없음, 같은 실행의 명령 갱신 | 새 기기 challenge 입력. 서버 300초 만료 전에도 기기 challenge 만료/재부팅 때 갱신 필요 |
+| 기기 증명 제출 | POST /api/keyrings/{deviceId}/reset-runs/{resetRunId}/ack | 현재 `{"proof":"<직렬화 규격 미확정>"}`, 검증 후 200 / COMPLETED | 펌웨어 proof 객체와 문자열 포장 여부·Ed25519 실제 검증 어댑터 |
+| 로컬 실행 ID 유실 복구 | 아직 해당 목록 API 없음 | 6.4의 진행 실행 목록 조회는 제안 | 현재 로그인 계정의 실행·resetRunId·resetNonce 복구 조회 필요 |
+
+경로는 `/api` 기준이며 개발 APK의 `/dev` 프록시는 기존 설정에 따른다. HTTP 요청·응답은 JSON이며 인증과 no-store 기준은 BE 명세를 따른다. Start의 false는 REQUIRE_SYNCED, true는 별도 미전송 삭제 동의를 받은 DISCARD_WITH_CONSENT로 대응하는 안이며, 실제 서명 필드 매핑은 BE가 확정한다.
+
+BE 선행 View의 구조 예시다. 아래 `<...>`와 뒤 BLE 예시의 값은 표시용이며 검산 벡터가 아니다. 생략/null 정책과 기기 명령의 문자열 포장도 최종 BE 공급 규격으로 확정한다.
+
+```json
+{
+  "resetRunId": "22222222-2222-4222-8222-222222222222",
+  "deviceId": 4,
+  "ownerGeneration": "11111111-1111-4111-8111-111111111111",
+  "state": "PENDING_DEVICE",
+  "discardUnsentConfirmed": false,
+  "createdAt": "2026-11-05T06:00:00Z",
+  "commandExpiresAt": "2026-11-05T06:05:00Z",
+  "deviceCommand": "<BE 실제 서명 어댑터가 공급할 명령>"
+}
+```
+
+동일 실행의 완료 조회/ACK 성공은 state=COMPLETED와 completedAt을 반환하고 deviceCommand를 제공하지 않는 것이 BE 선행 구현이다. FE는 기기 증명을 해당 실행에 제출했고 BE가 이를 검증·소유 해제와 함께 커밋했다는 응답/조회 의미가 확정된 뒤 완료 화면에 연결한다. 현재 BE View에 없는 deviceResetConfirmed/ownershipReleased/registrationAllowed를 이미 공급되는 필드로 가정하지 않는다.
+
+BLE는 NUS RX Write with response / TX Notify를 사용한다. UTF-8 JSON 한 줄 뒤 LF, 최대 20바이트 단위 쓰기를 유지한다. 아래 들여쓰기는 가독성용이다. requestId는 요청마다 지정하며 서버 서명에 결속된 필드를 임의로 바꾸지 않는다.
+
+1. GET_DEVICE_INFO의 firmwareVersion·supportedFunctions·resetContractVersion·ownershipEpoch·ownerState를 확인한다. 초기화 세 명령과 버전이 확인되지 않으면 해당 기기에 초기화 명령을 보내지 않는다.
+2. 아래 challenge를 받아 BE에 전달한다. expiresInSeconds=60은 기기 uptime 기준의 유효기간이며 작업 전체 제한 시간이 아니다.
+
+```json
+{"protocolVersion":1,"type":"GET_RESET_CHALLENGE","requestId":"reset-challenge-01"}
+```
+
+```json
+{
+  "protocolVersion": 1,
+  "type": "RESET_CHALLENGE",
+  "requestId": "reset-challenge-01",
+  "resetProtocolVersion": "tingle-keyring-reset-v1",
+  "keyId": "ed25519-0000000000000001",
+  "deviceSerial": "XIAO-0000000000000001",
+  "ownershipEpoch": 0,
+  "localOwnerGeneration": "11111111-1111-4111-8111-111111111111",
+  "challengeId": "33333333-3333-4333-8333-333333333333",
+  "deviceNonce": "<32-byte canonical base64url>",
+  "expiresInSeconds": 60,
+  "signature": "<device Ed25519 signature>"
+}
+```
+
+3. BE의 실제 서명 허가를 6.5의 **전체 RESET_DEVICE 예시**에 맞춰 평면 JSON으로 전송한다. 최초 착수 응답은 다음과 같고 아직 완료 증명이 없다. 페어링 삭제로 이 응답도 유실될 수 있다.
+
+```json
+{"protocolVersion":1,"type":"RESET_RESULT","requestId":"reset-01","resetRunId":"22222222-2222-4222-8222-222222222222","state":"RESETTING","result":"PENDING"}
+```
+
+4. 연결이 끊기면 같은 serial/keyId의 기기를 다시 찾아 서비스 탐색·Notify 구독을 수행한 뒤 다음 명령으로 조회한다. 저장된 결과 조회에는 새 challenge가 필요하지 않다.
+
+```json
+{
+  "protocolVersion": 1,
+  "type": "GET_RESET_RESULT",
+  "requestId": "reset-result-02",
+  "resetRunId": "22222222-2222-4222-8222-222222222222",
+  "resetNonce": "<server 32-byte canonical base64url>"
+}
+```
+
+완료 응답의 전체 구조는 다음과 같다. signature는 6.6의 CLEARED 원문에 대한 기기 서명이며 FE가 재생성하지 않는다. 이 결과는 기기 작업 완료이며 서버 소유 해제 완료와 구분한다.
+
+```json
+{
+  "protocolVersion": 1,
+  "type": "RESET_RESULT",
+  "requestId": "reset-result-02",
+  "deviceSerial": "XIAO-0000000000000001",
+  "deviceId": 4,
+  "resetRunId": "22222222-2222-4222-8222-222222222222",
+  "ownerGeneration": "11111111-1111-4111-8111-111111111111",
+  "fromOwnershipEpoch": 0,
+  "toOwnershipEpoch": 1,
+  "resetNonce": "<server 32-byte canonical base64url>",
+  "deletionScope": "OWNER_DATA_V1",
+  "recordPolicy": "REQUIRE_SYNCED",
+  "dataErasure": "LOGICAL",
+  "state": "RESET_DONE",
+  "result": "CLEARED",
+  "proof": {
+    "protocolVersion": "tingle-keyring-reset-v1",
+    "keyId": "ed25519-0000000000000001",
+    "signature": "<device Ed25519 CLEARED signature>"
+  }
+}
+```
+
+기기 오류는 기존 공통 형식이다. 예를 들어 미전송 원본이 남아 기본 정책으로 착수할 수 없으면 다음을 반환한다.
+
+```json
+{"protocolVersion":1,"type":"ERROR","requestId":"reset-01","code":"PENDING_RECORDS"}
+```
+
+#### 6.11.2 앱에 보관할 값과 재시도 규칙
+
+| 앱이 계정별로 영속 보관할 값 | 용도 |
+| --- | --- |
+| 작업을 시작한 계정 식별, deviceId·deviceSerial·keyId | 다른 로그인 계정·다른 실물·다른 실행의 결과 혼용 방지 |
+| resetRunId·resetNonce·이전 ownerGeneration·from/toOwnershipEpoch | 서버/BLE에서 동일 작업 복구, 결과 필드 대조 |
+| 시작 Idempotency-Key·시작 본문·선택한 recordPolicy/삭제 동의 | 동일 시작 재시도, 정책 변경 여부 확인 |
+| 마지막 확인 단계·기기 CLEARED 응답/기기 proof·서버 완료 확인 결과 | 기기 중복 삭제 없이 ACK 재시도와 화면 복구 |
+
+BE는 시작/조회 응답으로 이 값들을 공급하는 최종 규격을 정해야 한다. 로그인 토큰·nonce·증명 전체를 일반 분석/공유 로그에 남기지 않는다. 다른 계정으로 로그인하면 그 계정의 작업으로 이어붙이지 않는다. 원래 계정 재로그인 후 복구하며, 앱 로컬 값을 잃었을 때는 권한 있는 BE 복구 조회가 필요하다.
+
+- 앱 재시작은 먼저 서버의 같은 실행 결과를 조회한다. 해당 실행의 검증·소유 해제 완료가 확인되면 기기 초기화를 다시 실행하지 않는다.
+- 서버 완료 미확인이고 로컬 CLEARED가 있으면 같은 증명을 ACK에 다시 제출한다. 없으면 BLE GET_RESET_RESULT를 조회한다. PENDING은 진행 중이며 새 실행을 만들지 않는다.
+- 기기 RESET_NOT_FOUND는 삭제 실패/미착수의 확정 증거가 아니다. 대상·실행·nonce와 서버 상태를 먼저 대조한다. 아직 미착수임이 확인되고 같은 실행을 계속할 때만 새 기기 challenge로 허가를 갱신한다. 이미 완료한 과거 실행을 무조건 다시 삭제하지 않는다.
+- 기기 RESET_CHALLENGE_REQUIRED는 새 challenge와 같은 resetRunId의 새 서버 허가가 필요하다. resetNonce·전후 epoch·삭제 정책은 변경하지 않는다. 서명·기기·세대·epoch 오류는 자동 재서명/우회하지 않고 계약/상태 확인 대상으로 표시한다.
+- 시작의 같은 HTTP 본문 재시도는 같은 Idempotency-Key를 사용한다. BLE requestId는 새로 지정할 수 있지만 업무 실행은 resetRunId로 유지한다. ACK·명령 갱신 API의 별도 멱등 헤더 여부는 최종 BE 규격에 따른다.
+- 기존 10초 응답 대기는 완전한 BLE 요청 전송 후 FE의 결과 미확인 판정용 제안값이다. 시간 초과·앱 종료·취소 화면·연결 끊김으로 완료 처리하거나 서버 소유를 해제하지 않는다. 자동 조회 간격·재시도 횟수는 아직 확정하지 않았다.
+- 삭제 정책은 시작 전에 선택한다. 현재 제안/BE 선행 구현은 같은 실행의 정책 변경과 진행 작업의 자동 취소를 지원하지 않는다. REQUIRE_SYNCED로 시작한 뒤 DISCARD로 몰래 바꾸거나 다른 키로 새 실행을 만드는 복구를 구현하지 않는다.
+
+#### 6.11.3 서버 완료 응답 유실과 소유 해제 후 조회
+
+BE !211의 현재 서비스는 완료 실행을 원래 실행 계정으로 조회하고 같은 증명을 재제출할 때 현재 소유자 일치를 다시 요구하지 않는다. 기존 계정의 유효 세션과 저장된 실행 귀속은 확인한다. 따라서 **서버 커밋 뒤 HTTP 응답을 잃은 경우 같은 실행 GET 또는 같은 ACK 재시도로 복구하는 구조**다. 현재 검증 근거는 합성 프로토콜 통합 검사이며 실제 기기 서명 경로 검증은 후속이다.
+
+새 소유자가 등록한 뒤 늦게 도착한 옛 ACK는 이미 저장된 과거 실행 결과만 반환해야 한다. 이를 현재 새 소유자의 해제로 다시 적용하지 않는다. 과거 resetRun=COMPLETED는 그 실행의 완료이며, 현재 기기가 여전히 UNBOUND이거나 재등록 가능하다는 뜻은 아니다. FE의 새 등록 가능 표시는 BE가 확인한 현재 상태를 따른다. 서버 실행 이력/증명의 보관 기간은 BE의 보관 정책 확정이 필요하며 무기한 보관을 약속하지 않는다.
+
+#### 6.11.4 기기 완료 증명 재조회·보관·새 소유자 접근
+
+| 항목 | 현재 IoT 구현 |
+| --- | --- |
+| 재조회 | 같은 기기에 GET_RESET_RESULT(resetRunId, resetNonce). 일치하는 최근 작업만 반환 |
+| 보관 수·기간 | 최근 초기화 1건. 날짜/일수 기준 자동 만료 없음. **다음 유효한 초기화의 RESETTING 저널을 영구 기록할 때 이전 결과를 대체** |
+| 전원/연결 차단 | 저널·완료 proof는 NVS에 보존. 부팅 복구 후 동일 결과 조회. 저장 오류/손상에서 임의 키 재생성·완료 추정 금지 |
+| 새 소유자의 등록·설정 | 최근 과거 결과를 삭제하지 않음. 옛 작업 조회는 옛 ownerGeneration·전후 epoch·증명만 반환 |
+| BLE 접근 기준 | 계정 로그인 검증은 기기에서 하지 않음. 기기 근처에서 NUS 접속 및 실행 ID·32바이트 resetNonce를 가진 요청의 일치로 제한. 현재 계정 소유권 인증과 동일한 의미로 안내하지 않음 |
+| 서버 접근 기준 | 원래 실행 계정의 유효 세션·작업 귀속 확인. 새 계정에 이전 소유자의 실행/nonce를 공급하지 않는 최종 BE 계약 필요 |
+| 옛 명령 재전송 | 최근 실행 ID·nonce 일치 시 저장 결과만 반환. 새 소유자의 데이터를 다시 삭제하지 않음. 다른 과거 실행/epoch는 거절 |
+
+RESETTING과 초기화 이후 설정이 없는 복구 상태에는 NUS 광고를 제공한다. 새 설정 저장 뒤에도 NUS 조회는 가능하다. 새 등록 증명 발급의 60초 창과 완료 결과 조회 가능 시간을 혼동하지 않는다. 다음 초기화로 최근 결과가 교체된 뒤에는 기기에 모든 옛 실행 이력의 조회를 요구할 수 없으며 서버 보관/앱이 이미 보관한 증명으로 복구한다.
+
+#### 6.11.5 미전송 기록과 지원 버전
+
+**실제 앱 NUS의 미전송 기록 열람·제품 서버 업로드·서명된 접수 영수증 반영은 아직 연결되지 않았다.** `src/phone.c`의 바이너리 READ_RECORD/LAB_STORED_RECEIPT는 합성 시험용이고 실제 앱의 인증된 업로드 완료 경로로 사용하지 않는다. 따라서 0.3.0의 초기화 지원을 “먼저 업로드”까지 구현됐다는 의미로 전달하지 않는다.
+
+| 항목 | 현재 상태 / FE 표시 기준 |
+| --- | --- |
+| 지원 버전 | `0.3.0-dev-signed` 로컬 빌드에 초기화 세 명령·epoch v2 포함. 실제 보드 탑재·BE/FE 종단은 미확인. 0.2.3은 초기화 명령 미지원 |
+| 기능 확인 | 버전만 비교하지 않고 DEVICE_INFO의 지원 명령·resetContractVersion·저장 상태와 서버 기능 공급을 함께 확인 |
+| 미전송 공개 조회 | GET_STATUS.pendingRecordCount는 현재 null, storageState는 UNKNOWN. 0이나 “없음”으로 변환하지 않음 |
+| 기본 정책 | REQUIRE_SYNCED. 초기화 착수 잠금 아래 현재 엔진의 CONFIRMED/REVIEW 원본이 0인지 확인. 남으면 PENDING_RECORDS로 보존 |
+| 별도 삭제 동의 | 동의를 서버가 확인하고 DISCARD_WITH_CONSENT를 명령 서명에 결속한 경우에만 미전송 원본 포함 정리. FE boolean만으로 삭제 허가하지 않음 |
+| 집계 불명/저장 오류 | RECORD_STATE_UNKNOWN 또는 STORAGE_ERROR. DISCARD 동의가 있어도 UNKNOWN을 0으로 추정하거나 정상 삭제 완료로 표시하지 않음 |
+| 먼저 업로드 | 제품용 기록 조회·인증된 업로드·서버 내구 저장 증명·기기 원본 정리 확인 경로의 추가 구현/공동 계약 필요. 완료 전 해당 버튼은 미지원/연결 준비 중으로 표시 |
+
+선업로드를 지원할 때의 완료 조건은 `기기 원본 읽기 → BE 내구 저장 및 검증된 접수 영수증 → 기기 영수증 검증·원본 정리 → 실제 잔여 수 재확인 → 같은 초기화 실행 재개`로 맞춘다. 앱이 읽었거나 HTTP 전송만 성공한 것으로 기기 원본을 지우지 않는다. 정확한 제품 기록 명령·API·서명·지원 버전은 아직 공급되지 않았으므로 새 명령명이나 후속 버전 번호를 확정하지 않는다.
+
+FE 화면의 후보 상태는 다음과 같다. 이 이름은 FE 내부 상태 제안이며 BE/BLE의 실제 state 값을 변경하지 않는다.
+
+| 화면 의미 | 확인 근거·다음 동작 |
+| --- | --- |
+| 지원/대상 확인 | 펌웨어 기능·서버 준비·serial/keyId·소유 대상 대조 |
+| 기록 처리 선택/지원 대기 | 미확인 건수는 그대로 표시. 선업로드 미지원과 별도 삭제 동의를 구분. 실행 생성 전 정책 선택 |
+| 기기 초기화 대기/진행 | 서버 PENDING_DEVICE, 기기 PENDING 또는 결과 미확인. 같은 실행 유지 |
+| 기기 완료 / 서버 반영 대기 | 일치하는 CLEARED 보관 후 ACK 전달/재시도. 전체 완료 아님 |
+| 완료 | 해당 실행의 기기 증명 검증과 서버 소유 해제의 원자적 완료를 BE 응답/조회로 확인 |
+| 결과 확인/복구 필요 | 타임아웃·연결 끊김·로그인 만료·저장 오류. 새 작업 생성이나 자동 소유 해제 없이 같은 실행 복구 |
 
 ## 7. 공통 BLE 메시지·전송·오류
 
@@ -656,6 +1162,6 @@ XIAO 전원 재시작·RESET은 로컬 설정이 없는 시험 보드의 등록 
 | 배치 일부 성공·실패/결과 누락 | 제출별 접수 확인, 미확인 원본 보존, 부분 완료 표시 및 retryable 구분 | 미실시 |
 | 구버전 기록의 필수 증빙 누락 | 현재 값으로 보충 제출/임의 삭제하지 않고 이관·정리 합의 대상으로 구분 | 미실시 |
 | 공간 부족·삭제 실패·기한 불확실 | 유효 기록 덮어쓰기 금지, 공간 확보 미확인을 완료 표시하지 않음 | 미실시 |
-| 버튼 없음·초기화/양도 | 이번 미지원/후속 표시, 정식 제품 요구 충족으로 확대하지 않음 | 범위 구분만 수행 |
+| 버튼 없음·초기화/양도 | 6절의 IoT 명령·키 보존·proof 재조회, BE/FE 연결과 정식 제품 요구를 구분 | 호스트 검증 통과, 실물·종단 미실시 |
 
 위 표는 테스트 계획이며 실측 결과가 아니다. 가상 응답·정적 JSON 확인, 실물 BLE·전원 차단·Android/iOS 검증 결과를 구분해 남긴다. 배터리 등은 실제 응답이 준비될 때까지 기존 상태 조회 명세대로 미확인으로 표시한다.

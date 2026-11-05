@@ -18,7 +18,8 @@ const char *kr_verify_dev_settings(const struct kr_identity *id, const struct kr
 		(next->payload[0] & ~1u)) {
 		return "UNSUPPORTED_SETTINGS_FORMAT";
 	}
-	if (!auth || !auth->protocol_version || strcmp(auth->protocol_version, KR_SETTINGS_PROOF_VERSION) ||
+	const char *version = auth && auth->version2 ? KR_SETTINGS_PROOF_VERSION_2 : KR_SETTINGS_PROOF_VERSION;
+	if (!auth || !auth->protocol_version || strcmp(auth->protocol_version, version) ||
 		!auth->server_key_id || strcmp(auth->server_key_id, server_key_id)) {
 		return "INVALID_SERVER_PROOF";
 	}
@@ -36,9 +37,13 @@ const char *kr_verify_dev_settings(const struct kr_identity *id, const struct kr
 	int size = snprintf(transcript, sizeof(transcript),
 		"TINGLE-KEYRING-SERVER-SETTINGS\n%s\n%s\n%s\n%s\n%" PRId64 "\n%s\n%s\n"
 		"%" PRId64 "\n%s\n%s\n%s\n%s\n%" PRId64 "\n",
-		KR_SETTINGS_PROOF_VERSION, server_key_id, id->serial, id->key_id,
+		version, server_key_id, id->serial, id->key_id,
 		next->device_id, next->owner_generation, next->sync_run, next->version,
 		next->format, next->hash, next->nonce, auth->device_nonce, epoch);
+	if (auth->version2 && size >= 0 && size < (int)sizeof(transcript)) {
+		size += snprintf(transcript + size, sizeof(transcript) - (size_t)size,
+			"%" PRId64 "\n", auth->ownership_epoch);
+	}
 	if (size < 0 || (size_t)size >= sizeof(transcript) ||
 		crypto_ed25519_check(signature, server_key, (const uint8_t *)transcript, (size_t)size)) {
 		return "INVALID_SERVER_PROOF";
