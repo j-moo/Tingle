@@ -1,5 +1,5 @@
 /* 데스크톱: 패널 1120(화면이 좁으면 양옆 80 남김) · 간격 48 → 양옆에 이웃 패널이 걸쳐 보임
-   모바일: 패널 = 화면 - 64 · 간격 12 → 양옆 20px 만큼 이웃 이미지만 보임(글은 24px 들여 안 보이게) */
+   모바일: 패널 = 화면 - 64 · 간격 12 → 양옆 20px 만큼 이웃 패널(영상 · 글 박스)이 걸쳐 보임 */
 .section {
   --panel-w: min(1120px, 100vw - 160px);
   --gap: 48px;
@@ -44,24 +44,21 @@
   will-change: transform;
 }
 
-/* 데스크톱 패널 = 회색 박스 안에 이미지 + 글 */
+/* 데스크톱 패널 = 영상 + 글 박스(회색 박스는 글에만). 줄 높이 = 영상 높이, 글 박스는 그 높이로 늘어남(stretch) */
 .panel {
   display: flex;
   flex: none;
   width: var(--panel-w);
-  height: min(600px, 100svh - var(--nav-height) - 120px);
-  align-items: center;
-  gap: 48px;
-  padding: 48px 32px;
-  border-radius: 32px;
-  background: var(--bg-surface);
+  align-items: stretch;
+  gap: 20px;
 }
 
+/* 단계 영상 칸: 16:9(데스크톱은 패널 폭의 55% — 나머지가 글 박스, 낮은 화면이면 높이에 맞춰 줄어듦) */
 .visual {
   flex: none;
-  height: 100%;
-  max-width: 50%;                        /* 이미지가 커져도 글 칸이 남게 */
-  aspect-ratio: 1;
+  width: min(55%, (100svh - var(--nav-height) - 220px) * 16 / 9);
+  align-self: center;                    /* 늘어나지 않게(16:9 유지) */
+  aspect-ratio: 16 / 9;
   border-radius: 20px;
   background: var(--neutral-150);
   object-fit: cover;
@@ -70,25 +67,32 @@
 .text {
   display: flex;
   min-width: 0;
+  flex: 1;
   flex-direction: column;
-  gap: 20px;
+  justify-content: center;
+  gap: 12px;
+  padding: 24px 28px;
+  border-radius: 24px;
+  background: var(--bg-surface);
+  word-break: keep-all;                  /* 한글이 단어 중간에서 줄바꿈되지 않게 */
 }
 .step {
   color: var(--text-secondary);
-  font-size: 18px;
+  font-size: 15px;
   font-weight: 700;
 }
 .title {
   margin: 0;
   color: var(--text-primary);
-  font-size: clamp(32px, 3.4vw, 48px);
+  font-size: clamp(22px, 2.5vw, 36px);
   font-weight: 900;
   line-height: 1.25;
   letter-spacing: -0.02em;
+  white-space: nowrap;                   /* 제목은 한 줄 */
 }
 .body {
   color: #4d4d4d;
-  font-size: 22px;
+  font-size: clamp(14px, 1.3vw, 18px);
   line-height: 1.5;
 }
 
@@ -150,7 +154,7 @@
   background: var(--brand-ink);
 }
 
-/* 태블릿(721~1023): 박스는 두고 이미지 위 · 글 아래로 쌓음(가로로 두면 글 칸이 0 이 됨) */
+/* 태블릿(721~1023): 영상 위 · 글 박스 아래로 쌓음(가로로 두면 글 칸이 0 이 됨) */
 @media (min-width: 721px) and (max-width: 1023px) {
   .section {
     --panel-w: calc(100vw - 96px);
@@ -161,24 +165,25 @@
     flex-direction: column;
     align-items: stretch;
     gap: 24px;
-    padding: 32px;
+  }
+  .text {
+    padding: 20px 24px;
   }
   .visual {
     width: 100%;
     height: auto;
     max-width: none;
     max-height: 40svh;
-    aspect-ratio: 16 / 10;
   }
   .title {
-    font-size: 36px;
+    font-size: 30px;
   }
   .body {
-    font-size: 18px;
+    font-size: 16px;
   }
 }
 
-/* 모바일: 박스 없음, 이미지 위 · 글 아래 */
+/* 모바일: 영상 위 · 글 박스 아래 */
 @media (max-width: 720px) {
   .section {
     --panel-w: calc(100vw - 64px);
@@ -191,27 +196,24 @@
     height: auto;
     flex-direction: column;
     align-items: stretch;
-    gap: 20px;
-    padding: 0;
-    border-radius: 0;
-    background: none;
+    gap: 12px;
   }
   .visual {
     width: 100%;
     height: auto;
     max-width: none;
-    aspect-ratio: 326 / 300;
     border-radius: 16px;
   }
   .text {
-    gap: 12px;
-    padding-inline: 24px;
+    gap: 8px;
+    padding: 16px 20px;
+    border-radius: 16px;
   }
   .step {
     font-size: 14px;
   }
   .title {
-    font-size: 28px;
+    font-size: clamp(20px, 6.5vw, 24px); /* 한 줄 제목이 320px 폭에서도 글 박스 안에 들어가게 */
   }
   .body {
     font-size: 16px;
@@ -288,7 +290,7 @@
   }
 }
 
-/* 폰 가로(누르기 모드): 높이가 낮아도 한 화면에 패널 하나(이미지 왼쪽 · 글 오른쪽) + 진행 막대. 위의 낮은 화면 세로 나열 규칙을 되돌림 */
+/* 폰 가로(누르기 모드): 높이가 낮아도 한 화면에 패널 하나(영상 왼쪽 · 글 박스 오른쪽) + 진행 막대. 위의 낮은 화면 세로 나열 규칙을 되돌림 */
 @media (orientation: landscape) and (max-height: 500px) {
   .section {
     --panel-w: calc(100vw - 96px);
@@ -316,32 +318,29 @@
   .panel {
     height: auto;
     flex-direction: row;
-    align-items: center;
-    gap: 20px;
-    padding: 14px;
-    border-radius: 20px;
-    background: var(--bg-surface);
+    align-self: center;                  /* 줄 높이 = 영상 높이 → 글 박스가 영상 높이에 맞춰짐 */
+    align-items: stretch;
+    gap: 10px;
   }
   .visual {
-    width: auto;
-    height: 100%;
-    max-width: 40%;
-    max-height: none;
-    aspect-ratio: 1;
+    width: min(50%, (100dvh - 172px) * 16 / 9);   /* 낮은 화면: 패널 줄 높이 안에서 16:9 유지 */
+    height: auto;
+    max-width: none;
     border-radius: 12px;
   }
   .text {
-    gap: 6px;
-    padding-inline: 0;
+    gap: 4px;
+    padding: 10px 14px;
+    border-radius: 12px;
   }
   .step {
     font-size: 12px;
   }
   .title {
-    font-size: 20px;
+    font-size: 18px;
   }
   .body {
-    font-size: 13px;
+    font-size: 12px;
   }
   .bars {
     display: flex;

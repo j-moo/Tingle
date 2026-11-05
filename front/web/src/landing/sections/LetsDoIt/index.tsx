@@ -1,6 +1,12 @@
 import { useEffect, useRef, useState, type CSSProperties } from 'react'
 import { jumping, TAP_MODE } from '../../sectionNav.ts'
 import styles from './LetsDoIt.module.css'
+import step1 from './media/step1.mp4'
+import step1Poster from './media/step1.jpg'
+import step2 from './media/step2.mp4'
+import step2Poster from './media/step2.jpg'
+import step3 from './media/step3.mp4'
+import step3Poster from './media/step3.jpg'
 
 // "Let's Do it!!" — 화면에 고정된 채 세로 스크롤만큼 3단계가 옆으로 지나가고, 다 보면 고정이 풀려 아래로 내려간다
 // 섹션 높이 = (단계 수 × --hold + 1) 화면(LetsDoIt.module.css), 안쪽은 sticky. 스크롤 위치로 현재 단계를 정해 --i 로 넘기면 CSS 가 탄성 곡선으로 줄을 옮긴다
@@ -10,12 +16,14 @@ import styles from './LetsDoIt.module.css'
 //   STEP 3 에서 한 번 더 넘기면 잠금이 풀리며 다음 섹션(브랜드 필름) 화면에 딱 맞춰 멈추고, STEP 1 에서 손가락으로 뒤로는 막힘(인트로로 돌아가지 않음, 휠 · 키보드만 위로). 진행 막대를 눌러도 그 단계로
 export const order = 20
 
-type Step = { step: string, title: string, body: string, image?: string }
+// 단계 영상: 소리 없는 16:9 짧은 클립(480p H.264 faststart) + 첫 장면 poster. 동작 줄이기면 재생하지 않고 poster 만
+type Step = { step: string, title: string, body: string, video: string, poster: string }
 const STEPS: Step[] = [
-  { step: 'STEP 1', title: '키링과 함께 일상으로', body: '키링을 등록하고 평소처럼 지니고 다녀요.' },
-  { step: 'STEP 2', title: '스치면 조용히 알려요', body: '잘 맞는 사람과 가까워지면 키링이 짧게 알려 줘요.' },
-  { step: 'STEP 3', title: '서로 수락하면 대화', body: '앱에서 제안을 확인하고 두 사람 모두 원할 때 대화가 열려요.' },
+  { step: 'STEP 1', title: '키링과 함께 일상으로', body: '키링을 등록하고 평소처럼 지니고 다녀요.', video: step1, poster: step1Poster },
+  { step: 'STEP 2', title: '스치면 조용히 알려요', body: '잘 맞는 사람과 가까워지면 키링이 짧게 알려 줘요.', video: step2, poster: step2Poster },
+  { step: 'STEP 3', title: '서로 수락하면 대화', body: '앱에서 제안을 확인하고 두 사람 모두 원할 때 대화가 열려요.', video: step3, poster: step3Poster },
 ]
+const STILL = matchMedia('(prefers-reduced-motion: reduce)').matches
 const LAST = STEPS.length - 1
 const STEP_KEYS: Record<string, 1 | -1> = { ArrowDown: 1, ArrowRight: 1, PageDown: 1, ' ': 1, ArrowUp: -1, ArrowLeft: -1, PageUp: -1 }
 const WHEEL_GAP_MS = 500                                                       // 잠금 중 휠은 이 간격마다 한 단계
@@ -183,7 +191,7 @@ export default function LetsDoIt() {
         <ol ref={track} className={styles.track} data-swipe='x'>
           {STEPS.map((s, i) => (
             <li key={s.step} className={styles.panel} aria-current={i === active ? 'step' : undefined}>
-              {s.image ? <img className={styles.visual} src={s.image} alt='' /> : <div className={styles.visual} aria-hidden />}
+              <video className={styles.visual} src={s.video} poster={s.poster} autoPlay={!STILL} muted loop playsInline preload={STILL ? 'none' : 'auto'} aria-hidden />
               <div className={styles.text}>
                 <p className={styles.step}>{s.step}</p>
                 <h3 className={styles.title}>{s.title}</h3>
