@@ -39,6 +39,7 @@ public class KeyringSyncService {
 	private final KeyringPayloadProvider payloads;
 	private final JdbcTemplate jdbc;
 	private final Clock clock;
+	private final com.e106.tingle.keyring.reset.KeyringResetGuard resetGuard;
 	private final ObjectProvider<DevSettingsIssuer> devSettings;
 	private final SecureRandom random = new SecureRandom();
 	private final StoredAckProofVerifier verifier = new StoredAckProofVerifier();
@@ -88,6 +89,9 @@ public class KeyringSyncService {
 		KeyringSyncRun run = new KeyringSyncRun(UUID.randomUUID(), deviceId, userId, device.getOwnerGeneration(),
 			device.getCredentialKeyId(), current, payload.bytes(), Base64.getUrlEncoder().withoutPadding()
 				.encodeToString(nonce), requestKey, clock.instant(), payload.format());
+		if (device.getOwnershipEpoch() != null) {
+			run.bindOwnershipEpoch(device.getOwnershipEpoch());
+		}
 		runs.saveAndFlush(run);
 		return new Created(issuedView(run, device, requestKey, deviceNonce, issuer), true);
 	}
@@ -130,6 +134,7 @@ public class KeyringSyncService {
 		KeyringSyncRun run = ownedRun(userId, device, runId);
 		requireCredential(device);
 		if (!Objects.equals(run.getCredentialKeyId(), device.getCredentialKeyId())
+			|| !Objects.equals(run.getOwnershipEpoch(), device.getOwnershipEpoch())
 			|| request.settingsVersion() != run.getSettingsVersion()
 			|| !request.payloadHash().equals(run.getPayloadHash())) {
 			throw new BusinessException(ErrorCode.INVALID_DEVICE_PROOF);
@@ -170,9 +175,11 @@ public class KeyringSyncService {
 			throw new BusinessException(ErrorCode.ONBOARDING_REQUIRED);
 		}
 		settings.findForUpdate(userId).orElseThrow(() -> new BusinessException(ErrorCode.ONBOARDING_REQUIRED));
-		return keyrings.findByIdForUpdate(deviceId).filter(device -> device.getState() == KeyringState.REGISTERED
-			&& Long.valueOf(userId).equals(device.getOwnerUserId()) && device.getOwnerGeneration() != null)
+		Keyring device = keyrings.findByIdForUpdate(deviceId).filter(item -> item.getState() == KeyringState.REGISTERED
+			&& Long.valueOf(userId).equals(item.getOwnerUserId()) && item.getOwnerGeneration() != null)
 			.orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
+		resetGuard.requireNoPendingReset(deviceId);
+		return device;
 	}
 
 	private KeyringSyncRun ownedRun(long userId, Keyring device, UUID runId) {
@@ -213,7 +220,8 @@ public class KeyringSyncService {
 			run.getPayloadHash(), run.getNonce(), run.getCredentialKeyId(), run.getProtocolVersion(),
 			run.getCreatedAt(), run.getAckedAt(), proof == null ? clock.instant() : proof.serverTime(),
 			proof == null ? null : proof.protocolVersion(), proof == null ? null : proof.keyId(),
-			proof == null ? null : proof.deviceNonce(), proof == null ? null : proof.signature());
+			proof == null ? null : proof.deviceNonce(), proof == null ? null : proof.signature(),
+			run.getOwnershipEpoch());
 	}
 
 	public record Created(SyncRunView run, boolean created) {

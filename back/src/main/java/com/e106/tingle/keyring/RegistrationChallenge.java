@@ -71,6 +71,11 @@ public class RegistrationChallenge {
 	private long revision;
 
 	public RegistrationChallenge(UUID challengeId, long userId, UUID requestKey, String nonce, Instant issuedAt) {
+		this(challengeId, userId, requestKey, nonce, issuedAt, KeyringProofTranscript.PROTOCOL_VERSION);
+	}
+
+	public RegistrationChallenge(UUID challengeId, long userId, UUID requestKey, String nonce, Instant issuedAt,
+		String protocolVersion) {
 		if (userId <= 0) {
 			throw new IllegalArgumentException("User id must be positive");
 		}
@@ -81,7 +86,11 @@ public class RegistrationChallenge {
 		this.expiresAt = this.issuedAt.plus(Duration.ofMinutes(5));
 		KeyringProofTranscript.registration("pending", "pending", challengeId, nonce, expiresAt.getEpochSecond());
 		this.nonce = nonce;
-		this.protocolVersion = KeyringProofTranscript.PROTOCOL_VERSION;
+		if (!(KeyringProofTranscript.PROTOCOL_VERSION.equals(protocolVersion)
+			|| KeyringProofTranscript.PROTOCOL_VERSION_2.equals(protocolVersion))) {
+			throw new IllegalArgumentException("Unsupported registration protocol");
+		}
+		this.protocolVersion = protocolVersion;
 	}
 
 	/** 소유·서명 검증 후 호출한다. 같은 소비 결과 재조회는 최초 결과를 보존한다. */

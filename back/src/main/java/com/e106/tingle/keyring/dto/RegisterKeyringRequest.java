@@ -9,7 +9,11 @@ public record RegisterKeyringRequest(
 	@NotBlank @Pattern(regexp = "[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}")
 	String challengeId,
 	@NotBlank @Pattern(regexp = "[A-Za-z0-9._-]{1,64}") String deviceSerial,
-	@NotNull @Valid RegistrationDeviceProof proof) {
+	@NotNull @Valid RegistrationDeviceProof proof, Long ownershipEpoch, String ownerState) {
+
+	public RegisterKeyringRequest(String challengeId, String deviceSerial, RegistrationDeviceProof proof) {
+		this(challengeId, deviceSerial, proof, null, null);
+	}
 
 	@Override
 	public String toString() {

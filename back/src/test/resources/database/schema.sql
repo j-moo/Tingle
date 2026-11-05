@@ -216,6 +216,7 @@ CREATE TABLE "keyring" (
     "credential_public_key" varchar(128),
     "credential_revoked_at" timestamptz,
     "owner_generation" uuid,
+    "ownership_epoch" bigint,
     CONSTRAINT "pk_keyring" PRIMARY KEY ("id"),
     CONSTRAINT "uq_keyring_serial_number" UNIQUE ("serial_number")
 );
@@ -231,6 +232,7 @@ COMMENT ON COLUMN "keyring"."credential_key_id" IS '등록 시 서버가 serial�
 COMMENT ON COLUMN "keyring"."credential_public_key" IS '사전 등록한 Ed25519 공개키의 X.509 SPKI 인코딩. 요청에서 받은 공개키를 신뢰하지 않으며 기존 미상 행은 NULL.';
 COMMENT ON COLUMN "keyring"."credential_revoked_at" IS '이 검증 자격이 폐기된 실제 시각. NULL은 폐기 기록 없음이며 누락된 키의 유효성을 추정하지 않는다.';
 COMMENT ON COLUMN "keyring"."owner_generation" IS '현재 소유 등록 세대. 새로 검증한 등록에서만 발급하며 기존 소유자의 미상 세대를 임의 UUID로 채우지 않는다.';
+COMMENT ON COLUMN "keyring"."ownership_epoch" IS '기기 서명으로 확인한 소유 카운터. 기존 미확인 값은 NULL로 유지하며 임의 backfill하지 않고 재등록 시 보존한다.';
 
 -- 채팅 메시지
 CREATE TABLE "chat_message" (
@@ -615,6 +617,7 @@ CREATE TABLE "keyring_sync_run" (
     "credential_key_id" varchar(64) NOT NULL,
     "protocol_version" varchar(32) NOT NULL,
     "settings_version" bigint NOT NULL,
+    "ownership_epoch" bigint,
     "payload_format" varchar(64),
     "payload" bytea NOT NULL,
     "payload_hash" varchar(64) NOT NULL,
@@ -639,6 +642,7 @@ COMMENT ON COLUMN "keyring_sync_run"."owner_generation" IS '실행 생성 당시
 COMMENT ON COLUMN "keyring_sync_run"."credential_key_id" IS '실행에 고정한 서버 대응 기기 검증키 식별자';
 COMMENT ON COLUMN "keyring_sync_run"."protocol_version" IS '실행 당시 증명 규격. tingle-device-proof-v1';
 COMMENT ON COLUMN "keyring_sync_run"."settings_version" IS '실행에 고정한 양수 설정 버전. ACK 시 현재 설정과 함께 재검증한다.';
+COMMENT ON COLUMN "keyring_sync_run"."ownership_epoch" IS '이 실행에 고정한 서명 v2 기기 카운터. 기존 v1 실행은 NULL이며 소급 변환하지 않는다.';
 COMMENT ON COLUMN "keyring_sync_run"."payload_format" IS '실행 생성 시 실제 전송 바이트와 함께 고정한 payload 형식 식별자. 이후 형식으로 교체하지 않으며 기존 미상 출처는 NULL로 보존한다. 서버 입력 증거의 형식으로 추정 대체하지 않는다.';
 COMMENT ON COLUMN "keyring_sync_run"."payload" IS '실제로 전달하는 당시 payload의 불변 원본 바이트. 현재 설정이나 임의 JSON 재직렬화로 대체하지 않는다.';
 COMMENT ON COLUMN "keyring_sync_run"."payload_hash" IS '불변 payload 원본의 SHA-256 소문자 hex';

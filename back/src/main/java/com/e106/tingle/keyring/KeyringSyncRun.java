@@ -58,6 +58,8 @@ public class KeyringSyncRun {
 	private String credentialKeyId;
 	@Column(nullable = false, updatable = false, length = 32)
 	private String protocolVersion;
+	@Column(updatable = false)
+	private Long ownershipEpoch;
 	@Column(nullable = false, updatable = false)
 	private Long settingsVersion;
 	@Column(nullable = false, updatable = false, columnDefinition = "bytea")
@@ -128,6 +130,14 @@ public class KeyringSyncRun {
 
 	public Map<String, DevSettingsProof> getServerProofs() {
 		return serverProofs == null ? Map.of() : Map.copyOf(serverProofs);
+	}
+
+	public void bindOwnershipEpoch(long epoch) {
+		if (epoch < 0 || id != null || ownershipEpoch != null) {
+			throw new IllegalStateException("Sync epoch is immutable");
+		}
+		ownershipEpoch = epoch;
+		protocolVersion = KeyringProofTranscript.PROTOCOL_VERSION_2;
 	}
 
 	public void rememberServerProof(UUID requestKey, DevSettingsProof proof) {
