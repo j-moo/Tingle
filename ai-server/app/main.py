@@ -4,7 +4,7 @@ from app.config import settings
 from app.icebreakers.http_api import create_router as create_icebreaker_router
 from app.match_explanation.runtime import create_runtime_router
 from app.middleware.request_id import RequestIdMiddleware, install_error_handlers
-from app.risk_detection.http_api import ReleaseCatalog, create_router
+from app.risk_detection.runtime import create_development_router
 from app.security.service_auth import ServiceAuthenticator, ServiceAuthError, ServiceAuthSettings
 
 app = FastAPI(
@@ -22,9 +22,12 @@ app.state.service_auth = service_auth
 app.include_router(create_icebreaker_router(
     service_auth, settings.icebreaker_release_descriptor_file, dev_enabled=settings.icebreaker_dev_enabled,
 ))
-app.include_router(create_router(
+app.include_router(create_development_router(
     authenticate=service_auth,
-    catalog=ReleaseCatalog(settings.risk_release_descriptor_file),
+    environment=settings.app_env,
+    enabled=settings.risk_local_rules_enabled,
+    descriptor_file=settings.risk_release_descriptor_file,
+    descriptor_sha256=settings.risk_local_rules_descriptor_sha256,
 ))
 app.include_router(create_runtime_router(
     service_auth, settings.explanation_release_descriptor_files,

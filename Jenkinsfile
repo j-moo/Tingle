@@ -73,7 +73,7 @@ pipeline {
               // pytest, tests/node 회귀, JS/Python parity를 공통 실행기로 검사한다. 기존 Node 설치를 유지한다.
               inDocker('python:3.12-slim', 'ai-server', '-v tingle-ci-pip:/root/.cache/pip', '''
 apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends nodejs >/dev/null
-pip install -q --root-user-action=ignore -r requirements.txt
+pip install -q --root-user-action=ignore -r requirements.txt -r app/risk_detection/requirements-dev.txt
 python scripts/run_tests.py
 ''')
             }
