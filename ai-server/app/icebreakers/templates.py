@@ -12,6 +12,7 @@ GENERAL = (
     "이번 주에 기대하는 작은 일이 있나요?",
 )
 GENERAL_VERSION = "icebreakers-general-ko-v1"
+Q040_VERSION = "q040-template-v1"
 SHARED_VERSION = "icebreakers-shared-topic-ko-v1"
 
 # 참조 ZIP의 shared_topic_templates.py에 있는 허용 키와 문구.
@@ -25,7 +26,7 @@ TOPICS = {
     "CAFE": "좋아하는 카페 분위기가 있나요?",
 }
 
-# BE에서 Q040의 공통 응답과 공개 권한을 확인한 뒤 전달할 제안 키.
+# BE에서 전달한 Q040 공식 코드를 라우터가 변환한 내부 키.
 DATE_TOPICS = {
     "DATE_REST": "쉬는 날에는 주로 어떻게 휴식을 취하세요?",
     "DATE_TALK": "식사하면서 가장 즐겁게 이야기하는 주제가 있나요?",
