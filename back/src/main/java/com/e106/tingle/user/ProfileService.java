@@ -10,8 +10,11 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.e106.tingle.agreement.OptionalConsent;
+import com.e106.tingle.agreement.UserConsentRepository;
 import com.e106.tingle.global.error.BusinessException;
 import com.e106.tingle.global.error.ErrorCode;
+import com.e106.tingle.settings.snapshot.SettingsChangeCoordinator;
 import com.e106.tingle.user.dto.NicknameAvailabilityResponse;
 import com.e106.tingle.user.dto.ProfileResponse;
 
@@ -32,6 +35,8 @@ public class ProfileService {
 	private final ProfileRepository profileRepository;
 	private final UserRepository userRepository;
 	private final Clock clock;
+	private final SettingsChangeCoordinator changes;
+	private final UserConsentRepository consents;
 
 	@Transactional(readOnly = true)
 	public ProfileResponse get(long userId) {
@@ -52,6 +57,7 @@ public class ProfileService {
 		// 같은 회원의 저장이 동시에 와도 꼬이지 않게 회원 행을 잠근다. 외래 키가 없으니 회원 존재 확인도 겸한다.
 		userRepository.findByIdForUpdate(userId)
 			.orElseThrow(() -> new BusinessException(ErrorCode.AUTH_REQUIRED));
+		changes.lockIfPresent(userId);
 		Profile profile = profileRepository.findById(userId).orElseGet(() -> Profile.empty(userId));
 		ProfileResponse before = ProfileResponse.from(profile);
 		boolean registered = profile.isRegistered();
@@ -79,10 +85,12 @@ public class ProfileService {
 		}
 		if (body.has("religion")) {
 			String religion = optionalText(body, "religion");
+			requireConsent(userId, religion, OptionalConsent.PROFILE_RELIGION);
 			profile.changeReligion(religion == null ? null : toEnum(Religion.class, religion));
 		}
 		if (body.has("introduction")) {
 			String introduction = optionalText(body, "introduction");
+			requireConsent(userId, introduction, OptionalConsent.PROFILE_INTRODUCTION);
 			profile.changeIntroduction(introduction == null ? null : ProfileRules.normalizeIntroduction(introduction));
 		}
 
@@ -94,6 +102,7 @@ public class ProfileService {
 				// 중복 확인과 저장 사이에 다른 사람이 같은 닉네임을 가져간 경우 (DB 유니크 제약이 최종 판단)
 				throw new BusinessException(ErrorCode.NICKNAME_DUPLICATED);
 			}
+			changes.advanceAndCapture(userId);
 		}
 		return ProfileResponse.from(profile);
 	}
@@ -106,6 +115,7 @@ public class ProfileService {
 	public void register(long userId) {
 		userRepository.findByIdForUpdate(userId)
 			.orElseThrow(() -> new BusinessException(ErrorCode.AUTH_REQUIRED));
+		changes.lockIfPresent(userId);
 		Profile profile = profileRepository.findById(userId)
 			.orElseThrow(() -> new BusinessException(ErrorCode.PROFILE_INCOMPLETE));
 		if (profile.isRegistered()) {
@@ -115,6 +125,7 @@ public class ProfileService {
 			throw new BusinessException(ErrorCode.PROFILE_INCOMPLETE);
 		}
 		profile.register(clock.instant());
+		changes.advanceAndCapture(userId);
 	}
 
 	/**
@@ -127,7 +138,7 @@ public class ProfileService {
 		if (!ProfileRules.isValidNickname(raw)) {
 			return new NicknameAvailabilityResponse(nickname, false, "INVALID_FORMAT");
 		}
-		boolean takenByOther = profileRepository.findByNicknameKey(ProfileRules.nicknameKey(nickname))
+		boolean takenByOther = profileRepository.findByNicknameIgnoreCase(nickname)
 			.filter(owner -> !owner.getUserId().equals(userId))
 			.isPresent();
 		return takenByOther
@@ -136,14 +147,20 @@ public class ProfileService {
 	}
 
 	private void changeNickname(Profile profile, String nickname) {
-		String key = ProfileRules.nicknameKey(nickname);
-		boolean takenByOther = profileRepository.findByNicknameKey(key)
+		boolean takenByOther = profileRepository.findByNicknameIgnoreCase(nickname)
 			.filter(owner -> !owner.getUserId().equals(profile.getUserId()))
 			.isPresent();
 		if (takenByOther) {
 			throw new BusinessException(ErrorCode.NICKNAME_DUPLICATED);
 		}
-		profile.changeNickname(nickname, key);
+		profile.changeNickname(nickname);
+	}
+
+	// 선택 정보는 동의한 회원만 저장할 수 있다. 비우기(null)는 동의와 상관없이 된다.
+	private void requireConsent(long userId, String value, OptionalConsent consent) {
+		if (value != null && !consents.isAgreed(userId, consent.name())) {
+			throw new BusinessException(ErrorCode.OPTIONAL_CONSENT_REQUIRED);
+		}
 	}
 
 	private static void rejectChangeAfterRegistration(boolean registered, Object current, Object requested) {

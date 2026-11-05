@@ -17,6 +17,15 @@ spring:
     url: ${SPRING_DATASOURCE_URL:}
     username: ${SPRING_DATASOURCE_USERNAME:}
     password: ${SPRING_DATASOURCE_PASSWORD:}
+    hikari:
+      data-source-properties:
+        # DB 오류 메시지에 입력값(예: "Key (email)=(...) already exists", 배치 SQL 값)을 넣지 않는다. 예외가 로그로 나가도 개인정보가 남지 않게 한다.
+        logServerErrorDetail: false
+  servlet:
+    multipart:
+      # 프로필 사진 원본 최대 10MB. 넘으면 400 PHOTO_INVALID (서비스도 같은 한도를 다시 확인한다).
+      max-file-size: 10MB
+      max-request-size: 11MB
   web:
     resources:
       # 앱 전용 JSON API 서버라 정적 파일(HTML·이미지)을 내보내지 않는다. 없는 경로는 JSON 404로 응답한다.
@@ -35,6 +44,13 @@ spring:
       hibernate:
         # enum 컬럼에 CHECK 제약을 만들지 않는다 (선택지 추가 시 기존 DB 호환, 클래스 주석 참고)
         dialect: com.e106.tingle.global.jpa.NoColumnCheckPostgreSqlDialect
+        hbm2ddl:
+          halt_on_error: true
+
+logging:
+  pattern:
+    # 로그 줄마다 추적 번호를 붙인다. 요청이면 응답 헤더 X-Request-Id 와 같은 값, 예약 작업이면 실행마다 새 값(global/trace).
+    correlation: "[%X{requestId:-}] "
 
 # 서버 상태 확인(배포·Jenkins 가 호출). DB 연결까지 확인해 정상이면 200 {"status":"UP"}, 아니면 503.
 # health 하나만 열고, 세부 정보(DB 종류 등)는 응답에 넣지 않는다.
@@ -48,7 +64,7 @@ management:
       show-details: never
 
 app:
-  # 인증 (docs/contracts/api/auth.md)
+  # 인증 (팀 공유 인증 API 계약)
   auth:
     jwt-secret: ${JWT_SECRET:}
     access-token-ttl: 30m
@@ -56,6 +72,10 @@ app:
     refresh-reuse-grace: 30s
     google-client-id: ${GOOGLE_WEB_CLIENT_ID:}
     kakao-app-id: ${KAKAO_APP_ID:}
+    # 네이버 OIDC: 앱이 넘긴 인가 코드를 서버가 비밀값으로 교환한다. 콜백 주소는 운영 앱 기준(개발 앱은 application-dev.yml).
+    naver-client-id: ${NAVER_CLIENT_ID:}
+    naver-client-secret: ${NAVER_CLIENT_SECRET:}
+    naver-redirect-uri: ${NAVER_REDIRECT_URI:https://k15e106.p.ssafy.io/auth/naver/callback}
     # 액세스 토큰에 iss·aud 가 있으면 이 값과 같아야 한다(없으면 통과).
     issuer: tingle
     audience: mobile-app
@@ -66,6 +86,10 @@ app:
   keyring:
     # 구매처를 임의 지정하지 않는다. 미설정이면 API는 purchaseUrl:null을 반환한다.
     purchase-url: ${KEYRING_PURCHASE_URL:}
+    dev-settings:
+      enabled: ${KEYRING_DEV_SETTINGS_ENABLED:false}
+      private-key-file: ${KEYRING_DEV_SETTINGS_PRIVATE_KEY_FILE:}
+      public-key-file: ${KEYRING_DEV_SETTINGS_PUBLIC_KEY_FILE:}
 
   # 새 설문 회차가 쓰는 설문 버전 (resources/survey/questionnaires/{버전}.json). 바꿔도 이미 시작한 회차는 원래 버전을 쓴다.
   survey:
@@ -91,12 +115,46 @@ app:
       - type: ADULT
         version: "2026-10-19"
         required: true
+      # 선택 정보별 동의(기능 명세 PRO-01·V211). 거부해도 가입·기본 이용은 된다. 동의 없이는 그 정보를 저장하지 않고,
+      # 철회하면 저장한 값·사진을 바로 지운다. 가입 동의 요청에서는 빠져도 되고 /optional-consents 로 따로 바꾼다.
+      - type: PROFILE_PHOTO
+        version: "2026-11-02"
+        required: false
+      - type: PROFILE_INTRODUCTION
+        version: "2026-11-02"
+        required: false
+      - type: PROFILE_RELIGION
+        version: "2026-11-02"
+        required: false
 
   push:
     enabled: ${PUSH_ENABLED:false}
     project-id: ${FIREBASE_PROJECT_ID:}
     # JWT와 별도인 Base64 32바이트 키. 누락 시 등록은 503, 본인 설치 해제는 허용한다.
     token-encryption-key: ${PUSH_TOKEN_ENCRYPTION_KEY:}
+  # 새 메시지 작업은 종료 안내 정책과 독립이며, 스키마·앱 준비 후 별도로 켠다.
+  chat-message-push:
+    scheduling-enabled: ${CHAT_MESSAGE_PUSH_SCHEDULING_ENABLED:false}
+    poll-ms: ${CHAT_MESSAGE_PUSH_POLL_MS:1000}
   chat-notices:
     scheduling-enabled: true
     poll-ms: 15000
+
+tingle:
+  photo:
+    # 프로필 사진 파일을 두는 서버 폴더. DB(profile.photo_url)에는 이 폴더 기준 키(profile/{userId}/{uuid}.jpg)만 저장한다.
+    # 운영은 blue·green 컨테이너가 함께 쓰는 영구 볼륨을 지정하고 백업한다. 미설정이면 임시 폴더(로컬·테스트용).
+    dir: ${PHOTO_STORAGE_DIR:${java.io.tmpdir}/tingle-photos}
+  ai:
+    # 개인 성향 분석(AI 서버). 공통 AI 설정(app.ai.service)이 꺼져 있으면 요청은 PENDING 으로 남는다.
+    personal-analysis:
+      analysis-version: SIS-A-1.0
+      survey-versions:
+        - SIS-Q-1.1-100
+      # 최초 실행을 포함한 최대 실행 횟수. 400·409·422 처럼 다시 보내도 같은 오류는 바로 FAILED.
+      max-attempts: 3
+      retry-delay: 1m
+      # 실행을 잡은 뒤 이 시간이 지나도 끝나지 않으면(서버 재시작 등) 다시 실행한다.
+      stuck-after: 5m
+      scheduling-enabled: true
+      poll-ms: 2000

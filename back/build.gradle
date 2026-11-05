@@ -25,7 +25,11 @@ dependencies {
 	implementation 'org.springframework.boot:spring-boot-starter-oauth2-resource-server'
 	implementation 'org.springframework.boot:spring-boot-starter-validation'
 	implementation 'org.springframework.boot:spring-boot-starter-webmvc'
+	implementation 'org.springframework.boot:spring-boot-starter-websocket'
 	implementation 'com.google.firebase:firebase-admin:9.11.0'
+	// 프로필 사진: WebP 읽기(ImageIO 플러그인)와 EXIF 방향 읽기
+	implementation 'com.twelvemonkeys.imageio:imageio-webp:3.15.3'
+	implementation 'com.drewnoakes:metadata-extractor:2.22.0'
 	implementation 'org.springframework.boot:spring-boot-starter-security'
 	implementation 'org.springframework.boot:spring-boot-starter-security-oauth2-resource-server'
 	compileOnly 'org.projectlombok:lombok'
@@ -53,5 +57,43 @@ checkstyle {
 }
 
 tasks.named('test') {
-	useJUnitPlatform()
+	useJUnitPlatform {
+		excludeTags 'ai-risk-http', 'ai-explanation-http'
+	}
+}
+
+tasks.register('riskAiSmokeTest', Test) {
+	group = 'verification'
+	description = 'Verify BE service JWT and risk HTTP against the synthetic loopback FastAPI server'
+	testClassesDirs = sourceSets.test.output.classesDirs
+	classpath = sourceSets.test.runtimeClasspath
+	dependsOn tasks.named('testClasses')
+	outputs.upToDateWhen { false }
+	outputs.cacheIf { false }
+	useJUnitPlatform {
+		includeTags 'ai-risk-http'
+	}
+	doFirst {
+		if (!System.getenv('RISK_TEST_PYTHON')?.trim()) {
+			throw new GradleException('riskAiSmokeTest requires RISK_TEST_PYTHON with the AI test dependencies')
+		}
+	}
+}
+
+tasks.register('explanationAiSmokeTest', Test) {
+	group = 'verification'
+	description = 'Verify service JWT and rule explanations against the synthetic loopback FastAPI server'
+	testClassesDirs = sourceSets.test.output.classesDirs
+	classpath = sourceSets.test.runtimeClasspath
+	dependsOn tasks.named('testClasses')
+	outputs.upToDateWhen { false }
+	outputs.cacheIf { false }
+	useJUnitPlatform {
+		includeTags 'ai-explanation-http'
+	}
+	doFirst {
+		if (!System.getenv('EXPLANATION_TEST_PYTHON')?.trim()) {
+			throw new GradleException('explanationAiSmokeTest requires EXPLANATION_TEST_PYTHON with AI dependencies')
+		}
+	}
 }

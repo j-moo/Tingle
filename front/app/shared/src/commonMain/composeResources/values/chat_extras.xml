@@ -1,0 +1,13 @@
+<resources>
+<string name="chat_extras_questions">대화 시작 질문</string>
+<string name="chat_extras_generate">질문 준비하기</string>
+<string name="chat_extras_check">준비 상태 확인</string>
+<string name="chat_extras_retry">다시 시도</string>
+<string name="chat_extras_failed">질문을 준비하지 못했어요. 채팅은 계속 이용할 수 있어요.</string>
+<string name="chat_extras_insert_title">이 질문으로 대화를 시작할까요?</string>
+<string name="chat_extras_insert_help">작성 중인 내용이 있다면 이 질문으로 바꿔요. 상대에게 보내려면 전송 버튼을 직접 눌러 주세요.</string>
+<string name="chat_extras_insert">입력창에 넣기</string>
+<string name="chat_extras_document_failed">고지문을 열지 못했어요. 다시 시도해 주세요.</string>
+<string name="chat_extras_document_review">열린 고지문을 확인했다면 아래 확인 버튼을 눌러 주세요.</string>
+<string name="chat_extras_cancel">취소</string>
+</resources>

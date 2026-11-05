@@ -129,7 +129,7 @@ _[contract-watchers]_
 
 이슈 본문에 명세 경로·영향 파트·검토 담당자를 적고, 작성자가 관련 파트의 Watcher 등록과 MR 리뷰 요청을 확인한다. Watcher를 추가할 권한이 없으면 본문에 대상자를 기록하고 팀장에게 등록을 요청한다. 구독만으로 승인을 대신할 수 없으며, 승인 인원과 교차 리뷰 기준은 [GitLab 컨벤션](gitlab-convention.md)의 `[mr-approval]`을 따른다.
 
-공통 명세는 `docs/contracts/api/`, `docs/contracts/keyring/`, `docs/contracts/matching/`에 두며, 최초 명세 작성 시 해당 파일을 만든다. 버전·필드·정상 및 오류 샘플·호환성·적용 순서와 변경 공유는 같은 문서의 `[shared-contracts]`를 따른다. 선행 계약이 정해지지 않아 구현이 멈췄다면 `blocked`와 의존 이슈를 기록한다.
+2026-10-29부터 공통 API·키링·매칭 계약은 팀 공유 외부 원본의 위치·버전을 관련 Jira 이슈에 연결한다. 저장소 문서는 `docs/convention/`과 `docs/specifications/`만 허용하며 GitLab 컨벤션 `[repository-documents]`를 따른다. 버전·필드·정상 및 오류 샘플·호환성·적용 순서와 변경 공유는 같은 문서의 `[shared-contracts]`를 따른다. 선행 계약이 정해지지 않아 구현이 멈췄다면 `blocked`와 의존 이슈를 기록한다.
 
 ## 스토리 포인트
 

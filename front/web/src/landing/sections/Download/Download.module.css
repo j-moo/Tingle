@@ -1,0 +1,178 @@
+/* 검은 배경, 위아래로 넉넉하게(Figma 데스크톱 714 · 모바일 404) */
+.download {
+  padding-block: 200px;
+  background: var(--neutral-900);
+  color: #fff;
+}
+
+.row {
+  display: flex;
+  width: min(1120px, 100% - 40px);
+  align-items: center;
+  justify-content: space-between;
+  gap: 40px;
+  margin-inline: auto;
+}
+
+.copy {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.eyebrow {
+  color: var(--neutral-300);
+  font-size: 14px;
+  font-weight: 600;
+}
+.title {
+  margin: 0;
+  font-size: clamp(28px, 3vw, 40px);
+  font-weight: 800;
+  line-height: 1.3;                     /* 본문 줄 간격(26px)을 물려받지 않게 — 줄바꿈 시 겹침 */
+  letter-spacing: -0.02em;
+}
+.body {
+  color: #bfbfbf;
+  font-size: 18px;
+}
+
+/* 데스크톱: QR(180) + 두 줄 토글 버튼(180) */
+.desktop {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.qr {
+  display: grid;
+  width: 180px;
+  height: 180px;
+  place-items: center;
+  overflow: hidden;
+  border-radius: 16px;
+  background: var(--neutral-150);
+  color: var(--neutral-500);
+  font-size: 13px;
+  font-weight: 600;
+}
+.qr img {
+  width: 100%;
+  height: 100%;
+}
+
+.toggle {
+  display: flex;
+  width: 180px;
+  flex-direction: column;
+  gap: 8px;
+}
+/* 첫 버튼: Android | Mac 전환(누르면 바뀜, 현재 쪽이 흰 칸 · 크고 굵게) */
+.platforms {
+  display: grid;
+  height: 48px;
+  grid-template-columns: 1fr 1fr;
+  padding: 4px;
+  border: 1px solid rgb(255 255 255 / 30%);
+  border-radius: 14px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.platforms > span {
+  display: grid;
+  place-items: center;
+  border-radius: 10px;
+  transition: background-color 0.2s, color 0.2s;
+}
+.on {
+  background: #fff;
+  color: var(--neutral-900);
+  font-size: 16px;
+  font-weight: 900;
+}
+.off {
+  color: rgb(255 255 255 / 60%);
+  font-size: 14px;
+  font-weight: 400;
+}
+/* 둘째 버튼: 설치하기 */
+.install {
+  display: grid;
+  height: 52px;
+  place-items: center;
+  border-radius: 14px;
+  background: #fff;
+  color: var(--neutral-900);
+  font-size: 16px;
+  font-weight: 700;
+  text-decoration: none;
+}
+.install[aria-disabled='true'] {
+  background: rgb(255 255 255 / 12%);
+  color: rgb(255 255 255 / 55%);
+  font-size: 14px;
+}
+
+.mobile {
+  display: none;
+}
+
+/* 폰 · 태블릿: 버전 표시 없이 설치하기 하나(폭과 상관없이) */
+.download[data-device='handheld'] .body,
+.download[data-device='handheld'] .desktop {
+  display: none;
+}
+.download[data-device='handheld'] .mobile {
+  display: block;
+}
+.mobileButton {
+  display: flex;
+  height: 54px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 14px;
+  background: #fff;
+  color: var(--neutral-900);
+  font-size: 16px;
+  font-weight: 600;
+  text-decoration: none;
+}
+.mobileButton[aria-disabled='true'] {
+  color: var(--neutral-500);
+}
+
+/* 좁은 화면: 세로로 쌓음(컴퓨터 좁은 창은 QR · 토글을 그대로 아래에) */
+@media (max-width: 720px) {
+  .download {
+    padding-block: 88px;
+  }
+  .row {
+    flex-direction: column;
+    align-items: center;                 /* 좁은 화면: 문구 · QR · 버튼을 가운데로(왼쪽에 쏠리지 않게) */
+    gap: 24px;
+    width: calc(100% - 40px);
+    text-align: center;
+  }
+  .copy,
+  .desktop {
+    align-items: center;
+  }
+  .mobile {
+    align-self: stretch;                 /* 폰 · 태블릿의 설치하기 버튼은 지금처럼 폭 가득 */
+  }
+}
+
+@media (min-width: 721px) {
+  .download[data-device='handheld'] .mobile {
+    width: 280px;
+  }
+}
+
+/* 누르기 모드(세로 · 폰 가로): 이 섹션 + 푸터가 딱 한 화면(일상 영상의 "다음"으로 오면 앱 다운로드 · 푸터만 보임). --footer-h 는 index.tsx 가 잼 */
+@media (orientation: portrait), (orientation: landscape) and (max-height: 500px) {
+  .download {
+    display: flex;
+    min-height: calc(100dvh - var(--footer-h, 0px));
+    align-items: center;
+  }
+}

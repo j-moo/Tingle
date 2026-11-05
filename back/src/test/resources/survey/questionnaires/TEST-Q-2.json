@@ -1,0 +1,45 @@
+{
+  "surveyVersion": "TEST-Q-2",
+  "wordingVersion": "TEST-WORDING-2",
+  "questionCount": 3,
+  "questions": [
+    {
+      "questionId": "Q001",
+      "ordinal": 1,
+      "part": 1,
+      "text": "이관 테스트 문항 1 (원본 Q001과 같은 뜻)",
+      "responseSchema": { "oneOf": [{ "enum": [1, 2, 3, 4, 5] }, { "const": "unknown" }] },
+      "options": [{ "value": 1, "label": "1" }, { "value": 5, "label": "5" }],
+      "allowUnknown": true,
+      "allowAny": false,
+      "calculationBinding": "E"
+    },
+    {
+      "questionId": "Q002",
+      "ordinal": 2,
+      "part": 1,
+      "text": "이관 테스트 문항 2 (뜻이 바뀌어 다시 답함)",
+      "responseSchema": { "oneOf": [{ "enum": [1, 2, 3] }, { "const": "unknown" }] },
+      "options": [{ "value": 1, "label": "1" }, { "value": 3, "label": "3" }],
+      "allowUnknown": true,
+      "allowAny": false,
+      "calculationBinding": "E"
+    },
+    {
+      "questionId": "Q040",
+      "ordinal": 3,
+      "part": 1,
+      "text": "이관 테스트 문항 3 (하나만 고름)",
+      "responseSchema": {
+        "oneOf": [
+          { "type": "array", "items": { "enum": ["rest", "talk"] }, "uniqueItems": true, "minItems": 1, "maxItems": 1 },
+          { "const": "unknown" }
+        ]
+      },
+      "options": [{ "value": "rest", "label": "휴식" }, { "value": "talk", "label": "대화" }],
+      "allowUnknown": true,
+      "allowAny": false,
+      "calculationBinding": "자기 q40"
+    }
+  ]
+}

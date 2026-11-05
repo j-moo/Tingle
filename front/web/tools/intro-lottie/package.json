@@ -1,0 +1,12 @@
+{
+  "name": "intro-lottie",
+  "private": true,
+  "description": "랜딩 인트로 Lottie(src/landing/sections/Intro/intro.json) 생성기 — 웹 빌드와 별개로 손으로 돌린다",
+  "type": "module",
+  "scripts": {
+    "build": "node generate.mjs"
+  },
+  "devDependencies": {
+    "opentype.js": "1.3.4"
+  }
+}

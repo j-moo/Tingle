@@ -3,6 +3,9 @@
 !requirements.txt
 !app/
 !app/**/*.py
+!app/personal_analysis/
+!app/personal_analysis/data/
+!app/personal_analysis/data/*.json
 
 # 앱 하위에 로컬 설정이나 가상환경이 생겨도 포함하지 않는다.
 **/.env

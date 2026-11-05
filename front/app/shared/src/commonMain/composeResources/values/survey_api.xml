@@ -1,0 +1,30 @@
+<resources>
+    <string name="survey_api_server_draft">작성 중인 설문 이어하기</string>
+    <string name="survey_api_application_pending">분석은 완료됐지만 이 결과는 아직 매칭에 적용되지 않았어요. 필요한 답변 확인이나 재검사가 남아 있을 수 있어요.</string>
+    <string name="survey_api_entry">성향테스트</string>
+    <string name="survey_api_dev_entry">키링 없이 성향테스트 · 개발용</string>
+    <string name="survey_api_intro">답변을 바탕으로 서로의 성향을 알아가요.</string>
+    <string name="survey_api_count">총 %1$d문항이에요. 답변마다 서버에 저장하며 다시 들어오면 이어서 할 수 있어요.</string>
+    <string name="survey_api_start">시작하거나 이어하기</string>
+    <string name="survey_api_loading">설문 정보를 확인하고 있어요.</string>
+    <string name="survey_api_error">설문 정보를 확인하지 못했어요.</string>
+    <string name="survey_api_reload">서버 저장 상태 다시 확인</string>
+    <string name="survey_api_recovery">저장 여부가 확인되기 전에는 다음 답변을 보내지 않아요. 서버에 저장된 답변을 다시 불러와 주세요.</string>
+    <string name="survey_api_back">돌아가기</string>
+    <string name="survey_api_leaving">처리 중이에요. 요청이 끝나면 이전 화면으로 돌아갈게요.</string>
+    <string name="survey_api_returned_missing">아직 답하지 않은 문항이 있어요. 서버의 최신 응답 상태에 맞춰 해당 문항으로 이동했어요.</string>
+    <string name="survey_api_all_saved">모든 문항에 답변하느라 고생 많으셨어요. 제출하면 이 회차의 답변은 수정할 수 없으며, 저장된 답변으로 성향 분석을 요청해요.</string>
+    <string name="survey_api_completed">설문 제출이 완료됐어요. 저장된 답변으로 분석을 요청할 수 있어요.</string>
+    <string name="survey_api_review">답변 다시 확인</string>
+    <string name="survey_api_submit">제출하고 분석하기</string>
+    <string name="survey_api_analyze">저장된 답변으로 분석 요청</string>
+    <string name="survey_api_analysis_refresh">분석 상태 확인</string>
+    <string name="survey_api_stage">가입 단계 확인</string>
+    <string name="survey_api_pending">제출이 완료됐고 성향 분석을 요청했어요. 잠시 후 분석 상태를 확인해 주세요.</string>
+    <string name="survey_api_succeeded">고생 많으셨어요! 성향 분석이 완료됐어요.</string>
+    <string name="survey_api_insufficient">설문은 제출됐지만 분석에 필요한 답변이 부족해요. 기존 답변은 보관돼요. 부족한 문항을 확인해 주세요. 재검사하기에서 새 회차로 다시 응답할 수 있어요.</string>
+    <string name="survey_api_missing">분석에 필요한 문항: %1$s번</string>
+    <string name="survey_api_failed">분석을 완료하지 못했어요. 설문을 다시 작성하지 않고 저장된 답변으로 분석을 다시 요청할 수 있어요.</string>
+    <string name="survey_api_stage_unchanged">가입 단계를 확인했어요. 아직 같은 단계예요. 남은 준비가 완료되면 다시 확인해 주세요.</string>
+    <string name="survey_api_stage_notice">매칭 준비가 끝났는지는 가입 단계에서 확인해 주세요. 키링 등록과 동기화가 남아 있을 수 있어요.</string>
+</resources>

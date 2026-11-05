@@ -1,0 +1,68 @@
+{
+  "sourceCommit": "934732229f83885faf0f0379d0e092c8a7605dbb",
+  "sourcePath": "docs/contracts/api/openapi.json#/components/schemas/Explanation",
+  "Explanation": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "source": {
+        "type": "string",
+        "enum": [
+          "GENERATED",
+          "RULE_FALLBACK"
+        ],
+        "description": "AI 결과·규칙 문장 등 응답의 생성 출처"
+      },
+      "text": {
+        "type": "string",
+        "minLength": 1,
+        "description": "메시지 또는 설명의 본문"
+      },
+      "evidenceKeys": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        },
+        "description": "설명에 사용한 판정 근거 코드 목록"
+      },
+      "promptVersion": {
+        "anyOf": [
+          {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "description": "AI 문구 생성에 사용한 프롬프트 버전"
+      },
+      "encounterId": {
+        "type": "integer",
+        "format": "int64",
+        "description": "matching.id. 공개 GET ExplanationStatus와 분리한 내부 판정 연결값.",
+        "minimum": 1
+      }
+    },
+    "required": [
+      "source",
+      "text",
+      "evidenceKeys",
+      "promptVersion",
+      "encounterId"
+    ],
+    "examples": [
+      {
+        "source": "GENERATED",
+        "text": "가상 형식 예시: 승인된 실제 근거가 있을 때만 생성합니다.",
+        "evidenceKeys": [
+          "EXAMPLE_EVIDENCE"
+        ],
+        "promptVersion": "example-prompt-v1",
+        "encounterId": 1001
+      }
+    ],
+    "description": "내부 AI 설명 응답. 실제 승인 근거를 검증한 후에만 저장·공개로 투영. 가상 예시는 생성 결과 증거가 아니다."
+  }
+}

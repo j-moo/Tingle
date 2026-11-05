@@ -1,0 +1,7 @@
+<resources>
+    <string name="proposal_review_changed">상대 프로필이 변경됐어요</string>
+    <string name="proposal_review_changed_help">방금 요청한 수락은 저장되지 않았어요. 최신 프로필을 확인한 뒤 다시 결정해 주세요.</string>
+    <string name="proposal_review_reload">최신 프로필 확인하기</string>
+    <string name="proposal_review_notice">최신 프로필을 다시 확인해 주세요</string>
+    <string name="proposal_review_notice_help">아래 내용을 확인한 뒤 수락 또는 거절을 다시 선택해 주세요. 이전 선택이 자동으로 전송되지는 않아요.</string>
+</resources>

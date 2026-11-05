@@ -17,10 +17,10 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 
 /**
- * 인증 API. 요청·응답 형식은 docs/contracts/api/auth.md 를 따른다.
+ * 인증 API. 요청·응답 형식은 팀 공유 인증 API 계약 를 따른다.
  */
 @RestController
-@RequestMapping("/api/v1/auth")
+@RequestMapping("/api/auth")
 @RequiredArgsConstructor
 public class AuthController {
 
@@ -28,7 +28,7 @@ public class AuthController {
 
 	@PostMapping("/{provider}")
 	public TokenResponse login(@PathVariable String provider, @Valid @RequestBody LoginRequest request) {
-		return authService.login(provider, request.token());
+		return authService.login(provider, request);
 	}
 
 	@PostMapping("/token/refresh")

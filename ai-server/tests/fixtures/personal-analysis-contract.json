@@ -1,0 +1,97 @@
+{
+  "sourceCommit": "97056b849ea7edb1aab6b5767105976650340d8e",
+  "sourcePath": "docs/contracts/api/openapi.json#/components/schemas",
+  "verifiedNotionPage": "https://app.notion.com/p/dfdc23fd598982dc885281a14be12080",
+  "scope": "Reading and TypeReference structure only; not approval of presentation policy or the old envelope",
+  "schemas": {
+    "Reading": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "key": {
+          "type": "string",
+          "minLength": 1
+        },
+        "templateId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "text": {
+          "type": "string",
+          "minLength": 1
+        },
+        "evidenceQuestionIds": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 50
+          }
+        },
+        "priority": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "key",
+        "templateId",
+        "text",
+        "evidenceQuestionIds",
+        "priority"
+      ],
+      "examples": [
+        {
+          "key": "example",
+          "templateId": "example",
+          "text": "example",
+          "evidenceQuestionIds": [],
+          "priority": 1
+        }
+      ]
+    },
+    "TypeReference": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "typeCode": {
+          "type": "string",
+          "minLength": 1
+        },
+        "score": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 100
+        },
+        "mode": {
+          "type": "string",
+          "enum": [
+            "PREFERENCE_FIT",
+            "SELF_SIMILARITY"
+          ]
+        },
+        "evidenceQuestionIds": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 50
+          }
+        }
+      },
+      "required": [
+        "typeCode",
+        "score",
+        "mode",
+        "evidenceQuestionIds"
+      ],
+      "examples": [
+        {
+          "typeCode": "example",
+          "score": 0,
+          "mode": "PREFERENCE_FIT",
+          "evidenceQuestionIds": []
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,22 @@
+<resources>
+    <string name="profile_basics_title">프로필 · 기본 정보</string>
+    <string name="profile_heading">어떤 분인지 알려주세요</string>
+    <string name="profile_intro">새로운 인연에게 보여줄 프로필을 준비해요.</string>
+    <string name="profile_nickname">닉네임</string>
+    <string name="profile_nickname_placeholder">예: 초록 산책</string>
+    <string name="profile_nickname_help">2~20자 · 한글, 영문, 숫자, 공백을 사용할 수 있어요.</string>
+    <string name="profile_birth_date">생년월일</string>
+    <string name="profile_birth_date_placeholder">YYYY-MM-DD</string>
+    <string name="profile_birth_date_help">숫자 8자리를 입력해 주세요. 상대에게는 나이만 보여요.</string>
+    <string name="profile_gender">성별 · 필수</string>
+    <string name="profile_male">남성</string>
+    <string name="profile_female">여성</string>
+    <string name="profile_notice_title">등록 전에 확인해 주세요</string>
+    <string name="profile_notice_body">만 19세 이상부터 이용할 수 있어요. 프로필 등록 후 생년월일과 성별은 직접 바꿀 수 없어요. 정정이 필요하면 서비스팀에 문의해 주세요.</string>
+    <string name="profile_continue">다음</string>
+    <string name="profile_saving">저장 중…</string>
+    <string name="profile_confirm_basics_title">생년월일과 성별을 확인해 주세요</string>
+    <string name="profile_confirm_basics_body">생년월일: %1$s\n성별: %2$s\n\n등록 후에는 직접 바꿀 수 없어요. 입력한 생년월일이 만 19세 미만이면 서버에서 계정이 탈퇴 처리돼요. 오타가 없는지 확인해 주세요.</string>
+    <string name="profile_confirm_basics_save">확인하고 저장</string>
+    <string name="profile_confirm_basics_edit">다시 수정</string>
+</resources>

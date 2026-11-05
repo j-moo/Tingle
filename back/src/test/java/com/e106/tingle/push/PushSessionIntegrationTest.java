@@ -41,7 +41,7 @@ import tools.jackson.databind.JsonNode;
 @Import(TestcontainersConfiguration.class)
 class PushSessionIntegrationTest extends IntegrationTestSupport {
 
-	private static final String PATH = "/api/v1/push-installations";
+	private static final String PATH = "/api/push-installations";
 
 	@Autowired
 	private PushDeliveryLookup lookup;
@@ -50,8 +50,8 @@ class PushSessionIntegrationTest extends IntegrationTestSupport {
 	private PushInstallationService installations;
 
 	@Test
-	@DisplayName("일반 로그아웃은 새 제안 연결을 유지하고 대기 중인 채팅 알림 대상은 제외한다")
-	void normalLogoutPreservesOnlyNewProposalDelivery() throws Exception {
+	@DisplayName("일반 로그아웃은 설치 행을 보존하고 모든 대기 알림의 연결을 비운다")
+	void normalLogoutClearsAllDeliveryConnections() throws Exception {
 		JsonNode user = readyUser();
 		long userId = userIdOf(user);
 		UUID id = UUID.randomUUID();
@@ -63,33 +63,31 @@ class PushSessionIntegrationTest extends IntegrationTestSupport {
 
 		assertThat(count(id)).isEqualTo(1);
 		for (Candidate candidate : queued) {
-			assertThat(lookup.resolve(candidate).isPresent())
-				.isEqualTo(candidate.kind() == PushNotificationKind.NEW_PROPOSAL);
+			assertThat(lookup.resolve(candidate)).isEmpty();
 		}
 		assertThat(lookup.candidates(userId, PushNotificationKind.CHAT_MESSAGE)).isEmpty();
-		PushDeliveryTarget target = lookup.resolve(queued.getFirst()).orElseThrow();
-		assertThat(target.token()).isEqualTo("synthetic-token");
-		assertThat(target.toString()).contains("[REDACTED]").doesNotContain(target.token());
+		assertThat(lookup.candidates(userId, PushNotificationKind.NEW_PROPOSAL)).isEmpty();
 		assertThat(toJson(queued)).doesNotContain("synthetic-token", "tokenCiphertext");
 	}
 
 	@Test
-	@DisplayName("다른 설치의 활성 로그인이 로그아웃한 설치의 채팅 알림 권한을 되살리지 않는다")
+	@DisplayName("새 기기 로그인은 이전 기기 설치의 알림 연결을 끊고, 이전 세션의 늦은 로그아웃은 새 연결을 건드리지 않는다")
 	void isolatesSessionStatePerInstallation() throws Exception {
 		String socialId = newSocialId();
 		JsonNode first = login("kakao", socialId);
 		completeOnboarding(first);
-		JsonNode second = login("kakao", socialId);
 		UUID firstId = UUID.randomUUID();
 		UUID secondId = UUID.randomUUID();
 		register(first, firstId, "synthetic-first").andExpect(status().isOk());
+		JsonNode second = login("kakao", socialId);
 		register(second, secondId, "synthetic-second").andExpect(status().isOk());
 
 		logout(first.path("refreshToken").asString()).andExpect(status().isNoContent());
 
 		assertThat(lookup.candidates(userIdOf(first), PushNotificationKind.CHAT_END_NOTICE))
 			.extracting(Candidate::installationId).containsExactly(secondId);
-		assertThat(lookup.candidates(userIdOf(first), PushNotificationKind.NEW_PROPOSAL)).hasSize(2);
+		assertThat(lookup.candidates(userIdOf(first), PushNotificationKind.NEW_PROPOSAL))
+			.extracting(Candidate::installationId).containsExactly(secondId);
 	}
 
 	@Test
@@ -117,9 +115,10 @@ class PushSessionIntegrationTest extends IntegrationTestSupport {
 	@DisplayName("다른 회원이나 다른 세션의 리프레시 증명으로 설치 연결을 해제할 수 없다")
 	void releaseRequiresMatchingOwnerAndFamily() throws Exception {
 		String socialId = newSocialId();
+		// 로그인 기기는 하나라서 다른 세션은 새 로그인으로 끝난 이전 세션이다.
+		JsonNode otherSession = login("kakao", socialId);
 		JsonNode owner = login("kakao", socialId);
 		completeOnboarding(owner);
-		JsonNode otherSession = login("kakao", socialId);
 		JsonNode otherUser = readyUser();
 		UUID id = UUID.randomUUID();
 		register(owner, id, "synthetic-owner").andExpect(status().isOk());
@@ -138,10 +137,10 @@ class PushSessionIntegrationTest extends IntegrationTestSupport {
 		JsonNode owner = readyUser();
 		UUID id = UUID.randomUUID();
 		register(owner, id, "synthetic-owner").andExpect(status().isOk());
-		mockMvc.perform(post("/api/v1/auth/logout").contentType(MediaType.APPLICATION_JSON)
+		mockMvc.perform(post("/api/auth/logout").contentType(MediaType.APPLICATION_JSON)
 			.content(toJson(Map.of("refreshToken", "unknown", "releaseInstallationId", id))))
 			.andExpect(status().isUnauthorized());
-		mockMvc.perform(post("/api/v1/auth/logout").contentType(MediaType.APPLICATION_JSON)
+		mockMvc.perform(post("/api/auth/logout").contentType(MediaType.APPLICATION_JSON)
 			.content(toJson(Map.of("refreshToken", owner.path("refreshToken").asString(),
 				"releaseInstallationId", "invalid")))).andExpect(status().isBadRequest());
 		assertThat(lookup.candidates(userIdOf(owner), PushNotificationKind.CHAT_MESSAGE)).hasSize(1);
@@ -179,7 +178,7 @@ class PushSessionIntegrationTest extends IntegrationTestSupport {
 		assertThat(results.getFirst()).isIn(200, 401);
 		assertThat(results.getLast()).isEqualTo(204);
 		assertThat(lookup.candidates(userIdOf(user), PushNotificationKind.CHAT_MESSAGE)).isEmpty();
-		assertThat(lookup.candidates(userIdOf(user), PushNotificationKind.NEW_PROPOSAL)).hasSize(1);
+		assertThat(lookup.candidates(userIdOf(user), PushNotificationKind.NEW_PROPOSAL)).isEmpty();
 	}
 
 	@Test
@@ -209,10 +208,10 @@ class PushSessionIntegrationTest extends IntegrationTestSupport {
 		Candidate queued = lookup.candidates(userIdOf(user), PushNotificationKind.CHAT_MESSAGE).getFirst();
 		refresh(user.path("refreshToken").asString()).andExpect(status().isOk());
 		assertThat(lookup.resolve(queued)).isPresent();
-		jdbc.update("update refresh_tokens set expires_at=? where family_id=?",
+		jdbc.update("update refresh_token set expires_at=? where family_id=?",
 			Timestamp.from(Instant.now().minusSeconds(1)), familyIdOf(user));
 		assertThat(lookup.resolve(queued)).isEmpty();
-		assertThat(lookup.candidates(userIdOf(user), PushNotificationKind.NEW_PROPOSAL)).hasSize(1);
+		assertThat(lookup.candidates(userIdOf(user), PushNotificationKind.NEW_PROPOSAL)).isEmpty();
 	}
 
 	@Test
@@ -234,17 +233,18 @@ class PushSessionIntegrationTest extends IntegrationTestSupport {
 	}
 
 	@Test
-	@DisplayName("세션 미연결 기존 행은 새 제안만 허용하고 정지·탈퇴 계정은 모든 전달에서 제외한다")
+	@DisplayName("세션 미연결 기존 행과 정지·탈퇴 계정은 모든 전달에서 제외한다")
 	void excludesLegacySessionAndInactiveUser() throws Exception {
 		JsonNode user = readyUser();
 		UUID id = UUID.randomUUID();
 		long userId = userIdOf(user);
 		register(user, id, "synthetic-token").andExpect(status().isOk());
-		jdbc.update("update push_installations set login_family_id=null where client_installation_id=?", id);
-		assertThat(lookup.candidates(userId, PushNotificationKind.CHAT_MESSAGE)).isEmpty();
 		Candidate queued = lookup.candidates(userId, PushNotificationKind.NEW_PROPOSAL).getFirst();
+		jdbc.update("update push_installation set login_family_id=null where client_installation_id=?", id);
+		assertThat(lookup.candidates(userId, PushNotificationKind.CHAT_MESSAGE)).isEmpty();
+		assertThat(lookup.candidates(userId, PushNotificationKind.NEW_PROPOSAL)).isEmpty();
 		for (String state : List.of("SUSPENDED", "WITHDRAWN")) {
-			jdbc.update("update app_users set status=? where user_id=?", state, userId);
+			jdbc.update("update users set status=? where id=?", state, userId);
 			assertThat(lookup.resolve(queued)).isEmpty();
 			assertThat(lookup.candidates(userId, PushNotificationKind.NEW_PROPOSAL)).isEmpty();
 		}
@@ -256,7 +256,7 @@ class PushSessionIntegrationTest extends IntegrationTestSupport {
 		JsonNode user = readyUser();
 		UUID id = UUID.randomUUID();
 		register(user, id, "synthetic-secret").andExpect(status().isOk());
-		jdbc.update("update push_installations set token_ciphertext='corrupt' where client_installation_id=?", id);
+		jdbc.update("update push_installation set token_ciphertext='corrupt' where client_installation_id=?", id);
 		Candidate candidate = lookup.candidates(userIdOf(user), PushNotificationKind.NEW_PROPOSAL).getFirst();
 		assertThatThrownBy(() -> lookup.resolve(candidate)).isInstanceOfSatisfying(BusinessException.class,
 			error -> assertThat(error.getErrorCode()).isEqualTo(ErrorCode.SERVICE_UNAVAILABLE))
@@ -274,7 +274,7 @@ class PushSessionIntegrationTest extends IntegrationTestSupport {
 	}
 
 	private ResultActions release(JsonNode user, UUID id) throws Exception {
-		return mockMvc.perform(post("/api/v1/auth/logout")
+		return mockMvc.perform(post("/api/auth/logout")
 			.contentType(MediaType.APPLICATION_JSON)
 			.content(toJson(Map.of("refreshToken", user.path("refreshToken").asString(),
 				"releaseInstallationId", id))));
@@ -286,7 +286,7 @@ class PushSessionIntegrationTest extends IntegrationTestSupport {
 	}
 
 	private int count(UUID id) {
-		return jdbc.queryForObject("select count(*) from push_installations where client_installation_id=?",
+		return jdbc.queryForObject("select count(*) from push_installation where client_installation_id=?",
 			Integer.class, id);
 	}
 }

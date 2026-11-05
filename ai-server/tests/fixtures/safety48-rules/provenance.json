@@ -1,0 +1,28 @@
+{
+  "syntheticOnly": true,
+  "archive": "Tingle_AI_MVP_safety48_icebreaker47_20261103_r2.zip",
+  "archiveSha256": "a75d1315c2c60c322c8450156960f84aa1723cb3ea95f0fca28cf981e66d39f8",
+  "zipEntries": {
+    "local_rule_engine.py": "4b05b4d6f37330500e163e87d74ba2bc590511eca60dfc13a80a889cf58b770b",
+    "shared_topic_templates.py": "3f34b85e3ac8f466fa75add4a063bf73e9bfe535add56e5b268e46b1a42c8dfe",
+    "test_local_rule_engine.py": "99baa6d90513b03ac306631103591aa7f2095db5e01ccf6378ebe211a9e95293",
+    "test_report_golden.py": "cc03b798bef45369bbd6f543ff626611c104bc66ae7eaf15c539604bc48ebd57",
+    "test_safety_adversarial.py": "bebb86ea229e3bc2ba422fb76852d5f2af751d43228187d072c299acf71413b3",
+    "test_shared_topic_templates.py": "79668b89426f1399099703b1c592da8110dc4c6c2d3130481a48975ff00901c4",
+    "report_40_draft_golden.json": "ad9c65ec299893f95d9c406a0f7bcade848b78b34492bb07f53b932cc17eb153"
+  },
+  "readOnlyDraftFiles": {
+    "app/risk_detection/__init__.py": "ff879a09eff3d4c243c00605d16ba1769f6bd850e92a40423d542db7c06a9a7c",
+    "app/risk_detection/http_api.py": "d08a2b0710f51b688369d3ddb05125081c2743fca72ff4e2a8576a9f6d6c298b",
+    "app/risk_detection/local_engine.py": "7ee9be41899443ad531bfb75d4b97ba8916dbf2c8528696bbf5695325d40cd68",
+    "app/risk_detection/prompts.py": "c23dd0085770d5eb6e09a11a275b2524e8d706c0279865f9295635c4efd9fd10",
+    "app/risk_detection/validation.py": "af7bc6dfcd0076a965c4a561c2488707419452dcadb80c50e5efbf384d212b59",
+    "tests/test_risk_detection_local.py": "9990ba44b55b77ac3042808b9689633ce809c2faa3094046672777506f61cbb9",
+    "tests/fixtures/safety-48/dev.json": "78536330bf37aa01ccb09516ab0ff51b511a5f3abf7b6ada036ca47f0373c50d",
+    "tests/fixtures/safety-48/eval.json": "a090dda3000a94a85a96513fa2ad017b1a63f4af353a39025b2c99850381becd",
+    "tests/fixtures/safety-48/README.md": "589fb403ed3f8448378585d4832b3690e6d66386632811a369c7d675fb0450c2",
+    "tests/fixtures/safety-48/scripted_outputs.json": "c95a6dc451d9f9030c3d7bf3aaff4377770c18f2cdb9921a2bb1c1c6e50501ab",
+    "docs/contracts/api/ai-chat-safety.md": "32690a4522ad64bb223a163d149595946735cd32f94f21c707ffd27713d9c875",
+    "docs/verification/safety-48-local-mvp.md": "a53fb037097b6e6a01cd703577d1f31688f540bdee8676f3f1a9582997042115"
+  }
+}

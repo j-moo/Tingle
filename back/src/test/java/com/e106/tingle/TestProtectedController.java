@@ -16,8 +16,8 @@ public class TestProtectedController {
 		return "ok";
 	}
 
-	// /api/v1/auth 아래라고 해서 가입 검사에서 빠지지 않는지 확인용
-	@GetMapping("/api/v1/auth/test-protected")
+	// /api/auth 아래라고 해서 가입 검사에서 빠지지 않는지 확인용
+	@GetMapping("/api/auth/test-protected")
 	String protectedAuthEndpoint() {
 		return "ok";
 	}

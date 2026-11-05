@@ -66,6 +66,26 @@ server {
         proxy_pass http://$up;
     }
 
+    # Android App Links — 네이버 로그인(OIDC) 콜백 https://${DOMAIN}/auth/naver/callback 을 브라우저 대신 앱이 받게 한다.
+    # 콜백은 운영 /auth/naver/callback · 개발 /dev/auth/naver/callback 로 나뉜다(패키지 2개, 한 도메인).
+    # 서명 키는 운영 tingle-release.jks(Jenkins 가 만드는 공개 APK) 하나만. 저장소에 있는 팀 공용 디버그 키는 넣지 않는다 —
+    # 누구나 그 키로 앱을 서명해 콜백(인가 code)을 가로챌 수 있다. 로컬 빌드는 adb shell pm set-app-links 로 직접 허용해 확인한다
+    location = /.well-known/assetlinks.json {
+        default_type application/json;
+        add_header Cache-Control "max-age=300";
+        return 200 '[{"relation":["delegate_permission/common.handle_all_urls"],"target":{"namespace":"android_app","package_name":"com.ssafy.tingle","sha256_cert_fingerprints":["DA:56:86:05:32:B1:3D:4F:B0:76:EF:07:CD:8A:BE:0F:AB:FB:7C:8E:F9:C1:7C:BB:B7:F8:E7:76:0B:80:54:4A"]}},{"relation":["delegate_permission/common.handle_all_urls"],"target":{"namespace":"android_app","package_name":"com.ssafy.tingle.dev","sha256_cert_fingerprints":["DA:56:86:05:32:B1:3D:4F:B0:76:EF:07:CD:8A:BE:0F:AB:FB:7C:8E:F9:C1:7C:BB:B7:F8:E7:76:0B:80:54:4A"]}}]';
+    }
+
+    # App Link 로 앱이 열리지 않았을 때(이미 동의한 사용자는 네이버가 사용자 조작 없이 바로 넘겨 브라우저가 앱을 열지 않을 수 있다 · 검증 전)
+    # 콜백이 웹으로 가지 않게 여기서 받는다: 버튼을 누르면(사용자 조작) 같은 주소를 intent:// 로 넘겨 앱이 열린다(같은 호스트 링크는 Chrome 이 앱으로 넘기지 않을 수 있어서). code 가 로그 · Referer 로 새지 않게
+    location ~ ^(/dev)?/auth/naver/callback$ {   # 운영 · 개발 콜백
+        access_log off;
+        add_header Referrer-Policy no-referrer always;
+        add_header Cache-Control "no-store" always;
+        default_type "text/html; charset=utf-8";
+        return 200 '<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Tingle</title><body style="margin:0;padding:64px 16px;font-family:sans-serif;text-align:center;background:#F5F0E8;color:#222"><p>네이버 확인이 끝났어요.</p><p><a id="go" href="#" style="display:inline-block;padding:14px 28px;border-radius:12px;background:#03C75A;color:#fff;text-decoration:none;font-weight:600">앱으로 돌아가기</a></p><p style="font-size:13px;color:#777">버튼을 눌러도 앱이 열리지 않으면 이 창을 닫고 앱에서 다시 시도해 주세요.</p><script>document.getElementById("go").href=location.href.replace(/^https:\/\//,"intent://")+"#Intent;scheme=https;end"</script>';
+    }
+
     # 개발 — /dev 접두사를 떼고 -dev 컨테이너로 넘긴다
     location = /dev {
         return 301 /dev/;
@@ -121,6 +141,13 @@ server {
     # Grafana 는 /grafana/ 하위 경로로 떠서(GF_SERVER_SERVE_FROM_SUB_PATH) 접두사를 그대로 넘긴다
     location /grafana/ {
         set $up grafana:3000;
+        proxy_pass http://$up;
+    }
+
+    # 코드리뷰봇 — GitLab MR 웹훅 수신(POST 만). 봇 컨테이너(review-bot)가 꺼져 있어도 nginx 는 뜬다(변수 upstream)
+    location = /review-bot/hook {
+        limit_except POST { deny all; }
+        set $up review-bot:8090;
         proxy_pass http://$up;
     }
 }

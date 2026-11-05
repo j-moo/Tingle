@@ -1,0 +1,29 @@
+<resources>
+    <string name="onboarding_title">가입 준비</string>
+    <string name="onboarding_agreements_title">Tingle을 시작하기 전에</string>
+    <string name="onboarding_agreements_body">서비스 이용에 필요한 필수 항목을 확인하고 동의해 주세요.</string>
+    <string name="onboarding_optional_separate">사진·자기소개·종교의 선택 동의는 프로필에서 별도로 관리해요. 이 화면에서는 기존 선택 동의를 변경하지 않아요.</string>
+    <string name="onboarding_required">[필수] %1$s</string>
+    <string name="onboarding_optional">[선택] %1$s</string>
+    <string name="onboarding_read_terms">내용 보기</string>
+    <string name="onboarding_terms_missing">전문 준비 중 · 실제 약관이 제공되면 동의할 수 있어요.</string>
+    <string name="onboarding_development_agreements">개발용 테스트 · 약관 전문은 준비 중이에요. 필수 항목을 체크하면 개발 서버에 저장하고 다음 단계로 이동해요.</string>
+    <string name="onboarding_terms_empty">동의 항목을 불러오지 못했어요. 다시 확인해 주세요.</string>
+    <string name="onboarding_agree">동의하고 계속하기</string>
+    <string name="onboarding_refresh">가입 상태 다시 확인</string>
+    <string name="onboarding_retry">다시 불러오기</string>
+    <string name="onboarding_logout">로그아웃</string>
+    <string name="onboarding_loading">가입 정보를 확인하고 있어요.</string>
+    <string name="onboarding_saved">저장했어요. 다음 가입 단계를 확인해 주세요.</string>
+    <string name="onboarding_keyring_title">키링을 등록해 주세요</string>
+    <string name="onboarding_keyring_wait">키링 등록 기능을 준비하고 있어요. 등록이 완료되어야 프로필 입력을 시작할 수 있어요.</string>
+    <string name="onboarding_keyring_search">키링 찾기 · 준비 중</string>
+    <string name="onboarding_purchase">키링 구매 안내</string>
+    <string name="onboarding_purchase_wait">구매 안내를 준비하고 있어요.</string>
+    <string name="onboarding_survey_wait">프로필 등록이 완료됐어요. 성향테스트 화면 연결을 준비하고 있어요.</string>
+    <string name="onboarding_preferences_wait">희망 상대 나이와 매칭 설정 화면을 준비하고 있어요.</string>
+    <string name="onboarding_sync_wait">키링 동기화가 필요해요. 기기 연결 기능을 준비하고 있어요.</string>
+    <string name="onboarding_ready_wait">가입이 완료됐어요. 홈 화면 연결을 준비하고 있어요.</string>
+    <string name="onboarding_link_failed">안내 페이지를 열지 못했어요. 잠시 후 다시 시도해 주세요.</string>
+    <string name="onboarding_profile_wait">프로필 입력 화면 연결을 준비하고 있어요.</string>
+</resources>

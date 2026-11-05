@@ -1,0 +1,32 @@
+<resources>
+    <string name="ble_probe_title">키링 BLE 연결 확인 · 개발용</string>
+    <string name="ble_probe_description">주변 키링을 찾아 연결하고 기기 정보·상태를 읽어요. 이 화면에서는 계정 등록이나 설정 변경을 하지 않아요.</string>
+    <string name="ble_probe_entry">주변 키링 탐색·연결 확인 · 개발용</string>
+    <string name="ble_unsupported">이 기기에서는 Bluetooth LE를 사용할 수 없어요.</string>
+    <string name="ble_permission">키링을 찾으려면 근처 기기 권한이 필요해요. Android 11 이하는 위치 권한이 필요해요.</string>
+    <string name="ble_bluetooth_off">블루투스가 꺼져 있어요.</string>
+    <string name="ble_location_off">이 Android 버전에서는 키링 탐색을 위해 위치 서비스를 켜야 해요.</string>
+    <string name="ble_available">블루투스와 키링 탐색 권한이 준비됐어요.</string>
+    <string name="ble_request_permission">권한 요청하기</string>
+    <string name="ble_app_settings">앱 권한 설정 열기</string>
+    <string name="ble_bluetooth_settings">블루투스 설정 열기</string>
+    <string name="ble_location_settings">위치 설정 열기</string>
+    <string name="ble_settings_failed">설정을 열지 못했어요. 휴대폰 설정에서 확인해 주세요.</string>
+    <string name="ble_failed">연결 확인에 실패했어요 (%1$s). 다시 탐색하고 연결해 주세요.</string>
+    <string name="ble_command_failed">키링이 요청을 처리하지 못했어요 (%1$s).</string>
+    <string name="ble_connecting">기기 응답을 확인하고 있어요.</string>
+    <string name="ble_start_scan">주변 키링 탐색</string>
+    <string name="ble_stop_scan">탐색 중지</string>
+    <string name="ble_scan_help">탐색은 최대 15초 동안 진행돼요. 등록용 시험 보드를 한 대씩 켜고 연결해 주세요. 이름만으로 본인 키링임을 확인할 수는 없어요.</string>
+    <string name="ble_scanning">주변 키링을 찾고 있어요.</string>
+    <string name="ble_candidate">후보 %1$d · %2$s · 신호 %3$d dBm · 연결</string>
+    <string name="ble_info">기기 번호: %1$s\n펌웨어: %2$s</string>
+    <string name="ble_not_registered">기기 정보 수신까지 확인했어요. 계정 등록·사용 준비 완료는 별도 확인이 필요해요.</string>
+    <string name="ble_read_status">기기 상태 읽기</string>
+    <string name="ble_status_unsupported">이 기기는 상태 조회 지원을 알려주지 않았어요.</string>
+    <string name="ble_unknown">미확인</string>
+    <string name="ble_charging">충전 중</string>
+    <string name="ble_not_charging">충전 중 아님</string>
+    <string name="ble_status">배터리: %1$s\n전압: %2$s\n충전: %3$s\n미전송 기록: %4$s</string>
+    <string name="ble_disconnect">연결 종료</string>
+</resources>

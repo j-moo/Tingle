@@ -3,7 +3,6 @@ package com.e106.tingle.proposal;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
-import java.util.UUID;
 
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -14,32 +13,27 @@ import org.springframework.data.repository.query.Param;
 import jakarta.persistence.LockModeType;
 
 public interface ProposalRepository extends JpaRepository<MatchProposal, Long> {
-	String VISIBLE = "select p.* from match_proposals p join user_pairs r on r.pair_id=p.pair_id "
-		+ "where (r.user_low=:userId or r.user_high=:userId) "
-		+ "and not exists (select 1 from app_users u where u.user_id in (r.user_low,r.user_high) "
-		+ "and u.status<>'ACTIVE') and not exists (select 1 from user_blocks b "
-		+ "where (b.blocker_id=r.user_low and b.blocked_id=r.user_high) "
-		+ "or (b.blocker_id=r.user_high and b.blocked_id=r.user_low)) "
-		+ "and (r.declined_until is null or r.declined_until<=:now or r.declined_proposal_id=p.proposal_id) "
-		+ "and p.status<>'ACCEPTED' and (p.expires_at>:now and ("
-		+ "(r.user_low=:userId and p.low_decision is null) "
-		+ "or (r.user_high=:userId and p.high_decision is null) "
-		+ "or p.status in ('PENDING','WAITING_FOR_OTHER'))) ";
+	String ELIGIBLE = "(select count(*) from users u where u.id in (p.user_low_id,p.user_high_id) "
+		+ "and u.status='ACTIVE')=2 and not exists (select 1 from matching_participant b "
+		+ "where b.matching_id=p.id and b.blocked_at is not null) ";
+	String VISIBLE = "select p.* from matching p join matching_participant own on own.matching_id=p.id "
+		+ "and own.user_id=:userId where (p.user_low_id=:userId or p.user_high_id=:userId) "
+		+ "and p.proposed_at is not null and p.status not in ('WAITING','NOT_MATCHED','ACCEPTED','CLOSED') "
+		+ "and p.proposed_at+interval '24 hours'>:now and " + ELIGIBLE
+		+ "and (own.response is null or p.status in ('PENDING','ONE_ACCEPTED')) ";
 
 	@Lock(LockModeType.PESSIMISTIC_WRITE)
 	@Query("select p from MatchProposal p where p.id = :id")
 	Optional<MatchProposal> lockById(@Param("id") long id);
 
-	@Query(value = VISIBLE + "order by p.created_at desc, p.proposal_id desc", nativeQuery = true)
+	@Query(value = VISIBLE + "order by p.proposed_at desc,p.id desc", nativeQuery = true)
 	List<MatchProposal> findFirstPage(@Param("userId") long userId, @Param("now") Instant now, Pageable page);
 
-	@Query(value = VISIBLE + "and (p.created_at<:at or (p.created_at=:at and p.proposal_id<:id)) "
-		+ "order by p.created_at desc, p.proposal_id desc", nativeQuery = true)
+	@Query(value = VISIBLE + "and (p.proposed_at<:at or (p.proposed_at=:at and p.id<:id)) "
+		+ "order by p.proposed_at desc,p.id desc", nativeQuery = true)
 	List<MatchProposal> findNextPage(@Param("userId") long userId, @Param("now") Instant now, @Param("at") Instant at,
 		@Param("id") long id, Pageable page);
 
-	@Query("select p from MatchProposal p join PairRelation r on r.id = p.pairId "
-		+ "where (r.userLow = :userId and (p.lowRequestKey = :key or p.lowCancelRequestKey = :key)) "
-		+ "or (r.userHigh = :userId and (p.highRequestKey = :key or p.highCancelRequestKey = :key))")
-	Optional<MatchProposal> findRequest(@Param("userId") long userId, @Param("key") UUID key);
+	@Query(value = "select exists(select 1 from matching p where p.id=:id and " + ELIGIBLE + ")", nativeQuery = true)
+	boolean eligible(long id);
 }

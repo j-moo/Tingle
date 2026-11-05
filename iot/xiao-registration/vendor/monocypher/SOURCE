@@ -1,0 +1,6 @@
+Monocypher 4.0.3, unmodified src/monocypher.[ch] and src/optional/monocypher-ed25519.[ch].
+Source: https://monocypher.org/download/monocypher-4.0.3.tar.gz
+SHA512: 40904ada5c7ee4f7741733e38b69a30a4b0561cbffba5ffe7c2dce16136d540251ec0d9056ff606510d3b5b708fb8a40db7e0870d4a0b2dc17ba2bfb880f8965
+Checksum source: https://monocypher.org/download/monocypher-4.0.3.tar.gz.sha512
+License: LICENCE.md (upstream BSD-2-Clause OR CC0-1.0).
+Normal Ed25519 is required; Monocypher's default EdDSA/Blake2b is NOT wire-compatible.

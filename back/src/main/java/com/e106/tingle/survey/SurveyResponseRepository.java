@@ -1,22 +1,28 @@
 package com.e106.tingle.survey;
 
+import java.time.Instant;
 import java.util.Optional;
-import java.util.UUID;
 
 import org.springframework.data.jpa.repository.JpaRepository;
-import org.springframework.data.jpa.repository.Modifying;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
+
+import jakarta.persistence.LockModeType;
 
 public interface SurveyResponseRepository extends JpaRepository<SurveyResponse, Long> {
 
-	Optional<SurveyResponse> findByPublicIdAndUserId(UUID publicId, Long userId);
+	Optional<SurveyResponse> findByIdAndUserId(Long id, Long userId);
 
-	Optional<SurveyResponse> findByUserIdAndClientRequestId(Long userId, UUID clientRequestId);
+	// 답 저장·삭제·완료를 회차 단위로 줄 세운다(완료와 동시에 들어온 저장이 완료 뒤에 끼어들지 않게).
+	@Lock(LockModeType.PESSIMISTIC_WRITE)
+	@Query("select s from SurveyResponse s where s.id = :id and s.userId = :userId")
+	Optional<SurveyResponse> findOwnedForUpdate(Long id, Long userId);
+
+	// 성향 분석 결과는 회원의 가장 최근 완료 회차 것만 적용한다(늦게 끝난 이전 회차 분석이 덮어쓰지 않게).
+	boolean existsByUserIdAndCompletedAtAfter(Long userId, Instant completedAt);
 
 	Optional<SurveyResponse> findByUserIdAndVersionCodeAndCompletedAtIsNull(Long userId, String versionCode);
 
-	// 응답 저장이 아니므로 revision(ETag)은 올리지 않는다(JPQL 일괄 수정은 @Version 을 건드리지 않음).
-	@Modifying(flushAutomatically = true, clearAutomatically = true)
-	@Query("update SurveyResponse s set s.clientRequestId = :key where s.id = :id")
-	void rebindRequest(Long id, UUID key);
+	// 재설치·다른 기기에서 제출한 회차를 다시 찾을 때 쓴다(가장 늦게 완료한 회차).
+	Optional<SurveyResponse> findFirstByUserIdAndCompletedAtIsNotNullOrderByCompletedAtDescIdDesc(Long userId);
 }

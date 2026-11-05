@@ -1,0 +1,64 @@
+{
+  "status": "DEVELOPMENT_MATCHING_SWITCH_ONLY_NOT_PRODUCTION_MATCHING_DATA",
+  "algorithm": "Ed25519",
+  "fixtures": [
+    {
+      "name": "iot-independent-handoff-v1",
+      "publicKeyRawHex": "704492dbf4e64e2b3d488f0f1657d9c451c84ad67c5942b8ee50c4c809ea6c9f",
+      "publicKeySpkiBase64url": "MCowBQYDK2VwAyEAcESS2_TmTis9SI8PFlfZxFHIStZ8WUK47lDEyAnqbJ8",
+      "request": {
+        "protocolVersion": 1,
+        "type": "SYNC_SETTINGS",
+        "requestId": "fixture-01",
+        "deviceId": 42,
+        "settingsVersion": 7,
+        "proofProtocolVersion": "tingle-device-proof-v1",
+        "keyId": "ed25519-0000000000000001",
+        "syncRunId": "22222222-2222-4222-8222-222222222222",
+        "ownerGeneration": "33333333-3333-4333-8333-333333333333",
+        "payloadEncoding": "base64url",
+        "payloadFormat": "tingle-dev-settings-v1",
+        "payload": "AQ",
+        "payloadHash": "4bf5122f344554c53bde2ebb8cd2b7e3d1600ad631c385a5d7cce23c7785459a",
+        "nonce": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+        "deviceNonce": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE",
+        "serverTime": "2026-11-04T00:00:00Z",
+        "serverProofProtocolVersion": "tingle-dev-settings-proof-v1",
+        "serverKeyId": "dev-ed25519-704492dbf4e64e2b",
+        "serverSignature": "LaINWp6XUQAYLaUGSJUl3zBnPOt6KZ2L1hYPXcmUwx7Hs3uhRn5fU8tOtaHcaPULMmVmHUP9k9GqXzkX4SgBDw"
+      },
+      "transcriptUtf8": "TINGLE-KEYRING-SERVER-SETTINGS\ntingle-dev-settings-proof-v1\ndev-ed25519-704492dbf4e64e2b\nXIAO-0000000000000001\ned25519-0000000000000001\n42\n33333333-3333-4333-8333-333333333333\n22222222-2222-4222-8222-222222222222\n7\ntingle-dev-settings-v1\n4bf5122f344554c53bde2ebb8cd2b7e3d1600ad631c385a5d7cce23c7785459a\nAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\nAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE\n1793750400\n",
+      "transcriptBase64url": "VElOR0xFLUtFWVJJTkctU0VSVkVSLVNFVFRJTkdTCnRpbmdsZS1kZXYtc2V0dGluZ3MtcHJvb2YtdjEKZGV2LWVkMjU1MTktNzA0NDkyZGJmNGU2NGUyYgpYSUFPLTAwMDAwMDAwMDAwMDAwMDEKZWQyNTUxOS0wMDAwMDAwMDAwMDAwMDAxCjQyCjMzMzMzMzMzLTMzMzMtNDMzMy04MzMzLTMzMzMzMzMzMzMzMwoyMjIyMjIyMi0yMjIyLTQyMjItODIyMi0yMjIyMjIyMjIyMjIKNwp0aW5nbGUtZGV2LXNldHRpbmdzLXYxCjRiZjUxMjJmMzQ0NTU0YzUzYmRlMmViYjhjZDJiN2UzZDE2MDBhZDYzMWMzODVhNWQ3Y2NlMjNjNzc4NTQ1OWEKQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQQpBUUVCQVFFQkFRRUJBUUVCQVFFQkFRRUJBUUVCQVFFQkFRRUJBUUVCQVFFCjE3OTM3NTA0MDAK",
+      "transcriptSha256": "770134688d23de96289f2d398a88cf951f6c05ba1aa748562ad7c7dc0c79499d"
+    },
+    {
+      "name": "synthetic-off-test-key-discarded",
+      "publicKeyRawHex": "88845c2af64345d2aee0915a3f2698b612ea86145a045bac78b3ba437dcf7c26",
+      "publicKeySpkiBase64url": "MCowBQYDK2VwAyEAiIRcKvZDRdKu4JFaPyaYthLqhhRaBFuseLO6Q33PfCY",
+      "request": {
+        "protocolVersion": 1,
+        "type": "SYNC_SETTINGS",
+        "requestId": "synthetic-off",
+        "deviceId": 42,
+        "settingsVersion": 7,
+        "proofProtocolVersion": "tingle-device-proof-v1",
+        "keyId": "ed25519-0000000000000001",
+        "syncRunId": "22222222-2222-4222-8222-222222222222",
+        "ownerGeneration": "33333333-3333-4333-8333-333333333333",
+        "payloadEncoding": "base64url",
+        "payloadFormat": "tingle-dev-settings-v1",
+        "payload": "AA",
+        "payloadHash": "6e340b9cffb37a989ca544e6bb780a2c78901d3fb33738768511a30617afa01d",
+        "nonce": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+        "deviceNonce": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE",
+        "serverTime": "2026-11-04T00:00:00Z",
+        "serverProofProtocolVersion": "tingle-dev-settings-proof-v1",
+        "serverKeyId": "dev-ed25519-88845c2af64345d2",
+        "serverSignature": "9nZSlZniAz9HNZV1i7u8p50jWSIwVkllFa0IUb5zrv2AjD2r3gSz5qRKtnxCiMRt0m39eMNTvVKlXrGkYr9IAg"
+      },
+      "transcriptUtf8": "TINGLE-KEYRING-SERVER-SETTINGS\ntingle-dev-settings-proof-v1\ndev-ed25519-88845c2af64345d2\nXIAO-0000000000000001\ned25519-0000000000000001\n42\n33333333-3333-4333-8333-333333333333\n22222222-2222-4222-8222-222222222222\n7\ntingle-dev-settings-v1\n6e340b9cffb37a989ca544e6bb780a2c78901d3fb33738768511a30617afa01d\nAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\nAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE\n1793750400\n",
+      "transcriptBase64url": "VElOR0xFLUtFWVJJTkctU0VSVkVSLVNFVFRJTkdTCnRpbmdsZS1kZXYtc2V0dGluZ3MtcHJvb2YtdjEKZGV2LWVkMjU1MTktODg4NDVjMmFmNjQzNDVkMgpYSUFPLTAwMDAwMDAwMDAwMDAwMDEKZWQyNTUxOS0wMDAwMDAwMDAwMDAwMDAxCjQyCjMzMzMzMzMzLTMzMzMtNDMzMy04MzMzLTMzMzMzMzMzMzMzMwoyMjIyMjIyMi0yMjIyLTQyMjItODIyMi0yMjIyMjIyMjIyMjIKNwp0aW5nbGUtZGV2LXNldHRpbmdzLXYxCjZlMzQwYjljZmZiMzdhOTg5Y2E1NDRlNmJiNzgwYTJjNzg5MDFkM2ZiMzM3Mzg3Njg1MTFhMzA2MTdhZmEwMWQKQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQQpBUUVCQVFFQkFRRUJBUUVCQVFFQkFRRUJBUUVCQVFFQkFRRUJBUUVCQVFFCjE3OTM3NTA0MDAK",
+      "transcriptSha256": "5e8b60dd8666fef8ae6242dff3158b36d878850fb94966b6e29cdabe4c15d92a"
+    }
+  ]
+}

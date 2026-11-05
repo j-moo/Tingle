@@ -3,6 +3,8 @@
 // MR 은 검사로 끝나고 결과가 GitLab MR 에 파트별로 표시된다. develop · master 에 push(머지)되면 검사 뒤 각 환경에 배포한다 (인프라 계획 6절).
 
 def PARTS = [back: 'back/', ai: 'ai-server/', web: 'front/web/', app: 'front/app/', iot: 'iot/']
+// AI 테스트가 읽는 참조 원본이 바뀌어도 회귀 검사를 실행한다.
+def AI_TEST_INPUTS = ['ai-server/reference/survey-20261021/mockup/dist/', 'ai-server/reference/survey-20261021/questionnaire-SIS-Q-1.1-100.json']
 // 브랜치별 배포: 코드를 dir 에 풀고 services(infra/docker-compose.yml 서비스 이름 → 응답 확인 주소)만 다시 띄운다.
 // bluegreen 은 infra/deploy-bluegreen.sh 로 무중단 전환한다 (운영 back · ai). ai 를 먼저 바꾼다 — 새 ai 가 옛 back 요청도 받아야 한다 (인프라 계획 7절).
 // back 확인은 Actuator — DB 연결까지 정상이면 200, 아니면 503. ai 는 /health.
@@ -45,6 +47,9 @@ pipeline {
           ''').trim().readLines()
           // Jenkinsfile 이 바뀌면 검사 방법이 바뀐 것이므로 전부 돌린다.
           changed = files.contains('Jenkinsfile') ? PARTS.keySet() as List : PARTS.findAll { k, dir -> files.any { it.startsWith(dir) } }.keySet() as List
+          if (!('ai' in changed) && files.any { file -> AI_TEST_INPUTS.any { path -> path.endsWith('/') ? file.startsWith(path) : file == path } }) {
+            changed.add('ai')
+          }
           echo "검사할 파트: ${changed ?: '없음'}"
         }
       }
@@ -65,11 +70,11 @@ pipeline {
           when { expression { 'ai' in changed } }
           steps {
             gitlabCommitStatus(name: 'ai') {
-              // ai 테스트는 JS 참조 구현과 결과를 비교하므로 Node.js 가 필요하다 (tests/conftest.py, 데비안 패키지 Node 20).
+              // pytest, tests/node 회귀, JS/Python parity를 공통 실행기로 검사한다. 기존 Node 설치를 유지한다.
               inDocker('python:3.12-slim', 'ai-server', '-v tingle-ci-pip:/root/.cache/pip', '''
 apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends nodejs >/dev/null
-pip install -q --root-user-action=ignore -r requirements.txt
-python -m pytest -q
+pip install -q --root-user-action=ignore -r requirements.txt -r app/risk_detection/requirements-dev.txt
+python scripts/run_tests.py
 ''')
             }
           }
@@ -95,13 +100,13 @@ pnpm build
               // Android SDK 는 처음 한 번 볼륨에 받고, 필요한 플랫폼·빌드 도구는 AGP 가 알아서 내려받는다.
               // 메모리: gradle.properties 기본값(4G + Kotlin 데몬 3G)은 서버에 크므로 Kotlin 을 gradle 안에서 돌리고 3G 로 줄인다.
               // develop · master 머지는 공개할 APK 를 팀 서명 키(Credentials tingle-release-key · tingle-release-password)로 찍는다 — master 는 release, develop 은 debug.
-              // 디버그 키는 빌드 컨테이너마다 새로 생겨 매번 서명이 달라지므로 덮어 설치가 안 된다. MR 검사는 키 없이 debug.
+              // MR builds use the local Android debug signing key.
               script {
                 def apkDir = [develop: '/srv/tingle/app/dev', master: '/srv/tingle/app'][env.gitlabSourceBranch]
                 def publish = env.gitlabActionType == 'PUSH' && apkDir
                 def release = publish && env.gitlabSourceBranch == 'master'
                 def build = {
-                  inDocker('eclipse-temurin:21-jdk', 'front/app', '-v tingle-ci-gradle-app:/root/.gradle -v tingle-ci-android:/opt/android-sdk -e ANDROID_HOME=/opt/android-sdk -e APK_TASK -e TINGLE_KEYSTORE -e TINGLE_KEYSTORE_PASSWORD', '''
+                  inDocker('eclipse-temurin:21-jdk', 'front/app', '-v tingle-ci-gradle-app:/root/.gradle -v tingle-ci-android:/opt/android-sdk -e ANDROID_HOME=/opt/android-sdk -e APK_TASK -e TINGLE_KEYSTORE -e TINGLE_KEYSTORE_PASSWORD -e GOOGLE_WEB_CLIENT_ID -e KAKAO_NATIVE_APP_KEY -e KAKAO_NATIVE_APP_KEY_DEV -e NAVER_CLIENT_ID', '''
 if [ ! -x "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" ]; then
   apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq unzip >/dev/null
   curl -fsSLo /tmp/tools.zip https://dl.google.com/android/repository/commandlinetools-linux-13114758_latest.zip
@@ -114,7 +119,11 @@ sh gradlew check :androidApp:$APK_TASK --no-daemon -Dorg.gradle.jvmargs=-Xmx3g -
                 }
                 if (publish) {
                   withEnv(["APK_TASK=${release ? 'assembleRelease' : 'assembleDebug'}"]) {
-                    withCredentials([file(credentialsId: 'tingle-release-key', variable: 'TINGLE_KEYSTORE'), string(credentialsId: 'tingle-release-password', variable: 'TINGLE_KEYSTORE_PASSWORD')]) { build() }
+                    // 소셜 로그인 키는 tingle-app-env 에서 앱이 쓰는 4개만 골라 넘긴다(네이버 비밀값은 APK 에 넣지 않는다 — OIDC PKCE) (DB · JWT 같은 서버 비밀값은 빌드에 넣지 않는다). build.gradle.kts 가 환경변수로 읽는다.
+                    withCredentials([file(credentialsId: 'tingle-release-key', variable: 'TINGLE_KEYSTORE'), string(credentialsId: 'tingle-release-password', variable: 'TINGLE_KEYSTORE_PASSWORD'), file(credentialsId: 'tingle-app-env', variable: 'APP_ENV')]) {
+                      def social = readFile(env.APP_ENV).readLines().findAll { it ==~ /(GOOGLE_WEB_CLIENT_ID|KAKAO_NATIVE_APP_KEY|KAKAO_NATIVE_APP_KEY_DEV|NAVER_CLIENT_ID)=.+/ }
+                      withEnv(social) { build() }
+                    }
                   }
                 } else {
                   withEnv(['APK_TASK=assembleDebug']) { build() }
@@ -145,25 +154,15 @@ sh gradlew check :androidApp:$APK_TASK --no-daemon -Dorg.gradle.jvmargs=-Xmx3g -
       }
     }
     stage('app-env') {
-      // 배포 브랜치 push 때만: Jenkins Credentials 의 앱 비밀값을 서버 /srv/tingle/app.env 로 쓴다 (compose 가 --env-file 로 읽는다).
-      // 비밀값을 추가하면 Credentials 에 넣고 여기 withCredentials 와 echo 줄을 늘린다. 값에 $ 가 있으면 compose 가 변수로 읽으니 $$ 로 넣는다.
+      // 배포 브랜치 push 때만: Jenkins Credentials tingle-app-env(Secret file, app.env 전체)를 서버 /srv/tingle/app.env 로 쓴다 (compose 가 --env-file 로 읽는다).
+      // 값을 바꾸거나 더할 때는 파일을 고쳐 Credentials 에 다시 올린다 (공유 사본: 자율 프로젝트/infra/app.env). 값에 $ 가 있으면 compose 가 변수로 읽으니 $$ 로 넣는다.
       when { expression { env.gitlabActionType == 'PUSH' && DEPLOY[env.gitlabSourceBranch] } }
       steps {
-        withCredentials([
-          usernamePassword(credentialsId: 'tingle-db', usernameVariable: 'POSTGRES_USER', passwordVariable: 'POSTGRES_PASSWORD'),
-          string(credentialsId: 'tingle-jwt-secret', variable: 'JWT_SECRET'),
-          string(credentialsId: 'tingle-push-key', variable: 'PUSH_TOKEN_ENCRYPTION_KEY'),
-        ]) {
+        withCredentials([file(credentialsId: 'tingle-app-env', variable: 'APP_ENV')]) {
           sh '''
             set +x
             umask 077
-            {
-              echo "# Jenkins 가 관리 — 직접 수정 금지. develop · master 배포마다 Jenkins Credentials 로 다시 쓴다 (Jenkinsfile app-env 단계)"
-              echo "POSTGRES_USER=$POSTGRES_USER"
-              echo "POSTGRES_PASSWORD=$POSTGRES_PASSWORD"
-              echo "JWT_SECRET=$JWT_SECRET"
-              echo "PUSH_TOKEN_ENCRYPTION_KEY=$PUSH_TOKEN_ENCRYPTION_KEY"
-            } > /srv/tingle/app.env.tmp
+            { cat "$APP_ENV"; echo; } | tr -d '\\r' > /srv/tingle/app.env.tmp # 끝 줄바꿈 보장(FCM 값을 뒤에 덧붙인다) · 윈도우 줄끝 제거
             mv /srv/tingle/app.env.tmp /srv/tingle/app.env
             mkdir -p /srv/tingle/secrets # back 이 읽기 전용으로 마운트한다. 없으면 docker 가 root 소유로 만들어 Jenkins 가 못 쓴다
             echo "app.env 갱신: $(grep -c = /srv/tingle/app.env)개 값"
@@ -200,13 +199,13 @@ sh gradlew check :androidApp:$APK_TASK --no-daemon -Dorg.gradle.jvmargs=-Xmx3g -
           def target = DEPLOY[env.gitlabSourceBranch]
           gitlabCommitStatus(name: "deploy-${env.gitlabSourceBranch}") {
             if (target.backup) {
-              // 운영 DB tingle 을 pg_dump 로 받아 30개까지 보관한다. 복구: pg_restore -U <사용자> -d tingle --clean <파일>
+              // 두 DB 백업 계열 모두 최대 7일. 복원 후 재삭제 검증 전에는 서비스 개방 금지.
               sh '''
                 umask 077
-                f=/backup/db-tingle-$(date +%Y%m%d-%H%M%S)-$(git rev-parse --short HEAD).dump
+                docker run --rm --volumes-from "$(hostname)" -w "$WORKSPACE" python:3.12-slim python infra/backup-retention.py --directory /backup --apply
+                f=/backup/db-tingle-$(date -u +%Y%m%d-%H%M%S)-$(git rev-parse --short HEAD).dump
                 docker exec tingle-db-1 sh -c 'pg_dump -U "$POSTGRES_USER" -Fc tingle' > "$f.tmp"
                 mv "$f.tmp" "$f"
-                ls -t /backup/db-tingle-*.dump | tail -n +31 | xargs -r rm --
                 echo "DB 백업: $f ($(du -h "$f" | cut -f1))"
               '''
             }

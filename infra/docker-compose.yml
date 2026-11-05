@@ -70,8 +70,8 @@ services:
     restart: unless-stopped
 
   # back: 운영(prod, DB tingle, 블루-그린 back-blue · back-green 중 한쪽만 켬) · 개발(dev, DB tingle_dev). nginx 가 /api/ /ws/ → back, /dev/api/ /dev/ws/ → back-dev 로 넘긴다.
-  # 테이블은 미리 있어야 한다 (ddl-auto validate). 처음엔 docs/database/schema.sql 을 넣었다 — 이후 스키마 변경은 BE 가 DB 에 반영.
-  # 비밀값은 app.env (Jenkins Credentials). 구글 · 카카오 ID 는 정해지면 Credentials 에 넣고 여기에 GOOGLE_WEB_CLIENT_ID · KAKAO_APP_ID 를 더한다.
+  # 테이블은 미리 있어야 한다 (ddl-auto validate). 처음엔 back/database/schema.sql 을 넣었다 — 이후 스키마 변경은 BE 가 DB 에 반영.
+  # 비밀값은 app.env (Jenkins Credentials tingle-app-env 파일 하나). 소셜 로그인 키는 구글 · 카카오만 (네이버는 서버 키 없음).
   back-blue:
     build: ../back
     environment: &back-env
@@ -81,12 +81,25 @@ services:
       SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:?}
       JWT_SECRET: ${JWT_SECRET:?}
       PUSH_TOKEN_ENCRYPTION_KEY: ${PUSH_TOKEN_ENCRYPTION_KEY:?}
+      GOOGLE_WEB_CLIENT_ID: ${GOOGLE_WEB_CLIENT_ID:-} # 소셜 토큰 검증(back application.yml google-client-id · kakao-app-id). 비면 그 공급자 로그인만 실패
+      KAKAO_APP_ID: ${KAKAO_APP_ID:-}
+      # 네이버 OIDC: 서버가 앱이 보낸 인가 코드를 비밀값으로 교환하고 id_token 의 aud 를 Client ID 와 대조한다(S15P31E106-193). 비밀값은 서버에만
+      NAVER_CLIENT_ID: ${NAVER_CLIENT_ID:-}
+      NAVER_CLIENT_SECRET: ${NAVER_CLIENT_SECRET:-}
       # 푸시(FCM): Jenkins Credentials 에 tingle-fcm(서비스 계정 JSON)이 있으면 Jenkins 가 키 파일을 쓰고 app.env 에 켜는 값을 넣는다. 없으면 꺼진 채로 뜬다.
       PUSH_ENABLED: ${PUSH_ENABLED:-false}
+      CHAT_MESSAGE_PUSH_SCHEDULING_ENABLED: ${CHAT_MESSAGE_PUSH_SCHEDULING_ENABLED:-false}
+      CHAT_MESSAGE_PUSH_POLL_MS: ${CHAT_MESSAGE_PUSH_POLL_MS:-1000}
       FIREBASE_PROJECT_ID: ${FIREBASE_PROJECT_ID:-}
       GOOGLE_APPLICATION_CREDENTIALS: /run/secrets/tingle/fcm.json
+      PHOTO_STORAGE_DIR: /data/photos # 프로필 사진 파일 폴더. 아래 볼륨으로 호스트 /data/uploads/{prod|dev} 에 둔다 (backup-daily.sh 백업 대상)
+      # 가입 화면 약관 전문 링크(back application.yml agreement content-url). front/web/public 정적 페이지. 비밀값이 아니라 app.env 대신 여기 둔다. 끝의 / 는 빼면 안 된다(S15P31E106-220)
+      TERMS_CONTENT_URL: https://${DOMAIN:?}/terms/
+      PRIVACY_CONTENT_URL: https://${DOMAIN:?}/privacy/
+      AI_RISK_CONTENT_URL: https://${DOMAIN:?}/ai-risk/
     volumes: &back-volumes
       - /srv/tingle/secrets:/run/secrets/tingle:ro # Jenkins 가 쓰는 비밀 파일 (fcm.json)
+      - /data/uploads/prod:/data/photos # 운영 사진. 블루 · 그린이 같은 폴더를 함께 쓴다. 호스트 폴더 소유자는 이미지 실행 사용자(uid 1000)
     depends_on: [db]
     mem_limit: 1536m
     restart: unless-stopped
@@ -105,7 +118,27 @@ services:
       <<: *back-env
       SPRING_PROFILES_ACTIVE: dev
       SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/tingle_dev
-    volumes: *back-volumes
+      TERMS_CONTENT_URL: https://${DOMAIN:?}/dev/terms/ # 개발은 develop 에 머지된 web-dev 페이지
+      PRIVACY_CONTENT_URL: https://${DOMAIN:?}/dev/privacy/
+      AI_RISK_CONTENT_URL: https://${DOMAIN:?}/dev/ai-risk/
+      # AI 서버 호출(app.ai.service, S15P31E106-234). 서비스 토큰 서명 키는 서버에 손으로 둔 파일이다(비밀 키는 secrets, 공개 키는 ai-keys).
+      # 키 파일 없이 켜면 back-dev 가 뜨지 않는다. 운영은 키를 따로 만든 뒤 연결한다
+      APP_AI_SERVICE_ENABLED: "true"
+      APP_AI_SERVICE_ENVIRONMENT: dev
+      APP_AI_SERVICE_BASE_URL: http://ai-dev:8000
+      APP_AI_SERVICE_KEY_ID: be-dev-1
+      APP_AI_SERVICE_PRIVATE_KEY_FILE: /run/secrets/tingle/ai-service-dev.pem
+      # Q040 개발 릴리스는 외부 승인된 파일을 양쪽 서비스에 동일하게 등록한다.
+      APP_ICEBREAKER_EXTERNAL_ENABLED: "${Q040_DEV_ENABLED:-false}"
+      APP_ICEBREAKER_MANIFEST_LOCATION: file:/run/tingle/q040-dev-release-v1/be-descriptor.json
+      # 개발 1바이트 설정 서명. 실제 키 인계·공동 시험 승인 전에는 비활성이다.
+      KEYRING_DEV_SETTINGS_ENABLED: "${KEYRING_DEV_SETTINGS_ENABLED:-false}"
+      KEYRING_DEV_SETTINGS_PRIVATE_KEY_FILE: "${KEYRING_DEV_SETTINGS_PRIVATE_KEY_FILE:-/run/secrets/tingle/dev-settings-private.pem}"
+      KEYRING_DEV_SETTINGS_PUBLIC_KEY_FILE: "${KEYRING_DEV_SETTINGS_PUBLIC_KEY_FILE:-/run/secrets/tingle/dev-settings-public.pem}"
+    volumes: # 개발 사진은 운영과 섞이지 않게 따로 둔다
+      - /srv/tingle/secrets:/run/secrets/tingle:ro
+      - /data/uploads/dev:/data/photos
+      - ${Q040_DEV_RELEASE_DIR:-/srv/tingle/releases/q040-dev-release-v1}:/run/tingle/q040-dev-release-v1:ro
     depends_on: [db]
     mem_limit: 1536m
     restart: unless-stopped
@@ -126,6 +159,12 @@ services:
     build: ../ai-server
     environment:
       APP_ENV: dev
+      AI_SERVICE_PUBLIC_KEYS: '{"be-dev-1":"/run/ai-keys/be-dev-1.pub.pem"}' # back-dev 서명 키와 짝. 파일이 없으면 기동을 거절한다
+      ICEBREAKER_DEV_ENABLED: "${Q040_DEV_ENABLED:-false}"
+      ICEBREAKER_RELEASE_DESCRIPTOR_FILE: /run/tingle/q040-dev-release-v1/ai-descriptor.json
+    volumes:
+      - /srv/tingle/ai-keys/dev:/run/ai-keys:ro # 공개 키만 둔다(비밀값 아님). 컨테이너 사용자(uid 10001)가 읽도록 644
+      - ${Q040_DEV_RELEASE_DIR:-/srv/tingle/releases/q040-dev-release-v1}:/run/tingle/q040-dev-release-v1:ro
     mem_limit: 512m
     restart: unless-stopped
 
@@ -194,6 +233,8 @@ services:
     volumes:
       - ./monitoring/grafana/datasources:/etc/grafana/provisioning/datasources:ro
       - ./monitoring/grafana/dashboards:/etc/grafana/provisioning/dashboards:ro # tingle.json
+      # 개발 비동기 관측 규칙만 등록한다. 수신 채널 승인 전에는 모든 규칙을 paused로 유지한다.
+      - ./monitoring/grafana/alerting:/etc/grafana/provisioning/alerting:ro
       - grafana:/var/lib/grafana
     depends_on: [prometheus, loki]
     mem_limit: 192m

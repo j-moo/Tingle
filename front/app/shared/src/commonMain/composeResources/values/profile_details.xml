@@ -1,0 +1,33 @@
+<resources>
+    <string name="profile_details_title">프로필 소개</string>
+    <string name="profile_details_heading">나를 조금 더 알려 주세요</string>
+    <string name="profile_details_intro">모두 선택 항목이에요. 비워 두어도 다음으로 넘어갈 수 있어요.</string>
+    <string name="profile_details_public">등록한 정보는 매칭 제안을 받은 상대가 채팅 수락 전에도 확인할 수 있어요.</string>
+    <string name="profile_photo_title">프로필 사진 · 선택</string>
+    <string name="profile_photo_empty">아직 등록한 사진이 없어요</string>
+    <string name="profile_photo_consent">[선택] 사진 수집·이용 및 상대 공개에 동의</string>
+    <string name="profile_photo_add">사진 선택</string>
+    <string name="profile_photo_replace">사진 바꾸기</string>
+    <string name="profile_photo_delete">사진 삭제</string>
+    <string name="profile_photo_uploading">사진을 등록하고 있어요…</string>
+    <string name="profile_photo_replacing">새 사진을 등록하고 있어요. 완료 전까지 기존 사진을 유지해요.</string>
+<!--    <string name="profile_photo_rule">1장 · 최대 10MB · JPG/JPEG, PNG, WebP, HEIC\n선택 후 정사각형으로 자를 수 있어요.</string>-->
+    <string name="profile_photo_matching">사진이 없으면 ‘사진이 있는 상대만 매칭’을 켠 사용자와 새 매칭이 되지 않을 수 있어요.</string>
+    <string name="profile_intro_title">자기소개 · 선택</string>
+    <string name="profile_intro_consent">[선택] 자기소개 수집·이용 및 상대 공개에 동의</string>
+    <string name="profile_intro_placeholder">좋아하는 일이나 함께하고 싶은 시간을 소개해 주세요.</string>
+    <string name="profile_intro_rule">최대 200자 · 줄바꿈 3개까지 · 이모지 사용 가능</string>
+    <string name="profile_intro_count">%1$d / 200자</string>
+    <string name="profile_intro_too_long">자기소개는 200자 이내로 입력해 주세요.</string>
+    <string name="profile_intro_too_many_lines">줄바꿈은 3개까지 사용할 수 있어요.</string>
+    <string name="profile_religion_title">종교 · 선택</string>
+    <string name="profile_religion_consent">[선택·별도] 종교 정보 처리 및 상대 공개에 동의</string>
+    <string name="profile_religion_private_help">선택하지 않거나 공개하지 않으면 상대에게 ‘종교 정보 비공개’로 보여요.</string>
+    <string name="profile_religion_none">무교</string>
+    <string name="profile_religion_protestant">개신교</string>
+    <string name="profile_religion_catholic">천주교</string>
+    <string name="profile_religion_buddhist">불교</string>
+    <string name="profile_religion_other">기타</string>
+    <string name="profile_religion_private">공개하지 않음</string>
+</resources>
+

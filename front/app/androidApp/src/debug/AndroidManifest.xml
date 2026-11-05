@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application>
+        <!-- 개발 APK에서만 로그인 없이 실제 OS 권한 화면을 검사한다. release에는 포함되지 않는다. -->
+        <activity android:name="com.ssafy.e106.preview.NotificationPermissionsActivity" android:exported="true" />
+    </application>
+</manifest>

@@ -1,0 +1,20 @@
+<resources>
+    <string name="login_heading">가까운 인연,\n팅글에서 시작해요</string>
+    <string name="login_intro">사용하는 계정으로 간편하게 시작하세요.</string>
+    <string name="login_google">Google로 로그인</string>
+    <string name="login_kakao">카카오 로그인</string>
+    <string name="login_naver">네이버 로그인</string>
+    <string name="login_google_busy">Google 로그인 중이에요…</string>
+    <string name="login_kakao_busy">카카오 로그인 중이에요…</string>
+    <string name="login_naver_busy">네이버 로그인 중이에요…</string>
+    <string name="login_account_hint">이전에 가입했다면 같은 로그인 방법을 선택해 주세요.</string>
+    <string name="login_unavailable">로그인 서비스를 준비하고 있어요.\n잠시 후 다시 시도해 주세요.</string>
+    <string name="login_connected">로그인했어요</string>
+    <string name="login_next_agreement">다음은 서비스 이용 동의예요.</string>
+    <string name="login_next_keyring">다음은 키링 등록이에요.</string>
+    <string name="login_next_profile">다음은 내 프로필 작성이에요.</string>
+    <string name="login_next_survey">다음은 성향테스트예요.</string>
+    <string name="login_next_preferences">다음은 매칭 조건 설정이에요.</string>
+    <string name="login_next_sync">키링과 설정을 동기화할 차례예요.</string>
+    <string name="login_next_ready">서비스 이용 준비가 완료됐어요.</string>
+</resources>

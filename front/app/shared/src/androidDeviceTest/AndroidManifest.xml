@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+    <application>
+        <!-- 실제 OS BLE 준비 상태와 회전 후 미연결 표시를 검증하는 테스트 전용 호스트. -->
+        <activity android:name="com.ssafy.e106.features.keyring.BleProbeTestActivity" android:exported="true" />
+        <!-- 설정 회전 중 입력 보존과 저장 완료를 검증하는 테스트 전용 호스트. -->
+        <activity android:name="com.ssafy.e106.features.settings.SettingsLifecycleActivity" android:exported="true" />
+        <!-- 저장 요청 복구 도중 실제 Activity 중단·복귀를 검사하는 테스트 전용 호스트. -->
+        <activity android:name="com.ssafy.e106.features.report.ReportRestoreTestActivity" android:exported="true" />
+        <!-- 종료된 방의 신고 결과 확인·접수 완료 표시를 검사하는 테스트 전용 호스트. -->
+        <activity android:name="com.ssafy.e106.features.report.ReportRecoveryTestActivity" android:exported="true" />
+        <!-- 추천 카드와 실제 채팅 초안 연결을 검증하는 테스트 전용 호스트. -->
+        <activity android:name="com.ssafy.e106.features.safety.QuestionCardsTestActivity" android:exported="true" />
+        <!-- 동의 고지의 통신 실패 후 화면 내 재조회만 수행하는 테스트 전용 호스트. -->
+        <activity android:name="com.ssafy.e106.features.safety.AiConsentRecoveryTestActivity" android:exported="true" />
+        <!-- 일시 오류 뒤 같은 화면의 재시도 버튼으로 질문을 복구하는 테스트 전용 화면. -->
+        <activity android:name="com.ssafy.e106.features.safety.ChatExtrasRecoveryTestActivity" android:exported="true" />
+        <!-- 실제 채팅 Route의 주기 조회를 검사하는 테스트 전용 화면. 배포 APK에는 포함되지 않는다. -->
+        <activity android:name="com.ssafy.e106.features.chat.ChatPollingTestActivity" android:exported="true" />
+        <!-- 회전/재생성을 검증하는 테스트 전용 호스트이며 개발·운영 앱에는 포함되지 않는다. -->
+        <activity android:name="com.ssafy.e106.features.profile.ProfileLifecycleTestActivity" android:exported="true" />
+        <!-- 설문 저장·제출·전환 중 화면 재생성은 실제 Activity에서 검증한다. -->
+        <activity android:name="com.ssafy.e106.features.survey.SurveyLifecycleTestActivity" android:exported="true" />
+        <!-- 기기 테스트 APK 에는 카카오 콜백이 필요 없다. 남겨 두면 androidApp 이 채우는 ${kakaoScheme} 이 비어 매니페스트 병합이 실패한다 -->
+        <activity android:name="com.kakao.sdk.auth.AuthCodeHandlerActivity" tools:node="remove" />
+        <!-- 네이버 콜백(App Link)도 같다. ${naverCallbackHost} · ${naverCallbackPath} 는 androidApp 이 채운다 -->
+        <activity android:name="com.ssafy.e106.core.auth.NaverAuthActivity" tools:node="remove" />
+        <!-- 로컬 화면 검사와 병합된 기능 검사를 모두 보존한다. -->
+        <activity android:name="com.ssafy.e106.features.home.RecoveryUiTestActivity" android:exported="true"
+            android:theme="@android:style/Theme.Material.Light.NoActionBar" />
+        <activity android:name="com.ssafy.e106.features.home.CompactLayoutTestActivity" android:exported="true"
+            android:theme="@android:style/Theme.Material.Light.NoActionBar" android:windowSoftInputMode="adjustResize" />
+        <activity android:name="com.ssafy.e106.features.chat.ChatScreenTestActivity" android:exported="true" />
+        <activity android:name="com.ssafy.e106.features.home.HomeNavigationTestActivity" android:exported="true" />
+        <!-- 서버 소유 목록의 회전/복귀 재조회를 검증하는 테스트 전용 화면. -->
+        <activity android:name="com.ssafy.e106.features.keyring.OwnedKeyringsTestActivity" android:exported="true" />
+    </application>
+</manifest>
