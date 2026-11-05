@@ -2,6 +2,8 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
     <application>
+        <!-- 제안 대기 화면의 실제 자동 갱신·종료·방 이동을 확인하는 테스트 전용 호스트. -->
+        <activity android:name="com.ssafy.e106.features.proposals.ProposalPollingTestActivity" android:exported="true" />
         <!-- MainActivity와 동일한 adjustResize + edge-to-edge 조합으로 실제 IME 간격을 검사한다. -->
         <activity android:name="com.ssafy.e106.features.chat.ChatImeInsetsTestActivity" android:exported="true"
             android:theme="@android:style/Theme.Material.Light.NoActionBar" android:windowSoftInputMode="adjustResize" />
