@@ -18,6 +18,8 @@ data class ReportState(
     val evidence: List<ReportEvidence> = emptyList(),
     val selectedIds: Set<Long> = emptySet(),
     val hasMoreEvidence: Boolean = false,
+    // 권한 거절과 일시적인 권한 조회 실패를 구분한다. 후자만 본문을 숨긴 채 재조회를 제공한다.
+    val accessRetryAvailable: Boolean = false,
 ) {
     val available: Boolean get() = canReport && !roomKey.isNullOrBlank() && rules != null && rules.maxDetailUnits > 0
     // 신규 신고 가능 여부와 기존 요청의 처리 상태는 별개다. 만료 후에도 결과 확인·접수 완료를 표시한다.
