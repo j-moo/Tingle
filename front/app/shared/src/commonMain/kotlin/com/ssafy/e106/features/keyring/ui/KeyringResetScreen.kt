@@ -76,15 +76,20 @@ fun KeyringResetScreen(state: KeyringResetState, onAccepted: (Boolean) -> Unit, 
                 val label = when (action) {
                     KeyringResetAction.OpenConfirm -> Res.string.reset_continue
                     KeyringResetAction.StartReset -> Res.string.reset_start
-                    KeyringResetAction.UploadRecords -> Res.string.reset_records_upload
+                    KeyringResetAction.UploadRecords -> if (state.recordUploadAvailable) Res.string.reset_records_upload
+                        else Res.string.reset_records_preparing
                     KeyringResetAction.CheckConnection -> Res.string.reset_connect
                     KeyringResetAction.CheckResult -> Res.string.reset_check
                     KeyringResetAction.Retry -> Res.string.reset_retry
                     KeyringResetAction.Refresh -> Res.string.reset_refresh
                     else -> Res.string.reset_close
                 }
-                // 업로드는 삭제 작업이 아니며, 초기화 시작만 두 동의와 기록 조회 결과로 제한한다.
-                val enabled = !state.busy && (action != KeyringResetAction.StartReset || state.canConfirm)
+                // 선업로드 계약·펌웨어가 준비되기 전에는 클릭 콜백도 실행하지 않는다.
+                val enabled = !state.busy && when (action) {
+                    KeyringResetAction.StartReset -> state.canConfirm
+                    KeyringResetAction.UploadRecords -> state.canUploadRecords
+                    else -> true
+                }
                 AppButton(stringResource(label), Modifier.fillMaxWidth(),
                     variant = if (action == KeyringResetAction.StartReset) AppButtonVariant.Danger else AppButtonVariant.Primary,
                     enabled = enabled,
@@ -105,7 +110,10 @@ private fun ResetRecordsSection(state: KeyringResetState, onChoice: (ResetRecord
     when {
         count == null || count < 0 -> {
             StatusCard(stringResource(Res.string.reset_records_unknown), stringResource(Res.string.reset_records_unknown_help))
-            AppButton(stringResource(Res.string.reset_records_refresh), onClick = onRefresh, variant = AppButtonVariant.Secondary)
+            // 미확인은 기록 0개가 아니다. 미지원 조회를 가능한 재시도로 표시하지 않는다.
+            if (!state.recordQueryAvailable) Text(stringResource(Res.string.reset_records_query_unavailable))
+            AppButton(stringResource(if (state.recordQueryAvailable) Res.string.reset_records_refresh else Res.string.reset_records_preparing),
+                enabled = state.canQueryRecords, onClick = { if (state.canQueryRecords) onRefresh() }, variant = AppButtonVariant.Secondary)
         }
         count == 0 -> StatusCard(stringResource(Res.string.reset_records_empty), stringResource(Res.string.reset_records_empty_help))
         else -> {
@@ -116,6 +124,7 @@ private fun ResetRecordsSection(state: KeyringResetState, onChoice: (ResetRecord
                 AppRadio(state.recordChoice == ResetRecordChoice.Delete, { onChoice(ResetRecordChoice.Delete) },
                     stringResource(Res.string.reset_records_delete_choice))
             }
+            if (!state.recordUploadAvailable) Text(stringResource(Res.string.reset_records_upload_unavailable))
             if (state.recordChoice == ResetRecordChoice.Delete) {
                 Text(stringResource(Res.string.reset_records_delete_help), color = AppColors.Error)
                 AppCheckbox(state.recordDeletionAccepted, onDeletionAccepted, stringResource(Res.string.reset_records_delete_accept))

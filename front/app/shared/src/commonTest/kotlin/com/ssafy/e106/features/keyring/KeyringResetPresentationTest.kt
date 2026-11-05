@@ -26,6 +26,18 @@ class KeyringResetPresentationTest {
             recordDeletionAccepted = true).canConfirm)
     }
 
+    // 준비되지 않은 기능을 누를 수 없어야 하고, 향후 지원돼도 소유/연결 경계는 유지한다.
+    @Test fun unsupportedRecordOperationsStayDisabled() {
+        assertFalse(confirmation.canQueryRecords)
+        val upload = confirmation.copy(pendingRecordCount = 3, recordChoice = ResetRecordChoice.UploadFirst)
+        assertFalse(upload.canUploadRecords)
+        assertTrue(upload.copy(recordUploadAvailable = true).canUploadRecords)
+        assertFalse(upload.copy(recordUploadAvailable = true, connected = false).canUploadRecords)
+        assertFalse(upload.copy(recordUploadAvailable = true, ownershipConfirmed = false).canUploadRecords)
+        assertFalse(upload.copy(recordUploadAvailable = true, pendingRecordCount = null).canUploadRecords)
+        assertFalse(confirmation.copy(recordQueryAvailable = true, connected = false).canQueryRecords)
+    }
+
     @Test fun losingOwnershipOrConnectionBlocksPreviouslyAcceptedReset() {
         val ready = confirmation.copy(pendingRecordCount = 0)
         assertFalse(ready.copy(ownershipConfirmed = false).canConfirm)
