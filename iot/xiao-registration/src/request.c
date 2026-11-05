@@ -35,14 +35,21 @@ static const char *settings(struct kr_core *core, const struct kr_json *json, ch
 	int decoded = kr_base64_decode(kr_json_string(json, "payload"), candidate.payload, KR_PAYLOAD_MAX);
 	if (decoded <= 0) { return "INVALID_PAYLOAD"; }
 	candidate.payload_size = (uint32_t)decoded;
-	/* serverTime is deliberately not a trusted clock until authenticated time is
-	 * specified. Storage proof does not imply that matching is enabled. */
-	return kr_store(core, &candidate, signature);
+	const struct kr_settings_auth auth = {
+		.protocol_version = kr_json_string(json, "serverProofProtocolVersion"),
+		.server_key_id = kr_json_string(json, "serverKeyId"),
+		.device_nonce = kr_json_string(json, "deviceNonce"),
+		.server_time = kr_json_string(json, "serverTime"),
+		.signature = kr_json_string(json, "serverSignature"),
+	};
+	return kr_store(core, &candidate, &auth, signature);
 }
 
 void kr_request(struct kr_core *core, char *frame, struct kr_status status,
 	bool registration_open, char response[KR_RESPONSE_MAX])
 {
+	core->stop_peer = false;
+	core->peer_after_stored.verified_time = 0;
 	struct kr_json json;
 	const char *error = "INVALID_MESSAGE";
 	char request[224] = "null";
@@ -55,15 +62,29 @@ void kr_request(struct kr_core *core, char *frame, struct kr_status status,
 	}
 	const char *type = kr_json_string(&json, "type");
 	if (equal(type, "GET_DEVICE_INFO")) {
+		bool settings_ready = core->platform.issue_settings_nonce != NULL;
 		snprintf(response, KR_RESPONSE_MAX,
 			"{\"protocolVersion\":1,\"type\":\"DEVICE_INFO\",\"requestId\":%s,"
 			"\"deviceSerial\":\"%s\",\"firmwareVersion\":\"%s\",\"supportedProtocolVersions\":[1],"
-			"\"supportedFunctions\":[\"GET_DEVICE_INFO\",\"GET_REGISTRATION_PROOF\",\"GET_STATUS\"],"
-			"\"maxFrameBytes\":%u,\"maxPayloadBytes\":%u,\"settingsPolicy\":\"UNRESOLVED\","
+			"\"supportedFunctions\":[\"GET_DEVICE_INFO\",\"GET_REGISTRATION_PROOF\",\"GET_STATUS\"%s],"
+			"\"maxFrameBytes\":%u,\"maxPayloadBytes\":%u,\"settingsPolicy\":\"%s\","
 			"\"storedSettingsVersion\":%" PRId64 ",\"storedPayloadHash\":\"%s\","
 			"\"storageHealthy\":%s,\"applied\":false,\"timeReady\":false}\n",
-			request, core->identity.serial, KR_FIRMWARE_VERSION, KR_FRAME_MAX, KR_PAYLOAD_MAX,
+			request, core->identity.serial, KR_FIRMWARE_VERSION,
+			settings_ready ? ",\"GET_SYNC_CHALLENGE\",\"SYNC_SETTINGS\"" : "",
+			KR_FRAME_MAX, KR_PAYLOAD_MAX, settings_ready ? "DEV_SIGNED_V1" : "UNRESOLVED",
 			core->current.version, core->current.hash, core->storage_error ? "false" : "true");
+		return;
+	}
+	if (equal(type, "GET_SYNC_CHALLENGE")) {
+		char nonce[44];
+		error = core->platform.issue_settings_nonce ?
+			core->platform.issue_settings_nonce(core->platform.ctx, nonce) : "POLICY_UNRESOLVED";
+		if (error) { goto fail; }
+		snprintf(response, KR_RESPONSE_MAX,
+			"{\"protocolVersion\":1,\"type\":\"SYNC_CHALLENGE\",\"requestId\":%s,"
+			"\"deviceNonce\":\"%s\",\"expiresInSeconds\":%d}\n",
+			request, nonce, KR_SETTINGS_CHALLENGE_SECONDS);
 		return;
 	}
 	if (equal(type, "GET_STATUS")) {

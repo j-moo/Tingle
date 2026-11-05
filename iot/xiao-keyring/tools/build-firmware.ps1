@@ -6,7 +6,8 @@ param(
     [string]$ZephyrSdk = '',
     [string]$ArmToolchain = '',
     [string]$BuildDirectory = '',
-    [string]$ExtraConf = ''
+    [string]$ExtraConf = '',
+    [string]$DevSettingsPublicKeyFile = ''
 )
 $ErrorActionPreference = 'Stop'
 $projectRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
@@ -42,9 +43,14 @@ if (($ZephyrSdk -or $ArmToolchain) -and (Test-Path -LiteralPath $cachePath)) {
 if ($ExtraConf) {
     $ExtraConf = (Resolve-Path -LiteralPath $ExtraConf).Path
 }
+$devPublicKey = ''
+if ($DevSettingsPublicKeyFile) {
+    $devPublicKey = (Get-Content -Raw -LiteralPath $DevSettingsPublicKeyFile).Trim()
+    if ($devPublicKey -cnotmatch '^[0-9a-f]{64}$') { throw 'Expected a raw Ed25519 public key in lowercase hex.' }
+}
 & $CMake -S $projectRoot -B $BuildDirectory -G Ninja `
     '-DBOARD=xiao_ble/nrf52840' "-DPython3_EXECUTABLE=$Python" "-DCMAKE_MAKE_PROGRAM=$Ninja" `
-    "-DEXTRA_CONF_FILE=$ExtraConf" '-DKR_DIAG_INTERACTIVE_BOOT=OFF' @toolchainArgs
+    "-DEXTRA_CONF_FILE=$ExtraConf" "-DKR_DEV_SETTINGS_PUBLIC_KEY=$devPublicKey" '-DKR_DIAG_INTERACTIVE_BOOT=OFF' @toolchainArgs
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 & $CMake --build $BuildDirectory --parallel 4
 exit $LASTEXITCODE

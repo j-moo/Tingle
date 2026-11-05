@@ -99,12 +99,26 @@ enum kr_result kr_register(struct kr_engine *e, const uint8_t owner[16],
 	return KR_OK;
 }
 
+static bool synthetic_profile(const struct kr_profile *profile)
+{
+	if (profile->data_len != KR_DATA_MAX) {
+		return false;
+	}
+	for (unsigned i = 0; i < KR_DATA_MAX; ++i) {
+		if (profile->data[i] != (uint8_t)i) {
+			return false;
+		}
+	}
+	return true;
+}
+
 enum kr_result kr_sync(struct kr_engine *e, const struct kr_profile *p)
 {
 	uint8_t encoded[KR_PROFILE_BYTES];
 	struct kr_profile normalized;
 	size_t len = kr_profile_encode(p, encoded);
-	if (!e->config.registered || !len || !kr_profile_decode(&normalized, encoded, len)) {
+	if (!e->config.registered || !len || !kr_profile_decode(&normalized, encoded, len) ||
+		(e->io.synthetic_only && !synthetic_profile(&normalized))) {
 		return KR_INVALID;
 	}
 	if (p->revision < e->config.profile.revision) {
@@ -241,6 +255,22 @@ enum kr_decision kr_always_match(void *ctx, const struct kr_profile *a,
 	(void)a;
 	(void)b;
 	return KR_ACCEPT;
+}
+
+void kr_expire_candidates(struct kr_engine *e, uint64_t now)
+{
+	if (!e->ready || e->storage_error || !now) {
+		return;
+	}
+	static const struct kr_record empty;
+	for (unsigned i = 0; i < KR_RECORDS; ++i) {
+		const struct kr_record *r = &e->records[i];
+		/* Retain confirmed records and calculation failures for upload. */
+		if (r->kind == KR_MATCH && !r->reason && r->expires_at && now >= r->expires_at &&
+			save(e, i, &empty) != KR_OK) {
+			break;
+		}
+	}
 }
 
 void kr_drain(struct kr_engine *e)

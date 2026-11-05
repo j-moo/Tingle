@@ -1,12 +1,18 @@
 #ifndef TINGLE_REGISTRATION_H
 #define TINGLE_REGISTRATION_H
 
+#include "peer_plan.h"
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 
 #define KR_PROOF_VERSION "tingle-device-proof-v1"
+#define KR_SETTINGS_PROOF_VERSION "tingle-dev-settings-proof-v1"
+#define KR_DEV_PAYLOAD_FORMAT "tingle-dev-settings-v1"
+#define KR_SETTINGS_CHALLENGE_SECONDS 60
+#ifndef KR_FIRMWARE_VERSION
 #define KR_FIRMWARE_VERSION "0.1.0-registration"
+#endif
 /* Implementation limits, to be agreed with FE/BE before production rollout. */
 #define KR_PAYLOAD_MAX 2048
 #define KR_FRAME_MAX 4096
@@ -35,6 +41,19 @@ struct kr_settings {
 	uint8_t payload[KR_PAYLOAD_MAX];
 };
 
+struct kr_settings_auth {
+	const char *protocol_version;
+	const char *server_key_id;
+	const char *device_nonce;
+	const char *server_time;
+	const char *signature;
+};
+
+struct kr_settings_nonce {
+	char value[44];
+	int64_t deadline_ms;
+};
+
 struct kr_platform {
 	void *ctx;
 	/* Must complete a durable atomic write AND full readback before returning 0. */
@@ -42,7 +61,9 @@ struct kr_platform {
 	/* Verifies authenticated server/owner binding and supported payload schema.
 	 * Default board adapter returns POLICY_UNRESOLVED until the contract exists.
 	 * SHA256 alone is NOT sender authentication. Called even for retry ACKs. */
-	const char *(*authorize)(void *ctx, const struct kr_settings *next);
+	const char *(*authorize)(void *ctx, const struct kr_settings *next,
+		const struct kr_settings_auth *auth, struct kr_peer_plan *plan);
+	const char *(*issue_settings_nonce)(void *ctx, char out[44]);
 };
 
 struct kr_core {
@@ -50,6 +71,8 @@ struct kr_core {
 	struct kr_settings current;
 	struct kr_platform platform;
 	bool storage_error;
+	bool stop_peer;
+	struct kr_peer_plan peer_after_stored;
 };
 
 void kr_hash(const void *data, size_t len, uint8_t out[32]);
@@ -65,7 +88,12 @@ bool kr_settings_valid(const struct kr_settings *settings);
 int kr_registration_proof(const struct kr_identity *id, const char *challenge,
 	const char *nonce, int64_t expires, char signature[87]);
 const char *kr_store(struct kr_core *core, const struct kr_settings *next,
-	char signature[87]);
+	const struct kr_settings_auth *auth, char signature[87]);
+void kr_issue_settings_nonce(struct kr_settings_nonce *challenge, const uint8_t bytes[32], int64_t now_ms);
+const char *kr_verify_dev_settings(const struct kr_identity *id, const struct kr_settings *next,
+	const struct kr_settings_auth *auth, struct kr_settings_nonce *challenge, int64_t now_ms,
+	const char *server_key_id, const uint8_t server_key[32], int64_t *verified_time);
+bool kr_peer_after_response(struct kr_core *core, bool sent, struct kr_peer_plan *out);
 
 /* Flat JSON requests, strict duplicate/type/overflow checks. Values are decoded
  * in-place only after complete LF framing. No heap or floating-point integers. */
