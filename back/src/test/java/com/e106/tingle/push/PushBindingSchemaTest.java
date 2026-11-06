@@ -1,5 +1,7 @@
 package com.e106.tingle.push;
 
+import static com.e106.tingle.CanonicalStorageDesign.totalColumns;
+import static com.e106.tingle.CanonicalStorageDesign.totalTables;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.sql.Timestamp;
@@ -39,9 +41,9 @@ class PushBindingSchemaTest {
 	@DisplayName("설계 DDL은 30개 테이블·274개 컬럼과 nullable 연결 세대·기기 epoch를 보존한다")
 	void preservesApprovedLayoutAndNullableGenerationTypes() {
 		assertThat(jdbc.queryForObject("select count(*) from information_schema.tables "
-			+ "where table_schema='public' and table_type='BASE TABLE'", Integer.class)).isEqualTo(30);
+			+ "where table_schema='public' and table_type='BASE TABLE'", Integer.class)).isEqualTo(totalTables());
 		assertThat(jdbc.queryForObject("select count(*) from information_schema.columns "
-			+ "where table_schema='public'", Integer.class)).isEqualTo(274);
+			+ "where table_schema='public'", Integer.class)).isEqualTo(totalColumns());
 		List<Map<String, Object>> columns = jdbc.queryForList("select column_name,data_type,is_nullable,column_default "
 			+ "from information_schema.columns where table_schema='public' and table_name='push_installation' "
 			+ "and column_name in ('binding_id','linked_at') order by column_name");

@@ -1,5 +1,6 @@
 package com.e106.tingle;
 
+import static com.e106.tingle.CanonicalStorageDesign.totalTables;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.util.List;
@@ -35,7 +36,7 @@ class BackendApplicationTests {
 			+ "or (table_name='user_consents' and column_name in ('consent_type','document_version')))",
 			(rs, row) -> rs.getString(1) + "." + rs.getString(2) + ":" + rs.getString(3));
 		assertThat(jdbc.queryForObject("select count(*) from information_schema.tables "
-			+ "where table_schema='public' and table_type='BASE TABLE'", Integer.class)).isEqualTo(30);
+			+ "where table_schema='public' and table_type='BASE TABLE'", Integer.class)).isEqualTo(totalTables());
 		assertThat(types).containsExactlyInAnyOrder("users.provider:USER-DEFINED",
 			"users.provider_user_id:character varying", "users.status:text", "users.email:character varying",
 			"profile.nickname:character varying", "profile.gender:USER-DEFINED", "profile.smoking_status:USER-DEFINED",
