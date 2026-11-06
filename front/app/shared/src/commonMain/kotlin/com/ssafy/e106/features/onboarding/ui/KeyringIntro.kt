@@ -10,7 +10,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -52,7 +52,9 @@ import com.ssafy.e106.resources.onboarding_keyring_find
 import com.ssafy.e106.resources.onboarding_keyring_no
 import com.ssafy.e106.resources.onboarding_keyring_search
 import com.ssafy.e106.resources.onboarding_keyring_title
+import com.ssafy.e106.resources.onboarding_link_failed
 import com.ssafy.e106.resources.onboarding_logout
+import com.ssafy.e106.resources.onboarding_refresh
 import com.ssafy.e106.resources.onboarding_retry
 import org.jetbrains.compose.resources.stringResource
 
@@ -72,10 +74,12 @@ private object Pebble {
 internal fun KeyringIntro(
     busy: Boolean,
     error: String?,
+    linkFailed: Boolean,
     purchaseUrl: String?,
     onFind: (() -> Unit)?,
     onOpen: (String) -> Unit,
     onReload: () -> Unit,
+    onRefresh: () -> Unit,
     onLogout: () -> Unit,
 ) {
     Surface(Modifier.fillMaxSize(), color = AppColors.Background) {
@@ -95,11 +99,13 @@ internal fun KeyringIntro(
                 Text(stringResource(Res.string.onboarding_keyring_body), style = MaterialTheme.typography.bodyLarge,
                     textAlign = TextAlign.Center, color = AppColors.TextSecondary)
                 error?.let { OnboardingError(it) }
+                if (linkFailed) OnboardingError(stringResource(Res.string.onboarding_link_failed))
                 Spacer(Modifier.weight(1f))
                 AppButton(stringResource(if (onFind != null) Res.string.onboarding_keyring_find else Res.string.onboarding_keyring_search),
                     Modifier.fillMaxWidth(), enabled = onFind != null && !busy, onClick = { onFind?.invoke() })
                 purchaseUrl?.let { url ->
-                    Row(verticalAlignment = Alignment.CenterVertically) {
+                    // 큰 글자에서 "구매하기"가 쪼개지지 않게 넘치면 다음 줄로
+                    FlowRow(horizontalArrangement = Arrangement.Center, itemVerticalAlignment = Alignment.CenterVertically) {
                         Text(stringResource(Res.string.onboarding_keyring_no), style = MaterialTheme.typography.bodyMedium, color = AppColors.TextSecondary)
                         TextButton(onClick = { onOpen(url) }) {
                             Text(stringResource(Res.string.onboarding_keyring_buy), style = MaterialTheme.typography.bodyMedium,
@@ -109,7 +115,11 @@ internal fun KeyringIntro(
                 }
                 if (error != null) AppButton(stringResource(Res.string.onboarding_retry), Modifier.fillMaxWidth(),
                     variant = AppButtonVariant.Secondary, enabled = !busy, onClick = onReload)
-                TextButton(onClick = onLogout, enabled = !busy) {
+                // 서버에서 가입 단계가 바뀌었는지 다시 확인(운영 앱은 키링 찾기가 막혀 있어 이것 말고는 갱신할 방법이 없다)
+                TextButton(onClick = onRefresh, enabled = !busy) {
+                    Text(stringResource(Res.string.onboarding_refresh), style = MaterialTheme.typography.bodySmall, color = AppColors.TextSecondary)
+                }
+                TextButton(onClick = onLogout) {   // 불러오는 중에도 나갈 수 있어야 한다(로그아웃은 진행 중 작업을 취소한다)
                     Text(stringResource(Res.string.onboarding_logout), style = MaterialTheme.typography.bodySmall, color = AppColors.TextSecondary)
                 }
             }

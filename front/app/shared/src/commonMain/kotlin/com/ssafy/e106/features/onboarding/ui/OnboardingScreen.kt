@@ -103,7 +103,8 @@ fun OnboardingScreen(
     fun open(url: String) { linkFailed = runCatching { uri.openUri(url) }.isFailure }
     // 키링 단계: 가운데 키링 그림 · 키링 찾기 · 구매 안내(시안 02). 개발용 진입(설정 · 성향테스트 · 프로필 수정)은 두지 않는다
     if (keyring && !state.submitted) {
-        KeyringIntro(state.busy, state.error?.message, state.purchaseUrl, onFind = onBleProbe, onOpen = ::open, onReload = onReload, onLogout = onLogout)
+        KeyringIntro(state.busy, state.error?.message, linkFailed, state.purchaseUrl, onFind = onBleProbe, onOpen = ::open,
+            onReload = onReload, onRefresh = onRefresh, onLogout = onLogout)
         return
     }
     OnboardingPanel(stringResource(when {
