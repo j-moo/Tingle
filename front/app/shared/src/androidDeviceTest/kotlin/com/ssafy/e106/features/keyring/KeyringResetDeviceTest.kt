@@ -57,14 +57,13 @@ class KeyringResetTestActivity : ComponentActivity() {
                     LaunchedEffect(Unit) { model.load(resetRun.deviceId, true, resetSerial) }
                     KeyringResetScreen(state, model::accepted, {
                         when (it) {
-                            KeyringResetAction.OpenConfirm -> model.confirm()
                             KeyringResetAction.StartReset -> model.start(f.board)
                             KeyringResetAction.Cancel -> model.cancel()
                             else -> Unit
                         }
                     }, onRecordChoice = model::recordChoice, onRecordDeletionAccepted = model::recordDeletionAccepted)
                 }
-                "links" -> KeyringResetRecoveryLinks(1, {}, f.store)
+                "links" -> KeyringResetRecoveryLinks(1, {}, store = f.store)
                 else -> ConnectedKeyringResetRoute(resetRun.deviceId, {}, {}, model, ble)
             }
         } }
@@ -87,15 +86,14 @@ class KeyringResetDeviceTest {
         }
     }
 
-    @Test fun storedProofRemainsPartialAcrossRecreateUntilServerCompleted() {
+    @Test fun storedProofIsFinishedAutomaticallyOnceWithoutResendingToBoard() {
         val f = ResetFixture(); runBlocking { f.seed(ack = resetProof) }; KeyringResetTestActivity.fixture = f
         launch().use { scenario ->
-            compose.onNodeWithText("키링 초기화 완료 · 서버 반영 대기").assertExists()
-            assertEquals(0, f.server.acknowledgements.size)
+            // 결과 확인 화면 없이 저장된 기기 증명으로 서버 해제를 자동으로 마저 한다
+            compose.waitUntil(5_000) { f.server.acknowledgements.size == 1 }
+            compose.onNodeWithText("초기화되었어요!").assertExists()
             scenario.recreate(); compose.waitForIdle()
-            compose.onNodeWithText("키링 초기화 완료 · 서버 반영 대기").assertExists()
-            compose.onNodeWithText("초기화 결과 확인").performClick()
-            compose.onNodeWithText("키링 초기화를 완료했어요").assertExists()
+            compose.onNodeWithText("초기화되었어요!").assertExists()
             assertEquals(1, f.server.acknowledgements.size)
             assertEquals(0, f.board.sends)
         }
@@ -103,15 +101,14 @@ class KeyringResetDeviceTest {
     @Test fun unknownInventoryRequiresBothCheckboxesBeforeExplicitStart() {
         val f = ResetFixture(); f.server.run = resetRun.copy(discardUnsentConfirmed = true); KeyringResetTestActivity.fixture = f
         launch("blocked").use {
-            compose.onNodeWithText("안내 확인하고 계속").performClick()
-            compose.onNodeWithText("초기화 대상과 안내 내용을 확인했어요.").performScrollTo().performClick()
-            compose.onNodeWithText("키링 초기화하기").assertIsNotEnabled()
+            compose.onNodeWithText("위 내용을 확인했어요.").performScrollTo().performClick()
+            compose.onNodeWithText("키링 초기화").assertIsNotEnabled()
             assertEquals(0, f.server.starts.size)
             compose.onNodeWithText("개수를 확인할 수 없는 미전송 만남 기록의 삭제에 동의해요.").performScrollTo().performClick()
-            compose.onNodeWithText("키링 초기화하기").assertIsEnabled()
+            compose.onNodeWithText("키링 초기화").assertIsEnabled()
             assertEquals(0, f.server.starts.size)
-            compose.onNodeWithText("키링 초기화하기").performClick()
-            compose.onNodeWithText("키링 초기화를 완료했어요").assertExists()
+            compose.onNodeWithText("키링 초기화").performClick()
+            compose.onNodeWithText("초기화되었어요!").assertExists()
             assertEquals(1, f.server.starts.size)
             assertEquals(true, f.server.starts.single().second.discardUnsentConfirmed)
         }
@@ -119,22 +116,20 @@ class KeyringResetDeviceTest {
     @Test fun consentIsNotReusedAfterActivityRecreation() {
         val f = ResetFixture(); KeyringResetTestActivity.fixture = f
         launch("blocked").use { scenario ->
-            compose.onNodeWithText("안내 확인하고 계속").performClick()
-            compose.onNodeWithText("초기화 대상과 안내 내용을 확인했어요.").performScrollTo().performClick()
+            compose.onNodeWithText("위 내용을 확인했어요.").performScrollTo().performClick()
             compose.onNodeWithText("개수를 확인할 수 없는 미전송 만남 기록의 삭제에 동의해요.").performScrollTo().performClick()
-            compose.onNodeWithText("키링 초기화하기").assertIsEnabled()
+            compose.onNodeWithText("키링 초기화").assertIsEnabled()
             scenario.recreate(); compose.waitForIdle()
-            compose.onNodeWithText("안내 확인하고 계속").performClick()
-            compose.onNodeWithText("키링 초기화하기").assertIsNotEnabled()
+            compose.onNodeWithText("키링 초기화").assertIsNotEnabled()
             assertEquals(0, f.server.starts.size)
         }
     }
     @Test fun recoveryEntrySurvivesAbsenceFromOwnedList() {
         val f = ResetFixture(); runBlocking { f.seed() }; KeyringResetTestActivity.fixture = f
         launch("links").use { scenario ->
-            compose.onNodeWithText("키링 #${resetRun.deviceId} 초기화 작업 확인").assertExists()
+            compose.onNodeWithText("초기화 중인 키링").assertExists()
             scenario.recreate(); compose.waitForIdle()
-            compose.onNodeWithText("키링 #${resetRun.deviceId} 초기화 작업 확인").assertExists()
+            compose.onNodeWithText("초기화 중인 키링").assertExists()
             assertEquals(0, f.server.ownershipReads)
         }
     }

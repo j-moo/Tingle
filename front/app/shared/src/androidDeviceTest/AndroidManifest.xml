@@ -6,9 +6,6 @@
     <application>
         <!-- 약관 웹 문서 로딩 · 실패 판정을 실제 WebView 로 확인하는 테스트 호스트 -->
         <activity android:name="com.ssafy.e106.core.ui.components.WebDocumentTestActivity" android:exported="true" />
-        <!-- 소유 상태의 미확인/인증 경계와 작은 화면을 확인하는 순수 UI 전용 호스트. -->
-        <activity android:name="com.ssafy.e106.features.keyring.KeyringOwnerStatusTestActivity" android:exported="true"
-            android:theme="@android:style/Theme.Material.Light.NoActionBar" />
         <!-- 차단/나가기 저장소 복구 실패 안내를 확인하는 별도 테스트 호스트. -->
         <activity android:name="com.ssafy.e106.features.safety.SafetyRestoreTestActivity" android:exported="true"
             android:theme="@android:style/Theme.Material.Light.NoActionBar" />

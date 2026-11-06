@@ -36,7 +36,7 @@ class OwnedKeyringsTestActivity : ComponentActivity() {
                 }, TestSession(OnboardingStatus.READY)) as T
         })[OwnedKeyringsViewModel::class.java]
         setContent { AppTheme {
-            ConnectedOwnedKeyringsRoute(Session.SignedIn(1, OnboardingStatus.READY, false), {}, model)
+            ConnectedOwnedKeyringsRoute(Session.SignedIn(1, OnboardingStatus.READY, false), {}, model, onReset = {}, recoveryLinks = {})
         } }
     }
 }
@@ -48,15 +48,14 @@ class OwnedKeyringsDeviceTest {
         OwnedKeyringsTestActivity.reads.set(0)
         ActivityScenario.launch<OwnedKeyringsTestActivity>(Intent(InstrumentationRegistry.getInstrumentation().context,
             OwnedKeyringsTestActivity::class.java)).use { scenario ->
-            compose.onNodeWithText("서버 상태 · 설정 동기화 완료").assertExists()
+            compose.onNodeWithText("펌웨어 1.0").assertExists()
             assertEquals(1, OwnedKeyringsTestActivity.reads.get())
-            compose.onNodeWithText("현재 블루투스 연결과 배터리 상태는 아직 확인할 수 없어요.", substring = true).assertExists()
             scenario.recreate(); compose.waitForIdle()
             assertEquals(2, OwnedKeyringsTestActivity.reads.get())
             scenario.moveToState(Lifecycle.State.CREATED)
             scenario.moveToState(Lifecycle.State.RESUMED); compose.waitForIdle()
             assertEquals(3, OwnedKeyringsTestActivity.reads.get())
-            compose.onNodeWithText("키링 #7").assertExists()
+            compose.onNodeWithText("내 키링 1").assertExists()
         }
     }
 }

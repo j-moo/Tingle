@@ -36,6 +36,7 @@ fun OnboardingRoute(
     profileAccess: DevelopmentProfileAccess = koinInject(),
     surveyAccess: SurveyAccess = koinInject(),
     settingsAccess: SettingsAccess = koinInject(),
+    // 서비스 호스트가 키링 연결 · 설정 전송을 맡으면 true(실제 앱). 호스트 없이 이 화면만 쓰면 화면이 연결을 정리한다
     managedKeyringConnection: Boolean = false,
 ) {
     val state by model.state.collectAsStateWithLifecycle()
@@ -56,11 +57,9 @@ fun OnboardingRoute(
     val canSettings = settingsAccess.allowed(session)
     when {
         // 연결 화면을 로딩 분기보다 먼저 둔다. 등록 뒤 가입 단계가 바뀌는 순간 로딩 화면이 끼면 연결 화면이 빠지면서 BLE 연결이 끊긴다
-        // managedKeyringConnection 은 개발 앱 서비스 호스트에서만 true — 기기 진단도 그때만 보인다
-        keyringStep && openBleProbe -> ConnectedKeyringSetupRoute({ openBleProbe = false }, managedConnection = managedKeyringConnection,
-            diagnostics = managedKeyringConnection)
+        keyringStep && openBleProbe -> ConnectedKeyringSetupRoute({ openBleProbe = false }, managedConnection = managedKeyringConnection)
         state.session != session -> OnboardingPanel(stringResource(Res.string.onboarding_title)) { Text(stringResource(Res.string.onboarding_loading)) }
-        canSettings && openSettings -> ConnectedSettingsRoute(session, { openSettings = false }, showKeyringSync = managedKeyringConnection)
+        canSettings && openSettings -> ConnectedSettingsRoute(session, { openSettings = false })
         canSurvey && openSurvey -> SurveyRoute(session, { openSurvey = false })
         canManage && manageProfile -> ProfileManagementRoute(session, { manageProfile = false })
         !session.isReady && session.status == OnboardingStatus.PROFILE_REQUIRED -> ProfileRoute(session)

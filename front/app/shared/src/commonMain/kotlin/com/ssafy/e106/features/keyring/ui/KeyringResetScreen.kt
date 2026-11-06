@@ -5,8 +5,20 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
+import androidx.compose.foundation.background
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.draw.alpha
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import org.jetbrains.compose.resources.painterResource
 import com.ssafy.e106.core.ui.components.*
 import com.ssafy.e106.core.ui.theme.*
 import com.ssafy.e106.resources.*
@@ -22,70 +34,78 @@ fun KeyringResetScreen(state: KeyringResetState, onAccepted: (Boolean) -> Unit, 
         Column(Modifier.fillMaxSize().safeDrawingPadding()) {
             // 이 배너는 debug @Preview에서만 켠다. 제품 화면의 동작 상태와 혼동하지 않는다.
             if (showPreviewNotice) Text(stringResource(Res.string.reset_preview_notice), Modifier.padding(AppSpacing.Small))
-            AppTopBar(stringResource(Res.string.reset_title), onBack = if (state.busy) null else ({ onAction(KeyringResetAction.Back) }))
-            Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()).padding(screenPaddingValues()),
-                verticalArrangement = Arrangement.spacedBy(AppSpacing.Large)) {
-                state.errorMessage?.let { Text(it, color = AppColors.Error) }
-                // 응답 유실 후에는 소유 목록에서 사라질 수도 있다. 결과 조회와 실물 재연결을 각각 제공한다.
-                if (phase == KeyringResetStage.Unknown && !state.connected) {
-                    AppButton(stringResource(Res.string.reset_connect), onClick = { onAction(KeyringResetAction.CheckConnection) })
+            // 다른 키링 화면과 같은 화살표. 진행 중에는 뒤로 갈 수 없어 자리만 둔다
+            if (state.busy) Spacer(Modifier.height(48.dp)) else BackArrowBar { onAction(KeyringResetAction.Back) }
+            if (phase == KeyringResetStage.Ready || phase == KeyringResetStage.Confirm) {
+                Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()).padding(screenPaddingValues()),
+                    verticalArrangement = Arrangement.spacedBy(AppSpacing.Large)) {
+                    state.errorMessage?.let { Text(it, color = AppColors.Error) }
+                    // 되돌릴 수 없는 작업이라는 점을 붉은 표시 · 경고 상자로 먼저 보여준다
+                    Row(Modifier.background(AppColors.ErrorContainer, RoundedCornerShape(50)).padding(horizontal = 10.dp, vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Icon(painterResource(Res.drawable.ic_warning), null, Modifier.size(14.dp), tint = AppColors.Error)
+                        Text(stringResource(Res.string.reset_irreversible), style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.SemiBold, color = AppColors.Error)
+                    }
+                    Text(stringResource(Res.string.reset_question), style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold,
+                        modifier = Modifier.semantics { heading() })
+                    Text(stringResource(Res.string.reset_effect), color = AppColors.TextSecondary)
+                    Text(stringResource(Res.string.reset_both), Modifier.fillMaxWidth().background(AppColors.ErrorContainer, RoundedCornerShape(14.dp))
+                        .padding(horizontal = 14.dp, vertical = 12.dp), color = AppColors.OnErrorContainer, style = MaterialTheme.typography.bodyMedium)
+                    Text(stringResource(Res.string.reset_existing), color = AppColors.TextSecondary, style = MaterialTheme.typography.bodyMedium)
+                    ResetRecordsSection(state, onRecordChoice, onRecordDeletionAccepted,
+                        onRefresh = { onAction(KeyringResetAction.Refresh) })
+                    // 안내와 확인이 한 화면이다. 초기화 자체의 동의와 아직 업로드하지 않은 기록의 삭제 동의를 묶지 않는다.
+                    AppCheckbox(state.accepted, onAccepted, stringResource(Res.string.reset_accept))
                 }
-                if (phase == KeyringResetStage.Ready || phase == KeyringResetStage.Confirm) {
-                    Text(stringResource(Res.string.reset_question), style = MaterialTheme.typography.headlineSmall)
-                    StatusCard(stringResource(Res.string.reset_target), state.deviceLabel.orEmpty())
-                    Text(stringResource(Res.string.reset_effect))
-                    Text(stringResource(Res.string.reset_both), color = AppColors.Error)
-                    Text(stringResource(Res.string.reset_existing))
-                    if (phase == KeyringResetStage.Confirm) {
-                        ResetRecordsSection(state, onRecordChoice, onRecordDeletionAccepted,
-                            onRefresh = { onAction(KeyringResetAction.Refresh) })
-                        // 초기화 자체의 동의와 아직 업로드하지 않은 기록의 삭제 동의를 묶지 않는다.
-                        AppCheckbox(state.accepted, onAccepted, stringResource(Res.string.reset_accept))
+            } else {
+                // 시작 화면 말고는 진행 중 · 완료 · 실패(· 연결 필요) 하나만 가운데에 보여준다
+                Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()).padding(screenPaddingValues()),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(AppSpacing.Medium, Alignment.CenterVertically)) {
+                    // 불러오는 중(아직 초기화 전)은 로딩 원만 — "초기화하고 있어요"로 오해하지 않게
+                    val copy = when {
+                        phase == KeyringResetStage.Loading -> null
+                        state.busy -> Res.string.reset_running to Res.string.reset_running_help
+                        phase == KeyringResetStage.Complete -> Res.string.reset_done to Res.string.reset_done_help
+                        phase == KeyringResetStage.Disconnected && state.stage != KeyringResetStage.Failed ->
+                            Res.string.reset_disconnected to Res.string.reset_disconnected_help
+                        phase == KeyringResetStage.Unavailable -> Res.string.reset_unavailable to Res.string.reset_unavailable_help
+                        else -> Res.string.reset_failed to Res.string.reset_failed_help
                     }
-                } else {
-                    val copy = when (phase) {
-                        KeyringResetStage.Loading -> Res.string.reset_loading to Res.string.reset_loading_help
-                        KeyringResetStage.Disconnected -> Res.string.reset_disconnected to Res.string.reset_disconnected_help
-                        KeyringResetStage.Preparing -> Res.string.reset_preparing to Res.string.reset_preparing_help
-                        KeyringResetStage.Resetting -> Res.string.reset_device_processing to Res.string.reset_processing_help
-                        KeyringResetStage.Unlinking -> Res.string.reset_server_processing to Res.string.reset_processing_help
-                        KeyringResetStage.Partial -> Res.string.reset_partial to Res.string.reset_partial_help
-                        KeyringResetStage.Recovering -> Res.string.reset_recovering to Res.string.reset_recovering_help
-                        KeyringResetStage.Failed -> Res.string.reset_failed to Res.string.reset_failed_help
-                        KeyringResetStage.Complete -> Res.string.reset_complete to Res.string.reset_complete_help
-                        KeyringResetStage.Unavailable -> Res.string.reset_unavailable to Res.string.reset_unavailable_help
-                        else -> Res.string.reset_unknown to Res.string.reset_unknown_help
+                    when {
+                        state.busy -> {
+                            // 문구가 없는 불러오는 중에도 TalkBack 이 무엇을 기다리는지 읽게 한다
+                            val label = stringResource(if (phase == KeyringResetStage.Loading) Res.string.reset_loading_label else Res.string.reset_running)
+                            CircularProgressIndicator(Modifier.size(48.dp).semantics { contentDescription = label }, color = AppColors.TextPrimary)
+                        }
+                        phase == KeyringResetStage.Complete -> Image(painterResource(Res.drawable.ic_check_done), null, Modifier.size(56.dp))
+                        phase == KeyringResetStage.Disconnected && state.stage != KeyringResetStage.Failed -> KeyringPebble(Modifier.size(96.dp).alpha(0.45f))
+                        else -> Icon(painterResource(Res.drawable.ic_warning), null, Modifier.size(48.dp), tint = AppColors.Error)
                     }
-                    StatusCard(stringResource(copy.first), stringResource(copy.second))
-                    if (!state.deviceLabel.isNullOrBlank()) StatusCard(stringResource(Res.string.reset_target), state.deviceLabel)
-                    if (phase in listOf(KeyringResetStage.Preparing, KeyringResetStage.Resetting, KeyringResetStage.Unlinking,
-                            KeyringResetStage.Partial, KeyringResetStage.Recovering, KeyringResetStage.Unknown)) {
-                        ServiceRow(stringResource(Res.string.reset_device_step), detail = stringResource(if (state.deviceResetConfirmed) Res.string.reset_confirmed else Res.string.reset_unconfirmed))
-                        ServiceRow(stringResource(Res.string.reset_server_step), detail = stringResource(if (state.ownershipReleased) Res.string.reset_confirmed else Res.string.reset_unconfirmed))
-                        Text(stringResource(Res.string.reset_both), color = AppColors.Error)
-                    }
-                    if (phase == KeyringResetStage.Complete) Text(stringResource(Res.string.reset_existing))
+                    if (copy != null) Text(stringResource(copy.first), style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold,
+                        textAlign = TextAlign.Center, modifier = Modifier.semantics { heading() })
+                    if (copy != null) Text(stringResource(copy.second), color = AppColors.TextSecondary, textAlign = TextAlign.Center)
+                    if (!state.busy) state.errorMessage?.let { Text(it, color = AppColors.Error, textAlign = TextAlign.Center) }
                 }
             }
             Column(Modifier.fillMaxWidth().padding(AppSpacing.Medium), verticalArrangement = Arrangement.spacedBy(AppSpacing.Small)) {
                 val action = when (phase) {
-                    KeyringResetStage.Ready -> KeyringResetAction.OpenConfirm
-                    KeyringResetStage.Confirm -> if (state.pendingRecordCount != null && state.pendingRecordCount > 0 &&
+                    KeyringResetStage.Ready, KeyringResetStage.Confirm -> if (state.pendingRecordCount != null && state.pendingRecordCount > 0 &&
                         state.recordChoice == ResetRecordChoice.UploadFirst) KeyringResetAction.UploadRecords else KeyringResetAction.StartReset
                     KeyringResetStage.Disconnected -> KeyringResetAction.CheckConnection
+                    // 결과 확인 화면은 없다. 앱이 자동으로 마저 하고, 그래도 안 되면 "다시 시도"로 같은 확인을 다시 한다
                     KeyringResetStage.Partial, KeyringResetStage.Unknown -> KeyringResetAction.CheckResult
                     KeyringResetStage.Failed -> KeyringResetAction.Retry
                     KeyringResetStage.Unavailable -> KeyringResetAction.Refresh
                     else -> KeyringResetAction.Close
                 }
                 val label = when (action) {
-                    KeyringResetAction.OpenConfirm -> Res.string.reset_continue
                     KeyringResetAction.StartReset -> Res.string.reset_start
                     KeyringResetAction.UploadRecords -> if (state.recordUploadAvailable) Res.string.reset_records_upload
                         else Res.string.reset_records_preparing
                     KeyringResetAction.CheckConnection -> Res.string.reset_connect
-                    KeyringResetAction.CheckResult -> Res.string.reset_check
-                    KeyringResetAction.Retry -> Res.string.reset_retry
+                    KeyringResetAction.CheckResult, KeyringResetAction.Retry -> Res.string.reset_retry
                     KeyringResetAction.Refresh -> Res.string.reset_refresh
                     else -> Res.string.reset_close
                 }
@@ -95,12 +115,12 @@ fun KeyringResetScreen(state: KeyringResetState, onAccepted: (Boolean) -> Unit, 
                     KeyringResetAction.UploadRecords -> state.canUploadRecords
                     else -> true
                 }
-                AppButton(stringResource(label), Modifier.fillMaxWidth(),
+                // 진행 중에는 버튼 없이 가운데 로딩만 둔다
+                if (!state.busy) AppButton(stringResource(label), Modifier.fillMaxWidth(),
                     variant = if (action == KeyringResetAction.StartReset) AppButtonVariant.Danger else AppButtonVariant.Primary,
                     enabled = enabled,
-                    loading = state.busy, loadingText = stringResource(Res.string.reset_wait),
                     onClick = { if (enabled) onAction(action) })
-                if (phase == KeyringResetStage.Confirm) AppButton(stringResource(Res.string.reset_cancel), Modifier.fillMaxWidth(),
+                if (phase == KeyringResetStage.Ready || phase == KeyringResetStage.Confirm) AppButton(stringResource(Res.string.reset_cancel), Modifier.fillMaxWidth(),
                     variant = AppButtonVariant.Secondary, onClick = { onAction(KeyringResetAction.Cancel) })
             }
         }
@@ -129,7 +149,7 @@ private fun ResetRecordsSection(state: KeyringResetState, onChoice: (ResetRecord
                 }, stringResource(Res.string.reset_records_unknown_delete_accept))
             }
         }
-        count == 0 -> StatusCard(stringResource(Res.string.reset_records_empty), stringResource(Res.string.reset_records_empty_help))
+        count == 0 -> Unit                                    // 보낼 기록이 없으면 따로 알리지 않는다
         else -> {
             StatusCard(stringResource(Res.string.reset_records_pending, count), stringResource(Res.string.reset_records_help))
             Column(Modifier.selectableGroup()) {

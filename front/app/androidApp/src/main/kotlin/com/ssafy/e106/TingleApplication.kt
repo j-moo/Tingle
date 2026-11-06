@@ -25,17 +25,11 @@ class TingleApplication : Application() {
         startKoin {
             androidContext(this@TingleApplication)
             val socialKeys = SocialKeys(BuildConfig.GOOGLE_WEB_CLIENT_ID, BuildConfig.KAKAO_NATIVE_APP_KEY, BuildConfig.NAVER_CLIENT_ID, BuildConfig.NAVER_REDIRECT_URI)
-            // 약관 미준비·키링 없이 프로필 입력은 개발 앱·개발 서버 조합에서만 허용한다.
-            val developmentOnboarding = BuildConfig.DEBUG &&
-                BuildConfig.APPLICATION_ID == "com.ssafy.tingle.dev" &&
-                BuildConfig.API_BASE_URL == "https://k15e106.p.ssafy.io/dev/api/"
+            // 운영 앱 · 개발 앱은 같은 화면 · 같은 가입 흐름을 쓴다(개발용 우회 · 진단 화면 없음). 서버 주소 · 키만 다르다.
             modules(coreModule(BuildConfig.API_BASE_URL, BuildConfig.HTTP_LOG, socialKeys), authUiModule,
-                onboardingModule(allowUnpublishedAgreements = developmentOnboarding),
-                profileModule(allowKeyringSkip = developmentOnboarding, allowUnpublishedAgreements = developmentOnboarding),
-                surveyModule(development = developmentOnboarding),
-                settingsModule(development = developmentOnboarding),
+                onboardingModule(), profileModule(), surveyModule(), settingsModule(),
                 // 키링 소유 조회는 실제 서버 모듈을 사용하며 BLE 연결 성공을 대체하지 않는다.
-                proposalModule(developmentOnboarding), matchReasonModule, homeModule, chatModule, safetyModule, reportModule, keyringModule)
+                proposalModule(), matchReasonModule, homeModule, chatModule, safetyModule, reportModule, keyringModule)
         }
     }
 }
