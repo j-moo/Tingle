@@ -5,6 +5,8 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
+import android.graphics.Color
+import androidx.browser.customtabs.CustomTabColorSchemeParams
 import androidx.browser.customtabs.CustomTabsIntent
 
 /**
@@ -40,7 +42,10 @@ internal class NaverAuthActivity : Activity() {
 
     private fun act(action: NaverAuthGate.Action) {
         when (action) {
-            is NaverAuthGate.Action.Open -> runCatching { CustomTabsIntent.Builder().build().launchUrl(this, Uri.parse(action.url)) }
+            is NaverAuthGate.Action.Open -> runCatching { CustomTabsIntent.Builder()
+                .setDefaultColorSchemeParams(CustomTabColorSchemeParams.Builder().setToolbarColor(Color.WHITE).setNavigationBarColor(Color.WHITE).build())   // 로그인 화면과 같은 흰색 — 브라우저로 튀는 느낌을 줄임
+                .setShowTitle(true)
+                .build().launchUrl(this, Uri.parse(action.url)) }
                 .onFailure { act(gate.onOpenFailed()) }  // 브라우저가 없다
             NaverAuthGate.Action.Finish -> finish()
             NaverAuthGate.Action.None -> Unit
