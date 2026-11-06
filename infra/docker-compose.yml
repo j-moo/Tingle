@@ -132,6 +132,7 @@ services:
       APP_ICEBREAKER_EXTERNAL_ENABLED: "${Q040_DEV_ENABLED:-false}"
       APP_ICEBREAKER_MANIFEST_LOCATION: file:/run/tingle/q040-dev-release-v1/be-descriptor.json
       # 개발 1바이트 설정 서명. 실제 키 인계·공동 시험 승인 전에는 비활성이다.
+      app.keyring-reset.enabled: "${KEYRING_RESET_DEV_ENABLED:-false}"
       KEYRING_DEV_SETTINGS_ENABLED: "${KEYRING_DEV_SETTINGS_ENABLED:-false}"
       KEYRING_DEV_SETTINGS_PRIVATE_KEY_FILE: "${KEYRING_DEV_SETTINGS_PRIVATE_KEY_FILE:-/run/secrets/tingle/dev-settings-private.pem}"
       KEYRING_DEV_SETTINGS_PUBLIC_KEY_FILE: "${KEYRING_DEV_SETTINGS_PUBLIC_KEY_FILE:-/run/secrets/tingle/dev-settings-public.pem}"
