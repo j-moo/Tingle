@@ -12,7 +12,9 @@ import kotlin.uuid.Uuid
 
 data class BleProbeState(val candidates: List<BleCandidate> = emptyList(), val scanning: Boolean = false,
     val busy: Boolean = false, val connected: Boolean = false, val info: BleDeviceInfo? = null,
-    val status: BleDeviceStatus? = null, val error: BleFailure? = null, val commandError: String? = null)
+    val status: BleDeviceStatus? = null, val error: BleFailure? = null, val commandError: String? = null,
+    /** 사용자가 고른(연결한) 후보. 연결 화면이 목록에서 이 카드를 선택 표시한다 */
+    val selectedId: String? = null)
 
 /**
  * 첫 연동 진단: 발견/Notify 구독/기기 정보/상태를 분리한다. 서버 계정 귀속은 변경하지 않는다.
@@ -66,7 +68,8 @@ class BleProbeViewModel(private val ble: KeyringBle, private val sessions: Sessi
         val previous = work
         previous?.cancel()
         val stamp = ++generation
-        mutable.value = mutable.value.copy(scanning = false, busy = true, error = null, commandError = null, info = null, status = null)
+        mutable.value = mutable.value.copy(scanning = false, busy = true, error = null, commandError = null, info = null, status = null,
+            selectedId = id)
         work = viewModelScope.launch {
             try {
                 // stopScan의 정리가 완료돼야 플랫폼 단일 탐색/연결 락을 넘겨받을 수 있다.

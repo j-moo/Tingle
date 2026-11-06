@@ -16,7 +16,7 @@ private val lightScheme = lightColorScheme(
 )
 
 @Composable
-fun AppTheme(content: @Composable () -> Unit) {
+fun AppTheme(content: @Composable () -> Unit) = ProvidePreviewResources {
     MaterialTheme(
         colorScheme = lightScheme,
         typography = appTypography(),

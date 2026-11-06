@@ -493,6 +493,14 @@ class KeyringSyncTest {
         val m = model(server, KeyringSyncStore(prefs)); runCurrent()
         assertTrue(m.state.value.recoveryFailed); assertTrue(server.creates.isEmpty())
     }
+    @Test fun failedExistingChoiceKeepsFailureEvenWhenAnotherRunWasQueued() = runTest(dispatcher) {
+        val server = SyncServer(); val m = model(server, KeyringSyncStore(SyncPrefs()))
+        m.attach("XIAO-test") { error("No send") }; runCurrent()
+        m.useExisting(999, "XIAO-test")                       // 내 목록에 없는 키링 → 실패
+        m.retryRecovery()                                       // 실패 처리 중에 들어온 다시 돌기 요청
+        runCurrent()
+        assertTrue(m.state.value.recoveryFailed); assertFalse(m.state.value.busy)
+    }
     @Test fun multiDeviceTargetsSurviveUpdatesAndPayloadIsNotPersisted() = runTest {
         val prefs = SyncPrefs(); val store = KeyringSyncStore(prefs)
         store.rememberTarget(1, syncRun.deviceId, "XIAO-test"); store.rememberTarget(1, 2, "XIAO-second")

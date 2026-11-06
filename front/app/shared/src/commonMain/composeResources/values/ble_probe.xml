@@ -38,9 +38,8 @@
     <string name="probe_missing_help">내 키링이 안 보이나요? 휴대폰 가까이 가져와 버튼을 다시 길게 눌러 주세요.</string>
     <string name="probe_connecting">키링에 연결하고 있어요</string>
     <string name="probe_connecting_body">키링을 휴대폰 가까이 두고 잠시 기다려 주세요.</string>
-    <string name="probe_connected_title">연결됐어요</string>
-    <string name="probe_connected_body">아래 키링이 맞는지 확인하고 등록해 주세요.</string>
-    <string name="probe_connected_body_plain">키링 정보를 확인했어요.</string>
-    <string name="probe_firmware">펌웨어 %1$s</string>
     <string name="probe_dev_toggle">기기 진단 · 개발용</string>
+    <string name="probe_selected_body">선택한 키링이 연결됐어요. 맞는지 확인하고 등록해 주세요.</string>
+    <string name="probe_selected_body_plain">선택한 키링이 연결됐어요.</string>
+    <string name="probe_device_meta">%1$s · 펌웨어 %2$s</string>
 </resources>

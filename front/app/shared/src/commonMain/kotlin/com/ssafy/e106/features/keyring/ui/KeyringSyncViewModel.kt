@@ -15,7 +15,7 @@ import kotlin.time.Duration.Companion.seconds
 
 enum class SyncPhase { WaitingStage, Issuing, WaitingConnection, Sending, Stored, Confirming, Confirmed, PolicyWaiting, Stale, Failed }
 data class KeyringSyncProgress(val deviceId: Long, val phase: SyncPhase, val error: AppError? = null,
-    val applied: Boolean? = null, val timeReady: Boolean? = null)
+    val applied: Boolean? = null, val timeReady: Boolean? = null, val serial: String? = null)
 data class KeyringSyncState(val owner: Long? = null, val busy: Boolean = false,
     val items: List<KeyringSyncProgress> = emptyList(), val recoveryFailed: Boolean = false)
 
@@ -50,6 +50,7 @@ class KeyringSyncViewModel(private val api: KeyringSyncRepository, private val s
     // 보드 challenge는 재부팅하면 사라진다. 키/본문의 HTTP 복구와 달리 BLE 쓰기는 원래 연결에만 허용한다.
     // 디스크에는 연결 생존을 기록하지 않는다. 모델 재생성 후에는 결과 확인 뒤 새 인증이 필요하다.
     private val nonceBindings = mutableMapOf<Long, Pair<Long, String>>()
+    private val serials = mutableMapOf<Long, String>()
     private val delivered = mutableMapOf<Long, Pair<Long, Long>>()
     private var observedRevision = 0L
     // 인터넷 사용 가능 신호는 전송 성공 보장이 아니다. 복원 전환마다 한 번만 Offline 실패를 깨운다.
@@ -87,7 +88,7 @@ class KeyringSyncViewModel(private val api: KeyringSyncRepository, private val s
             if (owner != mutable.value.owner) {
                 cancelWork(); boardSerial = null; transmit = null; challenge = null
                 mutable.value = KeyringSyncState(owner)
-                delivered.clear(); nonceBindings.clear()
+                delivered.clear(); nonceBindings.clear(); serials.clear()
             }
             if (revision != observedRevision) { observedRevision = revision; attempted.clear() }
             if (session != observed) {
@@ -144,14 +145,18 @@ class KeyringSyncViewModel(private val api: KeyringSyncRepository, private val s
         val stamp = generation
         mutable.update { it.copy(busy = true) }
         job = viewModelScope.launch {
+            var ok = false
             try {
                 val items = unwrap(owned.list(), owner, stamp)
                 check(items.any { it.deviceId == deviceId })
                 store.selectTarget(owner, deviceId, serial); ensure(owner, stamp)
                 attempted.remove(deviceId)
+                ok = true
             } catch (c: CancellationException) { throw c }
             catch (_: Exception) { if (stamp == generation) mutable.update { it.copy(recoveryFailed = true) } }
-            finally { if (stamp == generation) { mutable.update { it.copy(busy = false) }; drive() } }
+            // 실패하면 실패 표시(recoveryFailed)를 남긴다. 그 사이 들어온 연결 · 네트워크 복구 요청은 실패 표시를 지우지 않고 이어서 돈다
+            finally { if (stamp == generation) { mutable.update { it.copy(busy = false) }
+                if (ok) drive() else if (requested) { requested = false; drive(keepFailure = true) } } }
         }
     }
 
@@ -163,23 +168,27 @@ class KeyringSyncViewModel(private val api: KeyringSyncRepository, private val s
         val stamp = generation
         mutable.update { it.copy(busy = true) }
         job = viewModelScope.launch {
+            var ok = false
             try {
                 val previous = store.read(owner).first { it.deviceId == deviceId }; ensure(owner, stamp)
                 store.save(owner, SyncTicket(deviceId, previous.serial, Uuid.random().toString())); ensure(owner, stamp)
                 attempted.remove(deviceId)
+                ok = true
             } catch (c: CancellationException) { throw c }
             catch (_: Exception) { if (stamp == generation) mutable.update { it.copy(recoveryFailed = true) } }
-            finally { if (stamp == generation) { mutable.update { it.copy(busy = false) }; drive() } }
+            // 실패하면 실패 표시(recoveryFailed)를 남긴다. 그 사이 들어온 연결 · 네트워크 복구 요청은 실패 표시를 지우지 않고 이어서 돈다
+            finally { if (stamp == generation) { mutable.update { it.copy(busy = false) }
+                if (ok) drive() else if (requested) { requested = false; drive(keepFailure = true) } } }
         }
     }
 
-    private fun drive() {
+    private fun drive(keepFailure: Boolean = false) {
         if (!active) return
         val session = sessions.state.value as? Session.SignedIn ?: return
         if (mutable.value.busy) { requested = true; return }
         val stamp = generation
         val owner = session.userId
-        mutable.update { it.copy(busy = true, recoveryFailed = false) }
+        mutable.update { it.copy(busy = true, recoveryFailed = keepFailure && it.recoveryFailed) }
         job = viewModelScope.launch {
             try {
                 val tickets = store.read(owner); ensure(owner, stamp)
@@ -187,6 +196,7 @@ class KeyringSyncViewModel(private val api: KeyringSyncRepository, private val s
                 val allowed = session.status in setOf(OnboardingStatus.SYNC_PENDING, OnboardingStatus.READY)
                 for (ticket in tickets) {
                     ensure(owner, stamp)
+                    serials[ticket.deviceId] = ticket.serial              // 진행 표시에 어느 보드용 설정인지 싣는다
                     if (!allowed) { show(ticket.deviceId, SyncPhase.WaitingStage); continue }
                     if (!attempted.add(ticket.deviceId)) continue
                     val startedNetworkRevision = networkRevision
@@ -351,7 +361,7 @@ class KeyringSyncViewModel(private val api: KeyringSyncRepository, private val s
         return when (result) { is ApiResult.Ok -> result.value; is ApiResult.Fail -> throw SyncApiFailure(result.error) }
     }
     private fun show(id: Long, phase: SyncPhase, error: AppError? = null, applied: Boolean? = null, timeReady: Boolean? = null) {
-        mutable.update { it.copy(items = it.items.filterNot { item -> item.deviceId == id } + KeyringSyncProgress(id, phase, error, applied, timeReady)) }
+        mutable.update { it.copy(items = it.items.filterNot { item -> item.deviceId == id } + KeyringSyncProgress(id, phase, error, applied, timeReady, serials[id])) }
     }
     override fun onCleared() { pause() }
 }
