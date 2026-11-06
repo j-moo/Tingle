@@ -2,15 +2,24 @@ import { useEffect, useState, type CSSProperties, type MouseEvent } from 'react'
 import { goSection, sideOf, TAP_MODE } from '../../sectionNav.ts'
 import { detectPlatform } from './detectPlatform.ts'
 import styles from './Download.module.css'
+import androidQrProd from './qr-android.svg'
+import androidQrDev from './qr-android-dev.svg'
 
 // 앱 다운로드: 컴퓨터 = QR + 버튼 둘([Android | Mac] 전환 · [설치하기])(누르면 전환, 기본값은 접속 OS), 폰 · 태블릿(Android · iOS) = 설치하기 하나
 // 폰 · 태블릿은 폭과 상관없이 OS 로 판단(자기 화면의 QR 은 찍을 수 없음). 좁은 컴퓨터 창은 QR 화면을 세로로 쌓음
-// 설치 링크 · QR 은 아직 없음 → 비워 두면 "준비 중"으로 보이고 눌러도 이동하지 않는다(가짜 링크 넣지 않음)
+// Android = 운영 페이지(/)는 운영 APK(master 머지 때 /app/latest.apk), 개발 페이지(/dev/, BASE_URL)는 개발 APK(develop 머지 때 /dev/app/latest.apk) — Jenkins 가 갱신
+// QR 은 각 주소를 python qrcode 로 만든 qr-android(-dev).svg. 주소를 바꾸면 다시 만든다(이 폴더에서, 개발은 /dev/app/... · qr-android-dev.svg):
+//   python -c "import qrcode, qrcode.image.svg as s; qrcode.make('https://k15e106.p.ssafy.io/app/latest.apk', image_factory=s.SvgPathFillImage, border=2).save('qr-android.svg')"
+// Mac 은 아직 없음 → 비워 두면 "준비 중"으로 보이고 눌러도 이동하지 않는다(가짜 링크 넣지 않음)
 export const order = 50
+
+const DEV = import.meta.env.BASE_URL === '/dev/'                           // 개발 서버 빌드(Dockerfile --base=/dev/)
+const ANDROID_APK = `https://k15e106.p.ssafy.io${DEV ? '/dev' : ''}/app/latest.apk`
+const androidQr = DEV ? androidQrDev : androidQrProd
 
 type Target = 'android' | 'mac'
 const APPS: Record<Target, { label: string, href: string, qr: string }> = {
-  android: { label: 'Android', href: '', qr: '' },          // qr = 설치 링크 QR 이미지 경로(public 기준이면 BASE_URL 붙여서)
+  android: { label: 'Android', href: ANDROID_APK, qr: androidQr },   // qr = 설치 링크 QR 이미지(href 를 바꾸면 QR 도 다시 만들 것)
   mac: { label: 'Mac', href: '', qr: '' },
 }
 
