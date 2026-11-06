@@ -73,16 +73,13 @@ import org.koin.compose.viewmodel.koinViewModel
             Text(stringResource(Res.string.ble_info, info.serial, info.firmware))
             Text(stringResource(Res.string.ble_not_registered))
             ProfileStorageDiagnostics(info)
+            OwnerFlowCapabilityDiagnostics(info)
             AppButton(stringResource(Res.string.ble_read_status), enabled = !state.busy && !registering && state.connected && info.supportsStatus,
                 onClick = model::readStatus)
             if (!info.supportsStatus) Text(stringResource(Res.string.ble_status_unsupported))
         }
-        state.status?.let { status ->
-            val unknown = stringResource(Res.string.ble_unknown)
-            val charging = when (status.charging) { true -> stringResource(Res.string.ble_charging); false -> stringResource(Res.string.ble_not_charging); null -> unknown }
-            Text(stringResource(Res.string.ble_status, status.batteryPercent?.let { "$it%" } ?: unknown,
-                status.batteryMillivolts?.let { "$it mV" } ?: unknown, charging, status.pendingRecordCount?.toString() ?: unknown))
-        }
+        // 읽기 전용 스냅샷을 별도 컴포넌트로 표시한다. 연결/계정 변경 시 모델이 이전 관측값을 비운다.
+        state.status?.let { KeyringStatusDiagnostics(it) }
         if (state.connected || state.busy) AppButton(stringResource(Res.string.ble_disconnect),
             variant = AppButtonVariant.Secondary, enabled = !registering, onClick = model::leave)
         // 동기화 중 다른 명령을 막고 등록 결과와 설정 상태를 같은 화면에 표시한다.

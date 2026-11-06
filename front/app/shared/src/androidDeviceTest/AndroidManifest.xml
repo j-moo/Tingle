@@ -2,6 +2,9 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
     <application>
+        <!-- 소유 상태의 미확인/인증 경계와 작은 화면을 확인하는 순수 UI 전용 호스트. -->
+        <activity android:name="com.ssafy.e106.features.keyring.KeyringOwnerStatusTestActivity" android:exported="true"
+            android:theme="@android:style/Theme.Material.Light.NoActionBar" />
         <!-- 차단/나가기 저장소 복구 실패 안내를 확인하는 별도 테스트 호스트. -->
         <activity android:name="com.ssafy.e106.features.safety.SafetyRestoreTestActivity" android:exported="true"
             android:theme="@android:style/Theme.Material.Light.NoActionBar" />
