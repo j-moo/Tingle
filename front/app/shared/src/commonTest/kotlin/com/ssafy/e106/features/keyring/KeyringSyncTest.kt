@@ -50,13 +50,15 @@ private class SyncServer : KeyringSyncRepository, OwnedKeyringRepository {
     val creates = mutableListOf<Pair<Long, String>>()
     val acks = mutableListOf<Pair<String, KeyringSyncAck>>()
     var getCount = 0
+    // 조회409·응답유실을 발급/ACK와 독립적으로 재현한다.
+    var getAction: suspend () -> ApiResult<KeyringSyncRun> = { ApiResult.Ok(run) }
     var createAction: suspend () -> ApiResult<KeyringSyncRun> = { ApiResult.Ok(run) }
     var ackAction: suspend () -> ApiResult<KeyringSyncRun> = { run = run.copy(state = "ACKED"); ApiResult.Ok(run) }
     val bodies = mutableListOf<SyncChallengeBody>()
     override suspend fun create(deviceId: Long, key: String, body: SyncChallengeBody): ApiResult<KeyringSyncRun> {
         creates += deviceId to key; bodies += body; run = run.copy(deviceNonce = body.deviceNonce); return createAction()
     }
-    override suspend fun get(deviceId: Long, runId: String): ApiResult<KeyringSyncRun> { getCount++; return ApiResult.Ok(run) }
+    override suspend fun get(deviceId: Long, runId: String): ApiResult<KeyringSyncRun> { getCount++; return getAction() }
     override suspend fun ack(deviceId: Long, runId: String, key: String, body: KeyringSyncAck): ApiResult<KeyringSyncRun> {
         acks += key to body; return ackAction()
     }
@@ -65,6 +67,62 @@ private class SyncServer : KeyringSyncRepository, OwnedKeyringRepository {
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class KeyringSyncTest {
+    /** 서버 성향 응답의 봉투를 검사하고 원본 바이트를 보존한다. 실제 성향 계산 fixture는 아니다. */
+    @Test fun profileEnvelopeKeepsOpaquePayloadAndRejectsUnknownOrMalformedFormats() {
+        val payload = kotlin.io.encoding.Base64.UrlSafe.withPadding(kotlin.io.encoding.Base64.PaddingOption.ABSENT)
+            .encode("TPS1".encodeToByteArray() + ByteArray(192))
+        val run = syncRun.copy(payloadFormat = KeyringSyncProtocol.PROFILE_FORMAT, payload = payload)
+        assertTrue(KeyringSyncProtocol.signed(run, requireNotNull(run.deviceNonce)))
+        val frame = Json.parseToJsonElement(KeyringSyncProtocol.request(run, "33333333-3333-4333-8333-333333333333").decodeToString()).jsonObject
+        assertEquals(payload, frame.getValue("payload").jsonPrimitive.content)
+        for (bad in listOf(run.copy(payload = "AQ"), run.copy(payloadFormat = "future-format"),
+            run.copy(payload = "A".repeat(262)), run.copy(serverSignature = null))) {
+            assertFalse(KeyringSyncProtocol.signed(bad, requireNotNull(run.deviceNonce)))
+        }
+    }
+
+    /** 발급409는 새 nonce/키로 한 번 갱신하지만 반복409는 사용자 확인 상태로 멈춘다. */
+    @Test fun createStaleUsesFreshNonceAndKeyWithBoundedRenewal() = runTest(dispatcher) {
+        val server = SyncServer().apply { createAction = { ApiResult.Fail(AppError.Server(409, "SYNC_VERSION_STALE", "old")) } }
+        val store = KeyringSyncStore(SyncPrefs()); store.rememberTarget(1, syncRun.deviceId, "XIAO-test")
+        var challenges = 0
+        val m = model(server, store)
+        m.attach("XIAO-test", { challenges++; if (challenges == 1) "A".repeat(43) else "B".repeat(42) + "A" }) { error("No stale BLE") }
+        runCurrent()
+        assertEquals(2, challenges); assertEquals(2, server.creates.size)
+        assertNotEquals(server.creates[0].second, server.creates[1].second)
+        assertNotEquals(server.bodies[0], server.bodies[1]); assertTrue(server.acks.isEmpty())
+        assertEquals(SyncPhase.Stale, m.state.value.items.single().phase)
+    }
+
+    /** 저장 증명 복구 GET이409일 때 이전 ACK를 보내지 않고 새 실행으로 이동한다. */
+    @Test fun recoveryGetStaleReissuesButDoesNotPromoteSignup() = runTest(dispatcher) {
+        val server = SyncServer().apply { ackAction = { ApiResult.Fail(AppError.Offline) } }
+        val store = KeyringSyncStore(SyncPrefs()); store.rememberTarget(1, syncRun.deviceId, "XIAO-test")
+        val session = TestSession(OnboardingStatus.SYNC_PENDING)
+        val m = model(server, store, session); m.attach("XIAO-test") { stored(it) }; runCurrent()
+        val oldAck = server.acks.single()
+        server.getAction = { ApiResult.Fail(AppError.Server(409, "SYNC_VERSION_STALE", "old")) }
+        server.ackAction = { server.run = server.run.copy(state = "ACKED"); ApiResult.Ok(server.run) }
+        m.retry(syncRun.deviceId); runCurrent()
+        assertEquals(2, server.creates.size); assertEquals(2, server.acks.size)
+        assertNotEquals(oldAck.first, server.acks.last().first)
+        assertEquals(SyncPhase.Confirmed, m.state.value.items.single().phase)
+        assertEquals(OnboardingStatus.SYNC_PENDING, (session.state.value as Session.SignedIn).status)
+    }
+
+    /** GET 오류가 확정409가 아니면 기존 ACK·발급 기록을 보존한다. */
+    @Test fun unknownGetFailurePreservesPendingProof() = runTest(dispatcher) {
+        val server = SyncServer().apply { ackAction = { ApiResult.Fail(AppError.Offline) } }
+        val store = KeyringSyncStore(SyncPrefs()); store.rememberTarget(1, syncRun.deviceId, "XIAO-test")
+        val m = model(server, store); m.attach("XIAO-test") { stored(it) }; runCurrent()
+        val before = store.read(1).single()
+        server.getAction = { ApiResult.Fail(AppError.Server(503, "SERVICE_UNAVAILABLE", "temporary")) }
+        m.retry(syncRun.deviceId); runCurrent()
+        assertEquals(before, store.read(1).single()); assertEquals(1, server.creates.size); assertEquals(1, server.acks.size)
+        assertEquals(SyncPhase.Failed, m.state.value.items.single().phase)
+    }
+
     /** 서버 ACK 응답 유실 후 동일 증명은 복구하지만 같은 run의 소유 순번 변경은 거절한다. */
     @Test fun v2AckRecoveryPreservesEpochAndRejectsChangedIdentity() = runTest(dispatcher) {
         val server = SyncServer().apply { run = syncRun.copy(ownershipEpoch = 1,
@@ -375,8 +433,8 @@ class KeyringSyncTest {
             models.clear()
         }
     }
-    // 앱 재생성 후에도 저장된 ACK의 확정 거절을 먼저 확인하고 새 보드 challenge를 요청한다.
-    @Test fun restoredPendingAckRenewsOnlyAfterConfirmedStaleRejection() = runTest(dispatcher) {
+    // 기존 ON/OFF의 GET200/stale:true도 구버전 확정이다. 복구 ACK를 반복하지 않고 갱신한다.
+    @Test fun restoredPendingAckRenewsAfterGetConfirmsStale() = runTest(dispatcher) {
         val server = SyncServer().apply { run = run.copy(settingsVersion = 1, currentSettingsVersion = 1)
             ackAction = { ApiResult.Fail(AppError.Offline) } }
         val prefs = SyncPrefs(); val store = KeyringSyncStore(prefs)
@@ -394,10 +452,10 @@ class KeyringSyncTest {
         }
         val restored = model(server, KeyringSyncStore(prefs))
         restored.attach("XIAO-test", {
-            assertEquals(original, server.acks.last()); assertEquals(2, server.acks.size)
+            assertEquals(original, server.acks.last()); assertEquals(1, server.acks.size)
             "B".repeat(42) + "A"
         }) { assertEquals(2L, it.settingsVersion); stored(it) }; runCurrent()
-        assertEquals(3, server.acks.size); assertEquals(2, server.creates.size)
+        assertEquals(2, server.acks.size); assertEquals(2, server.creates.size)
         assertEquals(SyncPhase.Confirmed, restored.state.value.items.single().phase)
     }
     // 최신 설정도 전송 중 다시 바뀔 수 있다. 한 진행에서 갱신 횟수를 제한해 무한 발급을 막는다.

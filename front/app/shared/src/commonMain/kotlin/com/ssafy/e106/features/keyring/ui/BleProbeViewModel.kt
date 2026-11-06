@@ -205,6 +205,15 @@ class BleProbeViewModel(private val ble: KeyringBle, private val sessions: Sessi
         val stamp = generation
         mutable.update { it.copy(busy = true) }
         try {
+            // 서버 형식은 발급 후 알 수 있다. 성향 지원 기기는 페어링 대기를 60초 nonce 발급보다
+            // 먼저 끝내며, 전송 직전에도 같은 연결에서 다시 보호를 확인한다. 기존 기기는 일반 흐름을 유지한다.
+            val info = readInfo(channel)
+            check(stamp == generation && channel === connection && info.serial == expectedSerial)
+            mutable.update { it.copy(info = info) }
+            if (info.supportsProtectedProfileStorage) {
+                channel.prepareProtectedTransport()
+                check(stamp == generation && channel === connection)
+            }
             val id = Uuid.random().toString()
             val response = channel.exchange(KeyringSyncProtocol.challengeRequest(id))
             check(stamp == generation && channel === connection)
@@ -235,7 +244,14 @@ class BleProbeViewModel(private val ble: KeyringBle, private val sessions: Sessi
             mutable.update { it.copy(info = info) }
             // NUS 기반이 Notify 구독 및 20바이트 순차 Write with Response를 보장한다.
             // 전송 재시도는 조정 모델이 새 보드 challenge/서명을 발급받은 뒤에만 진입한다.
-            val bytes = channel.exchange(KeyringSyncProtocol.request(run, requestId))
+            val request = KeyringSyncProtocol.request(run, requestId)
+            val bytes = if (run.payloadFormat == KeyringSyncProtocol.PROFILE_FORMAT) {
+                // 성향은 일반 RX로 우회하지 않는다. 직전 지원 정보와 같은 연결의 보호 Read 성공이 모두 필요하다.
+                check(info.supportsProtectedProfileStorage)
+                channel.prepareProtectedTransport()
+                check(stamp == generation && connection === channel)
+                channel.exchangeProtected(request)
+            } else channel.exchange(request)
             check(stamp == generation && connection === channel)
             return KeyringSyncProtocol.response(bytes, requestId, run)
         } catch (failure: Exception) {
