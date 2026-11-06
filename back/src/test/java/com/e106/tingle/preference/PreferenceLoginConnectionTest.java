@@ -16,6 +16,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneId;
+import java.util.UUID;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -53,6 +54,7 @@ import com.e106.tingle.settings.UserSetting;
 import com.e106.tingle.settings.snapshot.SettingsChangeCoordinator;
 import com.e106.tingle.user.OnboardingService;
 import com.e106.tingle.user.OnboardingStatus;
+import com.e106.tingle.user.PendingEmails;
 import com.e106.tingle.user.User;
 
 /**
@@ -73,7 +75,8 @@ class PreferenceLoginConnectionTest {
 	@EnableAutoConfiguration
 	@EntityScan(basePackageClasses = {MatchingPreference.class, UserSetting.class, User.class})
 	@EnableJpaRepositories(basePackages = {"com.e106.tingle.preference", "com.e106.tingle.user"})
-	@Import({AuthService.class, PreferenceProvisioningService.class, PreferenceProvisioningAccess.class,
+	@Import({AuthService.class, PendingEmails.class, PreferenceProvisioningService.class,
+		PreferenceProvisioningAccess.class,
 		PreferencesService.class, PreferenceMemberAccess.class})
 	static class Config {
 
@@ -120,7 +123,7 @@ class PreferenceLoginConnectionTest {
 				.isEqualTo(1);
 			assertThat(jdbc.queryForObject("select count(*) from matching_preference where user_id=?",
 				Long.class, userId)).isEqualTo(1);
-			return new TokenService.IssuedTokens(userId, "test-access", NOW.plusSeconds(1800),
+			return new TokenService.IssuedTokens(userId, UUID.randomUUID(), "test-access", NOW.plusSeconds(1800),
 				"test-refresh", NOW.plusSeconds(3600));
 		});
 		mvc = MockMvcBuilders.standaloneSetup(new PreferencesController(preferences))

@@ -155,7 +155,7 @@ public class TokenService {
 
 	private IssuedTokens issued(long userId, UUID familyId, Instant now, NewRefreshToken refreshToken) {
 		Instant accessTokenExpiresAt = now.plus(properties.accessTokenTtl());
-		return new IssuedTokens(userId, accessToken(userId, familyId, now, accessTokenExpiresAt),
+		return new IssuedTokens(userId, familyId, accessToken(userId, familyId, now, accessTokenExpiresAt),
 			accessTokenExpiresAt, refreshToken.raw(), refreshToken.entity().getExpiresAt());
 	}
 
@@ -190,7 +190,8 @@ public class TokenService {
 	private record NewRefreshToken(String raw, RefreshToken entity) {
 	}
 
-	public record IssuedTokens(long userId, String accessToken, Instant accessTokenExpiresAt,
+	/** sessionId 는 로그인 세션(family)이다. 응답에는 넣지 않는다. */
+	public record IssuedTokens(long userId, UUID sessionId, String accessToken, Instant accessTokenExpiresAt,
 		String refreshToken, Instant refreshTokenExpiresAt) {
 	}
 }
