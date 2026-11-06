@@ -1,4 +1,5 @@
 #include "registration.h"
+#include "profile.h"
 #include <inttypes.h>
 #include <stdio.h>
 #include <string.h>
@@ -98,6 +99,10 @@ void kr_request(struct kr_core *core, char *frame, struct kr_status status,
 			"\"supportedProofProtocolVersions\":[%s],"
 			"\"maxFrameBytes\":%u,\"maxPayloadBytes\":%u,\"settingsPolicy\":\"%s\","
 			"\"storedSettingsVersion\":%" PRId64 ",\"storedPayloadHash\":\"%s\","
+			"\"supportedPayloadFormats\":[%s],\"storedPayloadFormat\":\"%s\","
+			"\"profileStored\":%s,\"storedPayloadBytes\":%u,"
+			"\"profileStorageCharacteristic\":\"6e400004-b5a3-f393-e0a9-e50e24dcca9e\","
+			"\"profileRequiresEncryption\":true,"
 			"\"storageHealthy\":%s,\"applied\":false,\"timeReady\":false}\n",
 			request, core->identity.serial, KR_FIRMWARE_VERSION,
 			settings_ready ? ",\"GET_SYNC_CHALLENGE\",\"SYNC_SETTINGS\"" : "",
@@ -108,7 +113,11 @@ void kr_request(struct kr_core *core, char *frame, struct kr_status status,
 			core->reset.ownership_epoch ? "\"" KR_PROOF_VERSION_2 "\"" :
 				"\"" KR_PROOF_VERSION "\",\"" KR_PROOF_VERSION_2 "\"",
 			KR_FRAME_MAX, KR_PAYLOAD_MAX, settings_ready ? "DEV_SIGNED_V1" : "UNRESOLVED",
-			core->current.version, core->current.hash, core->storage_error ? "false" : "true");
+			core->current.version, core->current.hash,
+			settings_ready ? "\"" KR_DEV_PAYLOAD_FORMAT "\",\"" KR_PROFILE_STORAGE_FORMAT "\"" : "",
+			core->current.format, core->current.magic &&
+				!strcmp(core->current.format, KR_PROFILE_STORAGE_FORMAT) ? "true" : "false",
+			(unsigned)core->current.payload_size, core->storage_error ? "false" : "true");
 		return;
 	}
 	if (equal(type, "GET_RESET_CHALLENGE")) {

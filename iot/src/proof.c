@@ -1,4 +1,5 @@
 #include "registration.h"
+#include "profile.h"
 #include "monocypher-ed25519.h"
 #include <inttypes.h>
 #include <stdio.h>
@@ -177,6 +178,9 @@ bool kr_settings_valid(const struct kr_settings *s)
 		s->nonce[43] || s->hash[64] || s->format[64]) { return false; }
 	if (!kr_uuid(s->owner_generation) || !kr_uuid(s->sync_run) || !kr_nonce(s->nonce) ||
 		!kr_identifier(s->format) || strlen(s->hash) != 64) { return false; }
+	struct kr_profile_data profile;
+	if (!strcmp(s->format, KR_PROFILE_STORAGE_FORMAT) &&
+		!kr_profile_data_decode(s->payload, s->payload_size, &profile)) { return false; }
 	uint8_t digest[32];
 	char hex[65];
 	kr_hash(s->payload, s->payload_size, digest);
@@ -191,6 +195,9 @@ const char *kr_store(struct kr_core *core, const struct kr_settings *next,
 	core->stop_peer = false;
 	if (core->storage_error) { return "STORAGE_ERROR"; }
 	if (core->reset.phase == KR_RESETTING) { return "RESET_IN_PROGRESS"; }
+	if (!strcmp(next->format, KR_PROFILE_STORAGE_FORMAT) && !core->profile_transport_protected) {
+		return "SECURE_TRANSPORT_REQUIRED";
+	}
 	bool version2 = auth && auth->version2;
 	if (core->reset.ownership_epoch && !version2) { return "PROTOCOL_UPGRADE_REQUIRED"; }
 	if (version2 && auth->ownership_epoch != core->reset.ownership_epoch) {

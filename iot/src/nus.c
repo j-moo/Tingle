@@ -12,6 +12,7 @@
 static struct bt_uuid_128 service_uuid = BT_UUID_INIT_128(KR_NUS_UUID(0x6e400001));
 static struct bt_uuid_128 rx_uuid = BT_UUID_INIT_128(KR_NUS_UUID(0x6e400002));
 static struct bt_uuid_128 tx_uuid = BT_UUID_INIT_128(KR_NUS_UUID(0x6e400003));
+static struct bt_uuid_128 profile_uuid = BT_UUID_INIT_128(KR_NUS_UUID(0x6e400004));
 static struct kr_core core;
 static struct k_sem *peer_wake;
 static struct kr_peer_plan peer_plan;
@@ -22,6 +23,7 @@ static int64_t window_deadline;
 static struct bt_conn *peer;
 static uint32_t generation;
 static bool ready, busy;
+static bool incoming_protected;
 static struct kr_frame incoming;
 static char frame[KR_FRAME_MAX + 1], response[KR_RESPONSE_MAX];
 K_MUTEX_DEFINE(transport_lock);
@@ -29,10 +31,13 @@ K_MUTEX_DEFINE(core_lock);
 K_MUTEX_DEFINE(peer_plan_lock);
 K_SEM_DEFINE(request_ready, 0, 1);
 
-static ssize_t receive(struct bt_conn *conn, const struct bt_gatt_attr *attr,
-	const void *buf, uint16_t len, uint16_t offset, uint8_t flags)
+static ssize_t receive_frame(struct bt_conn *conn, const struct bt_gatt_attr *attr,
+	const void *buf, uint16_t len, uint16_t offset, uint8_t flags, bool protected)
 {
 	ARG_UNUSED(attr);
+	if (protected && bt_conn_get_security(conn) < BT_SECURITY_L2) {
+		return BT_GATT_ERR(BT_ATT_ERR_AUTHENTICATION);
+	}
 	if (offset || (flags & (BT_GATT_WRITE_FLAG_PREPARE | BT_GATT_WRITE_FLAG_CMD)) || !len || len > 20) {
 		return BT_GATT_ERR(BT_ATT_ERR_INVALID_ATTRIBUTE_LEN);
 	}
@@ -40,6 +45,13 @@ static ssize_t receive(struct bt_conn *conn, const struct bt_gatt_attr *attr,
 	if (conn != peer || busy) {
 		k_mutex_unlock(&transport_lock);
 		return BT_GATT_ERR(BT_ATT_ERR_INSUFFICIENT_RESOURCES);
+	}
+	if (!incoming.size) { incoming_protected = protected; }
+	if (incoming_protected != protected) {
+		kr_frame_reset(&incoming);
+		k_mutex_unlock(&transport_lock);
+		bt_conn_disconnect(conn, BT_HCI_ERR_REMOTE_USER_TERM_CONN);
+		return BT_GATT_ERR(BT_ATT_ERR_AUTHORIZATION);
 	}
 	int framed = kr_frame_push(&incoming, buf, len);
 	if (framed < 0) {
@@ -56,6 +68,29 @@ static ssize_t receive(struct bt_conn *conn, const struct bt_gatt_attr *attr,
 	return len;
 }
 
+static ssize_t receive(struct bt_conn *conn, const struct bt_gatt_attr *attr,
+	const void *buf, uint16_t len, uint16_t offset, uint8_t flags)
+{
+	return receive_frame(conn, attr, buf, len, offset, flags, false);
+}
+
+static ssize_t receive_profile(struct bt_conn *conn, const struct bt_gatt_attr *attr,
+	const void *buf, uint16_t len, uint16_t offset, uint8_t flags)
+{
+	return receive_frame(conn, attr, buf, len, offset, flags, true);
+}
+
+static ssize_t profile_security(struct bt_conn *conn, const struct bt_gatt_attr *attr,
+	void *buf, uint16_t len, uint16_t offset)
+{
+	if (bt_conn_get_security(conn) < BT_SECURITY_L2) {
+		return BT_GATT_ERR(BT_ATT_ERR_AUTHENTICATION);
+	}
+	/* A protected, nonpersonal read lets FE negotiate encryption BEFORE writing data. */
+	const uint8_t encrypted = 1;
+	return bt_gatt_attr_read(conn, attr, buf, len, offset, &encrypted, sizeof(encrypted));
+}
+
 static void subscribed(const struct bt_gatt_attr *attr, uint16_t value)
 {
 	ARG_UNUSED(attr);
@@ -66,7 +101,11 @@ BT_GATT_SERVICE_DEFINE(nus,
 	BT_GATT_PRIMARY_SERVICE(&service_uuid),
 	BT_GATT_CHARACTERISTIC(&rx_uuid.uuid, BT_GATT_CHRC_WRITE, BT_GATT_PERM_WRITE, NULL, receive, NULL),
 	BT_GATT_CHARACTERISTIC(&tx_uuid.uuid, BT_GATT_CHRC_NOTIFY, BT_GATT_PERM_NONE, NULL, NULL, NULL),
-	BT_GATT_CCC(subscribed, BT_GATT_PERM_READ | BT_GATT_PERM_WRITE));
+	BT_GATT_CCC(subscribed, BT_GATT_PERM_READ | BT_GATT_PERM_WRITE),
+	/* Appended after TX/CCC so existing notification attribute indexes stay valid. */
+	BT_GATT_CHARACTERISTIC(&profile_uuid.uuid, BT_GATT_CHRC_READ | BT_GATT_CHRC_WRITE,
+		BT_GATT_PERM_READ_ENCRYPT | BT_GATT_PERM_WRITE_ENCRYPT,
+		profile_security, receive_profile, NULL));
 
 static void connected(struct bt_conn *conn, uint8_t error)
 {
@@ -211,11 +250,13 @@ static void process_requests(void *a, void *b, void *c)
 	for (;;) {
 		k_sem_take(&request_ready, K_FOREVER);
 		struct bt_conn *conn = NULL;
+		bool protected = false;
 		k_mutex_lock(&transport_lock, K_FOREVER);
 		uint32_t request_generation = generation;
 		if (ready && peer) {
 			memcpy(frame, incoming.bytes, incoming.size);
 			conn = bt_conn_ref(peer);
+			protected = incoming_protected && bt_conn_get_security(peer) >= BT_SECURITY_L2;
 			ready = false;
 		}
 		k_mutex_unlock(&transport_lock);
@@ -224,8 +265,10 @@ static void process_requests(void *a, void *b, void *c)
 		}
 
 		k_mutex_lock(&core_lock, K_FOREVER);
+		core.profile_transport_protected = protected;
 		kr_request(&core, frame, kr_board_status(), !core.current.magic &&
 			k_uptime_get() < window_deadline, response);
+		core.profile_transport_protected = false;
 		atomic_set(&has_settings, core.current.magic != 0);
 		atomic_set(&reset_pending, core.reset.phase == KR_RESETTING);
 		atomic_set(&reset_history, core.reset.ownership_epoch != 0);
