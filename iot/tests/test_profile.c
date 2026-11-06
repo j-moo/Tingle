@@ -156,7 +156,7 @@ static void request(struct kr_core *core, const struct kr_settings *s,
 		assert(kr_frame_push(&frame, json + i, (size_t)count) == (i + count == length ? 1 : 0));
 		i += count;
 	}
-	kr_request(core, frame.bytes, (struct kr_status){-1,-1}, false, reply);
+	kr_request(core, frame.bytes, (struct kr_status){.battery_mv = -1, .charging = -1}, false, reply);
 }
 
 int main(int argc, char **argv)
@@ -212,7 +212,7 @@ int main(int argc, char **argv)
 	auth = sign(&normal, false, 0); request(&core, &normal, &auth, reply);
 	assert(strstr(reply, "\"stored\":true") && strstr(reply, "\"applied\":false") && writes == 1);
 	char info[] = "{\"protocolVersion\":1,\"type\":\"GET_DEVICE_INFO\",\"requestId\":\"i\"}";
-	kr_request(&core, info, (struct kr_status){-1,-1}, false, reply);
+	kr_request(&core, info, (struct kr_status){.battery_mv = -1, .charging = -1}, false, reply);
 	assert(strstr(reply, "\"profileStored\":true") && strstr(reply, "\"storedPayloadBytes\":196"));
 	assert(strstr(reply, KR_PROFILE_STORAGE_FORMAT) && !strstr(reply, encoded));
 	const char *names[] = {"unknown.bin", "strict-age-off.bin"};

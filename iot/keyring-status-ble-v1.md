@@ -1,5 +1,9 @@
 # 키링 상태 조회 BLE 명세 v1
 
+**최신0.7.2 후속:** [연동 인계](app-flow-v2-handoff.md) 맨 위 절을 우선한다. STATUS 응답 수신 한도는2304B이며 기존 FE512B 제한을 확대했다. C548B 실제 응답 fixture와 Kotlin 전송/파서로 호환을 검사한다. powerSource·선택적 FUEL_GAUGE·USB 중 추정 금지·recordCursorEpoch를 유지하고, unresolvedAccountLockCount는 이전 상대 소유 scope/실패 입력 메타데이터 복구도 포함한다. 기본 보드의 정확한 잔량/장착 여부는 측정되지 않았으며 null/UNCONFIRMED를 유지한다.
+
+**2026-11-06 / 0.5.0 후속:** 현재 필드는 [전체 앱 연동 v2의 4절](app-flow-v2-handoff.md)을 우선한다. 공개 상태는 전압·충전과 전압 기반 추정치(측정 없으면 null), 기록/NVS 상세는 서버 소유 세션 READ 권한 후 실제 집계를 제공한다. batteryPresence는 UNCONFIRMED이며 실제 잔량계 측정으로 표시하지 않는다. 아래는 0.1.0 당시 기록이다.
+
 현재 통합 펌웨어는 `iot/src/main.c`·`iot/src/nus.c`에서 실행하며 빌드 파일은 `iot/build/zephyr.uf2`다. [빌드·서명 설정 안내](dev-settings-signing-handoff-v1.md)를 참고한다. 이 문서의 `0.1.0-registration` 및 고정 커밋 링크는 이전 시험 기준을 보존한 것이다.
 
 | 항목 | 내용 |

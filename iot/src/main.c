@@ -2,6 +2,9 @@
 #include "nus.h"
 #include "phone.h"
 #include "storage.h"
+#include "peer.h"
+#include "service.h"
+#include "monocypher.h"
 #include <errno.h>
 #include <string.h>
 #include <soc.h>
@@ -17,6 +20,7 @@
 #include <zephyr/logging/log.h>
 #include <zephyr/random/random.h>
 #include <zephyr/settings/settings.h>
+#include <zephyr/sys/util.h>
 
 LOG_MODULE_REGISTER(keyring, LOG_LEVEL_INF);
 
@@ -27,6 +31,12 @@ static struct bt_uuid_128 service_uuid = BT_UUID_INIT_128(LAB_UUID(1));
 static struct bt_uuid_128 rx_uuid = BT_UUID_INIT_128(LAB_UUID(2));
 static struct bt_uuid_128 tx_uuid = BT_UUID_INIT_128(LAB_UUID(3));
 static const uint8_t radio_uuid[16] = {LAB_UUID(4)};
+static const uint8_t peer_uuid[16] = {LAB_UUID(7)};
+static struct kr_peer_runtime peers;
+static atomic_t peer_exchange_enabled;
+static atomic_t settings_generation;
+static struct k_spinlock peer_filter_lock;
+static uint8_t peer_filter[32];
 static struct kr_engine engine;
 static uint64_t device_id;
 static struct bt_le_ext_adv *phone_adv;
@@ -38,6 +48,8 @@ static uint64_t utc_base;
 static int64_t uptime_base;
 static unsigned adv_cursor, adv_next_cursor;
 static int adv_slot = -1;
+static uint8_t adv_event[16];
+static uint32_t adv_record_sequence;
 static bool adv_active;
 enum adv_completion { ADV_PENDING, ADV_UNSENT, ADV_SENT };
 static atomic_t adv_finished;
@@ -46,12 +58,13 @@ static atomic_t restart_phone_adv;
 static atomic_t lab_enabled;
 static atomic_t service_scan_enabled;
 static atomic_t service_discoveries;
+static atomic_t peer_authenticated_count, peer_exchange_count, peer_rejected_count;
 static bool subscribed;
-static uint8_t rx_frame[KR_FRAME_MAX];
+static uint8_t rx_frame[KR_BINARY_FRAME_MAX];
 static size_t rx_len;
 static bool command_pending;
 static bool command_busy;
-static uint8_t tx_frame[KR_FRAME_MAX];
+static uint8_t tx_frame[KR_BINARY_FRAME_MAX];
 static size_t tx_len;
 static size_t tx_offset;
 static bool tx_inflight;
@@ -65,21 +78,24 @@ void kr_runtime_owner_unlock(void) { k_mutex_unlock(&owner_data_lock); }
 int kr_runtime_pending_records(void)
 {
 	if (engine.storage_error) { return -EIO; }
-	int count = 0;
-	for (unsigned i = 0; i < KR_RECORDS; ++i) {
-		if (engine.records[i].kind == KR_CONFIRMED || engine.records[i].kind == KR_REVIEW) { ++count; }
-	}
-	return count;
+	return (int)kr_pending(&engine);
 }
 
-void kr_runtime_reset_block(void)
+void kr_runtime_pause_matching(void)
 {
+	atomic_inc(&settings_generation);
 	atomic_clear(&lab_enabled);
 	atomic_clear(&service_scan_enabled);
+	atomic_clear(&peer_exchange_enabled);
+	k_sem_give(&wake);
 }
+void kr_runtime_reset_block(void) { kr_runtime_pause_matching(); }
+uint32_t kr_runtime_generation(void) { return (uint32_t)atomic_get(&settings_generation); }
 
 int kr_runtime_clear_owner_data(void)
 {
+	kr_peer_stop(&peers);
+	kr_nus_clear_application();
 	int result = kr_storage_clear_owner(&engine);
 	if (!result) {
 		k_mutex_lock(&phone_lock, K_FOREVER);
@@ -145,7 +161,10 @@ static void report_boot(struct k_work *work)
 	LOG_INF("BOOT status: stage=%s error=%ld", boot_names[atomic_get(&boot_step)],
 		(long)atomic_get(&boot_errno));
 	if (atomic_get(&service_scan_enabled)) {
-		LOG_INF("Service discovery RX=%ld", (long)atomic_set(&service_discoveries, 0));
+		if (atomic_get(&peer_exchange_enabled)) {
+			LOG_INF("Peer proof=%ld exchange=%ld rejected=%ld", (long)atomic_get(&peer_authenticated_count),
+				(long)atomic_get(&peer_exchange_count), (long)atomic_get(&peer_rejected_count));
+		} else { LOG_INF("Service discovery RX=%ld", (long)atomic_set(&service_discoveries, 0)); }
 	}
 	/* Diagnostic reporting only: never delays matching or synchronization queues. */
 	(void)k_work_reschedule(&boot_report, K_SECONDS(5));
@@ -186,11 +205,20 @@ static void turn_led_off(struct k_work *work)
 	ARG_UNUSED(work);
 	(void)gpio_pin_set_dt(&led, 0);
 }
+void kr_runtime_stop_feedback(void)
+{
+	(void)k_work_cancel_delayable(&led_off); (void)gpio_pin_set_dt(&led, 0);
+}
 
 static void feedback(void *ctx, const uint8_t id[16])
 {
 	ARG_UNUSED(ctx);
 	ARG_UNUSED(id);
+	if (atomic_get(&peer_exchange_enabled)) {
+		struct kr_profile_data own;
+		if (!kr_profile_data_decode(engine.config.profile.data, engine.config.profile.data_len, &own) ||
+			!(own.options & 4)) { return; }
+	}
 	/* Board LED is verified by the board DTS. External motor wiring is not guessed. */
 	(void)gpio_pin_set_dt(&led, 1);
 	(void)k_work_reschedule(&led_off, K_SECONDS(30));
@@ -208,6 +236,7 @@ static void random_bytes(void *ctx, uint8_t *out, size_t len)
 
 static uint64_t now_utc(void)
 {
+	uint64_t trusted = kr_nus_application_time(); if (trusted) { return trusted; }
 	return utc_base ? utc_base + (uint64_t)(k_uptime_get() - uptime_base) / 1000 : 0;
 }
 
@@ -366,8 +395,8 @@ static void send_phone(void)
 
 static void handle_phone(void)
 {
-	static uint8_t command[KR_FRAME_MAX];
-	static uint8_t response[KR_FRAME_MAX];
+	static uint8_t command[KR_BINARY_FRAME_MAX];
+	static uint8_t response[KR_BINARY_FRAME_MAX];
 	k_mutex_lock(&phone_lock, K_FOREVER);
 	if (!command_pending || !phone) {
 		k_mutex_unlock(&phone_lock);
@@ -421,7 +450,7 @@ static bool parse_ad(struct bt_data *data, void *user_data)
 {
 	struct assembly *a = user_data;
 	if (data->type != BT_DATA_SVC_DATA128 || data->data_len < 16 ||
-		memcmp(data->data, radio_uuid, 16)) {
+		memcmp(data->data, atomic_get(&peer_exchange_enabled) ? peer_uuid : radio_uuid, 16)) {
 		return true;
 	}
 	a->found = true;
@@ -450,7 +479,7 @@ static bool parse_ad(struct bt_data *data, void *user_data)
 static void scan_received(const struct bt_le_scan_recv_info *info,
 	struct net_buf_simple *buffer)
 {
-	if (!atomic_get(&lab_enabled)) {
+	if (!atomic_get(&lab_enabled) && !atomic_get(&peer_exchange_enabled)) {
 		if (atomic_get(&service_scan_enabled)) {
 			bt_data_parse(buffer, count_service_discovery, NULL);
 		}
@@ -469,8 +498,15 @@ static void scan_received(const struct bt_le_scan_recv_info *info,
 	}
 	message.malformed |= message.len != a.total ||
 		kr_crc32(message.data, message.len) != a.crc;
+	if (atomic_get(&peer_exchange_enabled) && !message.malformed && message.len >= KR_PEER_HEADER &&
+		!memcmp(message.data, "PX\1", 3) && message.data[3] != 1) {
+		k_spinlock_key_t key = k_spin_lock(&peer_filter_lock);
+		bool ours = !memcmp(message.data + 36, peer_filter, sizeof(peer_filter));
+		k_spin_unlock(&peer_filter_lock, key);
+		if (!ours) { return; } /* Other pairs never consume this board's RX queue. */
+	}
 	/* In a crowd, other pairs' valid control packets must not consume RX slots. */
-	if (!message.malformed && message.len == LAB_CONTROL_BODY_BYTES + 10 &&
+	if (atomic_get(&lab_enabled) && !message.malformed && message.len == LAB_CONTROL_BODY_BYTES + 10 &&
 		message.data[3] == 2 && kr_packet_valid(message.data, message.len) &&
 		kr_get64(message.data + 14) != device_id) {
 		return;
@@ -503,7 +539,7 @@ static int advertise_next(void)
 		adv_active = false;
 		if (completed == ADV_SENT) {
 			adv_cursor = adv_next_cursor;
-			kr_sent(&engine, adv_slot);
+			(void)kr_sent_guarded(&engine, adv_slot, adv_record_sequence, adv_event);
 		}
 	}
 	if (adv_active || !engine.ready) {
@@ -511,7 +547,9 @@ static int advertise_next(void)
 	}
 	unsigned next_cursor = adv_cursor;
 	int next_slot;
-	size_t len = kr_advertisement(&engine, &next_cursor, packet, &next_slot);
+	size_t len = atomic_get(&peer_exchange_enabled) ?
+		kr_peer_advertisement(&peers, &engine, packet, &next_slot) :
+		kr_advertisement(&engine, &next_cursor, packet, &next_slot);
 	if (!len) {
 		return 0;
 	}
@@ -519,7 +557,7 @@ static int advertise_next(void)
 	uint32_t crc = kr_crc32(packet, len);
 	for (size_t offset = 0; offset < len; offset += 230) {
 		size_t n = MIN((size_t)230, len - offset);
-		memcpy(chunks[count], radio_uuid, 16);
+		memcpy(chunks[count], atomic_get(&peer_exchange_enabled) ? peer_uuid : radio_uuid, 16);
 		kr_put32(chunks[count] + 16, crc);
 		kr_put16(chunks[count] + 20, (uint16_t)len);
 		kr_put16(chunks[count] + 22, (uint16_t)offset);
@@ -536,6 +574,11 @@ static int advertise_next(void)
 	if (!result) {
 		adv_next_cursor = next_cursor;
 		adv_slot = next_slot;
+		if (adv_slot >= 0 && adv_slot < KR_RECORDS) {
+			memcpy(adv_event, engine.records[adv_slot].id, 16); adv_record_sequence = engine.records[adv_slot].sequence;
+		} else if (adv_slot >= KR_RECORDS && adv_slot < KR_RECORDS + KR_SUPPRESSIONS) {
+			memcpy(adv_event, engine.suppressed[adv_slot - KR_RECORDS].id, 16);
+		}
 		adv_active = true;
 	}
 	return result;
@@ -632,19 +675,58 @@ static int set_peer_scan(bool enable)
 	return result;
 }
 
-static int apply_service_peer(const struct kr_peer_plan *plan)
+static int apply_service_peer(void *ctx, const struct kr_peer_plan *plan)
 {
-	/* Leave the synthetic engine and its persisted records isolated. */
+	ARG_UNUSED(ctx);
+	if (!kr_nus_apply_application(plan, &peers)) { return -EAGAIN; }
+	if (plan->peer.valid && peers.active && !memcmp(peers.own.public_key, plan->peer.public_key, 32)) {
+		/* Phone advertising/cache retries must not reset a live crypto session. */
+		kr_runtime_owner_lock();
+		if (plan->generation != kr_runtime_generation()) { kr_runtime_owner_unlock(); return -EAGAIN; }
+		atomic_set(&peer_exchange_enabled, 1); kr_runtime_owner_unlock(); return set_peer_scan(true);
+	}
+	atomic_clear(&peer_exchange_enabled);
 	int result = peer_adv ? bt_le_ext_adv_stop(peer_adv) : 0;
 	if (result) {
 		return result;
 	}
+	adv_active = false; adv_slot = -1; atomic_set(&adv_finished, ADV_PENDING);
+	kr_runtime_owner_lock();
+	kr_peer_stop(&peers); engine.ready = false;
+	kr_runtime_owner_unlock();
+	k_msgq_purge(&radio_rx);
 	if (!plan->length) {
 		return set_peer_scan(false);
 	}
 	result = prepare_peer_adv();
 	if (result) {
 		return result;
+	}
+	if (plan->peer.valid) {
+#ifdef KR_DEV_SERVER_KEY_HEX
+		uint8_t public_key[32];
+		if (hex2bin(KR_DEV_SERVER_KEY_HEX, 64, public_key, sizeof(public_key)) != sizeof(public_key)) { return -EINVAL; }
+		kr_runtime_owner_lock();
+		result = kr_peer_start(&peers, &plan->peer, public_key, &engine);
+		if (!result) { kr_nus_bind_application(&peers); }
+		kr_runtime_owner_unlock();
+		if (result) { return -EACCES; }
+		utc_base = (uint64_t)plan->verified_time; uptime_base = k_uptime_get();
+		k_spinlock_key_t key = k_spin_lock(&peer_filter_lock);
+		memcpy(peer_filter, peers.own.public_key, sizeof(peer_filter));
+		k_spin_unlock(&peer_filter_lock, key);
+		kr_runtime_owner_lock();
+		if (plan->generation != kr_runtime_generation()) { kr_runtime_owner_unlock(); return -EAGAIN; }
+		atomic_set(&peer_exchange_enabled, 1); kr_runtime_owner_unlock();
+		result = set_peer_scan(true);
+		if (result) {
+			atomic_clear(&peer_exchange_enabled); kr_runtime_owner_lock(); kr_peer_stop(&peers); engine.ready = false;
+			kr_runtime_owner_unlock(); return result;
+		}
+		return 0;
+#else
+		return -ENOTSUP;
+#endif
 	}
 	const struct bt_data ad = BT_DATA(BT_DATA_SVC_DATA128, plan->service_data, plan->length);
 	result = bt_le_ext_adv_set_data(peer_adv, &ad, 1, NULL, 0);
@@ -656,6 +738,23 @@ static int apply_service_peer(const struct kr_peer_plan *plan)
 	}
 	return result;
 }
+
+static bool service_reset_pending(void *ctx) { ARG_UNUSED(ctx); return kr_nus_reset_pending(); }
+static uint32_t service_block_reset(void *ctx)
+{
+	ARG_UNUSED(ctx);
+	kr_runtime_reset_block();
+	(void)k_work_cancel_delayable(&led_off);
+	(void)gpio_pin_set_dt(&led, 0);
+	k_msgq_purge(&radio_rx);
+	return kr_runtime_generation();
+}
+static int service_refresh_phone(void *ctx) { ARG_UNUSED(ctx); return phone_advertising_data(false); }
+static const char *service_finish_reset(void *ctx) { ARG_UNUSED(ctx); return kr_nus_finish_reset(); }
+static const struct kr_service_io service_io = {
+	.reset_pending = service_reset_pending, .block_reset = service_block_reset,
+	.apply = apply_service_peer, .refresh_phone = service_refresh_phone, .finish_reset = service_finish_reset,
+};
 
 static int enable_lab(void)
 {
@@ -721,7 +820,7 @@ int main(void)
 	struct kr_io io = {
 		.config = kr_storage_config, .record = kr_storage_record,
 		.suppression = kr_storage_suppression, .random = random_bytes,
-		.feedback = feedback, .calculate = kr_always_match,
+		.feedback = feedback, .calculate = kr_always_match, .sequence = kr_storage_sequence,
 		.synthetic_only = true,
 	};
 	kr_init(&engine, device_id, io);
@@ -738,6 +837,7 @@ int main(void)
 		atomic_set(&boot_errno, result);
 		LOG_ERR("Storage unavailable: %d; preserved, no new matching", result);
 	}
+	kr_nus_attach_application(&engine);
 	if (!gpio_is_ready_dt(&led) || gpio_pin_configure_dt(&led, GPIO_OUTPUT_INACTIVE)) {
 		atomic_set(&boot_errno, -ENODEV);
 		LOG_ERR("Board LED unavailable");
@@ -766,36 +866,24 @@ int main(void)
 		if (kr_nus_take_peer_plan(&service_plan)) {
 			service_mode = service_update = true;
 			atomic_clear(&service_scan_enabled);
+			atomic_clear(&peer_exchange_enabled);
 			if (atomic_cas(&lab_enabled, 1, 0)) {
 				(void)k_work_cancel_delayable(&led_off);
 				(void)gpio_pin_set_dt(&led, 0);
 			}
 		}
-		if (kr_nus_reset_pending()) {
-			service_mode = service_update = true;
-			memset(&service_plan, 0, sizeof(service_plan));
-			kr_runtime_reset_block();
-			(void)k_work_cancel_delayable(&led_off);
-			(void)gpio_pin_set_dt(&led, 0);
-			k_msgq_purge(&radio_rx);
+		struct kr_service_progress progress = kr_service_step(&service_plan, &service_update, &service_io);
+		if (progress.reset_pending) { service_mode = true; }
+		if (progress.applied) {
+			atomic_set(&service_scan_enabled, service_plan.length != 0);
+			atomic_set(&restart_phone_adv, 1);
+			LOG_INF("Service discovery %s", service_plan.length ? "active" : "stopped");
+		} else if (progress.radio_error && progress.radio_error != last_adv_error) {
+			LOG_WRN("Service discovery update failed: %d; retrying", progress.radio_error);
 		}
-		if (service_update) {
-			result = apply_service_peer(&service_plan);
-			if (!result) {
-				result = phone_advertising_data(false);
-			}
-			if (!result) {
-				service_update = false;
-				atomic_set(&service_scan_enabled, service_plan.length != 0);
-				atomic_set(&restart_phone_adv, 1);
-				LOG_INF("Service discovery %s", service_plan.length ? "active" : "stopped");
-			} else if (result != last_adv_error) {
-				LOG_WRN("Service discovery update failed: %d; retrying", result);
-			}
-			last_adv_error = result;
-		}
-		if (kr_nus_reset_pending() && !service_update) {
-			const char *error = kr_nus_finish_reset();
+		if (progress.applied || progress.radio_error) { last_adv_error = progress.radio_error; }
+		if (progress.reset_attempted) {
+			const char *error = progress.reset_error;
 			if (error && (!last_reset_error || strcmp(last_reset_error, error))) {
 				LOG_ERR("Reset recovery pending: %s", error);
 			}
@@ -803,6 +891,7 @@ int main(void)
 			atomic_set(&restart_phone_adv, 1);
 		}
 		kr_runtime_owner_lock();
+		kr_nus_application_tick();
 		if (!service_mode && kr_nus_lab_allowed() && !atomic_get(&lab_enabled) && lab_requested()) {
 			result = enable_lab();
 			if (result) {
@@ -823,20 +912,24 @@ int main(void)
 				LOG_ERR("Phone advertising update failed: %d", result);
 			}
 		}
-		if (!atomic_get(&lab_enabled)) {
+		if (!atomic_get(&lab_enabled) && !atomic_get(&peer_exchange_enabled)) {
 			continue;
 		}
 		kr_runtime_owner_lock();
-		if (!atomic_get(&lab_enabled)) {
+		if (!atomic_get(&lab_enabled) && !atomic_get(&peer_exchange_enabled)) {
 			kr_runtime_owner_unlock();
 			continue;
 		}
-		handle_phone();
+		if (atomic_get(&lab_enabled)) { handle_phone(); }
+		peers.now = now_utc();
 		kr_expire_candidates(&engine, now_utc());
 		struct radio_message message;
 		/* Bound a dispatch pass so continuous scanning cannot starve the phone. */
 		for (unsigned n = 0; n < 4 && !k_msgq_get(&radio_rx, &message, K_NO_WAIT); ++n) {
-			if (message.malformed) {
+			if (atomic_get(&peer_exchange_enabled)) {
+				if (!message.malformed) { (void)kr_peer_receive(&peers, &engine, message.data, message.len, now_utc()); }
+				else { ++peers.rejected; }
+			} else if (message.malformed) {
 				(void)kr_radio_error(&engine, message.source, message.data,
 					message.len, KR_BAD_DATA, now_utc());
 			} else {
@@ -846,18 +939,24 @@ int main(void)
 		atomic_val_t dropped = atomic_set(&radio_dropped, 0);
 		if (dropped) {
 			engine.overflow += (uint32_t)dropped;
-			uint8_t count[4];
-			kr_put32(count, (uint32_t)dropped);
-			(void)kr_radio_error(&engine, device_id, count, sizeof(count),
-				KR_RADIO_OVERFLOW, now_utc());
+			if (atomic_get(&peer_exchange_enabled)) { peers.overflow += (uint32_t)dropped; }
+			else {
+				uint8_t count[4]; kr_put32(count, (uint32_t)dropped);
+				(void)kr_radio_error(&engine, device_id, count, sizeof(count), KR_RADIO_OVERFLOW, now_utc());
+			}
 		}
 		kr_drain(&engine);
+		if (atomic_get(&peer_exchange_enabled)) {
+			atomic_set(&peer_authenticated_count, peers.authenticated);
+			atomic_set(&peer_exchange_count, peers.exchanged);
+			atomic_set(&peer_rejected_count, peers.rejected);
+		}
 		result = advertise_next();
 		if (result && result != last_adv_error) {
 			LOG_WRN("Extended advertising start failed: %d; retrying", result);
 		}
 		last_adv_error = result;
-		send_phone();
+		if (atomic_get(&lab_enabled)) { send_phone(); }
 		kr_runtime_owner_unlock();
 		if (k_msgq_num_used_get(&radio_rx)) {
 			k_sem_give(&wake);

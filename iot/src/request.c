@@ -1,11 +1,13 @@
 #include "registration.h"
 #include "profile.h"
+#include "monocypher.h"
 #include <inttypes.h>
 #include <stdio.h>
 #include <string.h>
 
 /* Called by one application worker, never from a Bluetooth callback. */
 static struct kr_settings candidate;
+void kr_request_forget_candidate(void) { crypto_wipe(&candidate, sizeof(candidate)); }
 
 static bool equal(const char *a, const char *b) { return a && !strcmp(a, b); }
 
@@ -89,6 +91,7 @@ void kr_request(struct kr_core *core, char *frame, struct kr_status status,
 		error = "UNSUPPORTED_PROTOCOL"; goto fail;
 	}
 	const char *type = kr_json_string(&json, "type");
+	if (core->platform.application && core->platform.application(core->platform.ctx, &json, request, status, response)) { return; }
 	if (equal(type, "GET_DEVICE_INFO")) {
 		bool settings_ready = core->platform.issue_settings_nonce != NULL;
 		snprintf(response, KR_RESPONSE_MAX,
@@ -103,6 +106,7 @@ void kr_request(struct kr_core *core, char *frame, struct kr_status status,
 			"\"profileStored\":%s,\"storedPayloadBytes\":%u,"
 			"\"profileStorageCharacteristic\":\"6e400004-b5a3-f393-e0a9-e50e24dcca9e\","
 			"\"profileRequiresEncryption\":true,"
+			"\"peerExchangeProtocol\":\"tingle-peer-dev-v1\",\"maxPeerSessions\":16,"
 			"\"storageHealthy\":%s,\"applied\":false,\"timeReady\":false}\n",
 			request, core->identity.serial, KR_FIRMWARE_VERSION,
 			settings_ready ? ",\"GET_SYNC_CHALLENGE\",\"SYNC_SETTINGS\"" : "",

@@ -1,5 +1,6 @@
 #include "registration.h"
 #include "profile.h"
+#include "policy.h"
 #include "monocypher-ed25519.h"
 #include <inttypes.h>
 #include <stdio.h>
@@ -181,6 +182,9 @@ bool kr_settings_valid(const struct kr_settings *s)
 	struct kr_profile_data profile;
 	if (!strcmp(s->format, KR_PROFILE_STORAGE_FORMAT) &&
 		!kr_profile_data_decode(s->payload, s->payload_size, &profile)) { return false; }
+	struct kr_policy policy;
+	if (kr_policy_format(s->format) && (!kr_policy_decode(s->payload, s->payload_size, &policy) ||
+		s->payload[3] != (!strcmp(s->format, KR_POLICY_FORMAT) ? '3' : '2'))) { return false; }
 	uint8_t digest[32];
 	char hex[65];
 	kr_hash(s->payload, s->payload_size, digest);
@@ -195,7 +199,7 @@ const char *kr_store(struct kr_core *core, const struct kr_settings *next,
 	core->stop_peer = false;
 	if (core->storage_error) { return "STORAGE_ERROR"; }
 	if (core->reset.phase == KR_RESETTING) { return "RESET_IN_PROGRESS"; }
-	if (!strcmp(next->format, KR_PROFILE_STORAGE_FORMAT) && !core->profile_transport_protected) {
+	if ((!strcmp(next->format, KR_PROFILE_STORAGE_FORMAT) || kr_policy_format(next->format)) && !core->profile_transport_protected) {
 		return "SECURE_TRANSPORT_REQUIRED";
 	}
 	bool version2 = auth && auth->version2;
@@ -252,8 +256,10 @@ const char *kr_store(struct kr_core *core, const struct kr_settings *next,
 
 bool kr_peer_after_response(struct kr_core *core, bool sent, struct kr_peer_plan *out)
 {
+	/* Full settings also publish an OFF/blocked plan so applied/time state
+	 * can advance without starting a radio. Legacy discovery semantics stay. */
 	bool start = sent && core->peer_after_stored.verified_time > 0 &&
-		core->peer_after_stored.length;
+		(core->peer_after_stored.length || kr_policy_format(core->current.format));
 	if (start) {
 		*out = core->peer_after_stored;
 	}

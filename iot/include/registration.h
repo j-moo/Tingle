@@ -19,7 +19,7 @@
 /* Implementation limits, to be agreed with FE/BE before production rollout. */
 #define KR_PAYLOAD_MAX 2048
 #define KR_FRAME_MAX 4096
-#define KR_RESPONSE_MAX 1536
+#define KR_RESPONSE_MAX 2304
 #define KR_RECORD_MAGIC UINT32_C(0x4b525301)
 
 struct kr_identity {
@@ -59,6 +59,7 @@ struct kr_settings_nonce {
 	int64_t deadline_ms;
 };
 
+struct kr_status;
 struct kr_platform {
 	void *ctx;
 	/* Must complete a durable atomic write AND full readback before returning 0. */
@@ -74,6 +75,8 @@ struct kr_platform {
 	int (*save_reset)(void *ctx, const struct kr_reset_record *next);
 	const char *(*erase_owner)(void *ctx);
 	const char *(*accept_reset)(void *ctx, const struct kr_json *json);
+	bool (*application)(void *ctx, const struct kr_json *json, const char *request,
+		struct kr_status status, char *response);
 };
 
 struct kr_core {
@@ -82,6 +85,7 @@ struct kr_core {
 	struct kr_platform platform;
 	bool storage_error;
 	bool profile_transport_protected; /* Per-request RAM state; never part of NVS. */
+	uint32_t connection_epoch;
 	bool stop_peer;
 	struct kr_peer_plan peer_after_stored;
 	struct kr_reset_record reset;
@@ -119,7 +123,12 @@ const char *kr_json_string(const struct kr_json *obj, const char *key);
 const char *kr_json_number(const struct kr_json *obj, const char *key);
 size_t kr_json_quote(const char *text, char *out, size_t capacity);
 
-struct kr_status { int battery_mv; int charging; };
+struct kr_status {
+	int battery_mv, charging;
+	int gauge_percent;
+	bool gauge_ready, gauge_percent_valid, presence_valid, battery_present;
+	bool usb_valid, usb_present;
+};
 struct kr_frame { char bytes[KR_FRAME_MAX + 1]; size_t size; };
 /* 0: incomplete, 1: complete, -1: malformed (caller disconnects).
  * A disconnect always resets this object, never the durable settings. */
@@ -127,5 +136,6 @@ int kr_frame_push(struct kr_frame *frame, const void *bytes, size_t length);
 void kr_frame_reset(struct kr_frame *frame);
 void kr_request(struct kr_core *core, char *frame, struct kr_status status,
 	bool registration_open, char response[KR_RESPONSE_MAX]);
+void kr_request_forget_candidate(void);
 
 #endif
