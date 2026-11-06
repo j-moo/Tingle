@@ -110,7 +110,9 @@ class BleProbeViewModelTest {
     @Test fun profileUsesProtectedChannelAfterProtectionBeforeNonce() = runTest(dispatcher) {
         val run = profileRun(); val port = profilePort(run); val vm = model(port)
         vm.scan(); runCurrent(); vm.connect("a"); runCurrent()
-        assertEquals(run.deviceNonce, vm.syncChallenge("XIAO-test"))
+        // 실행 화면에서 사용하는 경로로 보호 확인과 명시적인 성향 발급 선택까지 검증한다.
+        assertEquals(SyncChallengeBody(requireNotNull(run.deviceNonce), KeyringSyncProtocol.PROFILE_FORMAT),
+            vm.syncIssuanceRequest("XIAO-test"))
         assertTrue(port.commands.indexOf("PROTECT") < port.commands.indexOf("GET_SYNC_CHALLENGE"))
         assertEquals(run.payloadHash, vm.syncSettings(run, "XIAO-test").ack.payloadHash)
         assertEquals(1, port.commands.count { it == "PROTECTED_SYNC_SETTINGS" })
@@ -118,6 +120,19 @@ class BleProbeViewModelTest {
     }
 
     /** 지원 정보 누락 또는 보호 실패는 일반 RX로 우회하지 않고 전송 전에 중단한다. */
+    @Test fun issuanceKeepsLegacyBodyAndDoesNotDowngradeProtectionFailure() = runTest(dispatcher) {
+        val port = profilePort(profileRun()).apply { extraInfo = emptyMap() }
+        val vm = model(port); vm.scan(); runCurrent(); vm.connect("a"); runCurrent()
+        assertEquals(SyncChallengeBody("A".repeat(43)), vm.syncIssuanceRequest("XIAO-test"))
+        assertFalse("PROTECT" in port.commands)
+        // 같은 연결이어도 매번 최신 지원을 읽으며 보호 실패로 ON/OFF 발급을 대신하지 않는다.
+        port.extraInfo = profilePort(profileRun()).extraInfo
+        port.protect = { throw BleException(BleFailure.SecureTransportRequired) }
+        assertFails { vm.syncIssuanceRequest("XIAO-test") }
+        assertEquals(1, port.commands.count { it == "GET_SYNC_CHALLENGE" })
+    }
+
+    /** 실제 성향 쓰기에서도 지원 정보와 보호 연결을 다시 확인한다. */
     @Test fun profileUnsupportedOrProtectionFailureNeverFallsBack() = runTest(dispatcher) {
         for (unsupported in listOf(true, false)) {
             val run = profileRun(); val port = profilePort(run)

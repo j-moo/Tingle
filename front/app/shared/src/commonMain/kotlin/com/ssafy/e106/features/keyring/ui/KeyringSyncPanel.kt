@@ -19,7 +19,8 @@ import org.koin.compose.viewmodel.koinViewModel
     // 연결이 바뀌면 전송 경로도 제거한다. busy 변화에는 효과를 재실행하지 않아 자기 전송을 취소하지 않는다.
     // 서비스 호스트와 화면이 동시에 attach/detach하지 않도록 소유자를 하나로 제한한다.
     if (!managedConnection) DisposableEffect(serial, state.owner) {
-        if (serial != null) model.attach(serial, { ble.syncChallenge(serial) }) { run -> ble.syncSettings(run, serial) }
+        // 진단 화면에서 수동 동기화할 때도 서비스 호스트와 동일한 형식 선택을 사용한다.
+        if (serial != null) model.attachRequest(serial, { ble.syncIssuanceRequest(serial) }) { run -> ble.syncSettings(run, serial) }
         onDispose { model.detach() }
     }
     Text(stringResource(Res.string.sync_live_title), style = MaterialTheme.typography.titleMedium)

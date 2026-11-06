@@ -13,7 +13,7 @@ import kotlin.uuid.Uuid
 @Serializable data class SyncTicket(val deviceId: Long, val serial: String, val createKey: String,
     val identity: SyncIdentity? = null, val ackKey: String? = null, val ack: KeyringSyncAck? = null,
     val complete: Boolean = false, val deviceNonce: String? = null, val bleAttempted: Boolean = false,
-    val nonceReceivedAt: String? = null) {
+    val nonceReceivedAt: String? = null, val createBody: SyncChallengeBody? = null) {
     override fun toString() = "SyncTicket(REDACTED)"
 }
 @Serializable private data class SyncRecovery(val tickets: List<SyncTicket>)
@@ -40,7 +40,10 @@ class KeyringSyncStore(private val prefs: AppPrefs) {
             KeyringRegistrationProtocol.uuid(t.ackKey) && t.ack.settingsVersion == t.identity.settingsVersion &&
             t.ack.payloadHash == t.identity.payloadHash && t.ack.proof.keyId == t.identity.keyId &&
             t.ack.proof.protocolVersion == t.identity.proofProtocolVersion)) &&
-        (!t.complete || t.identity != null) && (t.deviceNonce == null || KeyringSyncProtocol.validDeviceNonce(t.deviceNonce))
+        (!t.complete || t.identity != null) && (t.deviceNonce == null || KeyringSyncProtocol.validDeviceNonce(t.deviceNonce)) &&
+        // 구버전 파일에는 본문이 없다. 새 파일은 nonce와 선택 형식을 검증해 같은 키에 다른 본문을 보내지 않는다.
+        (t.createBody == null || (t.createBody.deviceNonce == t.deviceNonce &&
+            t.createBody.payloadFormat in setOf(null, KeyringSyncProtocol.PROFILE_FORMAT)))
 
     /** 등록 성공 시 호출한다. 기존 실행을 보존하고 새 대상이 생긴 경우에만 자동 진행을 깨운다. */
     @OptIn(ExperimentalUuidApi::class)

@@ -51,7 +51,8 @@ import kotlinx.coroutines.CancellationException
     val serial = link.info?.serial?.takeIf { canSync && link.connected }
     // busy 변화는 키에 넣지 않는다. 자기 전송이 시작됐다는 이유로 연결을 분리하면 안 된다.
     DisposableEffect(serial, state.owner) {
-        if (serial != null) sync.attach(serial, { ble.syncChallenge(serial) }) { run -> ble.syncSettings(run, serial) }
+        // 최초 발급에서만 기기 지원에 맞는 본문을 생성하며 이후 HTTP 재시도는 내구 본문을 사용한다.
+        if (serial != null) sync.attachRequest(serial, { ble.syncIssuanceRequest(serial) }) { run -> ble.syncSettings(run, serial) }
         onDispose { sync.detach() }
     }
 }
