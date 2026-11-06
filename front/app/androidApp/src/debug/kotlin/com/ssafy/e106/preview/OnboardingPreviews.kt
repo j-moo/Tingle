@@ -31,3 +31,33 @@ import com.ssafy.e106.features.onboarding.ui.*
             { _, _ -> }, {}, {}, {}, {})
     }
 }
+
+// 실제 API가 돌려주는 가입 단계별 안내와 다음 버튼을 비교한다. 예시 상태는 Preview에만 전달하며 계정이나 서버를 변경하지 않는다.
+@Preview(name = "가입 단계 · 성향테스트", showBackground = true, widthDp = 390, heightDp = 844)
+@Composable fun SignupSurveyStepPreview() {
+    SignupStepPreview(OnboardingStatus.SURVEY_REQUIRED)
+}
+
+@Preview(name = "가입 단계 · 희망 나이", showBackground = true, widthDp = 390, heightDp = 844)
+@Composable fun SignupPreferencesStepPreview() {
+    SignupStepPreview(OnboardingStatus.PREFERENCES_REQUIRED)
+}
+
+@Preview(name = "가입 단계 · 동기화 대기", showBackground = true, widthDp = 390, heightDp = 844)
+@Preview(name = "가입 단계 · 동기화 큰 글자", showBackground = true, widthDp = 320, heightDp = 640, fontScale = 1.5f)
+@Composable fun SignupSyncStepPreview() {
+    SignupStepPreview(OnboardingStatus.SYNC_PENDING)
+}
+
+// 완료 상태를 임의로 만들지 않고 미완료 단계의 화면만 확인한다. 실제 이동 콜백은 가입 경로에서 연결한다.
+@Composable private fun SignupStepPreview(status: OnboardingStatus) {
+    AppTheme {
+        OnboardingScreen(
+            state = OnboardingState(session = Session.SignedIn(1, status, false)),
+            onCheck = { _, _ -> }, onSubmit = {}, onReload = {}, onRefresh = {}, onLogout = {},
+            canOpenSurvey = status == OnboardingStatus.SURVEY_REQUIRED,
+            canOpenSettings = status != OnboardingStatus.SURVEY_REQUIRED,
+            onBleProbe = if (status == OnboardingStatus.SYNC_PENDING) ({}) else null,
+        )
+    }
+}
