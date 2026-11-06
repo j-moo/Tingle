@@ -6,9 +6,11 @@ import java.time.Instant;
 import java.util.Arrays;
 import java.util.Base64;
 import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
 
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -18,8 +20,11 @@ import com.e106.tingle.global.error.BusinessException;
 import com.e106.tingle.global.error.ErrorCode;
 import com.e106.tingle.keyring.dto.SyncAckRequest;
 import com.e106.tingle.keyring.dto.SyncRunView;
+import com.e106.tingle.keyring.proof.ServerSettingsTranscript;
 import com.e106.tingle.keyring.proof.StoredAckProofVerifier;
 import com.e106.tingle.preference.PreferenceUserSettingRepository;
+import com.e106.tingle.settings.snapshot.KeyringCanonicalSnapshotService;
+import com.e106.tingle.settings.snapshot.SettingsChangeCoordinator;
 import com.e106.tingle.user.OnboardingService;
 import com.e106.tingle.user.OnboardingStatus;
 import com.e106.tingle.user.UserRepository;
@@ -30,6 +35,7 @@ import lombok.RequiredArgsConstructor;
 @Service
 @RequiredArgsConstructor
 public class KeyringSyncService {
+	private static final String PROFILE_FORMAT = ServerSettingsTranscript.PROFILE_PAYLOAD_FORMAT;
 	private final UserRepository users;
 	private final RefreshTokenRepository sessions;
 	private final OnboardingService onboarding;
@@ -41,6 +47,10 @@ public class KeyringSyncService {
 	private final Clock clock;
 	private final com.e106.tingle.keyring.reset.KeyringResetGuard resetGuard;
 	private final ObjectProvider<DevSettingsIssuer> devSettings;
+	private final KeyringCanonicalSnapshotService profileSnapshots;
+	private final SettingsChangeCoordinator settingsChanges;
+	@Value("${app.keyring.dev-settings.profile-device-serials:}")
+	private Set<String> profileDeviceSerials;
 	private final SecureRandom random = new SecureRandom();
 	private final StoredAckProofVerifier verifier = new StoredAckProofVerifier();
 
@@ -51,9 +61,18 @@ public class KeyringSyncService {
 
 	@Transactional
 	public Created create(long userId, UUID familyId, long deviceId, UUID requestKey, String deviceNonce) {
+		return create(userId, familyId, deviceId, requestKey, deviceNonce, false);
+	}
+
+	@Transactional
+	public Created create(long userId, UUID familyId, long deviceId, UUID requestKey, String deviceNonce,
+		boolean profileRequested) {
 		Keyring device = access(userId, familyId, deviceId, OnboardingStatus.SYNC_PENDING);
 		requireCredential(device);
 		DevSettingsIssuer issuer = devSettings.getIfAvailable();
+		if (profileRequested && (issuer == null || !supportsProfile(device))) {
+			throw new BusinessException(ErrorCode.POLICY_UNRESOLVED);
+		}
 		if (issuer != null) {
 			DevSettingsIssuer.requireDeviceNonce(deviceNonce);
 		} else if (deviceNonce != null) {
@@ -63,10 +82,13 @@ public class KeyringSyncService {
 			"[\"" + requestKey + "\"]").orElse(null);
 		if (replay != null) {
 			requireSession(userId, familyId);
+			if (profileRequested != PROFILE_FORMAT.equals(replay.getPayloadFormat())) {
+				throw new BusinessException(ErrorCode.IDEMPOTENCY_CONFLICT);
+			}
+			requireCurrentProfileRun(replay, device);
 			return new Created(issuedView(replay, device, requestKey, deviceNonce, issuer), false);
 		}
-		KeyringPayload payload = issuer == null ? payloads.prepare(userId, deviceId, device.getOwnerGeneration())
-			: issuer.prepare(userId, deviceId, device.getOwnerGeneration());
+		KeyringPayload payload = preparePayload(userId, device, issuer, profileRequested);
 		// 공급자가 설정 담당 서비스를 통해 버전을 확정했을 수 있으므로 캐시 대신 DB에서 다시 읽는다.
 		long current = version(userId);
 		if (payload == null || payload.userId() != userId || payload.deviceId() != deviceId
@@ -79,10 +101,17 @@ public class KeyringSyncService {
 		if (existing != null) {
 			if (!payload.format().equals(existing.getPayloadFormat())
 				|| !Arrays.equals(payload.bytes(), existing.getPayload())) {
-				throw new BusinessException(ErrorCode.IDEMPOTENCY_CONFLICT);
+				if (issuer == null || (!PROFILE_FORMAT.equals(payload.format())
+					&& !PROFILE_FORMAT.equals(existing.getPayloadFormat()))) {
+					throw new BusinessException(ErrorCode.IDEMPOTENCY_CONFLICT);
+				}
+				// 설정 행은 이미 잠겨 있다. 같은 버전의 기존 발급을 바꾸지 않는다.
+				settingsChanges.advanceAndCapture(userId);
+				current = version(userId);
+			} else {
+				existing.addRequestKeyAlias(requestKey);
+				return new Created(issuedView(existing, device, requestKey, deviceNonce, issuer), false);
 			}
-			existing.addRequestKeyAlias(requestKey);
-			return new Created(issuedView(existing, device, requestKey, deviceNonce, issuer), false);
 		}
 		byte[] nonce = new byte[32];
 		random.nextBytes(nonce);
@@ -94,6 +123,41 @@ public class KeyringSyncService {
 		}
 		runs.saveAndFlush(run);
 		return new Created(issuedView(run, device, requestKey, deviceNonce, issuer), true);
+	}
+
+	private KeyringPayload preparePayload(long userId, Keyring device, DevSettingsIssuer issuer,
+		boolean profileRequested) {
+		if (issuer == null) {
+			return payloads.prepare(userId, device.getId(), device.getOwnerGeneration());
+		}
+		if (!profileRequested) {
+			return issuer.prepare(userId, device.getId(), device.getOwnerGeneration());
+		}
+		byte[] bytes = profileSnapshots.generateStoragePayload(userId);
+		return new KeyringPayload(userId, device.getId(), device.getOwnerGeneration(), version(userId),
+			PROFILE_FORMAT, bytes);
+	}
+
+	private boolean supportsProfile(Keyring device) {
+		return profileDeviceSerials.contains(device.getSerialNumber());
+	}
+
+	private void requireCurrentProfileRun(KeyringSyncRun run, Keyring device) {
+		if (!PROFILE_FORMAT.equals(run.getPayloadFormat())) {
+			return;
+		}
+		if (devSettings.getIfAvailable() == null || !supportsProfile(device)) {
+			throw new BusinessException(ErrorCode.POLICY_UNRESOLVED);
+		}
+		requireCredential(device);
+		if (!Objects.equals(run.getCredentialKeyId(), device.getCredentialKeyId())
+			|| !Objects.equals(run.getOwnershipEpoch(), device.getOwnershipEpoch())) {
+			throw new BusinessException(ErrorCode.INVALID_DEVICE_PROOF);
+		}
+		if (version(run.getOwnerUserId()) != run.getSettingsVersion()
+			|| !Arrays.equals(run.getPayload(), profileSnapshots.generateStoragePayload(run.getOwnerUserId()))) {
+			throw new BusinessException(ErrorCode.SYNC_VERSION_STALE);
+		}
 	}
 
 	private SyncRunView issuedView(KeyringSyncRun run, Keyring device, UUID requestKey,
@@ -109,7 +173,8 @@ public class KeyringSyncService {
 			throw new BusinessException(ErrorCode.IDEMPOTENCY_CONFLICT);
 		}
 		if (proof == null) {
-			if (!DevSettingsIssuer.FORMAT.equals(run.getPayloadFormat())) {
+			if (!DevSettingsIssuer.FORMAT.equals(run.getPayloadFormat())
+				&& !PROFILE_FORMAT.equals(run.getPayloadFormat())) {
 				throw new BusinessException(ErrorCode.POLICY_UNRESOLVED);
 			}
 			proof = issuer.sign(run, device.getSerialNumber(), deviceNonce, clock.instant());
@@ -124,6 +189,7 @@ public class KeyringSyncService {
 		Keyring device = access(userId, familyId, deviceId, OnboardingStatus.KEYRING_REQUIRED);
 		KeyringSyncRun run = ownedRun(userId, device, runId);
 		requireSession(userId, familyId);
+		requireCurrentProfileRun(run, device);
 		return view(run, version(userId));
 	}
 
@@ -144,6 +210,7 @@ public class KeyringSyncService {
 			.orElseThrow(() -> new BusinessException(ErrorCode.INVALID_DEVICE_PROOF));
 		Instant now = clock.instant();
 		requireSession(userId, familyId);
+		requireCurrentProfileRun(run, device);
 		long current = version(userId);
 		if (now.isBefore(run.getCreatedAt())) {
 			throw new BusinessException(ErrorCode.INVALID_DEVICE_PROOF);
@@ -158,8 +225,9 @@ public class KeyringSyncService {
 			throw new BusinessException(ErrorCode.SYNC_VERSION_STALE);
 		}
 		run.acknowledge(requestKey, proofHash, now);
-		// 개발 v1 저장은 성향 적용·신뢰 시각 준비를 입증하지 않는다.
-		if (!DevSettingsIssuer.FORMAT.equals(run.getPayloadFormat())) {
+		// 개발 설정과 TPS1 저장은 성향 적용·신뢰 시각 준비를 입증하지 않는다.
+		if (!DevSettingsIssuer.FORMAT.equals(run.getPayloadFormat())
+			&& !PROFILE_FORMAT.equals(run.getPayloadFormat())) {
 			device.acknowledgeSettings(current, now);
 			onboarding.recordProgress(userId);
 		}

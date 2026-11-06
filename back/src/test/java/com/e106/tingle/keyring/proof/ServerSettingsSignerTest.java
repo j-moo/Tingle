@@ -112,6 +112,30 @@ class ServerSettingsSignerTest {
 		assertThat(transcript.toString()).doesNotContain("XIAO");
 	}
 
+	@Test
+	void profilePayloadBindsFormatHashAndEpochAndRejectsBadFraming() throws Exception {
+		byte[] payload = new byte[196];
+		System.arraycopy("TPS1".getBytes(StandardCharsets.US_ASCII), 0, payload, 0, 4);
+		int offset = 4;
+		for (int[] field : new int[][] {{1, 46}, {16, 9}, {17, 39}, {32, 5}, {33, 39},
+			{48, 3}, {49, 2}, {50, 2}, {64, 16}, {65, 1}}) {
+			payload[offset] = (byte)field[0];
+			payload[offset + 1] = (byte)field[1];
+			offset += 3 + field[1];
+		}
+		String format = ServerSettingsTranscript.PROFILE_PAYLOAD_FORMAT;
+		var transcript = ServerSettingsTranscript.create("key", "serial", "device-key", 42, OWNER, RUN, 7,
+			format, payload, NONCE, DEVICE_NONCE, TIME, 1L);
+		String hash = HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(payload));
+		assertThat(new String(transcript.bytes(), StandardCharsets.UTF_8))
+			.contains("\ntingle-dev-settings-proof-v2\n", "\n" + format + "\n" + hash + "\n")
+			.endsWith("\n1\n");
+		payload[5] = 45;
+		assertThatThrownBy(() -> ServerSettingsTranscript.create("key", "serial", "device-key", 42,
+			OWNER, RUN, 7, format, payload, NONCE, DEVICE_NONCE, TIME, 1L))
+			.isInstanceOf(IllegalArgumentException.class);
+	}
+
 	private ServerSettingsTranscript from(JsonNode request) {
 		return ServerSettingsTranscript.create(request.get("serverKeyId").asText(), "XIAO-0000000000000001",
 			request.get("keyId").asText(), request.get("deviceId").asLong(),
