@@ -19,6 +19,9 @@ import org.koin.compose.viewmodel.koinViewModel
     bleState: BleProbeState, syncBusy: Boolean = false) {
     val state by model.state.collectAsStateWithLifecycle()
     val serial = bleState.info?.serial
+    // 기기에서 BOUND를 읽어도 누구의 계정인지는 추정하지 않는다. 서버 등록 결과가 유실된
+    // 요청은 이미 저장한 본문으로 복구할 수 있으므로 신규 BLE 증명 경로에만 이 제한을 적용한다.
+    val blocked = registrationBlock(bleState.info)
     // 실제 기기/회원이 바뀌면 이전 확인창의 동의를 재사용하지 않는다. 회전 후 확인창도 다시 연다.
     var confirm by remember(serial, state.owner) { mutableStateOf(false) }
     Text(stringResource(Res.string.registration_live_title), style = MaterialTheme.typography.titleMedium)
@@ -26,13 +29,15 @@ import org.koin.compose.viewmodel.koinViewModel
     if (state.busy) { CircularProgressIndicator(); Text(stringResource(Res.string.registration_live_busy)) }
     if (!state.loaded && !state.busy) AppButton(stringResource(Res.string.registration_live_restore), enabled = !syncBusy, onClick = model::restore)
     state.error?.let { Text(it.message, color = MaterialTheme.colorScheme.error) }
-    state.issue?.let { issue -> Text(stringResource(when (issue) {
+    val visibleIssue = if (state.pending?.body == null && state.confirmed == null) blocked ?: state.issue else state.issue
+    visibleIssue?.let { issue -> Text(stringResource(when (issue) {
         RegistrationIssue.Storage -> Res.string.registration_live_storage
         RegistrationIssue.ExpiredChallenge -> Res.string.registration_live_expired
         RegistrationIssue.Device -> Res.string.registration_live_device
         RegistrationIssue.NotInOwnedList -> Res.string.registration_live_unconfirmed
         RegistrationIssue.InvalidResponse -> Res.string.registration_live_invalid
         RegistrationIssue.ResetPending -> Res.string.registration_reset_pending
+        RegistrationIssue.DeviceBound -> Res.string.registration_live_bound
     }), color = MaterialTheme.colorScheme.error) }
     when {
         state.confirmed != null -> {
@@ -44,17 +49,17 @@ import org.koin.compose.viewmodel.koinViewModel
             Text(stringResource(Res.string.registration_live_pending, pending.serial))
             val needsBoard = pending.body == null
             AppButton(stringResource(Res.string.registration_live_retry), enabled = state.loaded && !state.busy && !syncBusy &&
-                (!needsBoard || (bleState.connected && !bleState.busy && serial == pending.serial)),
+                (!needsBoard || (blocked == null && bleState.connected && !bleState.busy && serial == pending.serial)),
                 onClick = { model.retry { challenge -> ble.registrationProof(challenge, pending.serial) } })
             if (state.canRestart) AppButton(stringResource(Res.string.registration_live_restart), enabled = !state.busy && !syncBusy,
                 variant = AppButtonVariant.Secondary, onClick = model::restart)
         }
-        serial != null && bleState.info.supportsRegistration -> {
+        serial != null && bleState.info.supportsRegistration && blocked == null -> {
             AppButton(stringResource(Res.string.registration_live_review), enabled = state.loaded && !state.busy &&
                 !bleState.busy && bleState.connected && !syncBusy, onClick = { confirm = true })
         }
     }
-    if (confirm && serial != null && state.pending == null && state.confirmed == null) AlertDialog(
+    if (confirm && serial != null && blocked == null && state.pending == null && state.confirmed == null) AlertDialog(
         onDismissRequest = { confirm = false }, title = { Text(stringResource(Res.string.registration_live_confirm_title)) },
         text = { Text(stringResource(Res.string.registration_live_confirm_body, serial)) },
         confirmButton = { TextButton(enabled = state.loaded && !state.busy && bleState.connected && !bleState.busy && !syncBusy,

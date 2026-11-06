@@ -159,7 +159,18 @@ class BleProbeViewModelTest {
         assertEquals(1L, vm.registrationProof(challenge, "XIAO-test").ownershipEpoch)
         assertEquals(listOf("GET_DEVICE_INFO", "GET_DEVICE_INFO", "GET_REGISTRATION_PROOF"), port.commands)
         port.extraInfo = port.extraInfo + ("ownerState" to JsonPrimitive("BOUND"))
-        assertFails { vm.registrationProof(challenge, "XIAO-test") }
+        val bound = assertFailsWith<BleCommandException> { vm.registrationProof(challenge, "XIAO-test") }
+        assertEquals("DEVICE_ALREADY_BOUND", bound.code)
+        assertEquals(1, port.commands.count { it == "GET_REGISTRATION_PROOF" })
+        // 실제 S20 회귀: BOUND 거절을 일반 프레임 실패로 처리해 연결까지 끊지 않는다.
+        assertEquals(BleLinkState.Ready, port.linkState.value)
+        assertEquals(RegistrationIssue.DeviceBound, registrationBlock(vm.state.value.info))
+        port.extraInfo = port.extraInfo + ("ownerState" to JsonPrimitive("RESETTING"))
+        assertEquals("RESET_IN_PROGRESS", assertFailsWith<BleCommandException> {
+            vm.registrationProof(challenge, "XIAO-test")
+        }.code)
+        assertEquals(RegistrationIssue.ResetPending, registrationBlock(vm.state.value.info))
+        assertEquals(BleLinkState.Ready, port.linkState.value)
         assertEquals(1, port.commands.count { it == "GET_REGISTRATION_PROOF" })
     }
 
