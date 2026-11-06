@@ -10,9 +10,9 @@ const snapTop = (el: Element) => {
 }
 
 // 한 번에 슉: 빠르게 출발해 부드럽게 멈추는 짧은 스크롤(브라우저 smooth 보다 빠르고 일정). 동작 줄이기면 바로 이동
-const SWIFT_MS = 520
+export const SWIFT_MS = 520
 let swift = 0
-function swiftTo(top: number) {
+export function swiftTo(top: number) {
   cancelAnimationFrame(swift)
   if (matchMedia('(prefers-reduced-motion: reduce)').matches) { scrollTo({ top, behavior: 'instant' }); return }
   const from = scrollY, t0 = performance.now(), ease = (t: number) => 1 - (1 - t) ** 4
