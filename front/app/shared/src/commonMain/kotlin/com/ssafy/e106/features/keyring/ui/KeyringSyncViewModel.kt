@@ -29,7 +29,8 @@ data class KeyringSyncState(val owner: Long? = null, val busy: Boolean = false,
 class KeyringSyncViewModel(private val api: KeyringSyncRepository, private val store: KeyringSyncStore,
     private val owned: OwnedKeyringRepository, private val sessions: SessionStore,
     private val now: () -> Instant = { Clock.System.now() },
-    private val changes: KeyringSettingsChanges = KeyringSettingsChanges()) : ViewModel() {
+    private val changes: KeyringSettingsChanges = KeyringSettingsChanges(),
+    private val network: NetworkMonitor? = null) : ViewModel() {
     // combine의 최초 방출보다 화면 resume이 먼저 올 수 있다. 현재 계정으로 초기화해
     // 첫 방출을 계정 전환으로 오인하거나 같은 발급/ACK를 두 번 시작하지 않는다.
     private val mutable = MutableStateFlow(KeyringSyncState(owner = (sessions.state.value as? Session.SignedIn)?.userId))
@@ -51,6 +52,32 @@ class KeyringSyncViewModel(private val api: KeyringSyncRepository, private val s
     private val nonceBindings = mutableMapOf<Long, Pair<Long, String>>()
     private val delivered = mutableMapOf<Long, Pair<Long, Long>>()
     private var observedRevision = 0L
+    // 인터넷 사용 가능 신호는 전송 성공 보장이 아니다. 복원 전환마다 한 번만 Offline 실패를 깨운다.
+    private var networkAvailable: Boolean? = null
+    private var networkRevision = 0L
+    private val offlineAttempts = mutableMapOf<Long, Long>()
+    private var networkJob: Job? = null
+
+    /** 기반의 검증된 인터넷 상태를 메인 스레드에서 전달한다. 최초 true도 보류 작업을 한 번 확인한다.
+     * 요청 키/증명을 교체하지 않고 기존 process 경로를 이용하므로 ACK 유실 복구 계약을 유지한다.
+     * 회전·화면 이탈로 pause된 모델, 서버 거절·권한 오류·완료 항목은 자동 재시도하지 않는다. */
+    fun onNetworkAvailabilityChanged(available: Boolean) {
+        if (networkAvailable == available) return
+        networkAvailable = available
+        if (available) { networkRevision++; retryOfflineAfterRestore() }
+    }
+
+    private fun retryOfflineAfterRestore() {
+        if (!active || networkAvailable != true) return
+        val eligible = mutable.value.items.filter {
+            it.phase == SyncPhase.Failed && it.error == AppError.Offline &&
+                offlineAttempts[it.deviceId]?.let { revision -> revision < networkRevision } == true
+        }.map { it.deviceId }
+        if (eligible.isEmpty()) return
+        eligible.forEach { attempted.remove(it); offlineAttempts.remove(it) }
+        // 전송 중 복원된 경우에는 진행 중 작업을 취소하지 않고 finally 뒤에 직렬로 이어간다.
+        drive()
+    }
 
     init { viewModelScope.launch(start = CoroutineStart.UNDISPATCHED) {
         combine(sessions.state, store.targetsChanged, changes.state) { session, _, revisions ->
@@ -72,8 +99,21 @@ class KeyringSyncViewModel(private val api: KeyringSyncRepository, private val s
         }
     } }
 
-    fun resume() { if (!active) { active = true; attempted.clear() }; drive() }
-    fun pause() { active = false; detach(); cancelWork() }
+    fun resume() {
+        if (!active) {
+            active = true; attempted.clear()
+            // viewModelScope에서 받아 상태 변경을 메인 스레드로 직렬화한다. 화면 재구성마다 재구독하지 않는다.
+            networkJob = network?.let { monitor -> viewModelScope.launch {
+                monitor.availability.collect { onNetworkAvailabilityChanged(it) }
+            } }
+        }
+        drive()
+    }
+    fun pause() {
+        active = false
+        networkJob?.cancel(); networkJob = null; networkAvailable = null
+        detach(); cancelWork()
+    }
     fun attach(serial: String, getChallenge: suspend () -> String, send: suspend (KeyringSyncRun) -> KeyringStoredResult) {
         if (boardSerial == serial && transmit != null) return
         binding++
@@ -84,6 +124,8 @@ class KeyringSyncViewModel(private val api: KeyringSyncRepository, private val s
     }
     private fun cancelWork() {
         generation++; job?.cancel(); job = null; requested = false; attempted.clear()
+        // 계정 변경·pause·BLE 분리 뒤 이전 작업의 복원 신호를 재사용하지 않는다.
+        offlineAttempts.clear()
         mutable.update { it.copy(busy = false) }
     }
     fun retry(deviceId: Long) { attempted.remove(deviceId); drive() }
@@ -142,6 +184,8 @@ class KeyringSyncViewModel(private val api: KeyringSyncRepository, private val s
                     ensure(owner, stamp)
                     if (!allowed) { show(ticket.deviceId, SyncPhase.WaitingStage); continue }
                     if (!attempted.add(ticket.deviceId)) continue
+                    val startedNetworkRevision = networkRevision
+                    offlineAttempts.remove(ticket.deviceId)
                     try { process(owner, stamp, ticket) }
                     catch (c: CancellationException) { throw c }
                     catch (failure: Exception) {
@@ -153,6 +197,11 @@ class KeyringSyncViewModel(private val api: KeyringSyncRepository, private val s
                             "SYNC_VERSION_STALE" -> SyncPhase.Stale
                             else -> SyncPhase.Failed
                         }, error)
+                        if (error == AppError.Offline) {
+                            offlineAttempts[ticket.deviceId] = startedNetworkRevision
+                            // 인터넷이 복원된 직후 이전 요청이 늦게 실패해도 복원 신호를 놓치지 않는다.
+                            retryOfflineAfterRestore()
+                        }
                     }
                 }
             } catch (c: CancellationException) { throw c }

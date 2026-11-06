@@ -22,7 +22,8 @@ val keyringModule = module {
     single { KeyringResetRecovery(get(), get(), get(), get(), get()) }
     viewModel { com.ssafy.e106.features.keyring.ui.KeyringResetViewModel(get(), get(), get(), get()) }
     single { com.ssafy.e106.features.keyring.data.KeyringSettingsChanges() }
-    viewModel { KeyringSyncViewModel(get(), get(), get(), get(), changes = get()) }
+    // 전경 동기화 모델이 연결 감시를 구독/해제하며 다른 기능의 요청을 일괄 재전송하지 않는다.
+    viewModel { KeyringSyncViewModel(get(), get(), get(), get(), changes = get(), network = get()) }
     viewModel { KeyringRegistrationViewModel(get(), get(), get(), get(), get(), get()) }
     viewModel { OwnedKeyringsViewModel(get(), get()) }
     viewModel { BleProbeViewModel(get(), get()) }

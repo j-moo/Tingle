@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- 연결 상태 관찰만 하는 일반 권한. 네트워크 설정을 변경하거나 런타임 동의를 요구하지 않는다. -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <!-- 첫 등록 NUS 연결용. 위치를 추론하지 않으며 구형 OS만 위치 권한을 요구한다. -->
     <uses-feature android:name="android.hardware.bluetooth_le" android:required="false" />
     <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30" />

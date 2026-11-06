@@ -88,6 +88,86 @@ class KeyringSyncTest {
     private fun model(server: SyncServer, store: KeyringSyncStore, session: TestSession = TestSession(OnboardingStatus.SYNC_PENDING)) =
         KeyringSyncViewModel(server, store, server, session).also { models.put("sync", it); it.resume() }
 
+    // 실제 NetworkMonitor는 OS 콜백을 Flow로 제공한다. 시험은 신호만 제어하고 기존 내구 복구 경로를 검증한다.
+    @Test fun internetRestoreRetriesFailedCreateWithSameKeyAndBody() = runTest(dispatcher) {
+        val availability = MutableStateFlow(false)
+        val server = SyncServer().apply { createAction = { ApiResult.Fail(AppError.Offline) } }
+        val store = KeyringSyncStore(SyncPrefs()); store.rememberTarget(1, syncRun.deviceId, "XIAO-test")
+        val monitor = object : NetworkMonitor { override val availability = availability }
+        val m = KeyringSyncViewModel(server, store, server, TestSession(OnboardingStatus.READY), network = monitor)
+        models.put("sync", m); m.resume(); m.attach("XIAO-test") { stored(it) }; runCurrent()
+        val firstKey = server.creates.single(); val firstBody = server.bodies.single()
+        server.createAction = { ApiResult.Ok(server.run) }; availability.value = true; runCurrent()
+        assertEquals(listOf(firstKey, firstKey), server.creates)
+        assertEquals(listOf(firstBody, firstBody), server.bodies)
+        assertEquals(SyncPhase.Confirmed, m.state.value.items.single().phase)
+        availability.value = false; runCurrent(); availability.value = true; runCurrent()
+        assertEquals(2, server.creates.size) // 완료된 작업은 다음 인터넷 복원에서도 다시 보내지 않는다.
+    }
+
+    @Test fun internetRestoreConfirmsLostAckBeforeBleReauthentication() = runTest(dispatcher) {
+        val server = SyncServer().apply { ackAction = { ApiResult.Fail(AppError.Offline) } }
+        val store = KeyringSyncStore(SyncPrefs()); store.rememberTarget(1, syncRun.deviceId, "XIAO-test")
+        val m = model(server, store); m.onNetworkAvailabilityChanged(false)
+        var sends = 0
+        m.attach("XIAO-test") { sends++; stored(it) }; runCurrent()
+        val proofAndKey = server.acks.single()
+        server.ackAction = {
+            // 기존 ACK가 확인되기 전에는 BLE를 다시 쓰면 안 된다. 확인 뒤의 재인증은 기존 계약대로 허용한다.
+            if (server.acks.size == 2) assertEquals(1, sends)
+            server.run = server.run.copy(state = "ACKED"); ApiResult.Ok(server.run)
+        }
+        m.onNetworkAvailabilityChanged(true); runCurrent()
+        assertEquals(listOf(proofAndKey, proofAndKey), server.acks.take(2))
+        assertEquals(3, server.acks.size); assertEquals(2, sends)
+        assertEquals(SyncPhase.Confirmed, m.state.value.items.single().phase)
+    }
+
+    @Test fun repeatedOnlineSignalsDoNotLoopWhenServerIsStillUnreachable() = runTest(dispatcher) {
+        val server = SyncServer().apply { createAction = { ApiResult.Fail(AppError.Offline) } }
+        val store = KeyringSyncStore(SyncPrefs()); store.rememberTarget(1, syncRun.deviceId, "XIAO-test")
+        val m = model(server, store); m.onNetworkAvailabilityChanged(false)
+        m.attach("XIAO-test") { stored(it) }; runCurrent()
+        m.onNetworkAvailabilityChanged(true); runCurrent()
+        repeat(4) { m.onNetworkAvailabilityChanged(true); runCurrent() }
+        assertEquals(2, server.creates.size)
+        assertEquals(SyncPhase.Failed, m.state.value.items.single().phase)
+    }
+
+    @Test fun restoreDuringRequestRetriesOnceAfterLateOfflineFailure() = runTest(dispatcher) {
+        val gate = CompletableDeferred<Unit>()
+        val server = SyncServer().apply { createAction = { gate.await(); ApiResult.Fail(AppError.Offline) } }
+        val store = KeyringSyncStore(SyncPrefs()); store.rememberTarget(1, syncRun.deviceId, "XIAO-test")
+        val m = model(server, store); m.onNetworkAvailabilityChanged(false)
+        m.attach("XIAO-test") { stored(it) }; runCurrent()
+        m.onNetworkAvailabilityChanged(true); runCurrent()
+        assertEquals(1, server.creates.size) // 진행 중인 호출과 병렬로 새 요청을 시작하지 않는다.
+        server.createAction = { ApiResult.Ok(server.run) }; gate.complete(Unit); runCurrent()
+        assertEquals(2, server.creates.size); assertEquals(1, server.acks.size)
+        assertEquals(SyncPhase.Confirmed, m.state.value.items.single().phase)
+    }
+
+    @Test fun internetRestoreDoesNotRetryServerRejection() = runTest(dispatcher) {
+        val server = SyncServer().apply { createAction = { ApiResult.Fail(AppError.Server(403, "FORBIDDEN", "권한 없음")) } }
+        val store = KeyringSyncStore(SyncPrefs()); store.rememberTarget(1, syncRun.deviceId, "XIAO-test")
+        val m = model(server, store); m.onNetworkAvailabilityChanged(false)
+        m.attach("XIAO-test") { stored(it) }; runCurrent()
+        m.onNetworkAvailabilityChanged(true); runCurrent()
+        assertEquals(1, server.creates.size); assertTrue(server.acks.isEmpty())
+    }
+
+    @Test fun pauseStopsNetworkCollectionAndDoesNotRetryInBackground() = runTest(dispatcher) {
+        val availability = MutableStateFlow(false)
+        val server = SyncServer().apply { createAction = { ApiResult.Fail(AppError.Offline) } }
+        val store = KeyringSyncStore(SyncPrefs()); store.rememberTarget(1, syncRun.deviceId, "XIAO-test")
+        val monitor = object : NetworkMonitor { override val availability = availability }
+        val m = KeyringSyncViewModel(server, store, server, TestSession(OnboardingStatus.READY), network = monitor)
+        models.put("sync", m); m.resume(); m.attach("XIAO-test") { stored(it) }; runCurrent()
+        assertEquals(1, availability.subscriptionCount.value)
+        m.pause(); runCurrent(); availability.value = true; runCurrent()
+        assertEquals(0, availability.subscriptionCount.value); assertEquals(1, server.creates.size)
+    }
+
     @Test fun waitsForSignupAndBoardChallengeBeforeIssuing() = runTest(dispatcher) {
         val server = SyncServer(); val store = KeyringSyncStore(SyncPrefs()); val session = TestSession(OnboardingStatus.PROFILE_REQUIRED)
         store.rememberTarget(1, syncRun.deviceId, "XIAO-test")
