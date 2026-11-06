@@ -1,7 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
+    <!-- 약관 웹 문서(WebDocumentDeviceTest)가 실제 정적 페이지를 받는다. 테스트 APK 전용 -->
+    <uses-permission android:name="android.permission.INTERNET" />
     <application>
+        <!-- 약관 웹 문서 로딩 · 실패 판정을 실제 WebView 로 확인하는 테스트 호스트 -->
+        <activity android:name="com.ssafy.e106.core.ui.components.WebDocumentTestActivity" android:exported="true" />
         <!-- 소유 상태의 미확인/인증 경계와 작은 화면을 확인하는 순수 UI 전용 호스트. -->
         <activity android:name="com.ssafy.e106.features.keyring.KeyringOwnerStatusTestActivity" android:exported="true"
             android:theme="@android:style/Theme.Material.Light.NoActionBar" />
