@@ -26,5 +26,6 @@
     <string name="survey_api_missing">분석에 필요한 문항: %1$s번</string>
     <string name="survey_api_failed">분석을 완료하지 못했어요. 설문을 다시 작성하지 않고 저장된 답변으로 분석을 다시 요청할 수 있어요.</string>
     <string name="survey_api_stage_unchanged">가입 단계를 확인했어요. 아직 같은 단계예요. 남은 준비가 완료되면 다시 확인해 주세요.</string>
+    <string name="survey_api_signup_ready">가입이 완료된 계정이에요. 돌아가서 서비스를 이용할 수 있어요.</string>
     <string name="survey_api_stage_notice">매칭 준비가 끝났는지는 가입 단계에서 확인해 주세요. 키링 등록과 동기화가 남아 있을 수 있어요.</string>
 </resources>
