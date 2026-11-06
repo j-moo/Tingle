@@ -20,4 +20,7 @@ object AppColors {
     val SelectionBorder = Color(0xFF4D7C3A)
     /** 구분선·카드 테두리·비활성 밑줄 (Figma 01 border-subtle). 07 의 14색에는 없고 01 컴포넌트가 쓴다. */
     val BorderSubtle = Color(0xFFE7E7E7)
+    /** 되돌릴 수 없는 작업(키링 초기화)의 경고 배경 · 글자 */
+    val ErrorContainer = Color(0xFFFDECEA)
+    val OnErrorContainer = Color(0xFF6B1510)
 }

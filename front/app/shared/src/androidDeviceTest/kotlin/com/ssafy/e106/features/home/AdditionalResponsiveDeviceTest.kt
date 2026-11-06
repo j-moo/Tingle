@@ -137,7 +137,7 @@ class AdditionalResponsiveDeviceTest(private val screen: String, private val wid
                 "proposal" -> listOf("수락하기", "거절하기")
                 "report" -> listOf("증거 메시지 선택")
                 "matching" -> listOf("키링 관리")
-                "reset" -> listOf("키링 초기화하기")
+                "reset" -> listOf("키링 초기화")
                 "account" -> listOf("로그아웃")
                 "keyringWaiting" -> listOf("키링 찾기", "구매하기", "가입 상태 다시 확인", "로그아웃")
                 "permissionSheet" -> listOf("접근 권한 안내", "앱 설정 열기")

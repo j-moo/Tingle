@@ -20,20 +20,20 @@ class KeyringResetViewModelTest {
 
     @Test fun unknownInventoryNeedsSeparateDeletionConsentAndCancelClearsBoth() = runTest(dispatcher) {
         val f = ResetFixture(); val m = model(f)
-        m.load(resetRun.deviceId, true, resetSerial); runCurrent(); m.confirm(); m.accepted(true)
+        m.load(resetRun.deviceId, true, resetSerial); runCurrent(); m.accepted(true)
         assertEquals(KeyringResetStage.Confirm, m.state.value.displayStage)
         assertNull(m.state.value.pendingRecordCount); assertFalse(m.state.value.canConfirm)
         m.start(f.board); runCurrent()
         m.recordChoice(ResetRecordChoice.Delete); m.recordDeletionAccepted(true)
         assertTrue(m.state.value.canConfirm)
-        m.cancel(); m.confirm()
+        m.cancel()
         assertFalse(m.state.value.canConfirm); assertFalse(m.state.value.recordDeletionAccepted); assertFalse(m.state.value.accepted)
         assertTrue(f.server.starts.isEmpty())
     }
     @Test fun explicitConsentStartsOnceAndOnlyServerCompletionShowsComplete() = runTest(dispatcher) {
         val f = ResetFixture(); f.server.run = resetRun.copy(discardUnsentConfirmed = true)
         f.server.ackAction = { ApiResult.Fail(AppError.Offline) }
-        val m = model(f); m.load(resetRun.deviceId, true, resetSerial); runCurrent(); m.confirm()
+        val m = model(f); m.load(resetRun.deviceId, true, resetSerial); runCurrent()
         m.recordChoice(ResetRecordChoice.Delete); m.recordDeletionAccepted(true)
         m.start(f.board); runCurrent(); assertTrue(f.server.starts.isEmpty())
         m.accepted(true); m.start(f.board); m.start(f.board); runCurrent()
@@ -53,14 +53,14 @@ class KeyringResetViewModelTest {
             if (failBeforeConfirm) f.server.ownershipFailure = AppError.Offline
             m.load(resetRun.deviceId, true, resetSerial); runCurrent()
             if (!failBeforeConfirm) {
-                m.confirm(); m.accepted(true); m.recordChoice(ResetRecordChoice.Delete); m.recordDeletionAccepted(true)
+                m.accepted(true); m.recordChoice(ResetRecordChoice.Delete); m.recordDeletionAccepted(true)
                 f.server.ownershipFailure = AppError.Offline
                 m.start(f.board); runCurrent()
             }
             assertEquals(KeyringResetStage.Unknown, m.state.value.displayStage)
             assertTrue(f.server.starts.isEmpty()); assertTrue(f.store.read(1).isEmpty())
             f.server.ownershipFailure = null
-            m.recover(f.board); runCurrent(); m.confirm(); m.accepted(true)
+            m.recover(f.board); runCurrent(); m.accepted(true)
             m.recordChoice(ResetRecordChoice.Delete); m.recordDeletionAccepted(true)
             assertTrue(m.state.value.canConfirm)
             m.start(f.board); runCurrent()
@@ -71,12 +71,12 @@ class KeyringResetViewModelTest {
     }
     @Test fun disconnectOrDifferentBoardInvalidatesConsentAndRecreationDoesNotStart() = runTest(dispatcher) {
         val f = ResetFixture(); val m = model(f)
-        m.load(resetRun.deviceId, true, resetSerial); runCurrent(); m.confirm(); m.accepted(true)
+        m.load(resetRun.deviceId, true, resetSerial); runCurrent(); m.accepted(true)
         m.recordChoice(ResetRecordChoice.Delete); m.recordDeletionAccepted(true)
         m.connectionChanged(false, null); m.start(f.board); runCurrent()
         assertFalse(m.state.value.canConfirm); assertEquals(KeyringResetStage.Disconnected, m.state.value.displayStage)
         m.connectionChanged(true, "another-board"); assertFalse(m.state.value.accepted); assertFalse(m.state.value.recordDeletionAccepted)
-        m.pause(); m.load(resetRun.deviceId, true, resetSerial); runCurrent(); m.confirm()
+        m.pause(); m.load(resetRun.deviceId, true, resetSerial); runCurrent()
         assertFalse(m.state.value.canConfirm); assertTrue(f.server.starts.isEmpty()); assertEquals(0, f.board.challenges)
     }
     @Test fun storedProofIsPartialAfterHttpFailureAndSurvivesModelRecreation() = runTest(dispatcher) {

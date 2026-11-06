@@ -45,7 +45,6 @@ import com.ssafy.e106.core.ui.theme.AppColors
 import com.ssafy.e106.core.ui.theme.AppSpacing
 import com.ssafy.e106.core.ui.theme.screenGutter
 import com.ssafy.e106.core.ui.theme.screenPaddingValues
-import com.ssafy.e106.features.keyring.data.BleDeviceInfo
 import com.ssafy.e106.features.profile.ui.ProfileBackHandler
 import com.ssafy.e106.resources.*
 import org.jetbrains.compose.resources.StringResource
@@ -59,7 +58,7 @@ import org.koin.compose.viewmodel.koinViewModel
  */
 @Composable fun ConnectedBleProbeRoute(onBack: () -> Unit, model: BleProbeViewModel = koinViewModel(),
     registration: KeyringRegistrationViewModel? = null, sync: KeyringSyncViewModel? = null,
-    managedConnection: Boolean = false, autoScan: Boolean = false, diagnostics: Boolean = false) {
+    managedConnection: Boolean = false, autoScan: Boolean = false) {
     val permission = rememberBlePermission()
     val state by model.state.collectAsStateWithLifecycle()
     val registrationState = registration?.state?.collectAsStateWithLifecycle()?.value
@@ -71,7 +70,7 @@ import org.koin.compose.viewmodel.koinViewModel
     // 자동 탐색을 이미 했는지. 사용자가 취소한 뒤 다시 저절로 찾지 않게 문구용 searched 와 나눈다
     var autoTried by rememberSaveable { mutableStateOf(false) }
     fun scan() { if (model.scan()) searched = true }               // 실제로 탐색을 시작했을 때만 "찾았다"로 친다
-    // 서비스 호스트가 있으면 내부 화면 이동은 연결 종료가 아니다. 단독 진단 화면은 기존 종료 정책을 유지한다.
+    // 서비스 호스트가 있으면 내부 화면 이동은 연결 종료가 아니다. 단독 연결 화면은 기존 종료 정책을 유지한다.
     // 연결을 놓으면 찾은 결과도 사라지므로 "찾아봤음"도 지운다(돌아왔을 때 "찾지 못했어요"로 보이지 않게)
     fun release() { registration?.pause(); if (!managedConnection) { sync?.detach(); model.leave(); searched = false } }
     // 호스트가 초기화 복구/권한 상태를 보고 일시 중지한 경우 내부 화면 진입으로 다시 켜지 않는다.
@@ -101,10 +100,10 @@ import org.koin.compose.viewmodel.koinViewModel
     // 내 키링 목록을 불러오는 동안(아직 안 불러온 첫 화면 포함)에도 연결 끊기를 숨긴다
     val listLoading = pickExisting && ownedState?.owner != null && (ownedState.loading || (ownedState.items == null && ownedState.error == null))
     BleProbeScreen(permission.availability, state, searched = searched, registrationMode = registration != null, pickExisting = pickExisting,
-        diagnostics = diagnostics, syncBusy = syncBusy, registering = registering || listLoading, onBack = { release(); onBack() },
+        syncBusy = syncBusy, registering = registering || listLoading, onBack = { release(); onBack() },
         onScan = ::scan, onStopScan = { model.stopScan(); searched = false }, onConnect = model::connect,
         // 사용자가 그만둔 건 "못 찾음"이 아니다 — 찾기 전 화면으로
-        onReadStatus = model::readStatus, onDisconnect = { model.leave(); searched = false }) {
+        onDisconnect = { model.leave(); searched = false }) {
         // 동기화 중 다른 명령을 막고 등록 결과와 설정 상태를 같은 화면에 표시한다.
         // 저장된 등록 요청 복구 · 미전송 동기화도 연결 전에 보여야 해서 단계와 상관없이 아래에 둔다.
         if (!pickExisting) registration?.let { KeyringRegistrationPanel(it, model, state, syncBusy) }
@@ -138,14 +137,12 @@ private fun step(availability: BleAvailability, state: BleProbeState, searched: 
     searched: Boolean = false,
     registrationMode: Boolean = false,
     pickExisting: Boolean = false,
-    diagnostics: Boolean = false,
     syncBusy: Boolean = false,
     registering: Boolean = false,
     onBack: () -> Unit = {},
     onScan: () -> Unit = {},
     onStopScan: () -> Unit = {},
     onConnect: (String) -> Unit = {},
-    onReadStatus: () -> Unit = {},
     onDisconnect: () -> Unit = {},
     extra: @Composable () -> Unit = {},
 ) {
@@ -153,14 +150,7 @@ private fun step(availability: BleAvailability, state: BleProbeState, searched: 
     val canAct = !state.busy && !registering
     Surface(Modifier.fillMaxSize(), color = AppColors.Background) {
         Column(Modifier.fillMaxSize().safeDrawingPadding(), horizontalAlignment = Alignment.CenterHorizontally) {
-            // 글자 "이전" 대신 화살표 아이콘. TalkBack은 "이전"으로 읽는다
-            Box(Modifier.fillMaxWidth().padding(horizontal = AppSpacing.Small)) {
-                // 눌렀을 때 원(물결) 없이 화살표만. 터치 영역은 48dp 유지
-                Box(Modifier.minimumInteractiveComponentSize().clickable(remember { MutableInteractionSource() }, indication = null,
-                    role = Role.Button, onClick = onBack), contentAlignment = Alignment.Center) {
-                    Icon(painterResource(Res.drawable.ic_arrow_back), stringResource(Res.string.owned_keyrings_back), tint = AppColors.TextPrimary)
-                }
-            }
+            BackArrowBar(onBack)
             // 화면 높이를 최소 높이로 잡아 ① 단계의 제목 · 레이더 · 버튼 묶음을 남은 공간 가운데에 둔다(넘치면 스크롤)
             BoxWithConstraints(Modifier.weight(1f).widthIn(max = 640.dp).fillMaxWidth()) {
             val viewport = maxHeight
@@ -173,7 +163,7 @@ private fun step(availability: BleAvailability, state: BleProbeState, searched: 
                     extra()
                 }
                 when (step) {
-                    ProbeStep.Connected -> ConnectedHero(state, registrationMode, diagnostics, syncBusy, canAct, onReadStatus, below)
+                    ProbeStep.Connected -> ConnectedHero(state, registrationMode, syncBusy, below)
                     // 내 키링 고르기는 아래 동기화 패널이 그린다. 묶음을 화면 가운데에
                     ProbeStep.PickExisting -> { Spacer(Modifier.weight(1f)); below(); Spacer(Modifier.weight(1f)) }
                     ProbeStep.Picking -> { PickingHero(state, canAct, onConnect); below() }
@@ -242,9 +232,9 @@ private fun step(availability: BleAvailability, state: BleProbeState, searched: 
 }
 
 /** ③ 연결됨. "연결됐어요" 화면 대신 고르던 목록을 그대로 두고, 연결한 키링만 초록 테두리 · 체크로 표시한다.
- * 등록은 아래 등록 패널([below])이 맡고, 개발용 기기 진단은 접어 둔다 */
-@Composable private fun ColumnScope.ConnectedHero(state: BleProbeState, registrationMode: Boolean, diagnostics: Boolean, syncBusy: Boolean,
-    canAct: Boolean, onReadStatus: () -> Unit, below: @Composable () -> Unit) {
+ * 등록은 아래 등록 패널([below])이 맡는다 */
+@Composable private fun ColumnScope.ConnectedHero(state: BleProbeState, registrationMode: Boolean, syncBusy: Boolean,
+    below: @Composable () -> Unit) {
     Spacer(Modifier.weight(1f))                                // ① 단계처럼 묶음을 화면 가운데에
     Title(Res.string.probe_pick_title)
     Body(if (registrationMode) Res.string.probe_selected_body else Res.string.probe_selected_body_plain)
@@ -271,8 +261,16 @@ private fun step(availability: BleAvailability, state: BleProbeState, searched: 
     }
     below()                                                    // 등록 패널을 묶음 안에 둬 함께 가운데로
     Spacer(Modifier.weight(1f))
-    // 기기 진단은 개발 앱에서만(운영 사용자에게 보이지 않는다)
-    if (diagnostics) state.info?.let { DevDiagnostics(it, state, canAct, onReadStatus) }
+}
+
+/** 글자 "이전" 대신 화살표 아이콘(TalkBack은 "이전"으로 읽는다). 눌렀을 때 원(물결) 없이 화살표만, 터치 영역은 48dp 유지 */
+@Composable internal fun BackArrowBar(onBack: () -> Unit) {
+    Box(Modifier.fillMaxWidth().padding(horizontal = AppSpacing.Small)) {
+        Box(Modifier.minimumInteractiveComponentSize().clickable(remember { MutableInteractionSource() }, indication = null,
+            role = Role.Button, onClick = onBack), contentAlignment = Alignment.Center) {
+            Icon(painterResource(Res.drawable.ic_arrow_back), stringResource(Res.string.owned_keyrings_back), tint = AppColors.TextPrimary)
+        }
+    }
 }
 
 /**
@@ -280,10 +278,12 @@ private fun step(availability: BleAvailability, state: BleProbeState, searched: 
  * 선택 목록에서는 화살표를 두지 않는다(눌러도 다른 화면이 나오지 않는다).
  */
 @Composable internal fun KeyringCard(title: String, selected: Boolean, enabled: Boolean = true, onClick: (() -> Unit)?,
-    sub: @Composable () -> Unit) {
+    trailing: (@Composable () -> Unit)? = null, sub: @Composable () -> Unit) {
     val border = if (selected) BorderStroke(2.dp, AppColors.SelectionBorder) else BorderStroke(1.dp, AppColors.BorderSubtle)
     // 막혀 있어도 선택한 카드는 흐리게 하지 않는다(무엇을 골랐는지 계속 보이게)
-    val modifier = Modifier.fillMaxWidth().alpha(if (enabled || selected) 1f else 0.4f).semantics { this.selected = selected }
+    val modifier = Modifier.fillMaxWidth().alpha(if (enabled || selected) 1f else 0.4f)
+        // 고를 수 있는 카드만 선택 상태를 읽어 준다(목록 카드는 "선택 안 됨"을 읽지 않게)
+        .semantics { if (onClick != null || selected) this.selected = selected }
     val content = @Composable {
         Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             PebbleThumb()
@@ -292,29 +292,12 @@ private fun step(availability: BleAvailability, state: BleProbeState, searched: 
                 sub()
             }
             if (selected) Image(painterResource(Res.drawable.ic_check_done), null, Modifier.size(24.dp))
+            else trailing?.invoke()
         }
     }
     if (onClick != null) Surface(onClick = onClick, enabled = enabled, shape = RoundedCornerShape(16.dp), color = AppColors.Background,
         border = border, modifier = modifier) { content() }
     else Surface(shape = RoundedCornerShape(16.dp), color = AppColors.Background, border = border, modifier = modifier) { content() }
-}
-
-@Composable private fun DevDiagnostics(info: BleDeviceInfo, state: BleProbeState, canAct: Boolean, onReadStatus: () -> Unit) {
-    var open by rememberSaveable { mutableStateOf(false) }
-    TextButton(onClick = { open = !open }) {
-        Text(stringResource(Res.string.probe_dev_toggle) + if (open) " ▲" else " ▼", color = AppColors.TextSecondary)
-    }
-    if (!open) return
-    Column(verticalArrangement = Arrangement.spacedBy(AppSpacing.Small)) {
-        Text(stringResource(Res.string.ble_not_registered), style = MaterialTheme.typography.bodySmall)
-        ProfileStorageDiagnostics(info)
-        OwnerFlowCapabilityDiagnostics(info)
-        AppButton(stringResource(Res.string.ble_read_status), variant = AppButtonVariant.Secondary,
-            enabled = canAct && state.connected && info.supportsStatus, onClick = onReadStatus)
-        if (!info.supportsStatus) Text(stringResource(Res.string.ble_status_unsupported), style = MaterialTheme.typography.bodySmall)
-        // 읽기 전용 스냅샷을 별도 컴포넌트로 표시한다. 연결/계정 변경 시 모델이 이전 관측값을 비운다.
-        state.status?.let { KeyringStatusDiagnostics(it) }
-    }
 }
 
 @Composable private fun Title(text: StringResource) {
@@ -385,16 +368,3 @@ private fun signalBars(rssi: Int) = when {
     }
 }
 
-/** 읽기 전용 개발 진단. 기기 보고를 서버 검증/매칭 준비 완료로 표시하지 않는다. Preview도 같은 함수를 쓴다. */
-@Composable fun ProfileStorageDiagnostics(info: BleDeviceInfo) {
-    Column(verticalArrangement = Arrangement.spacedBy(AppSpacing.Small)) {
-        Text(stringResource(if (info.supportsProtectedProfileStorage)
-            Res.string.ble_profile_supported else Res.string.ble_profile_unconfirmed))
-        Text(stringResource(when (info.profileStorage.reportsProfileStored) {
-            true -> Res.string.ble_profile_stored_report
-            false -> Res.string.ble_profile_not_stored_report
-            null -> Res.string.ble_profile_storage_unknown
-        }))
-        Text(stringResource(Res.string.ble_profile_diagnostic_notice), style = MaterialTheme.typography.bodySmall)
-    }
-}

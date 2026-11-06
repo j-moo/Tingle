@@ -45,7 +45,7 @@ import org.jetbrains.compose.resources.stringResource
     // 연결이 바뀌면 전송 경로도 제거한다. busy 변화에는 효과를 재실행하지 않아 자기 전송을 취소하지 않는다.
     // 서비스 호스트와 화면이 동시에 attach/detach하지 않도록 소유자를 하나로 제한한다.
     if (!managedConnection) DisposableEffect(serial, state.owner) {
-        // 진단 화면에서 수동 동기화할 때도 서비스 호스트와 동일한 형식 선택을 사용한다.
+        // 호스트 없이 이 화면만 쓸 때도 서비스 호스트와 동일한 형식 선택을 사용한다.
         if (serial != null) model.attachRequest(serial, { ble.syncIssuanceRequest(serial) }) { run -> ble.syncSettings(run, serial) }
         onDispose { model.detach() }
     }
@@ -172,7 +172,7 @@ import org.jetbrains.compose.resources.stringResource
 
 /** Preview에서는 이 순수 함수에 상태만 넣는다. 가짜 Repository/서버 완료 상태는 연결하지 않는다. */
 @Composable internal fun KeyringSyncProgressList(state: KeyringSyncState, retry: (Long) -> Unit, latest: (Long) -> Unit,
-    showActions: Boolean = true, numbers: Map<Long, Int>? = null) {
+    numbers: Map<Long, Int>? = null) {
     val full = Modifier.fillMaxWidth()
     if (state.recoveryFailed) Text(stringResource(Res.string.sync_live_storage), color = MaterialTheme.colorScheme.error, textAlign = TextAlign.Center)
     state.items.forEachIndexed { index, item ->
@@ -195,7 +195,6 @@ import org.jetbrains.compose.resources.stringResource
         if (item.phase == SyncPhase.Confirmed && (item.applied == false || item.timeReady == false))
             Text(stringResource(Res.string.sync_live_not_applied), color = AppColors.TextSecondary, textAlign = TextAlign.Center)
         if (item.phase == SyncPhase.Failed) item.error?.let { Text(it.message, color = MaterialTheme.colorScheme.error, textAlign = TextAlign.Center) }
-        if (!showActions) return@forEachIndexed
         if (item.phase == SyncPhase.Stale) AppButton(stringResource(Res.string.sync_live_latest), full, enabled = !state.busy, onClick = { latest(item.deviceId) })
         else if (item.phase in setOf(SyncPhase.Failed, SyncPhase.PolicyWaiting, SyncPhase.WaitingConnection))
             AppButton(stringResource(Res.string.sync_live_retry), full, enabled = !state.busy, onClick = { retry(item.deviceId) })

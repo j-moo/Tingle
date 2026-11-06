@@ -27,6 +27,7 @@ import com.ssafy.e106.features.keyring.ui.ConnectedOwnedKeyringsRoute
 import com.ssafy.e106.features.keyring.ui.ConnectedKeyringSetupRoute
 import com.ssafy.e106.features.keyring.ui.KeyringForegroundSync
 import com.ssafy.e106.features.keyring.ui.ConnectedKeyringResetRoute
+import com.ssafy.e106.features.keyring.ui.BleProbeViewModel
 import com.ssafy.e106.resources.*
 import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.koinInject
@@ -35,7 +36,7 @@ import org.koin.compose.viewmodel.koinViewModel
 // Keyrings는 서버의 등록 목록을 확인하는 경로이며 BLE 등록/초기화 경로와 구분한다.
 internal enum class ServicePage { Home, Proposals, Menu, Chats, Safety, Report, AiConsent, Profile, Survey, Settings, Help, Keyrings, BleProbe, KeyringReset, Preparing }
 
-/** 서버의 가입 완료 여부와 개발 화면 진입을 분리한다. 개발 진입으로 Session을 READY로 바꾸지 않는다. */
+/** 가입이 끝난(READY) 계정의 서비스 화면. 가입 중이면 가입 화면을 보여준다(운영 · 개발 앱 같음). */
 @Composable fun SignedInServiceHost(session: Session.SignedIn, access: ProposalAccess = koinInject(),
     model: HomeSessionViewModel = koinViewModel(), pushes: PushEvents = koinInject()) {
     var opened by rememberSaveable(session.userId, session.isReady, session.status) { mutableStateOf(session.isReady) }
@@ -50,12 +51,14 @@ internal enum class ServicePage { Home, Proposals, Menu, Chats, Safety, Report, 
     // 키링 정보를 홈/마이 어느 쪽에서 열었는지 보존해 같은 메뉴로 돌아간다.
     var keyringFromMenu by rememberSaveable(session.userId) { mutableStateOf(false) }
     var resetDeviceId by rememberSaveable(session.userId) { mutableStateOf<Long?>(null) }
+    // 초기화하려다 키링 연결 화면으로 왔으면, 연결되는 대로 초기화 화면으로 돌려보낸다
+    var connectForReset by rememberSaveable(session.userId) { mutableStateOf(false) }
     var logoutPrompt by rememberSaveable { mutableStateOf(false) }
     val state by model.state.collectAsStateWithLifecycle()
     val uri = LocalUriHandler.current
     // 같은 Activity의 동기화 모델을 BLE 화면에서도 공유한다. 가입 화면이 바뀌어도 대상 기록은 유지하며,
-    // 개발 앱의 전경에서만 자동 발급을 시작한다. 회전/백그라운드에서는 취소 후 내구 기록으로 복구한다.
-    if (access.development) KeyringForegroundSync(suspendSync = page == ServicePage.KeyringReset)
+    // 앱이 화면에 떠 있는 동안 자동 발급한다(운영 · 개발 앱 같음). 회전/백그라운드에서는 취소 후 내구 기록으로 복구한다.
+    KeyringForegroundSync(suspendSync = page == ServicePage.KeyringReset)
     fun go(destination: ServicePage) { model.leave(); page = destination }
     fun chats(room: Long? = null) { roomId = room; go(ServicePage.Chats) }
     fun proposals() { proposalId = null; go(ServicePage.Proposals) }
@@ -83,7 +86,7 @@ internal enum class ServicePage { Home, Proposals, Menu, Chats, Safety, Report, 
 
     if (!opened || !access.allowed(session)) {
         Column(Modifier.fillMaxSize()) {
-            Box(Modifier.weight(1f)) { OnboardingRoute(session, managedKeyringConnection = access.development) }
+            Box(Modifier.weight(1f)) { OnboardingRoute(session, managedKeyringConnection = true) }
         }
         return
     }
@@ -93,9 +96,6 @@ internal enum class ServicePage { Home, Proposals, Menu, Chats, Safety, Report, 
             if (page == ServicePage.Home) { model.leave(); opened = false } else go(ServicePage.Home)
         }
     Column(Modifier.fillMaxSize()) {
-        if (!session.isReady) TextButton(onClick = { model.leave(); opened = false }, modifier = Modifier.statusBarsPadding()) {
-            Text(stringResource(Res.string.proposals_development_notice))
-        }
         if (page in listOf(ServicePage.Home, ServicePage.Menu)) state.error?.let {
             Text(it.message, Modifier.padding(AppSpacing.Medium), color = MaterialTheme.colorScheme.error)
         }
@@ -129,17 +129,24 @@ internal enum class ServicePage { Home, Proposals, Menu, Chats, Safety, Report, 
                 })
                 ServicePage.Profile -> ProfileManagementRoute(session, { go(ServicePage.Menu) })
                 ServicePage.Survey -> SurveyRoute(session, { go(ServicePage.Menu) })
-                ServicePage.Settings -> ConnectedSettingsRoute(session, { go(ServicePage.Menu) }, showKeyringSync = access.development)
+                ServicePage.Settings -> ConnectedSettingsRoute(session, { go(ServicePage.Menu) })
                 // 소유 정보 확인만 수행하므로 메뉴를 열었다고 등록/동기화를 요청하지 않는다.
                 ServicePage.Keyrings -> ConnectedOwnedKeyringsRoute(session, { go(if (keyringFromMenu) ServicePage.Menu else ServicePage.Home) },
-                    onBleProbe = if (access.development) ({ go(ServicePage.BleProbe) }) else null,
-                    onReset = if (access.development) ({ id -> resetDeviceId = id; go(ServicePage.KeyringReset) }) else null)
-                ServicePage.KeyringReset -> if (access.development) resetDeviceId?.let { id ->
-                    ConnectedKeyringResetRoute(id, { go(ServicePage.Keyrings) }, { go(ServicePage.BleProbe) })
+                    onReset = { id -> resetDeviceId = id; connectForReset = false; go(ServicePage.KeyringReset) })
+                // 키링 초기화는 운영 · 개발 앱 같다. 초기화하려면 키링 연결이 필요해 연결 화면으로 보낸다
+                ServicePage.KeyringReset -> resetDeviceId?.let { id ->
+                    ConnectedKeyringResetRoute(id, { go(ServicePage.Keyrings) }, { connectForReset = true; go(ServicePage.BleProbe) })
                 }
-                // 진단 메뉴는 개발 앱 전용이다. 서버 가입 상태/소유 관계를 변경하지 않는다.
-                // 개발 등록 시험도 서버 권한을 그대로 사용하며 가입 완료 계정의 기존 기기를 임의 해제하지 않는다.
-                ServicePage.BleProbe -> if (access.development) ConnectedKeyringSetupRoute({ go(ServicePage.Keyrings) }, managedConnection = true, diagnostics = true)
+                // 키링 연결 화면(초기화 전 연결용). 서버 가입 상태/소유 관계를 변경하지 않는다.
+                ServicePage.BleProbe -> {
+                    if (connectForReset) {
+                        val link by koinViewModel<BleProbeViewModel>().state.collectAsStateWithLifecycle()
+                        LaunchedEffect(link.connected && link.info != null) {
+                            if (link.connected && link.info != null) { connectForReset = false; go(ServicePage.KeyringReset) }
+                        }
+                    }
+                    ConnectedKeyringSetupRoute({ connectForReset = false; go(ServicePage.Keyrings) }, managedConnection = true)
+                }
                 ServicePage.Menu -> AccountMenuScreen(state.account, onAction = { action -> when (action) {
                     AccountMenuAction.Refresh -> model.account()
                     AccountMenuAction.Home -> go(ServicePage.Home)

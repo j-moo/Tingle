@@ -3,7 +3,7 @@ package com.ssafy.e106.features.keyring.data
 import com.ssafy.e106.core.ble.*
 import kotlinx.serialization.json.*
 
-/** 공개 읽기 명령만 진단 화면에 노출한다. 등록 증명·설정 변경·초기화는 별도 업무 계약에서 연결한다. */
+/** 공개 읽기 명령만 연결 화면에서 쓴다. 등록 증명·설정 변경·초기화는 별도 업무 계약에서 연결한다. */
 internal object BleProbeProtocol {
     // 전체 STATUS는 기존 512바이트보다 크다. IoT 0.7 계약의 상한을 적용한다.
     const val STATUS_RESPONSE_MAX_BYTES = 2304
