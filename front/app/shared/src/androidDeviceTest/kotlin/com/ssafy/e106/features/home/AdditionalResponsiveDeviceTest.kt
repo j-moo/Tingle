@@ -22,6 +22,7 @@ import androidx.test.core.app.ActivityScenario
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import com.ssafy.e106.core.auth.*
+import com.ssafy.e106.core.ble.BleAvailability
 import com.ssafy.e106.core.ui.theme.AppTheme
 import com.ssafy.e106.features.auth.ui.*
 import com.ssafy.e106.features.onboarding.data.AgreementItem
@@ -99,7 +100,11 @@ private fun ResponsiveExample(screen: String) {
         "account" -> AccountMenuScreen(AccountMenuState(load = AccountMenuLoad.Ready, nickname = "화면 확인"), {})
         "permissions" -> DevicePermissionsScreen(DevicePermissionsState(), {})
         "keyringWaiting" -> OnboardingScreen(OnboardingState(
-            session = Session.SignedIn(1, OnboardingStatus.KEYRING_REQUIRED, false)), { _, _ -> }, {}, {}, {}, {})
+            session = Session.SignedIn(1, OnboardingStatus.KEYRING_REQUIRED, false), purchaseUrl = "https://tingle.test/shop"),
+            { _, _ -> }, {}, {}, {}, {})
+        "permissionSheet" -> SignupSheet(onClose = {}, background = {}, animate = false) {
+            PermissionSheetContent(BleAvailability.PermissionRequired, notificationGranted = false, denied = true)
+        }
     }
 }
 
@@ -112,7 +117,7 @@ class AdditionalResponsiveDeviceTest(private val screen: String, private val wid
     companion object {
         @JvmStatic @Parameterized.Parameters(name = "{0}-{1}x{2}-font{3}")
         fun cases(): List<Array<Any>> = listOf("login", "agreements", "lifestyle", "details", "age",
-            "proposal", "report", "matching", "reset", "account", "permissions", "keyringWaiting").flatMap { screen ->
+            "proposal", "report", "matching", "reset", "account", "permissions", "keyringWaiting", "permissionSheet").flatMap { screen ->
             listOf(arrayOf(screen, 320, 480, 2f), arrayOf(screen, 640, 320, 1.3f),
                 arrayOf(screen, 800, 1280, 1.3f))
         }
@@ -136,7 +141,8 @@ class AdditionalResponsiveDeviceTest(private val screen: String, private val wid
                 "reset" -> listOf("키링 초기화하기")
                 "account" -> listOf("로그아웃")
                 "permissions" -> listOf("상태 다시 확인")
-                "keyringWaiting" -> listOf("키링 찾기 · 준비 중", "로그아웃")
+                "keyringWaiting" -> listOf("키링 찾기 · 준비 중", "구매하기", "가입 상태 다시 확인", "로그아웃")
+                "permissionSheet" -> listOf("접근 권한 안내", "앱 설정 열기")
                 else -> listOf("로그아웃")
             }
             labels.forEach { label ->
