@@ -8,6 +8,7 @@ import com.ssafy.e106.core.auth.SocialKeys
 import com.ssafy.e106.core.auth.SocialLogin
 import com.ssafy.e106.core.ble.KeyringBle
 import com.ssafy.e106.core.network.createHttpClient
+import com.ssafy.e106.core.network.NetworkMonitor
 import com.ssafy.e106.core.push.DefaultPushEvents
 import com.ssafy.e106.core.push.PushDevice
 import com.ssafy.e106.core.push.PushEvents
@@ -36,6 +37,8 @@ import org.koin.dsl.module
  * §5 구현이 올라올 때마다 한 줄씩 더한다.
  */
 fun coreModule(baseUrl: String, httpLog: Boolean, socialKeys: SocialKeys) = module {
+    // 인터넷 복원 신호는 공통으로 제공하고 재시도 대상/횟수는 기능이 결정한다.
+    single<NetworkMonitor> { platformNetworkMonitor() }
     // 권한 요청은 화면의 사용자 동작에서만 한다. 플랫폼 인스턴스 생성은 무선 작업을 시작하지 않는다.
     single<KeyringBle> { platformKeyringBle() }
     single<TokenStore> { platformTokenStore(baseUrl) }
@@ -96,3 +99,6 @@ internal expect fun Scope.platformForeground(): StateFlow<Boolean>
 
 /** Android NUS 기반. iOS는 지원 준비 전 명시적으로 Unsupported를 반환한다. */
 internal expect fun Scope.platformKeyringBle(): KeyringBle
+
+/** Android 기본 경로 검증 상태. iOS는 구현 전까지 복원 신호를 제공하지 않는다. */
+internal expect fun Scope.platformNetworkMonitor(): NetworkMonitor
