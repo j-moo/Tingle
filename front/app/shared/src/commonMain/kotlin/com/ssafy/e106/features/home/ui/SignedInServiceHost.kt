@@ -83,8 +83,6 @@ internal enum class ServicePage { Home, Proposals, Menu, Chats, Safety, Report, 
     if (!opened || !access.allowed(session)) {
         Column(Modifier.fillMaxSize()) {
             Box(Modifier.weight(1f)) { OnboardingRoute(session, managedKeyringConnection = access.development) }
-            if (access.development && access.allowed(session)) AppButton(stringResource(Res.string.proposals_development_entry),
-                Modifier.fillMaxWidth().navigationBarsPadding().padding(AppSpacing.Medium), onClick = { page = ServicePage.Home; opened = true })
         }
         return
     }

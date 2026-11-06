@@ -40,11 +40,11 @@ import com.ssafy.e106.resources.agreement_sheet_close
 import org.jetbrains.compose.resources.stringResource
 
 /**
- * 로그인 직후 약관 동의를 로그인 화면 위에 아래에서 올라오는 시트로 띄운다. 뒤의 로그인 화면은 어둡게 덮어 누를 수 없다.
- * ✕ · 시스템 뒤로 가기 = [onClose](로그아웃). 시트를 끌어내려 닫는 동작은 없다(동의 없이 다음 단계로 갈 수 없으므로 닫기 = 로그인 취소).
+ * 가입 단계의 레이어 시트(로그인 직후 약관 동의, 키링 단계 권한 안내). 뒤 화면([background])은 어둡게 덮어 누를 수 없다.
+ * ✕ · 시스템 뒤로 가기 = [onClose](로그아웃). 시트를 끌어내려 닫는 동작은 없다(필수 단계라 닫기 = 로그인 취소).
  */
 @Composable
-fun AgreementSheet(onClose: () -> Unit, background: @Composable () -> Unit, animate: Boolean = true, content: @Composable () -> Unit) {
+fun SignupSheet(onClose: () -> Unit, background: @Composable () -> Unit, animate: Boolean = true, content: @Composable () -> Unit) {
     val shown = remember { MutableTransitionState(!animate).apply { targetState = true } }   // animate=false: 처음부터 올라온 상태(정지 Preview 용)
     ProfileBackHandler(enabled = true, onBack = onClose)
     Box(Modifier.fillMaxSize()) {

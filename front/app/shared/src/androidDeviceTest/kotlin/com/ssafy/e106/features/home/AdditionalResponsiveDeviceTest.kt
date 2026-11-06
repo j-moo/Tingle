@@ -136,6 +136,7 @@ class AdditionalResponsiveDeviceTest(private val screen: String, private val wid
                 "reset" -> listOf("키링 초기화하기")
                 "account" -> listOf("로그아웃")
                 "permissions" -> listOf("상태 다시 확인")
+                "keyringWaiting" -> listOf("키링 찾기 · 준비 중", "로그아웃")
                 else -> listOf("로그아웃")
             }
             labels.forEach { label ->

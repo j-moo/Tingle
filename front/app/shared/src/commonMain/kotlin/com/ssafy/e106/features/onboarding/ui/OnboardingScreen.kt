@@ -39,7 +39,6 @@ fun OnboardingRoute(
     managedKeyringConnection: Boolean = false,
 ) {
     val state by model.state.collectAsStateWithLifecycle()
-    var developmentProfile by rememberSaveable(session.userId, session.status, session.isReady) { mutableStateOf(false) }
     val canSkip = profileAccess.canSkipKeyring(session)
     // 등록 전 계정도 개발 앱에서 실물 통신을 확인한다. 실제 귀속은 별도 확인창 수락과 서버 검증 뒤에만 진행한다.
     // 계정/가입 단계 변경 시 진입 상태를 버린다. 연결은 서비스 호스트가 있으면 그 생명주기를 따른다.
@@ -60,21 +59,18 @@ fun OnboardingRoute(
         canSurvey && openSurvey -> SurveyRoute(session, { openSurvey = false })
         canManage && manageProfile -> ProfileManagementRoute(session, { manageProfile = false })
         !session.isReady && session.status == OnboardingStatus.PROFILE_REQUIRED -> ProfileRoute(session)
-        canSkip && developmentProfile -> Column(Modifier.fillMaxSize()) {
-            Column(Modifier.statusBarsPadding().padding(horizontal = AppSpacing.Large)) {
-                Text(stringResource(Res.string.profile_development_keyring_notice), style = MaterialTheme.typography.bodySmall)
-                TextButton(onClick = { developmentProfile = false }) {
-                    Text(stringResource(Res.string.profile_return_keyring))
-                }
+        else -> {
+            val screen = @Composable {
+                OnboardingScreen(state, model::check, model::submit, model::load, model::refresh, model::logout,
+                canManageProfile = canManage, onManageProfile = { if (canManage) manageProfile = true },
+                canOpenSurvey = canSurvey, onOpenSurvey = { if (canSurvey) openSurvey = true },
+                canOpenSettings = canSettings, onOpenSettings = { if (canSettings) openSettings = true },
+                onBleProbe = if (canSkip || canSync) ({ openBleProbe = true }) else null)
             }
-            Box(Modifier.weight(1f)) { ProfileRoute(session) }
+            // 키링 단계: 권한 안내 시트를 먼저 얹는다(필수 미허용이면 다음 불가, 닫으면 로그아웃)
+            if (!session.isReady && session.status == OnboardingStatus.KEYRING_REQUIRED) KeyringPermissionGate(session.userId, model::logout, screen)
+            else screen()
         }
-        else -> OnboardingScreen(state, model::check, model::submit, model::load, model::refresh, model::logout,
-            canSkipKeyring = canSkip, onSkipKeyring = { if (canSkip) developmentProfile = true },
-            canManageProfile = canManage, onManageProfile = { if (canManage) manageProfile = true },
-            canOpenSurvey = canSurvey, onOpenSurvey = { if (canSurvey) openSurvey = true },
-            canOpenSettings = canSettings, onOpenSettings = { if (canSettings) openSettings = true },
-            onBleProbe = if (canSkip || canSync) ({ openBleProbe = true }) else null)
     }
 }
 
@@ -87,8 +83,6 @@ fun OnboardingScreen(
     onReload: () -> Unit,
     onRefresh: () -> Unit,
     onLogout: () -> Unit,
-    canSkipKeyring: Boolean = false,
-    onSkipKeyring: () -> Unit = {},
     developmentNotice: String? = null,
     canManageProfile: Boolean = false,
     onManageProfile: () -> Unit = {},
@@ -107,9 +101,13 @@ fun OnboardingScreen(
     var reading by remember(session.userId, session.status) { mutableStateOf<AgreementItem?>(null) }
     reading?.let { item -> item.reviewUrl?.let { url -> AgreementDocument(item.title, url, onClose = { reading = null }); return } }
     fun open(url: String) { linkFailed = runCatching { uri.openUri(url) }.isFailure }
+    // 키링 단계: 가운데 키링 그림 · 키링 찾기 · 구매 안내(시안 02). 개발용 진입(설정 · 성향테스트 · 프로필 수정)은 두지 않는다
+    if (keyring && !state.submitted) {
+        KeyringIntro(state.busy, state.error?.message, state.purchaseUrl, onFind = onBleProbe, onOpen = ::open, onReload = onReload, onLogout = onLogout)
+        return
+    }
     OnboardingPanel(stringResource(when {
         agreements -> Res.string.onboarding_agreements_title
-        keyring -> Res.string.onboarding_keyring_title
         else -> Res.string.onboarding_title
     })) {
         when {
@@ -142,21 +140,6 @@ fun OnboardingScreen(
                 if (state.requiredAgreements.isEmpty() || state.error != null) AppButton(stringResource(Res.string.onboarding_retry),
                     variant = AppButtonVariant.Secondary, enabled = !state.busy, onClick = onReload)
             }
-            keyring -> {
-                // 진입만으로 등록하지 않는다. 운영 앱에는 이 개발 시험 경로의 콜백을 전달하지 않는다.
-                onBleProbe?.let { AppButton(stringResource(Res.string.ble_probe_entry), enabled = !state.busy, onClick = it) }
-                Text(stringResource(Res.string.onboarding_keyring_wait))
-                if (canSkipKeyring) {
-                    Text(stringResource(Res.string.profile_development_keyring_entry), style = MaterialTheme.typography.bodySmall)
-                    AppButton(stringResource(Res.string.profile_skip_keyring), enabled = !state.busy, onClick = onSkipKeyring)
-                }
-                AppButton(stringResource(Res.string.onboarding_keyring_search), enabled = false, onClick = {})
-                state.purchaseUrl?.let { url -> AppButton(stringResource(Res.string.onboarding_purchase),
-                    variant = AppButtonVariant.Secondary, onClick = { open(url) }) }
-                    ?: Text(stringResource(Res.string.onboarding_purchase_wait))
-                AppButton(stringResource(Res.string.onboarding_retry), variant = AppButtonVariant.Secondary,
-                    enabled = !state.busy, onClick = onReload)
-            }
             else -> Text(stringResource(when {
                 session.isReady -> Res.string.onboarding_ready_wait
                 session.status == OnboardingStatus.PROFILE_REQUIRED -> Res.string.onboarding_profile_wait
@@ -166,11 +149,11 @@ fun OnboardingScreen(
             }))
         }
         state.error?.let { OnboardingError(it.message) }
-        if (!keyring && onBleProbe != null) AppButton(stringResource(Res.string.sync_live_open), enabled = !state.busy, onClick = onBleProbe)
+        if (onBleProbe != null) AppButton(stringResource(Res.string.sync_live_open), enabled = !state.busy, onClick = onBleProbe)
         if (canOpenSettings) AppButton(stringResource(Res.string.settings_api_entry), enabled = !state.busy, onClick = onOpenSettings)
-        if (canOpenSurvey) AppButton(stringResource(if (keyring) Res.string.survey_api_dev_entry else Res.string.survey_api_entry),
+        if (canOpenSurvey) AppButton(stringResource(Res.string.survey_api_entry),
             enabled = !state.busy, onClick = onOpenSurvey)
-        if (canManageProfile) AppButton(stringResource(if (session.isReady) Res.string.profile_manage_entry else Res.string.profile_manage_dev_entry),
+        if (canManageProfile) AppButton(stringResource(Res.string.profile_manage_entry),
             enabled = !state.busy, onClick = onManageProfile)
         if (linkFailed) OnboardingError(stringResource(Res.string.onboarding_link_failed))
         if (!agreements || state.submitted) AppButton(stringResource(Res.string.onboarding_refresh),
