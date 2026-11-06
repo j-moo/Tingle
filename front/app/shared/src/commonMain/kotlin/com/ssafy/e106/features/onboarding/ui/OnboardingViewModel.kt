@@ -48,8 +48,9 @@ class OnboardingViewModel(
         }
     }
 
+    private var logoutJob: Job? = null
     private fun launchWork(block: suspend (Int) -> Unit) {
-        if (mutable.value.busy || mutable.value.session == null || mutable.value.session != sessions.state.value) return
+        if (logoutJob?.isActive == true || mutable.value.busy || mutable.value.session == null || mutable.value.session != sessions.state.value) return
         val stamp = generation
         mutable.update { it.copy(busy = true, error = null) }
         work = viewModelScope.launch {
@@ -113,5 +114,11 @@ class OnboardingViewModel(
         }
     }
     fun refresh() = launchWork { refreshInside(it) }
-    fun logout() = launchWork { auth.logout() }
+    // 로딩 중에도 나갈 수 있어야 한다(키링 단계는 들어오자마자 불러오기라 권한 시트 ✕가 무시됐다). 다른 계정으로 바뀐 뒤의 오래된 요청은 막는다
+    fun logout() {
+        val session = mutable.value.session ?: return
+        if (session != sessions.state.value || logoutJob?.isActive == true) return   // 연타해도 서버 로그아웃은 한 번
+        work?.cancel()
+        logoutJob = viewModelScope.launch { auth.logout() }
+    }
 }

@@ -67,7 +67,7 @@ fun AuthenticationHost(
                 current.needsSignupAgreement() && !passedLogin -> StartupScreen()   // 위 자동 로그아웃이 끝날 때까지
                 // 로그인 직후 약관: 로그인 화면 위에 시트로. ✕ · 뒤로 가기 = 로그아웃
                 // 약관 개정으로 다시 동의하는 기존 회원은 이미 로그인한 사람이라 뒤에 로그인 화면 대신 시작 화면
-                else -> AgreementSheet(onClose = { scope.launch { auth.logout() } },
+                else -> SignupSheet(onClose = { scope.launch { auth.logout() } },
                     background = { if (current.signupCompleted) StartupScreen() else SocialLoginRoute(snackbar) }) { signedIn(current) }
             }
         }

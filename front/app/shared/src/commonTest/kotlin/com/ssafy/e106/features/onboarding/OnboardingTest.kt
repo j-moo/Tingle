@@ -193,6 +193,14 @@ class OnboardingTest {
         pending.complete(ApiResult.Fail(AppError.Offline)); runCurrent(); m.logout(); runCurrent()
         assertEquals(Session.SignedOut, session.state.value); assertNull(m.state.value.session)
     }
+    @Test fun logoutWorksWhileLoading() = runTest(dispatcher) {
+        val repo = TestAgreements(); val pending = CompletableDeferred<ApiResult<AgreementsResponse>>()
+        repo.onLoad = { pending.await() }
+        val session = TestSession(OnboardingStatus.AGREEMENT_REQUIRED); val m = vm(repo, session); runCurrent()
+        assertTrue(m.state.value.busy)
+        m.logout(); runCurrent()
+        assertEquals(Session.SignedOut, session.state.value)
+    }
     @Test fun staleActionBeforeSessionCollectorRunsCannotLogoutNewAccount() = runTest(dispatcher) {
         val session = TestSession(OnboardingStatus.KEYRING_REQUIRED); val m = vm(TestAgreements(), session); runCurrent()
         session.state.value = Session.SignedIn(2, OnboardingStatus.KEYRING_REQUIRED, false)
