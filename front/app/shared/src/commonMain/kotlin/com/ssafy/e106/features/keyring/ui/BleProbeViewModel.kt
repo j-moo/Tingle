@@ -182,9 +182,16 @@ class BleProbeViewModel(private val ble: KeyringBle, private val sessions: Sessi
             // 연결 직후 읽은 정보는 다른 앱의 초기화 이후 낡을 수 있다. 쓰기 전 같은 보드를 다시 확인한다.
             val info = readInfo(channel)
             check(stamp == generation && channel === connection && info.serial == expectedSerial)
+            mutable.update { it.copy(info = info) }
+            // 표시 후 소유 상태가 바뀔 수 있다. 이미 귀속된 기기는 재등록 대신 동기화로 안내하며,
+            // 이 정상 거절 때문에 BLE 연결을 끊어 기존 동기화까지 방해하지 않는다.
+            when (registrationBlock(info)) {
+                RegistrationIssue.DeviceBound -> throw BleCommandException("DEVICE_ALREADY_BOUND")
+                RegistrationIssue.ResetPending -> throw BleCommandException("RESET_IN_PROGRESS")
+                else -> Unit
+            }
             check(info.supportsProof(challenge.proofProtocolVersion) &&
                 (challenge.proofProtocolVersion != KeyringRegistrationProtocol.VERSION_2 || info.ownerState == "UNOWNED"))
-            mutable.update { it.copy(info = info) }
             val result = channel.exchange(KeyringRegistrationProtocol.request(challenge, id))
             check(stamp == generation && channel === connection)
             return KeyringRegistrationProtocol.response(result, id, expectedSerial, challenge).also {

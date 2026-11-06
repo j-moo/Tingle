@@ -13,7 +13,14 @@ import kotlin.time.Instant
 import kotlin.uuid.ExperimentalUuidApi
 import kotlin.uuid.Uuid
 
-enum class RegistrationIssue { Storage, ExpiredChallenge, InvalidResponse, Device, NotInOwnedList, ResetPending }
+enum class RegistrationIssue { Storage, ExpiredChallenge, InvalidResponse, Device, NotInOwnedList, ResetPending, DeviceBound }
+
+/** 기기의 소유 상태는 현재 계정 소유라는 증명이 아니다. 신규 증명 요청만 막고 서버 조회/HTTP 복구는 유지한다. */
+internal fun registrationBlock(info: BleDeviceInfo?): RegistrationIssue? = when (info?.ownerState) {
+    "BOUND" -> RegistrationIssue.DeviceBound
+    "RESETTING" -> RegistrationIssue.ResetPending
+    else -> null
+}
 data class LiveRegistrationState(val owner: Long? = null, val loaded: Boolean = false, val busy: Boolean = false,
     val pending: PendingKeyringRegistration? = null, val confirmed: OwnedKeyring? = null,
     val issue: RegistrationIssue? = null, val error: AppError? = null, val canRestart: Boolean = false)
@@ -87,6 +94,12 @@ class KeyringRegistrationViewModel(private val api: KeyringRegistrationRepositor
         if (!KeyringRegistrationProtocol.validChallenge(challenge)) throw RegistrationProblem(RegistrationIssue.InvalidResponse)
         if (Instant.parse(challenge.expiresAt) <= now()) throw RegistrationProblem(RegistrationIssue.ExpiredChallenge)
         val body = try { proof(challenge) } catch (cancelled: CancellationException) { throw cancelled }
+            // 이미 저장된 소유 설정은 재부팅으로 풀리지 않는다. 정상적인 정책 거절을 통신 오류와 구분한다.
+            catch (failure: BleCommandException) { throw RegistrationProblem(when (failure.code) {
+                "DEVICE_ALREADY_BOUND", "OWNER_MISMATCH" -> RegistrationIssue.DeviceBound
+                "RESET_IN_PROGRESS" -> RegistrationIssue.ResetPending
+                else -> RegistrationIssue.Device
+            }) }
             catch (_: Exception) { throw RegistrationProblem(RegistrationIssue.Device) }
         operation.ensure()
         // BLE와 복구 저장소의 경계에서도 서버 challenge의 버전을 유지한다. v2를 v1 증명으로 대체하지 않는다.
