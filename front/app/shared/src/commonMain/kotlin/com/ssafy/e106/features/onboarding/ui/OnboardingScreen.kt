@@ -16,6 +16,7 @@ import com.ssafy.e106.core.auth.*
 import com.ssafy.e106.core.ui.components.*
 import com.ssafy.e106.core.ui.theme.*
 import com.ssafy.e106.resources.*
+import com.ssafy.e106.features.onboarding.data.AgreementItem
 import com.ssafy.e106.features.profile.ui.ProfileRoute
 import com.ssafy.e106.features.profile.ui.ProfileManagementRoute
 import com.ssafy.e106.features.profile.DevelopmentProfileAccess
@@ -102,6 +103,9 @@ fun OnboardingScreen(
     val keyring = !session.isReady && session.status == OnboardingStatus.KEYRING_REQUIRED
     val uri = LocalUriHandler.current
     var linkFailed by remember(session.userId, session.status) { mutableStateOf(false) }
+    // 약관 "내용 보기" — 브라우저로 나가지 않고 이 화면 위에 전문을 띄운다(체크 상태 유지)
+    var reading by remember(session.userId, session.status) { mutableStateOf<AgreementItem?>(null) }
+    reading?.let { item -> item.reviewUrl?.let { url -> AgreementDocument(item.title, url, onClose = { reading = null }); return } }
     fun open(url: String) { linkFailed = runCatching { uri.openUri(url) }.isFailure }
     OnboardingPanel(stringResource(when {
         agreements -> Res.string.onboarding_agreements_title
@@ -111,28 +115,32 @@ fun OnboardingScreen(
         when {
             state.submitted -> Text(stringResource(Res.string.onboarding_saved))
             agreements -> {
-                Text(stringResource(Res.string.onboarding_agreements_body))
-                if (state.agreements.any { !it.required }) {
-                    Text(stringResource(Res.string.onboarding_optional_separate), style = MaterialTheme.typography.bodySmall)
-                }
+                // 전체동의 · 구분선 · 필수 항목(오른쪽 내용 보기) · 다음. 선택 동의(사진 · 자기소개 · 종교)는 프로필에서 따로 받는다
                 if (state.allowUnpublishedAgreements && state.requiredAgreements.any { !it.canReview }) {
                     Text(developmentNotice ?: stringResource(Res.string.onboarding_development_agreements), style = MaterialTheme.typography.bodySmall)
                 }
+                val checkable = state.requiredAgreements.filter { state.canCheck(it) }
+                if (state.requiredAgreements.isNotEmpty()) {
+                    AgreementRow(stringResource(Res.string.onboarding_agree_all), strong = true,
+                        checked = checkable.isNotEmpty() && checkable.all { it.type in state.checked },
+                        enabled = !state.busy && checkable.isNotEmpty(),
+                        onToggle = { on -> checkable.forEach { onCheck(it.type, on) } })
+                    HorizontalDivider(color = AppColors.BorderSubtle)
+                }
                 state.requiredAgreements.forEach { item ->
-                    AppCheckbox(item.type in state.checked, { onCheck(item.type, it) },
-                        stringResource(Res.string.onboarding_required, item.title),
-                        enabled = !state.busy && state.canCheck(item))
-                    if (item.reviewUrl != null) TextButton(onClick = { open(item.reviewUrl!!) }) {
-                        Text(stringResource(Res.string.onboarding_read_terms))
-                    } else if (!item.canReview && !state.allowUnpublishedAgreements) {
-                        Text(stringResource(Res.string.onboarding_terms_missing), style = MaterialTheme.typography.bodySmall)
+                    AgreementRow(stringResource(Res.string.onboarding_required, item.title), item.type in state.checked,
+                        enabled = !state.busy && state.canCheck(item), onToggle = { onCheck(item.type, it) },
+                        onRead = item.reviewUrl?.let { { reading = item } })
+                    if (!item.canReview && !state.allowUnpublishedAgreements) {
+                        Text(stringResource(Res.string.onboarding_terms_missing), style = MaterialTheme.typography.bodySmall, color = AppColors.TextSecondary)
                     }
                 }
                 if (!state.busy && state.requiredAgreements.isEmpty()) Text(stringResource(Res.string.onboarding_terms_empty))
                 AppButton(stringResource(Res.string.onboarding_agree), enabled = state.canSubmit, loading = state.busy,
-                    modifier = Modifier.fillMaxWidth(), onClick = onSubmit)
-                AppButton(stringResource(Res.string.onboarding_retry), variant = AppButtonVariant.Secondary,
-                    enabled = !state.busy, onClick = onReload)
+                    modifier = Modifier.fillMaxWidth().padding(top = AppSpacing.Large), onClick = onSubmit)
+                // 항목을 못 받았거나 저장에 실패했을 때만 다시 불러오기
+                if (state.requiredAgreements.isEmpty() || state.error != null) AppButton(stringResource(Res.string.onboarding_retry),
+                    variant = AppButtonVariant.Secondary, enabled = !state.busy, onClick = onReload)
             }
             keyring -> {
                 // 진입만으로 등록하지 않는다. 운영 앱에는 이 개발 시험 경로의 콜백을 전달하지 않는다.
@@ -167,7 +175,8 @@ fun OnboardingScreen(
         if (linkFailed) OnboardingError(stringResource(Res.string.onboarding_link_failed))
         if (!agreements || state.submitted) AppButton(stringResource(Res.string.onboarding_refresh),
             loading = state.busy, enabled = !state.busy, onClick = onRefresh)
-        TextButton(onClick = onLogout, enabled = !state.busy) { Text(stringResource(Res.string.onboarding_logout)) }
+        // 약관 동의는 시트의 ✕ 가 로그아웃이라 따로 두지 않는다
+        if (!agreements) TextButton(onClick = onLogout, enabled = !state.busy) { Text(stringResource(Res.string.onboarding_logout)) }
     }
 }
 

@@ -126,7 +126,7 @@ class AdditionalResponsiveDeviceTest(private val screen: String, private val wid
                 .putExtra("fontScale", scale).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)).use {
             val labels = when (screen) {
                 "login" -> listOf("네이버 로그인")
-                "agreements" -> listOf("동의하고 계속하기")
+                "agreements" -> listOf("이용약관 전체동의", "다음")
                 "lifestyle" -> listOf("주 4회 이상", "다음")
                 "details" -> listOf("공개하지 않음", "다음")
                 "age" -> listOf("최대 나이는 제한하지 않을게요", "저장하고 계속하기")
