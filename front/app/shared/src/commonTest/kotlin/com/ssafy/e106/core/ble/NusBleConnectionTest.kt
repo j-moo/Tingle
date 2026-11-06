@@ -11,14 +11,111 @@ private class PacketFixture : BlePacketLink {
     override val state = MutableStateFlow(BleLinkState.Ready)
     override val packets = Channel<ByteArray>(256)
     val writes = mutableListOf<ByteArray>()
+    val protectedWrites = mutableListOf<ByteArray>()
+    var probes = 0
+    var onProbe: suspend () -> ByteArray = { byteArrayOf(1) }
     var onWrite: suspend (ByteArray) -> Unit = {}
     override suspend fun write(bytes: ByteArray) { writes.add(bytes); onWrite(bytes) }
+    override suspend fun readProtection(): ByteArray { probes++; return onProbe() }
+    override suspend fun writeProtected(bytes: ByteArray) { protectedWrites.add(bytes); onWrite(bytes) }
     override fun close() { state.value = BleLinkState.Closed; packets.close(BleException(BleFailure.Disconnected)) }
     fun reply(text: String) { text.encodeToByteArray().asList().chunked(20).forEach { packets.trySend(it.toByteArray()) } }
 }
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class NusBleConnectionTest {
+    // 보호 통로는 일반 RX와 절대 섞이지 않고 Write ACK마다 다음 20B를 보내야 한다.
+    @Test fun protectedChunksWaitForAckAndNeverUseOrdinaryRx() = runTest {
+        val port = PacketFixture(); val ack = Channel<Unit>(Channel.UNLIMITED)
+        port.onWrite = { ack.receive(); if (it.last() == 10.toByte()) port.reply("{}\n") }
+        val request = ("한".repeat(20) + "\n").encodeToByteArray()
+        val job = async { NusBleConnection(port).exchangeProtected(request) }
+        runCurrent(); assertEquals(1, port.probes); assertEquals(1, port.protectedWrites.size)
+        repeat(4) { ack.send(Unit); runCurrent() }
+        assertEquals("{}\n", job.await().decodeToString())
+        assertEquals(listOf(20, 20, 20, 1), port.protectedWrites.map { it.size })
+        assertContentEquals(request, port.protectedWrites.flatMap { it.toList() }.toByteArray())
+        assertTrue(port.writes.isEmpty())
+    }
+
+    @Test fun unverifiedOrUnsupportedProtectionNeverWritesAndCloses() = runTest {
+        // ASCII "01"은 계약의 원시 0x01이 아니다. 빈 값/다른 값/복수 바이트도 거절한다.
+        for (value in listOf(byteArrayOf(), byteArrayOf(0), "01".encodeToByteArray(), byteArrayOf(1, 1))) {
+            val port = PacketFixture(); port.onProbe = { value }
+            val error = assertFailsWith<BleException> { NusBleConnection(port).exchangeProtected("{}\n".encodeToByteArray()) }
+            assertEquals(BleFailure.SecureTransportRequired, error.reason)
+            assertTrue(port.writes.isEmpty() && port.protectedWrites.isEmpty())
+            assertEquals(BleLinkState.Closed, port.state.value)
+        }
+        val port = PacketFixture(); port.onProbe = { throw BleException(BleFailure.Unsupported) }
+        assertEquals(BleFailure.Unsupported, assertFailsWith<BleException> {
+            NusBleConnection(port).exchangeProtected("{}\n".encodeToByteArray())
+        }.reason)
+        assertTrue(port.writes.isEmpty() && port.protectedWrites.isEmpty())
+    }
+
+    @Test fun preparationDoesNotWriteAndEveryProtectedExchangeRechecksConnection() = runTest {
+        val port = PacketFixture(); val link = NusBleConnection(port)
+        link.prepareProtectedTransport()
+        assertTrue(port.writes.isEmpty() && port.protectedWrites.isEmpty())
+        port.onWrite = { if (it.last() == 10.toByte()) port.reply("{}\n") }
+        repeat(2) { link.exchangeProtected("{}\n".encodeToByteArray()) }
+        assertEquals(3, port.probes)
+        // 새 연결에 성공 값을 승계하지 않는다. 이전 연결의 prepare는 새 연결에 효력이 없다.
+        val next = PacketFixture(); next.onProbe = { byteArrayOf(0) }
+        assertFailsWith<BleException> { NusBleConnection(next).exchangeProtected("{}\n".encodeToByteArray()) }
+        assertTrue(next.protectedWrites.isEmpty())
+    }
+
+    @Test fun cancelledOrTimedOutProtectionNeverSendsPayload() = runTest {
+        val port = PacketFixture(); port.onProbe = { awaitCancellation() }
+        val job = launch { NusBleConnection(port).prepareProtectedTransport() }
+        runCurrent(); job.cancelAndJoin()
+        assertEquals(BleLinkState.Closed, port.state.value)
+        val timed = PacketFixture(); timed.onProbe = { awaitCancellation() }
+        assertEquals(BleFailure.Timeout, assertFailsWith<BleException> {
+            NusBleConnection(timed).exchangeProtected("{}\n".encodeToByteArray())
+        }.reason)
+        assertTrue(timed.writes.isEmpty() && timed.protectedWrites.isEmpty())
+        assertEquals(BleLinkState.Closed, timed.state.value)
+    }
+
+    @Test fun ordinaryExchangeDoesNotRequireProtectedFirmware() = runTest {
+        val port = PacketFixture(); port.onProbe = { error("legacy must not read protected characteristic") }
+        port.onWrite = { port.reply("{}\n") }
+        NusBleConnection(port).exchange("{}\n".encodeToByteArray())
+        assertEquals(0, port.probes); assertEquals(1, port.writes.size)
+    }
+
+    @Test fun protectionAndOrdinaryExchangeCannotInterleave() = runTest {
+        val port = PacketFixture(); val gate = CompletableDeferred<ByteArray>()
+        port.onProbe = { gate.await() }; val link = NusBleConnection(port)
+        val first = async { link.exchangeProtected("{}\n".encodeToByteArray()) }
+        runCurrent()
+        val second = async { link.exchange("{}\n".encodeToByteArray()) }
+        runCurrent(); assertTrue(port.writes.isEmpty() && port.protectedWrites.isEmpty())
+        gate.complete(byteArrayOf(1)); runCurrent()
+        assertEquals(1, port.protectedWrites.size); assertTrue(port.writes.isEmpty())
+        port.reply("{}\n"); runCurrent(); first.await()
+        assertEquals(1, port.writes.size)
+        port.reply("{}\n"); second.await()
+    }
+
+    @Test fun notificationDuringProtectionCheckIsNotAcceptedAsNewResponse() = runTest {
+        val port = PacketFixture(); port.onProbe = { port.reply("{}\n"); byteArrayOf(1) }
+        assertEquals(BleFailure.InvalidFrame, assertFailsWith<BleException> {
+            NusBleConnection(port).exchangeProtected("{}\n".encodeToByteArray())
+        }.reason)
+        assertTrue(port.protectedWrites.isEmpty())
+    }
+
+    @Test fun protectedWriteFailureDoesNotFallbackOrSendRemainingChunks() = runTest {
+        val port = PacketFixture(); port.onWrite = { throw BleException(BleFailure.WriteFailed) }
+        assertFailsWith<BleException> { NusBleConnection(port).exchangeProtected(("x".repeat(60) + "\n").encodeToByteArray()) }
+        assertEquals(1, port.protectedWrites.size); assertTrue(port.writes.isEmpty())
+        assertEquals(BleLinkState.Closed, port.state.value)
+    }
+
     @Test fun utf8SplitAtEveryByteIsReassembledBeforeDecoding() = runTest {
         val port = PacketFixture()
         port.onWrite = { if (it.last() == 10.toByte()) "{\"이름\":\"키링\"}\n".encodeToByteArray().forEach { byte -> port.packets.send(byteArrayOf(byte)) } }
