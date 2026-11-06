@@ -8,6 +8,8 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.*
 import com.ssafy.e106.core.ble.*
 import com.ssafy.e106.core.ui.components.*
+import com.ssafy.e106.core.ui.theme.AppSpacing
+import com.ssafy.e106.features.keyring.data.BleDeviceInfo
 import com.ssafy.e106.features.onboarding.ui.OnboardingPanel
 import com.ssafy.e106.features.profile.ui.ProfileBackHandler
 import com.ssafy.e106.resources.*
@@ -70,6 +72,7 @@ import org.koin.compose.viewmodel.koinViewModel
         state.info?.let { info ->
             Text(stringResource(Res.string.ble_info, info.serial, info.firmware))
             Text(stringResource(Res.string.ble_not_registered))
+            ProfileStorageDiagnostics(info)
             AppButton(stringResource(Res.string.ble_read_status), enabled = !state.busy && !registering && state.connected && info.supportsStatus,
                 onClick = model::readStatus)
             if (!info.supportsStatus) Text(stringResource(Res.string.ble_status_unsupported))
@@ -85,5 +88,19 @@ import org.koin.compose.viewmodel.koinViewModel
         // 동기화 중 다른 명령을 막고 등록 결과와 설정 상태를 같은 화면에 표시한다.
         registration?.let { KeyringRegistrationPanel(it, model, state, syncBusy) }
         sync?.let { KeyringSyncPanel(it, model, state, registrationBusy, managedConnection = managedConnection) }
+    }
+}
+
+/** 읽기 전용 개발 진단. 기기 보고를 서버 검증/매칭 준비 완료로 표시하지 않는다. Preview도 같은 함수를 쓴다. */
+@Composable fun ProfileStorageDiagnostics(info: BleDeviceInfo) {
+    Column(verticalArrangement = Arrangement.spacedBy(AppSpacing.Small)) {
+        Text(stringResource(if (info.supportsProtectedProfileStorage)
+            Res.string.ble_profile_supported else Res.string.ble_profile_unconfirmed))
+        Text(stringResource(when (info.profileStorage.reportsProfileStored) {
+            true -> Res.string.ble_profile_stored_report
+            false -> Res.string.ble_profile_not_stored_report
+            null -> Res.string.ble_profile_storage_unknown
+        }))
+        Text(stringResource(Res.string.ble_profile_diagnostic_notice), style = MaterialTheme.typography.bodySmall)
     }
 }

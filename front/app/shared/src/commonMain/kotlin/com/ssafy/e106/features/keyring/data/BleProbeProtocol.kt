@@ -39,7 +39,31 @@ internal object BleProbeProtocol {
             } ?: throw BleException(BleFailure.InvalidFrame)
         } ?: listOf(KeyringRegistrationProtocol.VERSION)
         return BleDeviceInfo(serial, version, "GET_STATUS" in functions, "GET_REGISTRATION_PROOF" in functions,
-            epoch, owner, versions, value.string("resetContractVersion"), functions)
+            epoch, owner, versions, value.string("resetContractVersion"), functions, profileInfo(value))
+    }
+
+    /** 구형 필드 생략은 미확인이다. 문자열 true/숫자 문자열/잘못된 배열을 지원 성공으로 보정하지 않는다. */
+    private fun profileInfo(value: JsonObject): BleProfileStorageInfo {
+        fun text(key: String, emptyAllowed: Boolean = false): String? = value[key]?.let {
+            value.string(key)?.takeIf { s -> s.length in (if (emptyAllowed) 0 else 1)..100 }
+                ?: throw BleException(BleFailure.InvalidFrame)
+        }
+        fun flag(key: String): Boolean? = value[key]?.let {
+            (it as? JsonPrimitive)?.takeUnless { p -> p.isString }?.booleanOrNull
+                ?: throw BleException(BleFailure.InvalidFrame)
+        }
+        val formats = value["supportedPayloadFormats"]?.let {
+            val items = it as? JsonArray ?: throw BleException(BleFailure.InvalidFrame)
+            if (items.size > 16) throw BleException(BleFailure.InvalidFrame)
+            items.map { item -> (item as? JsonPrimitive)?.takeIf { p -> p.isString }?.content
+                ?.takeIf { s -> s.length in 1..100 } ?: throw BleException(BleFailure.InvalidFrame) }
+        }
+        val bytes = value["storedPayloadBytes"]?.let {
+            number(value, "storedPayloadBytes")?.takeIf { n -> n in 0..2048 }
+                ?: throw BleException(BleFailure.InvalidFrame)
+        }
+        return BleProfileStorageInfo(formats, text("profileStorageCharacteristic"), flag("profileRequiresEncryption"),
+            text("storedPayloadFormat", emptyAllowed = true), flag("profileStored"), bytes)
     }
 
     fun status(value: JsonObject) = BleDeviceStatus(
@@ -56,7 +80,11 @@ class BleCommandException(val code: String) : Exception("BLE command failed")
 data class BleDeviceInfo(val serial: String, val firmware: String, val supportsStatus: Boolean, val supportsRegistration: Boolean = false,
     val ownershipEpoch: Long? = null, val ownerState: String? = null,
     val supportedProofProtocolVersions: List<String> = listOf("tingle-device-proof-v1"),
-    val resetContractVersion: String? = null, val supportedFunctions: List<String> = emptyList()) {
+    val resetContractVersion: String? = null, val supportedFunctions: List<String> = emptyList(),
+    val profileStorage: BleProfileStorageInfo = BleProfileStorageInfo()) {
+    /** 지원 선언은 암호화 성공/신원 증명이 아니다. 실제 전송 전 동일 연결의 보호 Read가 추가로 필요하다. */
+    val supportsProtectedProfileStorage get() = profileStorage.supportsProtectedStorage &&
+        supportedFunctions.containsAll(listOf("GET_SYNC_CHALLENGE", "SYNC_SETTINGS"))
     // 버전 이름만으로 삭제 명령 지원을 추측하지 않는다. 세 명령과 순번을 모두 확인해야 복구에 진입한다.
     internal val supportsReset get() = resetContractVersion == KeyringResetProtocol.VERSION &&
         ownershipEpoch != null && ownershipEpoch >= 0 && ownerState in setOf("BOUND", "UNOWNED", "RESETTING") &&
@@ -69,5 +97,28 @@ data class BleDeviceInfo(val serial: String, val firmware: String, val supportsS
                 ownerState in setOf("UNOWNED", "BOUND")
             else -> false
         }
+}
+
+/** DEVICE_INFO 진단 값만 보관한다. 가입 상태·STORED 서명 검증·서버 ACK의 근거로 사용하지 않는다. */
+data class BleProfileStorageInfo(
+    val supportedFormats: List<String>? = null,
+    val characteristic: String? = null,
+    val requiresEncryption: Boolean? = null,
+    val storedFormat: String? = null,
+    val stored: Boolean? = null,
+    val storedBytes: Long? = null,
+) {
+    internal val supportsProtectedStorage get() = FORMAT in supportedFormats.orEmpty() &&
+        characteristic?.lowercase() == CHARACTERISTIC && requiresEncryption == true
+    // true 하나만 도착하거나 형식/길이가 모순되면 저장됨으로 표시하지 않는다.
+    val reportsProfileStored: Boolean? get() = when {
+        stored == true && storedFormat == FORMAT && storedBytes == 196L -> true
+        stored == false && storedFormat != null && storedFormat != FORMAT && storedBytes != null -> false
+        else -> null
+    }
+    companion object {
+        const val FORMAT = "tingle-profile-storage-v1"
+        const val CHARACTERISTIC = "6e400004-b5a3-f393-e0a9-e50e24dcca9e"
+    }
 }
 data class BleDeviceStatus(val batteryPercent: Long?, val batteryMillivolts: Long?, val charging: Boolean?, val pendingRecordCount: Long?)
