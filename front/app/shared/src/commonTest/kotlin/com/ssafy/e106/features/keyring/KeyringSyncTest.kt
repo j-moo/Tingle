@@ -264,7 +264,7 @@ class KeyringSyncTest {
         assertEquals(listOf(body, body), server.bodies)
         assertEquals(SyncPhase.Confirmed, m.state.value.items.single().phase)
     }
-    // 새 모델에서는 예전 BLE 연결이 살아 있는지 알 수 없다. ACK 증명이 없는 발급은 새 challenge로 시작한다.
+    // 모델 재생성은 불명확한 POST 결과부터 같은 키/본문으로 확인한 뒤 새 BLE challenge로 전환한다.
     @Test fun lostCreateResponseRenewsChallengeAcrossRecreation() = runTest(dispatcher) {
         val server = SyncServer().apply { createAction = { ApiResult.Fail(AppError.Offline) } }
         val prefs = SyncPrefs(); val store = KeyringSyncStore(prefs); store.rememberTarget(1, syncRun.deviceId, "XIAO-test")
@@ -273,7 +273,8 @@ class KeyringSyncTest {
         val second = model(server, KeyringSyncStore(prefs)); second.attach("XIAO-test", { "B".repeat(42) + "A" }) {
             assertEquals("B".repeat(42) + "A", it.deviceNonce); stored(it)
         }; runCurrent()
-        assertEquals(2, server.creates.size)
+        assertEquals(3, server.creates.size)
+        assertEquals(first, server.creates[1]); assertEquals(server.bodies.first(), server.bodies[1])
         assertNotEquals(first.second, server.creates.last().second); assertNotEquals(server.bodies.first(), server.bodies.last())
         assertEquals(SyncPhase.Confirmed, second.state.value.items.single().phase)
     }
@@ -305,7 +306,7 @@ class KeyringSyncTest {
         val completed = store.read(1).single()
         gate.complete(Unit); runCurrent()
         assertEquals(completed, store.read(1).single())
-        assertEquals(2, server.creates.size); assertEquals(1, server.acks.size)
+        assertEquals(3, server.creates.size); assertEquals(oldKey, server.creates[1].second); assertEquals(1, server.acks.size)
         assertEquals(SyncPhase.Confirmed, m.state.value.items.single().phase)
     }
     @Test fun matchingBoardSendsServerPayloadAndAckOnlyAfterStored() = runTest(dispatcher) {
@@ -535,6 +536,78 @@ class KeyringSyncTest {
             assertEquals(setOf("settingsVersion", "payloadHash", "proof"), Json.parseToJsonElement(calls[2].body.toByteArray().decodeToString()).jsonObject.keys)
             assertTrue(calls[0].url.encodedPath.startsWith("/dev/api/keyrings/${syncRun.deviceId}/"))
         } finally { client.close() }
+    }
+
+    /** 실제 HTTP 직렬화에서 구형 요청은 필드 하나, 성향 요청은 정확히 두 필드를 보낸다. */
+    @Test fun httpExplicitProfileSelectionContainsOnlyNonceAndFormat() = runTest {
+        val bodies = mutableListOf<JsonObject>()
+        val client = createHttpClient("https://tingle.test/dev/api/", false, MockEngine { request ->
+            bodies += Json.parseToJsonElement(request.body.toByteArray().decodeToString()).jsonObject
+            respond(ApiJson.encodeToString(KeyringSyncRun.serializer(), syncRun), HttpStatusCode.OK,
+                headersOf(HttpHeaders.ContentType, "application/json"))
+        })
+        try {
+            HttpKeyringSyncRepository(client).create(syncRun.deviceId, "same-key",
+                SyncChallengeBody("A".repeat(43), KeyringSyncProtocol.PROFILE_FORMAT))
+            assertEquals(setOf("deviceNonce", "payloadFormat"), bodies.single().keys)
+            assertEquals(KeyringSyncProtocol.PROFILE_FORMAT, bodies.single().getValue("payloadFormat").jsonPrimitive.content)
+        } finally { client.close() }
+    }
+
+    /** 발급 전에 본문을 디스크에 고정하고 HTTP 유실 후 지원 정보가 바뀌어도 같은 본문을 쓴다. */
+    @Test fun profileSelectionIsDurableAndOfflineRetryDoesNotReevaluateCapability() = runTest(dispatcher) {
+        val prefs = SyncPrefs(); val store = KeyringSyncStore(prefs)
+        val server = SyncServer(); store.rememberTarget(1, syncRun.deviceId, "XIAO-test")
+        val payload = kotlin.io.encoding.Base64.UrlSafe.withPadding(kotlin.io.encoding.Base64.PaddingOption.ABSENT)
+            .encode("TPS1".encodeToByteArray() + ByteArray(192))
+        server.run = syncRun.copy(payloadFormat = KeyringSyncProtocol.PROFILE_FORMAT, payload = payload)
+        server.createAction = {
+            assertEquals(server.bodies.last(), KeyringSyncStore(prefs).read(1).single().createBody)
+            ApiResult.Fail(AppError.Offline)
+        }
+        var challenges = 0
+        val m = model(server, store)
+        m.attachRequest("XIAO-test", { challenges++; SyncChallengeBody("A".repeat(43), KeyringSyncProtocol.PROFILE_FORMAT) }) { stored(it) }
+        runCurrent()
+        server.createAction = { ApiResult.Ok(server.run) }
+        m.retry(syncRun.deviceId); runCurrent()
+        assertEquals(1, challenges); assertEquals(server.creates[0], server.creates[1])
+        assertEquals(server.bodies[0], server.bodies[1]); assertEquals(SyncPhase.Confirmed, m.state.value.items.single().phase)
+    }
+
+    /** 구형 내구 파일은 형식을 추측해 덧붙이지 않고 기존 nonce 단독 요청을 먼저 복구한다. */
+    @Test fun legacyPendingBodyIsReplayedBeforeNewProfileRequest() = runTest(dispatcher) {
+        val prefs = SyncPrefs(); val store = KeyringSyncStore(prefs)
+        store.rememberTarget(1, syncRun.deviceId, "XIAO-test")
+        val legacy = store.read(1).single().copy(deviceNonce = "A".repeat(43), nonceReceivedAt = "2026-11-04T12:00:00Z")
+        store.save(1, legacy)
+        val server = SyncServer().apply { createAction = { ApiResult.Fail(AppError.Offline) } }
+        val m = model(server, KeyringSyncStore(prefs)); runCurrent()
+        assertEquals(legacy.createKey, server.creates.single().second)
+        assertEquals(SyncChallengeBody("A".repeat(43)), server.bodies.single())
+        assertTrue(server.acks.isEmpty()); assertEquals(legacy, store.read(1).single())
+        m.pause()
+    }
+
+    /** 미허용 응답은 ON/OFF 재요청으로 우회하지 않고 정책 대기로 남긴다. */
+    @Test fun rejectedProfileIssuanceDoesNotFallbackOrDiscardRequest() = runTest(dispatcher) {
+        val server = SyncServer().apply { createAction = { ApiResult.Fail(AppError.Server(422, "POLICY_UNRESOLVED", "wait")) } }
+        val store = KeyringSyncStore(SyncPrefs()); store.rememberTarget(1, syncRun.deviceId, "XIAO-test")
+        val m = model(server, store)
+        m.attachRequest("XIAO-test", { SyncChallengeBody("A".repeat(43), KeyringSyncProtocol.PROFILE_FORMAT) }) { error("No BLE") }
+        runCurrent(); m.retry(syncRun.deviceId); runCurrent()
+        assertEquals(server.creates[0], server.creates[1]); assertEquals(server.bodies[0], server.bodies[1])
+        assertEquals(KeyringSyncProtocol.PROFILE_FORMAT, store.read(1).single().createBody?.payloadFormat)
+        assertEquals(SyncPhase.PolicyWaiting, m.state.value.items.single().phase); assertTrue(server.acks.isEmpty())
+    }
+
+    /** 서버가 다른 형식을 반환하면 성향 저장 완료로 잘못 표시하지 않는다. */
+    @Test fun unexpectedOnOffResponseForProfileRequestNeverReachesBoard() = runTest(dispatcher) {
+        val server = SyncServer(); val store = KeyringSyncStore(SyncPrefs())
+        store.rememberTarget(1, syncRun.deviceId, "XIAO-test")
+        val m = model(server, store)
+        m.attachRequest("XIAO-test", { SyncChallengeBody("A".repeat(43), KeyringSyncProtocol.PROFILE_FORMAT) }) { error("Wrong format") }
+        runCurrent(); assertEquals(SyncPhase.Failed, m.state.value.items.single().phase); assertTrue(server.acks.isEmpty())
     }
     @Test fun storageFailureAfterBoardProofDoesNotPostAck() = runTest(dispatcher) {
         val server = SyncServer(); val prefs = SyncPrefs(); val store = KeyringSyncStore(prefs)

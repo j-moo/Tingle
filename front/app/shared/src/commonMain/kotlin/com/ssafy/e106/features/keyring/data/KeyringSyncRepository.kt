@@ -36,7 +36,8 @@ import kotlin.time.Instant
     override fun toString() = "KeyringSyncAck(REDACTED)"
 }
 data class KeyringStoredResult(val ack: KeyringSyncAck, val applied: Boolean, val timeReady: Boolean)
-@Serializable data class SyncChallengeBody(val deviceNonce: String) {
+/** null 형식은 구형 ON/OFF 요청처럼 JSON에서 생략한다. 성향 발급은 BE257의 명시 선택을 사용한다. */
+@Serializable data class SyncChallengeBody(val deviceNonce: String, val payloadFormat: String? = null) {
     override fun toString() = "SyncChallengeBody(REDACTED)"
 }
 
@@ -46,7 +47,7 @@ interface KeyringSyncRepository {
     suspend fun ack(deviceId: Long, runId: String, key: String, body: KeyringSyncAck): ApiResult<KeyringSyncRun>
 }
 
-/** 환경별 접두사는 공통 클라이언트 소유다. 최신 개발 서명 계약은 보드의 deviceNonce 한 필드를 요구한다. */
+/** 환경별 접두사는 공통 클라이언트 소유다. 저장해 둔 nonce·형식을 그대로 보내 멱등 재시도 본문을 유지한다. */
 class HttpKeyringSyncRepository(private val client: HttpClient) : KeyringSyncRepository {
     override suspend fun create(deviceId: Long, key: String, body: SyncChallengeBody) = client.call<KeyringSyncRun> {
         post("keyrings/$deviceId/sync-runs") { header("Idempotency-Key", key); setBody(body) }

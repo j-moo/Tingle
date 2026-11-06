@@ -235,6 +235,14 @@ class BleProbeViewModel(private val ble: KeyringBle, private val sessions: Sessi
         } finally { if (stamp == generation) mutable.update { it.copy(busy = false) } }
     }
 
+    /** challenge 조회가 갱신한 실제 기기 지원과 보호 Read 결과로 형식을 고른다. 펌웨어 이름으로 추측하지 않는다. */
+    suspend fun syncIssuanceRequest(expectedSerial: String): SyncChallengeBody {
+        val nonce = syncChallenge(expectedSerial)
+        val info = requireNotNull(mutable.value.info)
+        check(mutable.value.connected && info.serial == expectedSerial)
+        return SyncChallengeBody(nonce, if (info.supportsProtectedProfileStorage) KeyringSyncProtocol.PROFILE_FORMAT else null)
+    }
+
     /** 서버가 이번 보드 challenge에 서명한 설정만 전송한다. 서명은 앱이 생성하지 않는다. */
     @OptIn(ExperimentalUuidApi::class)
     suspend fun syncSettings(run: KeyringSyncRun, expectedSerial: String): KeyringStoredResult {

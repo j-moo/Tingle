@@ -21,8 +21,8 @@ data class KeyringSyncState(val owner: Long? = null, val busy: Boolean = false,
 
 /**
  * 등록 후 가입 단계가 준비되면 설정 발급을 자동 시작한다. 화면 회전/백그라운드는 작업만 취소하고
- * 이미 저장한 ACK 멱등키와 증명은 보존한다. 아직 증명이 없는 발급은 연결 변경 시 새 challenge로
- * 시작하고, 같은 연결의 HTTP 유실만 같은 발급 키로 복구한다. 무한 자동 재시도하지 않는다.
+ * 이미 저장한 발급 본문·ACK 멱등키와 증명은 보존한다. 발급 응답 유실은 같은 키/본문으로 먼저 확인하고,
+ * 새 연결에서는 그 결과를 BLE에 쓰지 않고 새 challenge로 재서명한다. 무한 자동 재시도하지 않는다.
  * BLE 연결은 진단 모델이 소유한다. 기기 일련번호가 일치한 연결만 잠시 빌려 사용한다.
  */
 @OptIn(ExperimentalUuidApi::class)
@@ -42,13 +42,13 @@ class KeyringSyncViewModel(private val api: KeyringSyncRepository, private val s
     private val attempted = mutableSetOf<Long>()
     private var boardSerial: String? = null
     private var transmit: (suspend (KeyringSyncRun) -> KeyringStoredResult)? = null
-    private var challenge: (suspend () -> String)? = null
+    private var challenge: (suspend () -> SyncChallengeBody)? = null
     private var observed: Session? = sessions.state.value
     // 서버 ACK와 현재 BLE 연결에서의 저장 확인은 다르다. 새 연결은 재부팅 여부를 단정하지 않고
     // 새 challenge로 한 번 다시 인증한다. 같은 연결/변경 횟수에는 반복 전송하지 않는다.
     private var binding = 0L
-    // 보드 challenge는 재부팅하면 사라지므로 발급 키를 그 값을 받은 BLE 연결에만 묶는다.
-    // 디스크에는 연결 생존을 기록하지 않는다. 모델 재생성 후에는 미전송 발급도 새 인증이 필요하다.
+    // 보드 challenge는 재부팅하면 사라진다. 키/본문의 HTTP 복구와 달리 BLE 쓰기는 원래 연결에만 허용한다.
+    // 디스크에는 연결 생존을 기록하지 않는다. 모델 재생성 후에는 결과 확인 뒤 새 인증이 필요하다.
     private val nonceBindings = mutableMapOf<Long, Pair<Long, String>>()
     private val delivered = mutableMapOf<Long, Pair<Long, Long>>()
     private var observedRevision = 0L
@@ -114,7 +114,12 @@ class KeyringSyncViewModel(private val api: KeyringSyncRepository, private val s
         networkJob?.cancel(); networkJob = null; networkAvailable = null
         detach(); cancelWork()
     }
-    fun attach(serial: String, getChallenge: suspend () -> String, send: suspend (KeyringSyncRun) -> KeyringStoredResult) {
+    /** 기존 nonce 전용 호출은 ON/OFF로 유지한다. 실행 경로는 최신 기기 지원을 포함한 attachRequest를 쓴다. */
+    fun attach(serial: String, getChallenge: suspend () -> String, send: suspend (KeyringSyncRun) -> KeyringStoredResult) =
+        attachRequest(serial, { SyncChallengeBody(getChallenge()) }, send)
+
+    /** 기기 조회와 보호 연결 확인 뒤 만든 본문을 받는다. 재시도 중에는 이 콜백으로 본문을 다시 만들지 않는다. */
+    fun attachRequest(serial: String, getChallenge: suspend () -> SyncChallengeBody, send: suspend (KeyringSyncRun) -> KeyringStoredResult) {
         if (boardSerial == serial && transmit != null) return
         binding++
         boardSerial = serial; transmit = send; challenge = getChallenge; attempted.clear(); drive()
@@ -217,6 +222,8 @@ class KeyringSyncViewModel(private val api: KeyringSyncRepository, private val s
         var ticket = original
         val id = ticket.deviceId
         val delivery = binding to (changes.state.value[owner] ?: 0L)
+        // 결과 불명의 POST는 모델 재생성/만료 뒤에도 먼저 같은 요청으로 조회한다. 그 서명은 새 연결에 쓰지 않는다.
+        val unresolvedCreate = ticket.deviceNonce != null && ticket.identity == null && !ticket.bleAttempted
         fun connected() = transmit != null && boardSerial == ticket.serial
         // 한 번의 진행에서는 새 실행 전환을 최대 한 번만 허용한다. 서버가 계속 stale을 반환해도 루프를 만들지 않는다.
         suspend fun renewOrShowStale() {
@@ -229,16 +236,18 @@ class KeyringSyncViewModel(private val api: KeyringSyncRepository, private val s
         // 저장 증명이 있으면 BLE를 다시 건드리지 않고 GET/동일 ACK로 복구한다.
         // 그 전의 BLE 재전송은 60초·1회용 challenge를 재사용하면 안 된다.
         // 시간상 유효하더라도 새 연결에서는 보드가 재부팅했을 수 있어 새 challenge를 받는다.
-        if (ticket.ack == null && !ticket.complete) {
+        if (ticket.ack == null && !ticket.complete && !unresolvedCreate) {
             val freshChallenge = challenge
             if (transmit == null || freshChallenge == null || boardSerial != ticket.serial) {
                 show(id, SyncPhase.WaitingConnection); return
             }
             if (ticket.deviceNonce == null || ticket.bleAttempted || !nonceFresh(ticket) ||
                 nonceBindings[id] != (binding to ticket.createKey)) {
-                val nonce = freshChallenge(); ensure(owner, stamp)
-                check(KeyringSyncProtocol.validDeviceNonce(nonce))
-                ticket = SyncTicket(id, ticket.serial, Uuid.random().toString(), deviceNonce = nonce, nonceReceivedAt = now().toString())
+                val body = freshChallenge(); ensure(owner, stamp)
+                check(KeyringSyncProtocol.validDeviceNonce(body.deviceNonce) &&
+                    body.payloadFormat in setOf(null, KeyringSyncProtocol.PROFILE_FORMAT))
+                ticket = SyncTicket(id, ticket.serial, Uuid.random().toString(), deviceNonce = body.deviceNonce,
+                    nonceReceivedAt = now().toString(), createBody = body)
                 // 새 본문에는 새 키를 사용한다. POST보다 먼저 둘을 함께 디스크에 고정한다.
                 store.save(owner, ticket); ensure(owner, stamp)
                 // 내구 저장과 현재 계정/작업 확인이 끝난 요청만 이 연결의 HTTP 재시도에 사용한다.
@@ -248,7 +257,8 @@ class KeyringSyncViewModel(private val api: KeyringSyncRepository, private val s
         show(id, SyncPhase.Issuing)
         val recoveringAck = ticket.ack != null || ticket.complete
         val issued = if (recoveringAck) api.get(id, requireNotNull(ticket.identity).syncRunId)
-            else api.create(id, ticket.createKey, SyncChallengeBody(requireNotNull(ticket.deviceNonce)))
+            // 구버전 내구 기록에는 형식이 없으므로 원래 nonce 단독 요청 그대로 복원한다.
+            else api.create(id, ticket.createKey, ticket.createBody ?: SyncChallengeBody(requireNotNull(ticket.deviceNonce)))
         ensure(owner, stamp)
         // BE257은 GET과 동일 발급 재시도에서도 구버전을 409로 거절한다. 네트워크 오류와 달리
         // 이 확정 응답에서만 기존 실행을 교체하며 새 nonce·키로 최대 한 번 갱신한다.
@@ -257,12 +267,21 @@ class KeyringSyncViewModel(private val api: KeyringSyncRepository, private val s
         check(KeyringSyncProtocol.valid(run, id))
         check(ticket.identity == null || ticket.identity == run.identity())
         // GET은 최초 발급 별칭의 서명을 돌려줄 수 있다. 전송용 서명은 같은 키/본문 POST에서만 받는다.
-        if (!recoveringAck) check(KeyringSyncProtocol.signed(run, requireNotNull(ticket.deviceNonce)))
+        if (!recoveringAck) {
+            check(KeyringSyncProtocol.signed(run, requireNotNull(ticket.deviceNonce)))
+            // 명시한 성향 요청에 ON/OFF가 돌아와도 성공으로 낮춰 처리하지 않는다.
+            check(ticket.createBody?.payloadFormat?.let { it == run.payloadFormat } != false)
+        }
         ticket = ticket.copy(identity = run.identity())
         store.save(owner, ticket); ensure(owner, stamp)
         // 기존 ON/OFF 실행은 409 대신 200/stale:true를 반환할 수 있다. 이미 구버전임이
         // 확정됐으므로 이전 BLE/ACK를 반복하지 않는다. 결과 불명의 네트워크 오류는 위에서 기록을 보존한다.
         if (run.stale) { renewOrShowStale(); return }
+        if (!recoveringAck && unresolvedCreate &&
+            (nonceBindings[id] != (binding to ticket.createKey) || !nonceFresh(ticket))) {
+            // HTTP 결과는 확인됐지만 예전 보드 challenge는 새 연결에서 신뢰할 수 없다.
+            renewOrShowStale(); return
+        }
         if (ticket.complete && run.state == "ACKED") {
             if (connected() && delivered[id] != delivery && mayRenew) renewOrShowStale()
             else show(id, if (!connected() && delivered[id]?.second != delivery.second) SyncPhase.WaitingConnection else SyncPhase.Confirmed)
