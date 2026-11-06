@@ -5,7 +5,7 @@ import kotlinx.serialization.json.*
 
 /** 공개 읽기 명령만 진단 화면에 노출한다. 등록 증명·설정 변경·초기화는 별도 업무 계약에서 연결한다. */
 internal object BleProbeProtocol {
-    // The full STATUS JSON is larger than the legacy 512-byte response.
+    // 전체 STATUS는 기존 512바이트보다 크다. IoT 0.7 계약의 상한을 적용한다.
     const val STATUS_RESPONSE_MAX_BYTES = 2304
 
     fun request(type: String, id: String): ByteArray {
@@ -42,7 +42,7 @@ internal object BleProbeProtocol {
             } ?: throw BleException(BleFailure.InvalidFrame)
         } ?: listOf(KeyringRegistrationProtocol.VERSION)
         return BleDeviceInfo(serial, version, "GET_STATUS" in functions, "GET_REGISTRATION_PROOF" in functions,
-            epoch, owner, versions, value.string("resetContractVersion"), functions, profileInfo(value))
+            epoch, owner, versions, value.string("resetContractVersion"), functions, profileInfo(value), BleOwnerFlowProtocol.info(value))
     }
 
     /** 구형 필드 생략은 미확인이다. 문자열 true/숫자 문자열/잘못된 배열을 지원 성공으로 보정하지 않는다. */
@@ -69,12 +69,19 @@ internal object BleProbeProtocol {
             text("storedPayloadFormat", emptyAllowed = true), flag("profileStored"), bytes)
     }
 
-    fun status(value: JsonObject) = BleDeviceStatus(
-        number(value, "batteryPercent")?.takeIf { it in 0..100 },
-        number(value, "batteryMillivolts")?.takeIf { it > 0 },
-        (value["charging"] as? JsonPrimitive)?.takeUnless { it.isString }?.booleanOrNull,
-        number(value, "pendingRecordCount")?.takeIf { it >= 0 },
-    )
+    /** 공개 상태와 READ 인증 상세를 분리한다. 조회 결과는 서버 ACK/가입 완료의 근거가 아니다. */
+    fun status(value: JsonObject): BleDeviceStatus {
+        val authorized = BleOwnerFlowProtocol.flag(value, "ownerAuthorized")
+        // 구형 공개 집계는 유지하되, 신형에서 인증 실패/손상된 응답의 기록 수를 노출하지 않는다.
+        val canReadCount = !value.containsKey("ownerAuthorized") || authorized == true
+        return BleDeviceStatus(
+            number(value, "batteryPercent")?.takeIf { it in 0..100 },
+            number(value, "batteryMillivolts")?.takeIf { it > 0 },
+            BleOwnerFlowProtocol.flag(value, "charging"),
+            if (canReadCount) number(value, "pendingRecordCount")?.takeIf { it >= 0 } else null,
+            BleOwnerFlowProtocol.status(value),
+        )
+    }
     private fun number(value: JsonObject, key: String) = (value[key] as? JsonPrimitive)?.takeUnless { it.isString }?.longOrNull
     private fun JsonObject.string(key: String) = (get(key) as? JsonPrimitive)?.takeIf { it.isString }?.content
 }
@@ -84,7 +91,8 @@ data class BleDeviceInfo(val serial: String, val firmware: String, val supportsS
     val ownershipEpoch: Long? = null, val ownerState: String? = null,
     val supportedProofProtocolVersions: List<String> = listOf("tingle-device-proof-v1"),
     val resetContractVersion: String? = null, val supportedFunctions: List<String> = emptyList(),
-    val profileStorage: BleProfileStorageInfo = BleProfileStorageInfo()) {
+    val profileStorage: BleProfileStorageInfo = BleProfileStorageInfo(),
+    val ownerFlow: BleOwnerFlowInfo = BleOwnerFlowInfo()) {
     /** 지원 선언은 암호화 성공/신원 증명이 아니다. 실제 전송 전 동일 연결의 보호 Read가 추가로 필요하다. */
     val supportsProtectedProfileStorage get() = profileStorage.supportsProtectedStorage &&
         supportedFunctions.containsAll(listOf("GET_SYNC_CHALLENGE", "SYNC_SETTINGS"))
@@ -124,4 +132,6 @@ data class BleProfileStorageInfo(
         const val CHARACTERISTIC = "6e400004-b5a3-f393-e0a9-e50e24dcca9e"
     }
 }
-data class BleDeviceStatus(val batteryPercent: Long?, val batteryMillivolts: Long?, val charging: Boolean?, val pendingRecordCount: Long?)
+/** 같은 연결에서 마지막으로 받은 관측값. 소유 세션 허가나 서버 처리 결과를 대신하지 않는다. */
+data class BleDeviceStatus(val batteryPercent: Long?, val batteryMillivolts: Long?, val charging: Boolean?,
+    val pendingRecordCount: Long?, val ownerFlow: BleOwnerFlowStatus = BleOwnerFlowStatus())
