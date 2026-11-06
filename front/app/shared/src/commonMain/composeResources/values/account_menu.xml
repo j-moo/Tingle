@@ -26,8 +26,8 @@
     <string name="account_keyring_unknown">등록 상태 확인 필요</string>
     <string name="account_keyring_registered">연결·동기화 상태와 진동·LED 설정을 확인해요.</string>
     <string name="account_keyring_missing">등록된 키링이 없어요. 키링 등록을 시작할 수 있어요.</string>
-    <string name="account_permissions">알림·기기 권한</string>
-    <string name="account_permissions_detail">앱 알림과 키링 연결에 필요한 권한을 확인해요.</string>
+    <string name="account_permissions">알림 설정</string>
+    <string name="account_permissions_detail">휴대폰 설정에서 이 앱의 알림을 켜거나 꺼요.</string>
     <string name="account_section_help">약관과 도움말</string>
     <string name="account_terms">이용약관</string>
     <string name="account_privacy">개인정보 처리방침</string>

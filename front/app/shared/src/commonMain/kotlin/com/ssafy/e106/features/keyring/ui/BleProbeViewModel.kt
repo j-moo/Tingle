@@ -37,8 +37,9 @@ class BleProbeViewModel(private val ble: KeyringBle, private val sessions: Sessi
         sessions.state.map { (it as? Session.SignedIn)?.userId }.distinctUntilChanged().collect { leave() }
     } }
 
-    fun scan() {
-        if (mutable.value.busy || mutable.value.scanning || sessions.state.value !is Session.SignedIn) return
+    /** 탐색을 시작했으면 true. 이미 진행 중이거나 로그인 전이면 아무것도 하지 않고 false */
+    fun scan(): Boolean {
+        if (mutable.value.busy || mutable.value.scanning || sessions.state.value !is Session.SignedIn) return false
         val previous = work
         leave()
         val stamp = generation
@@ -52,6 +53,7 @@ class BleProbeViewModel(private val ble: KeyringBle, private val sessions: Sessi
             catch (failure: Exception) { if (stamp == generation) showFailure(failure) }
             finally { if (stamp == generation) mutable.value = mutable.value.copy(scanning = false) }
         }
+        return true
     }
 
     fun stopScan() {
@@ -229,7 +231,8 @@ class BleProbeViewModel(private val ble: KeyringBle, private val sessions: Sessi
         } catch (failure: Exception) {
             if (stamp == generation && failure !is BleCommandException) {
                 watcher?.cancel(); channel.close(); connection = null
-                mutable.update { it.copy(connected = false, info = null, error = BleFailure.Disconnected) }
+                // busy 도 같이 내린다. 따로 내리면 그 사이 한 프레임 "연결하고 있어요"로 보인다
+                mutable.update { it.copy(connected = false, info = null, error = BleFailure.Disconnected, busy = false) }
             }
             throw failure
         } finally { if (stamp == generation) mutable.update { it.copy(busy = false) } }
@@ -273,7 +276,8 @@ class BleProbeViewModel(private val ble: KeyringBle, private val sessions: Sessi
         } catch (failure: Exception) {
             if (stamp == generation && failure !is BleCommandException) {
                 watcher?.cancel(); channel.close(); connection = null
-                mutable.update { it.copy(connected = false, info = null, error = BleFailure.Disconnected) }
+                // busy 도 같이 내린다. 따로 내리면 그 사이 한 프레임 "연결하고 있어요"로 보인다
+                mutable.update { it.copy(connected = false, info = null, error = BleFailure.Disconnected, busy = false) }
             }
             throw failure
         } finally { if (stamp == generation) mutable.update { it.copy(busy = false) } }
@@ -296,7 +300,8 @@ class BleProbeViewModel(private val ble: KeyringBle, private val sessions: Sessi
         } catch (failure: Exception) {
             if (stamp == generation && failure !is BleCommandException) {
                 watcher?.cancel(); channel.close(); connection = null
-                mutable.update { it.copy(connected = false, info = null, error = BleFailure.Disconnected) }
+                // busy 도 같이 내린다. 따로 내리면 그 사이 한 프레임 "연결하고 있어요"로 보인다
+                mutable.update { it.copy(connected = false, info = null, error = BleFailure.Disconnected, busy = false) }
             }
             throw failure
         } finally { if (stamp == generation) mutable.update { it.copy(busy = false) } }

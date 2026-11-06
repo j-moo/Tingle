@@ -1,7 +1,6 @@
 <resources>
     <string name="registration_live_title">실제 계정 등록 · 개발 시험</string>
     <string name="registration_live_owner">현재 회원 번호: %1$s</string>
-    <string name="registration_live_description">키링의 기기 정보와 상태를 확인하고, 동의한 경우 실제 개발 서버에 등록해요.</string>
     <string name="registration_live_busy">등록 요청과 소유 정보를 확인하고 있어요.</string>
     <string name="registration_live_restore">저장된 등록 요청 다시 확인</string>
     <string name="registration_live_storage">등록 요청 기록을 안전하게 읽거나 저장하지 못했어요. 새 등록을 보내지 않아요. 다시 확인해 주세요.</string>

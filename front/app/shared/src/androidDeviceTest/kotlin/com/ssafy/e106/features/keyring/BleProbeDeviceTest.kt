@@ -48,13 +48,14 @@ class BleProbeDeviceTest {
                 BleFailure.BluetoothOff, BleFailure.LocationOff))
         }
         ActivityScenario.launch<BleProbeTestActivity>(Intent(context, BleProbeTestActivity::class.java)).use { scenario ->
-            compose.onNodeWithText("키링 BLE 연결 확인 · 개발용").assertExists()
+            compose.onNodeWithText("주변 키링 찾기").assertExists()
             compose.onNodeWithText("기기 정보 수신까지 확인했어요.", substring = true).assertDoesNotExist()
             compose.onNodeWithText("기기 상태 읽기").assertDoesNotExist()
-            if (availability == BleAvailability.PermissionRequired) compose.onNodeWithText("권한 요청하기").assertExists()
+            // 권한은 로그인 직후 권한 시트에서 받는다. 이 화면은 요청 버튼 없이 안내만 한다
+            if (availability == BleAvailability.PermissionRequired) compose.onNodeWithText("근처 기기 권한이 필요해요", substring = true).assertExists()
             scenario.recreate(); compose.waitForIdle()
-            compose.onNodeWithText("키링 BLE 연결 확인 · 개발용").assertExists()
-            compose.onNodeWithText("연결 종료").assertDoesNotExist()
+            compose.onNodeWithText("주변 키링 찾기").assertExists()
+            compose.onNodeWithText("연결 끊기").assertDoesNotExist()
         }
     }
 }

@@ -69,7 +69,5 @@ internal fun Context.bleAvailability(): BleAvailability {
     }
     return BlePermission(state, request = { launcher.launch(blePermissions()) },
         openAppSettings = { open(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:${context.packageName}"))) },
-        openBluetoothSettings = { open(Intent(Settings.ACTION_BLUETOOTH_SETTINGS)) },
-        openLocationSettings = { open(Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS)) },
         denied = denied && state == BleAvailability.PermissionRequired)
 }
