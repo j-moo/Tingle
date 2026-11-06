@@ -2,6 +2,7 @@
 #define TINGLE_PEER_PLAN_H
 
 #include <stdint.h>
+#include "peer.h"
 
 #define KR_DISCOVERY_UUID_BYTES 16
 #define KR_DISCOVERY_MAX_BYTES 254
@@ -15,6 +16,8 @@ struct kr_peer_plan {
 	int64_t verified_time;
 	uint16_t length;
 	uint8_t service_data[KR_DISCOVERY_MAX_BYTES];
+	struct kr_peer_material peer;
+	uint32_t generation;
 };
 
 #endif

@@ -4,7 +4,7 @@
 size_t kr_phone_frame(uint8_t op, uint32_t request, const uint8_t *body,
 	size_t len, uint8_t *out)
 {
-	if (len > KR_FRAME_MAX - 14) {
+	if (len > KR_BINARY_FRAME_MAX - 14) {
 		return 0;
 	}
 	out[0] = 'K';
@@ -100,7 +100,7 @@ size_t kr_phone_process(struct kr_engine *e, const uint8_t *in, size_t len,
 	uint8_t *out, uint64_t *new_utc)
 {
 	*new_utc = 0;
-	if (len < 14 || len > KR_FRAME_MAX || in[0] != 'K' || in[1] != 'P' ||
+	if (len < 14 || len > KR_BINARY_FRAME_MAX || in[0] != 'K' || in[1] != 'P' ||
 		in[2] != KR_VERSION || in[3] & 0x80 || (size_t)kr_get16(in + 8) + 14 != len ||
 		kr_get32(in + len - 4) != kr_crc32(in, len - 4)) {
 		return 0;

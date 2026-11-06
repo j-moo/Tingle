@@ -279,8 +279,8 @@ static void test_phone_frames(void)
 	setup(1);
 	exchange(50, false);
 	uint8_t body[64] = {0};
-	uint8_t request[KR_FRAME_MAX];
-	uint8_t reply[KR_FRAME_MAX];
+	uint8_t request[KR_BINARY_FRAME_MAX];
+	uint8_t reply[KR_BINARY_FRAME_MAX];
 	uint64_t utc;
 	size_t len = kr_phone_frame(KR_STATUS, 7, body, 0, request);
 	size_t response = kr_phone_process(&engines[0], request, len, reply, &utc);
@@ -453,7 +453,7 @@ static void test_sync_fixture(const char *path)
 {
 	FILE *file = fopen(path, "r");
 	assert(file);
-	uint8_t frame[KR_FRAME_MAX];
+	uint8_t frame[KR_BINARY_FRAME_MAX];
 	size_t len = 0;
 	unsigned value;
 	while (fscanf(file, "%2x", &value) == 1) {
@@ -463,7 +463,7 @@ static void test_sync_fixture(const char *path)
 	fclose(file);
 	setup(0);
 	engines[0].io.synthetic_only = true;
-	uint8_t response[KR_FRAME_MAX];
+	uint8_t response[KR_BINARY_FRAME_MAX];
 	uint64_t utc;
 	assert(kr_phone_process(&engines[0], frame, len, response, &utc) > 0);
 	assert(response[10] == KR_OK);

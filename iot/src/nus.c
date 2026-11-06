@@ -1,5 +1,8 @@
 #include "board.h"
 #include "nus.h"
+#include "product.h"
+#include "storage.h"
+#include "monocypher.h"
 #include <errno.h>
 #include <string.h>
 #include <zephyr/kernel.h>
@@ -8,12 +11,16 @@
 #include <zephyr/bluetooth/gatt.h>
 #include <zephyr/drivers/uart.h>
 #include <zephyr/sys/atomic.h>
+#include <zephyr/sys/util.h>
+#include <zephyr/random/random.h>
 
 static struct bt_uuid_128 service_uuid = BT_UUID_INIT_128(KR_NUS_UUID(0x6e400001));
 static struct bt_uuid_128 rx_uuid = BT_UUID_INIT_128(KR_NUS_UUID(0x6e400002));
 static struct bt_uuid_128 tx_uuid = BT_UUID_INIT_128(KR_NUS_UUID(0x6e400003));
 static struct bt_uuid_128 profile_uuid = BT_UUID_INIT_128(KR_NUS_UUID(0x6e400004));
 static struct kr_core core;
+static struct kr_product application;
+static atomic_t connection_epoch;
 static struct k_sem *peer_wake;
 static struct kr_peer_plan peer_plan;
 static bool peer_pending;
@@ -113,6 +120,7 @@ static void connected(struct bt_conn *conn, uint8_t error)
 	k_mutex_lock(&transport_lock, K_FOREVER);
 	peer = bt_conn_ref(conn);
 	++generation;
+	atomic_inc(&connection_epoch);
 	kr_frame_reset(&incoming); ready = busy = false;
 	k_mutex_unlock(&transport_lock);
 	printk("BLE connected\n");
@@ -124,6 +132,7 @@ static void disconnected(struct bt_conn *conn, uint8_t reason)
 	if (peer == conn) {
 		bt_conn_unref(peer); peer = NULL;
 		++generation;
+		atomic_inc(&connection_epoch);
 		kr_frame_reset(&incoming); ready = busy = false;
 	}
 	k_mutex_unlock(&transport_lock);
@@ -182,6 +191,7 @@ static void publish_peer_plan(const struct kr_peer_plan *plan)
 	}
 	k_mutex_lock(&peer_plan_lock, K_FOREVER);
 	peer_plan = *plan;
+	peer_plan.generation = kr_runtime_generation();
 	peer_pending = true;
 	k_mutex_unlock(&peer_plan_lock);
 	k_sem_give(peer_wake);
@@ -253,6 +263,7 @@ static void process_requests(void *a, void *b, void *c)
 		bool protected = false;
 		k_mutex_lock(&transport_lock, K_FOREVER);
 		uint32_t request_generation = generation;
+		uint32_t request_epoch = (uint32_t)atomic_get(&connection_epoch);
 		if (ready && peer) {
 			memcpy(frame, incoming.bytes, incoming.size);
 			conn = bt_conn_ref(peer);
@@ -266,6 +277,7 @@ static void process_requests(void *a, void *b, void *c)
 
 		k_mutex_lock(&core_lock, K_FOREVER);
 		core.profile_transport_protected = protected;
+		core.connection_epoch = request_epoch;
 		kr_request(&core, frame, kr_board_status(), !core.current.magic &&
 			k_uptime_get() < window_deadline, response);
 		core.profile_transport_protected = false;
@@ -284,6 +296,7 @@ static void process_requests(void *a, void *b, void *c)
 		struct kr_peer_plan plan;
 		k_mutex_lock(&core_lock, K_FOREVER);
 		bool activate_peer = kr_peer_after_response(&core, result == 0, &plan);
+		kr_request_forget_candidate();
 		k_mutex_unlock(&core_lock);
 		if (activate_peer) {
 			publish_peer_plan(&plan);
@@ -293,6 +306,7 @@ static void process_requests(void *a, void *b, void *c)
 		/* A partial response cannot be followed by a new JSON frame. */
 		if (result) { bt_conn_disconnect(conn, BT_HCI_ERR_REMOTE_USER_TERM_CONN); }
 		bt_conn_unref(conn);
+		crypto_wipe(frame, sizeof(frame)); crypto_wipe(response, sizeof(response));
 		k_mutex_lock(&transport_lock, K_FOREVER);
 		if (generation == request_generation) { busy = false; kr_frame_reset(&incoming); }
 		k_mutex_unlock(&transport_lock);
@@ -300,4 +314,54 @@ static void process_requests(void *a, void *b, void *c)
 }
 
 /* Notification backpressure must not stall the lab's scan and matching loop. */
-K_THREAD_DEFINE(nus_worker, 6144, process_requests, NULL, NULL, NULL, 7, 0, 0);
+K_THREAD_DEFINE(nus_worker, 8192, process_requests, NULL, NULL, NULL, 7, 0, 0);
+
+static int64_t application_uptime(void *ctx) { ARG_UNUSED(ctx); return k_uptime_get(); }
+static int application_random(void *ctx, uint8_t *bytes, size_t length) { ARG_UNUSED(ctx); return sys_csrand_get(bytes, length); }
+static void application_stop(void *ctx) { ARG_UNUSED(ctx); kr_runtime_stop_feedback(); }
+static uint32_t application_generation(void *ctx) { ARG_UNUSED(ctx); return kr_runtime_generation(); }
+static int application_record(void *ctx, unsigned slot, const struct kr_record *record)
+{
+	ARG_UNUSED(ctx); return kr_product_record(&application, slot, record);
+}
+static int application_suppression(void *ctx, unsigned slot, const struct kr_suppression *s)
+{ ARG_UNUSED(ctx); return kr_product_suppression(&application, slot, s); }
+static bool application_same_peer(void *ctx, unsigned slot, uint64_t peer)
+{ ARG_UNUSED(ctx); return kr_product_same_peer(&application, slot, peer); }
+static bool application_candidate(void *ctx, unsigned slot)
+{ ARG_UNUSED(ctx); return kr_product_candidate_ready(&application, slot); }
+static uint64_t application_error_key(void *ctx, uint64_t peer, const uint8_t *raw, size_t len)
+{ ARG_UNUSED(ctx); return kr_product_error_key(&application, peer, raw, len); }
+static bool application_request(void *ctx, const struct kr_json *json, const char *request,
+	struct kr_status status, char *response)
+{
+	ARG_UNUSED(ctx); kr_runtime_owner_lock();
+	bool handled = kr_product_dispatch(&application, json, request, status, response);
+	kr_runtime_owner_unlock(); return handled;
+}
+void kr_nus_attach_application(struct kr_engine *engine)
+{
+	uint8_t key[32] = {0};
+#ifdef KR_DEV_SERVER_KEY_HEX
+	(void)hex2bin(KR_DEV_SERVER_KEY_HEX, 64, key, sizeof(key));
+#endif
+	struct kr_product_io io = {.uptime_ms = application_uptime, .random = application_random,
+		.blob = kr_storage_blob, .space = kr_storage_space, .stop_feedback = application_stop, .generation = application_generation};
+	kr_product_init(&application, &core, engine, io, key); core.platform.application = application_request;
+	engine->io.record = application_record;
+	engine->io.suppression = application_suppression;
+	engine->io.same_peer = application_same_peer; engine->io.candidate_ready = application_candidate;
+	engine->io.error_key = application_error_key;
+}
+bool kr_nus_apply_application(const struct kr_peer_plan *plan, struct kr_peer_runtime *peers)
+{
+	k_mutex_lock(&core_lock, K_FOREVER); kr_runtime_owner_lock();
+	bool valid = plan->generation == kr_runtime_generation();
+	if (valid) { (void)kr_product_apply(&application, peers, plan->verified_time); }
+	kr_runtime_owner_unlock(); k_mutex_unlock(&core_lock); return valid;
+}
+void kr_nus_bind_application(struct kr_peer_runtime *peers) { kr_product_bind_peer(&application, peers); }
+void kr_nus_clear_application(void) { kr_product_forget_owner(&application); }
+int kr_nus_write_record(unsigned slot, const struct kr_record *record) { return kr_product_record(&application, slot, record); }
+void kr_nus_application_tick(void) { kr_product_tick(&application); }
+uint64_t kr_nus_application_time(void) { return kr_product_now(&application); }

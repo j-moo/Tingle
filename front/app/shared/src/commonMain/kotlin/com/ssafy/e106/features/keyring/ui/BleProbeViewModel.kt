@@ -148,7 +148,8 @@ class BleProbeViewModel(private val ble: KeyringBle, private val sessions: Sessi
         work = viewModelScope.launch {
             try {
                 val id = Uuid.random().toString()
-                val result = channel.exchange(BleProbeProtocol.request("GET_STATUS", id), maxResponseBytes = 512)
+                val result = channel.exchange(BleProbeProtocol.request("GET_STATUS", id),
+                    maxResponseBytes = BleProbeProtocol.STATUS_RESPONSE_MAX_BYTES)
                 val status = BleProbeProtocol.status(BleProbeProtocol.response(result, id, "STATUS"))
                 if (stamp == generation) mutable.value = mutable.value.copy(status = status)
             } catch (cancelled: CancellationException) { throw cancelled }

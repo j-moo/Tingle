@@ -1,6 +1,7 @@
 #include "board.h"
 #include "nus.h"
 #include "profile.h"
+#include "policy.h"
 #include "monocypher.h"
 #include "monocypher-ed25519.h"
 #include <errno.h>
@@ -20,6 +21,11 @@
 #include <zephyr/storage/flash_map.h>
 #include <zephyr/sys/util.h>
 #include <hal/nrf_saadc.h>
+#include <hal/nrf_power.h>
+#if DT_NODE_EXISTS(DT_ALIAS(keyring_fuel_gauge))
+#include <zephyr/drivers/fuel_gauge.h>
+static const struct device *gauge = DEVICE_DT_GET(DT_ALIAS(keyring_fuel_gauge));
+#endif
 
 static struct nvs_fs fs;
 static struct kr_settings readback;
@@ -67,12 +73,18 @@ static int put(uint16_t key, const void *data, size_t length)
 static int save(void *ctx, const struct kr_settings *next)
 {
 	(void)ctx;
+	/* Serialize the settings commit with encounter processing. Once a verified
+	 * change commits (including OFF), no old snapshot may create new work. */
+	kr_runtime_owner_lock();
+	kr_runtime_pause_matching();
 	int result = put(10, next, sizeof(*next));
-	if (result) { return result; }
-	ssize_t got = nvs_read(&fs, 10, &readback, sizeof(readback));
-	if (got != sizeof(readback) || memcmp(next, &readback, sizeof(readback)) ||
-		!kr_settings_valid(&readback)) { return -EIO; }
-	return 0;
+	if (!result) {
+		ssize_t got = nvs_read(&fs, 10, &readback, sizeof(readback));
+		if (got != sizeof(readback) || memcmp(next, &readback, sizeof(readback)) ||
+			!kr_settings_valid(&readback)) { result = -EIO; }
+	}
+	kr_runtime_owner_unlock();
+	return result;
 }
 
 static int save_reset(void *ctx, const struct kr_reset_record *next)
@@ -195,12 +207,24 @@ static const char *authorize(void *ctx, const struct kr_settings *next,
 		return error;
 	}
 	bool matching = next->payload[0] != 0;
-	if (!strcmp(next->format, KR_PROFILE_STORAGE_FORMAT)) {
+	if (!strcmp(next->format, KR_PROFILE_STORAGE_FORMAT) || kr_policy_format(next->format)) {
 		struct kr_profile_data profile;
-		if (!kr_profile_data_decode(next->payload, next->payload_size, &profile)) {
+		struct kr_policy policy;
+		bool operational = kr_policy_format(next->format);
+		if (operational && !kr_policy_decode(next->payload, next->payload_size, &policy)) { return "INVALID_SETTINGS"; }
+		if (!kr_profile_data_decode(operational ? policy.profile : next->payload,
+			operational ? 196 : next->payload_size, &profile)) {
 			return "INVALID_SETTINGS";
 		}
 		matching = (profile.options & 1u) != 0;
+		if (operational && (!policy.complete || !policy.enabled)) { matching = false; }
+		if (matching) {
+			uint8_t seed[32];
+			if (sys_csrand_get(seed, sizeof(seed))) { return "RANDOM_ERROR"; }
+			bool prepared = kr_peer_material_make(&plan->peer, &core->identity, next, auth, seed);
+			crypto_wipe(seed, sizeof(seed));
+			if (!prepared) { return "PEER_SETTINGS_UNSUPPORTED"; }
+		}
 	}
 	if (matching) {
 		static const uint8_t uuid[] = {KR_DEV_DISCOVERY_UUID};
@@ -332,14 +356,30 @@ void kr_board_print_identity(const struct kr_identity *id)
 struct kr_status kr_board_status(void)
 {
 	struct kr_status status = {.battery_mv = -1, .charging = -1};
+	status.usb_valid = true; status.usb_present = nrf_power_usbregstatus_vbusdet_get(NRF_POWER);
+#if DT_NODE_EXISTS(DT_ALIAS(keyring_fuel_gauge))
+	status.gauge_ready = true;
+	if (device_is_ready(gauge)) {
+		union fuel_gauge_prop_val value;
+		if (!fuel_gauge_get_prop(gauge, FUEL_GAUGE_PRESENT_STATE, &value)) {
+			status.presence_valid = true; status.battery_present = value.present_state;
+		}
+		if (!fuel_gauge_get_prop(gauge, FUEL_GAUGE_RELATIVE_STATE_OF_CHARGE, &value) && value.relative_state_of_charge <= 100) {
+			status.gauge_percent_valid = true; status.gauge_percent = value.relative_state_of_charge;
+		}
+	}
+#endif
 	if (!battery_ready) { return status; }
 	int charge = gpio_pin_get(gpio, 17);
 	if (charge >= 0) { status.charging = !charge; }
-	int16_t raw;
+	int16_t raw[8];
 	struct adc_sequence sequence = {.channels = BIT(0), .buffer = &raw,
 		.buffer_size = sizeof(raw), .resolution = 12};
-	if (!adc_read(adc, &sequence) && raw > 0) {
-		int32_t mv = raw;
+	const struct adc_sequence_options options = {.extra_samplings = 7, .interval_us = 100};
+	sequence.options = &options;
+	if (!adc_read(adc, &sequence)) {
+		int32_t mv = 0; for (unsigned i = 0; i < 8; ++i) { if (raw[i] <= 0) { return status; } mv += raw[i]; }
+		mv = (mv + 4) / 8;
 		if (!adc_raw_to_millivolts(600, ADC_GAIN_1_6, 12, &mv)) {
 			/* R16=1M, R17=510k. Voltage does not prove battery presence. */
 			status.battery_mv = (mv * 1510 + 255) / 510;
