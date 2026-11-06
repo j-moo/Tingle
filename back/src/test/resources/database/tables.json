@@ -1,7 +1,7 @@
 {
   "version": "1.9.0-keyring-ownership-epoch",
-  "total_tables": 35,
-  "total_columns": 297,
+  "total_tables": 38,
+  "total_columns": 327,
   "physical_foreign_keys": false,
   "tables": {
     "personality": {
@@ -1065,6 +1065,18 @@
           "name": "ownership_epoch",
           "type": "bigint",
           "meaning": "서버가 기기 서명으로 확인한 소유 카운터. 기존 미확인 값은 NULL 유지하며 서명된 최초 epoch0 또는 검증된 초기화 완료로만 설정한다. 재등록 시 보존하고 임의 backfill하지 않는다.",
+          "nullable": true,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "permanently_blocked_at",
+          "type": "timestamptz",
+          "meaning": "269 분실 키링 문의 및 처리 검증 정보",
           "nullable": true,
           "pk": false,
           "increment": false,
@@ -4393,6 +4405,372 @@
           "json_shape": null
         }
       ]
+    },
+    "lost_reauthentication": {
+      "name": "lost_reauthentication",
+      "purpose": "분실 문의 재인증/소유/확인/멱등 처리",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "meaning": "269 분실 키링 문의 및 처리 검증 정보",
+          "nullable": false,
+          "pk": true,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "user_id",
+          "type": "bigint",
+          "meaning": "269 분실 키링 문의 및 처리 검증 정보",
+          "nullable": false,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "keyring_id",
+          "type": "bigint",
+          "meaning": "269 분실 키링 문의 및 처리 검증 정보",
+          "nullable": false,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "owner_generation",
+          "type": "uuid",
+          "meaning": "269 분실 키링 문의 및 처리 검증 정보",
+          "nullable": false,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "session_id",
+          "type": "uuid",
+          "meaning": "269 분실 키링 문의 및 처리 검증 정보",
+          "nullable": false,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "request_key",
+          "type": "uuid",
+          "meaning": "269 분실 키링 문의 및 처리 검증 정보",
+          "nullable": false,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "request_hash",
+          "type": "varchar(64)",
+          "meaning": "269 분실 키링 문의 및 처리 검증 정보",
+          "nullable": false,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "verified_at",
+          "type": "timestamptz",
+          "meaning": "269 분실 키링 문의 및 처리 검증 정보",
+          "nullable": false,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "expires_at",
+          "type": "timestamptz",
+          "meaning": "269 분실 키링 문의 및 처리 검증 정보",
+          "nullable": false,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        }
+      ]
+    },
+    "lost_withdrawal_request": {
+      "name": "lost_withdrawal_request",
+      "purpose": "분실 문의 재인증/소유/확인/멱등 처리",
+      "columns": [
+        {
+          "name": "case_id",
+          "type": "bigint",
+          "meaning": "269 분실 키링 문의 및 처리 검증 정보",
+          "nullable": false,
+          "pk": true,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "user_id",
+          "type": "bigint",
+          "meaning": "269 분실 키링 문의 및 처리 검증 정보",
+          "nullable": false,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "request_id",
+          "type": "uuid",
+          "meaning": "269 분실 키링 문의 및 처리 검증 정보",
+          "nullable": false,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "request_hash",
+          "type": "varchar(64)",
+          "meaning": "269 분실 키링 문의 및 처리 검증 정보",
+          "nullable": false,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "withdrawal_id",
+          "type": "uuid",
+          "meaning": "269 분실 키링 문의 및 처리 검증 정보",
+          "nullable": false,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "keyring_id",
+          "type": "bigint",
+          "meaning": "269 분실 키링 문의 및 처리 검증 정보",
+          "nullable": false,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "owner_generation",
+          "type": "uuid",
+          "meaning": "269 분실 키링 문의 및 처리 검증 정보",
+          "nullable": false,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "session_id",
+          "type": "uuid",
+          "meaning": "269 분실 키링 문의 및 처리 검증 정보",
+          "nullable": false,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "reauthenticated_at",
+          "type": "timestamptz",
+          "meaning": "269 분실 키링 문의 및 처리 검증 정보",
+          "nullable": false,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "expires_at",
+          "type": "timestamptz",
+          "meaning": "269 분실 키링 문의 및 처리 검증 정보",
+          "nullable": false,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "reviewed_at",
+          "type": "timestamptz",
+          "meaning": "269 분실 키링 문의 및 처리 검증 정보",
+          "nullable": true,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "confirmed_at",
+          "type": "timestamptz",
+          "meaning": "269 분실 키링 문의 및 처리 검증 정보",
+          "nullable": true,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "info_request_id",
+          "type": "bigint",
+          "meaning": "269 분실 키링 문의 및 처리 검증 정보",
+          "nullable": true,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "info_delivered_at",
+          "type": "timestamptz",
+          "meaning": "269 분실 키링 문의 및 처리 검증 정보",
+          "nullable": true,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "reauthentication_id",
+          "type": "uuid",
+          "meaning": "최종 검증의 정확한 재인증 증명 ID",
+          "nullable": false,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        }
+      ]
+    },
+    "lost_case_command": {
+      "name": "lost_case_command",
+      "purpose": "분실 문의 재인증/소유/확인/멱등 처리",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "meaning": "269 분실 키링 문의 및 처리 검증 정보",
+          "nullable": false,
+          "pk": true,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "case_id",
+          "type": "bigint",
+          "meaning": "269 분실 키링 문의 및 처리 검증 정보",
+          "nullable": false,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "request_key",
+          "type": "uuid",
+          "meaning": "269 분실 키링 문의 및 처리 검증 정보",
+          "nullable": false,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "request_hash",
+          "type": "varchar(64)",
+          "meaning": "269 분실 키링 문의 및 처리 검증 정보",
+          "nullable": false,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "created_at",
+          "type": "timestamptz",
+          "meaning": "269 분실 키링 문의 및 처리 검증 정보",
+          "nullable": false,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        }
+      ]
     }
   },
   "enums": {
@@ -5151,6 +5529,11 @@
       "date": "2026-11-06",
       "issue": "S15P31E106-268",
       "reason": "회원탈퇴72시간/관계1년/영수증/사진정리4표 추가. matching CLOSED 보관행은 회원 참조 제거. 공유 DB 미적용."
+    },
+    {
+      "date": "2026-11-06",
+      "issue": "S15P31E106-269",
+      "reason": "분실 문의3표와 키링 영구차단 시각 추가. 기존 enum 변경 없음. 공유DB 미적용."
     }
   ]
 }

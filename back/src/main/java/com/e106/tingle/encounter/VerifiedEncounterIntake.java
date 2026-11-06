@@ -264,7 +264,8 @@ public final class VerifiedEncounterIntake {
 
 	private void requireDevice(long owner, long device, UUID generation) {
 		Boolean valid = jdbc.queryForObject("select exists (select 1 from keyring where id=? and owner_user_id=? "
-			+ "and state='REGISTERED' and (cast(? as uuid) is null or owner_generation=?))",
+			+ "and state='REGISTERED' and permanently_blocked_at is null "
+			+ "and (cast(? as uuid) is null or owner_generation=?))",
 			Boolean.class, device, owner,
 			generation, generation);
 		if (!Boolean.TRUE.equals(valid)) {

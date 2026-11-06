@@ -356,6 +356,7 @@ public class EncounterEvaluationWorker {
 		List<Proof> proofs = jdbc.query("select p.user_id,p.encounter_signature from matching_participant p "
 			+ "join users u on u.id=p.user_id and u.status='ACTIVE' "
 			+ "join keyring k on k.id=p.encounter_keyring_id and k.owner_user_id=p.user_id and k.state='REGISTERED' "
+			+ "and k.permanently_blocked_at is null "
 			+ "where p.matching_id=? and ((p.user_id=? and p.encounter_keyring_id=?) "
 			+ "or (p.user_id=? and p.encounter_keyring_id=?)) and octet_length(p.encounter_signature)>0 "
 			+ "and p.encounter_reported_at<=? and p.encounter_verified_at<=? "

@@ -17,7 +17,7 @@ public class KeyringReadRepository {
 
 	public boolean hasActiveBinding(long userId) {
 		return Boolean.TRUE.equals(jdbc.queryForObject("select exists (select 1 from keyring "
-			+ "where owner_user_id=? and state='REGISTERED')",
+			+ "where owner_user_id=? and state='REGISTERED' and permanently_blocked_at is null)",
 			Boolean.class, userId));
 	}
 
@@ -28,7 +28,7 @@ public class KeyringReadRepository {
 			+ "when s.user_id is not null or k.synced_settings_version is not null then 'SYNC_PENDING' "
 			+ "else 'REGISTERED' end as status from keyring k "
 			+ "left join user_setting s on s.user_id=k.owner_user_id "
-			+ "where k.owner_user_id=? and k.state='REGISTERED' order by k.id",
+			+ "where k.owner_user_id=? and k.state='REGISTERED' and k.permanently_blocked_at is null order by k.id",
 			(rs, row) -> new KeyringView(rs.getLong("id"),
 				KeyringStatus.valueOf(rs.getString("status")), rs.getString("firmware_version")), userId);
 	}

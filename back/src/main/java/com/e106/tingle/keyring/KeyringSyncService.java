@@ -246,6 +246,9 @@ public class KeyringSyncService {
 		Keyring device = keyrings.findByIdForUpdate(deviceId).filter(item -> item.getState() == KeyringState.REGISTERED
 			&& Long.valueOf(userId).equals(item.getOwnerUserId()) && item.getOwnerGeneration() != null)
 			.orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
+		if (device.getPermanentlyBlockedAt() != null) {
+			throw new BusinessException(ErrorCode.KEYRING_PERMANENTLY_BLOCKED);
+		}
 		resetGuard.requireNoPendingReset(deviceId);
 		return device;
 	}

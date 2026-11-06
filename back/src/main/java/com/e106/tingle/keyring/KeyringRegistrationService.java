@@ -68,6 +68,9 @@ public class KeyringRegistrationService {
 		Keyring device = keyrings.findBySerialForUpdate(request.deviceSerial())
 			.orElseThrow(() -> new BusinessException(previous == null
 				? ErrorCode.INVALID_DEVICE_PROOF : ErrorCode.DEVICE_ALREADY_BOUND));
+		if (device.getPermanentlyBlockedAt() != null) {
+			throw new BusinessException(ErrorCode.KEYRING_PERMANENTLY_BLOCKED);
+		}
 		if (device.getCredentialRevokedAt() != null
 			|| !request.proof().keyId().equals(device.getCredentialKeyId())) {
 			throw new BusinessException(ErrorCode.INVALID_DEVICE_PROOF);

@@ -52,6 +52,36 @@ class KeyringRegistrationIntegrationTest extends IntegrationTestSupport {
 	private PlatformTransactionManager transactions;
 
 	@Test
+	void blockedDeviceCannotRegisterAfterCredentialReinstatementOrManualOwnershipRestoration() throws Exception {
+		JsonNode user = eligibleUser();
+		Device device = trustedDevice();
+		JsonNode challenge = issue(user);
+		String body = request(challenge, device);
+		jdbc.update("update keyring set permanently_blocked_at=now(),credential_revoked_at=null where id=?",
+			device.id());
+		expectError(user, UUID.randomUUID(), body, 409, "KEYRING_PERMANENTLY_BLOCKED");
+		assertThat(consumed(challenge)).isFalse();
+		jdbc.update("update keyring set state='REGISTERED',owner_user_id=?,owner_generation=? where id=?",
+			userIdOf(user), UUID.randomUUID(), device.id());
+		expectError(user, UUID.randomUUID(), body, 409, "KEYRING_PERMANENTLY_BLOCKED");
+		assertThat(consumed(challenge)).isFalse();
+	}
+
+	@Test
+	void permanentBlockAlsoRejectsThePreviouslySuccessfulRegistrationReceipt() throws Exception {
+		JsonNode user = eligibleUser();
+		Device device = trustedDevice();
+		String body = request(issue(user), device);
+		UUID key = UUID.randomUUID();
+		register(user, key, body);
+		jdbc.update("update keyring set permanently_blocked_at=now(),credential_revoked_at=null where id=?",
+			device.id());
+		expectError(user, key, body, 409, "KEYRING_PERMANENTLY_BLOCKED");
+		assertThat(jdbc.queryForObject("select permanently_blocked_at is not null from keyring where id=?",
+			Boolean.class, device.id())).isTrue();
+	}
+
+	@Test
 	void registersNumericDeviceAndReceiptWithoutAcknowledgingSettingsAndAdvancesOnboarding() throws Exception {
 		JsonNode user = eligibleUser();
 		Device device = trustedDevice();

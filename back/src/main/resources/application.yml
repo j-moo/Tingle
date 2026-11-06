@@ -64,6 +64,8 @@ management:
       show-details: never
 
 app:
+  lost-withdrawal:
+    scheduling-enabled: ${LOST_WITHDRAWAL_RETENTION_ENABLED:true}
   withdrawal:
     enabled: ${WITHDRAWAL_ENABLED:false}
     identity-secret: ${WITHDRAWAL_IDENTITY_SECRET:}

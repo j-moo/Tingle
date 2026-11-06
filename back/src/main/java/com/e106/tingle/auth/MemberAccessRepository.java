@@ -43,7 +43,8 @@ public class MemberAccessRepository {
 
 	public boolean hasKeyring(long userId) {
 		return Boolean.TRUE.equals(jdbc.queryForObject("select exists (select 1 from keyring "
-			+ "where owner_user_id=? and state='REGISTERED')", Boolean.class, userId));
+			+ "where owner_user_id=? and state='REGISTERED' and permanently_blocked_at is null)",
+			Boolean.class, userId));
 	}
 
 	public boolean surveyCompleted(long userId) {
@@ -73,7 +74,8 @@ public class MemberAccessRepository {
 			+ "then s.settings_version end),0), "
 			+ "max(case when k.synced_settings_version>0 and k.synced_settings_version<=s.settings_version "
 			+ "then k.synced_settings_version end) from user_setting s left join keyring k "
-			+ "on k.owner_user_id=s.user_id and k.state='REGISTERED' where s.user_id=?",
+			+ "on k.owner_user_id=s.user_id and k.state='REGISTERED' and k.permanently_blocked_at is null "
+			+ "where s.user_id=?",
 			(rs, row) -> new SettingsVersions(rs.getLong(1), rs.getObject(2, Long.class)), userId);
 	}
 
@@ -127,7 +129,8 @@ public class MemberAccessRepository {
 			+ "and p.drinking_frequency is not null and p.completed_at is not null and " + AGE_SELECTED
 			+ " and s.user_id=u.id and s.completed_at is not null and a.status='SUCCEEDED' "
 			+ "and us.settings_version>0 and exists (select 1 from keyring k where k.owner_user_id=u.id "
-			+ "and k.state='REGISTERED' and k.synced_settings_version=us.settings_version))",
+			+ "and k.state='REGISTERED' and k.permanently_blocked_at is null "
+			+ "and k.synced_settings_version=us.settings_version))",
 			Boolean.class, userId, java.sql.Date.valueOf(adultBefore)));
 	}
 

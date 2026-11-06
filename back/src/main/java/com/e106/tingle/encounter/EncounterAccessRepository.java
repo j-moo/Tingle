@@ -27,7 +27,8 @@ public class EncounterAccessRepository {
 
 	public void requireOwnedRegisteredDevice(long userId, long deviceId) {
 		var devices = jdbc.query("select id from keyring where id=? and owner_user_id=? "
-			+ "and state='REGISTERED' for update", (result, row) -> result.getLong(1), deviceId, userId);
+			+ "and state='REGISTERED' and permanently_blocked_at is null for update",
+			(result, row) -> result.getLong(1), deviceId, userId);
 		if (devices.isEmpty()) {
 			throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND);
 		}

@@ -117,6 +117,12 @@ public class MemberWithdrawalCleanup {
 	}
 
 	private void deleteMemberData(long userId, Instant now) {
+		if (exists("lost_withdrawal_request")) {
+			jdbc.update("delete from lost_case_command where case_id in "
+				+ "(select case_id from lost_withdrawal_request where user_id=?)", userId);
+			jdbc.update("delete from lost_withdrawal_request where user_id=?", userId);
+			jdbc.update("delete from lost_reauthentication where user_id=?", userId);
+		}
 		jdbc.update("update operator_audit set target_service_case_id=null,reason=null where target_service_case_id in "
 			+ "(select id from service_case where requester_user_id=?)", userId);
 		jdbc.update("delete from service_case_history where service_case_id in "

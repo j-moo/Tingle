@@ -46,11 +46,14 @@ public class Keyring {
 	@Column(length = 128)
 	private String credentialPublicKey;
 	private Instant credentialRevokedAt;
+	// Independent of ownership/credentials: reset, rejoin or key reinstatement never revives a lost device.
+	private Instant permanentlyBlockedAt;
 	private UUID ownerGeneration;
 	// Device-authenticated counter. Unknown legacy rows stay null until a signed epoch-zero challenge/proof.
 	private Long ownershipEpoch;
 
 	public void confirmOwnershipEpoch(long epoch) {
+		requireNotPermanentlyBlocked();
 		if (epoch < 0 || (ownershipEpoch == null ? epoch != 0 : ownershipEpoch != epoch)) {
 			throw new IllegalStateException("Device ownership epoch is unconfirmed");
 		}
@@ -74,6 +77,7 @@ public class Keyring {
 
 	/** 현재 소유가 없는 사전 등록 기기만 연결한다. 과거 ACK를 새 소유자의 ACK로 넘기지 않는다. */
 	public void register(long userId, UUID generation) {
+		requireNotPermanentlyBlocked();
 		if (userId <= 0 || state != KeyringState.UNBOUND || ownerUserId != null) {
 			throw new IllegalStateException("Device is already bound");
 		}
@@ -86,6 +90,7 @@ public class Keyring {
 
 	/** 검증된 기기 초기화 증명 뒤에만 해제한다. 영구 식별자·기기 인증키는 보존한다. */
 	public void releaseAfterVerifiedReset(UUID expectedGeneration) {
+		requireNotPermanentlyBlocked();
 		if (state != KeyringState.REGISTERED || !Objects.equals(ownerGeneration, expectedGeneration)
 			|| expectedGeneration == null) {
 			throw new IllegalStateException("Reset ownership changed");
@@ -99,10 +104,17 @@ public class Keyring {
 
 	/** 현재 소유 세대와 서명·최신 설정 버전을 확인한 서비스만 호출한다. */
 	public void acknowledgeSettings(long settingsVersion, Instant now) {
+		requireNotPermanentlyBlocked();
 		if (state != KeyringState.REGISTERED || ownerGeneration == null || settingsVersion <= 0) {
 			throw new IllegalStateException("Device cannot acknowledge settings");
 		}
 		syncedSettingsVersion = settingsVersion;
 		syncedAt = Objects.requireNonNull(now);
+	}
+
+	private void requireNotPermanentlyBlocked() {
+		if (permanentlyBlockedAt != null) {
+			throw new IllegalStateException("Device is permanently blocked");
+		}
 	}
 }

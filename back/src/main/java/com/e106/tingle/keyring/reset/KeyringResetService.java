@@ -175,8 +175,12 @@ public class KeyringResetService {
 		users.findByIdForUpdate(userId).filter(user -> user.getStatus() == UserStatus.ACTIVE)
 			.orElseThrow(() -> new BusinessException(ErrorCode.SESSION_REVOKED));
 		requireSession(userId, family);
-		return devices.findByIdForUpdate(deviceId)
+		Keyring device = devices.findByIdForUpdate(deviceId)
 			.orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
+		if (device.getPermanentlyBlockedAt() != null) {
+			throw new BusinessException(ErrorCode.KEYRING_PERMANENTLY_BLOCKED);
+		}
+		return device;
 	}
 
 	private void requireSession(long userId, UUID family) {
