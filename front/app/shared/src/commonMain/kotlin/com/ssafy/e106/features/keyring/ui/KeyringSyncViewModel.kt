@@ -247,17 +247,22 @@ class KeyringSyncViewModel(private val api: KeyringSyncRepository, private val s
         }
         show(id, SyncPhase.Issuing)
         val recoveringAck = ticket.ack != null || ticket.complete
-        var run = unwrap(if (recoveringAck) api.get(id, requireNotNull(ticket.identity).syncRunId)
-            else api.create(id, ticket.createKey, SyncChallengeBody(requireNotNull(ticket.deviceNonce))), owner, stamp)
+        val issued = if (recoveringAck) api.get(id, requireNotNull(ticket.identity).syncRunId)
+            else api.create(id, ticket.createKey, SyncChallengeBody(requireNotNull(ticket.deviceNonce)))
+        ensure(owner, stamp)
+        // BE257은 GET과 동일 발급 재시도에서도 구버전을 409로 거절한다. 네트워크 오류와 달리
+        // 이 확정 응답에서만 기존 실행을 교체하며 새 nonce·키로 최대 한 번 갱신한다.
+        if (issued.isStaleRejection()) { renewOrShowStale(); return }
+        var run = unwrap(issued, owner, stamp)
         check(KeyringSyncProtocol.valid(run, id))
         check(ticket.identity == null || ticket.identity == run.identity())
         // GET은 최초 발급 별칭의 서명을 돌려줄 수 있다. 전송용 서명은 같은 키/본문 POST에서만 받는다.
         if (!recoveringAck) check(KeyringSyncProtocol.signed(run, requireNotNull(ticket.deviceNonce)))
         ticket = ticket.copy(identity = run.identity())
         store.save(owner, ticket); ensure(owner, stamp)
-        // 미확인 ACK는 stale이어도 같은 증명/키로 먼저 결과를 확인한다.
-        // 성공 또는 아래의 확정 거절 전까지 최신 설정 전환으로 복구 기록을 덮어쓰지 않는다.
-        if (run.stale && (ticket.ack == null || ticket.complete)) { renewOrShowStale(); return }
+        // 기존 ON/OFF 실행은 409 대신 200/stale:true를 반환할 수 있다. 이미 구버전임이
+        // 확정됐으므로 이전 BLE/ACK를 반복하지 않는다. 결과 불명의 네트워크 오류는 위에서 기록을 보존한다.
+        if (run.stale) { renewOrShowStale(); return }
         if (ticket.complete && run.state == "ACKED") {
             if (connected() && delivered[id] != delivery && mayRenew) renewOrShowStale()
             else show(id, if (!connected() && delivered[id]?.second != delivery.second) SyncPhase.WaitingConnection else SyncPhase.Confirmed)
@@ -291,11 +296,10 @@ class KeyringSyncViewModel(private val api: KeyringSyncRepository, private val s
         show(id, SyncPhase.Confirming)
         val ackResponse = api.ack(id, run.syncRunId, requireNotNull(ticket.ackKey), requireNotNull(ticket.ack))
         ensure(owner, stamp)
-        val ackError = (ackResponse as? ApiResult.Fail)?.error as? AppError.Server
         // 전송 중 서버 설정이 바뀌면 미완료 구버전 ACK는 409로 확정 거절된다.
         // 이때만 새 challenge/멱등키로 최신 설정을 발급한다. 오프라인·5xx 등 결과 불명은
         // 기존 ACK를 보존해 재시도하며, 같은 진행에서 갱신은 한 번으로 제한한다.
-        if (ackError?.status == 409 && ackError.code == "SYNC_VERSION_STALE") {
+        if (ackResponse.isStaleRejection()) {
             renewOrShowStale(); return
         }
         run = unwrap(ackResponse, owner, stamp)
@@ -318,6 +322,11 @@ class KeyringSyncViewModel(private val api: KeyringSyncRepository, private val s
         val elapsed = now() - Instant.parse(requireNotNull(ticket.nonceReceivedAt))
         elapsed >= 0.seconds && elapsed < 55.seconds
     }.getOrDefault(false)
+    /** 상태와 오류 코드가 모두 맞을 때만 실행 교체를 허용한다. 5xx·오프라인·다른409는 복구 자료를 유지한다. */
+    private fun ApiResult<KeyringSyncRun>.isStaleRejection(): Boolean {
+        val error = (this as? ApiResult.Fail)?.error as? AppError.Server
+        return error?.status == 409 && error.code == "SYNC_VERSION_STALE"
+    }
     private fun <T> unwrap(result: ApiResult<T>, owner: Long, stamp: Long): T {
         ensure(owner, stamp)
         return when (result) { is ApiResult.Ok -> result.value; is ApiResult.Fail -> throw SyncApiFailure(result.error) }

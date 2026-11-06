@@ -61,7 +61,15 @@ class HttpKeyringSyncRepository(private val client: HttpClient) : KeyringSyncRep
 
 /** JSON 숫자를 Long으로 유지한다. 서버 payload를 재인코딩하거나 FE 설정으로 대체하지 않는다. */
 internal object KeyringSyncProtocol {
+    const val PROFILE_FORMAT = "tingle-profile-storage-v1"
     private val codec = Base64.UrlSafe.withPadding(Base64.PaddingOption.ABSENT)
+    /** 형식과 길이만 검사하고 서버 바이트는 그대로 중계한다. 성향 해석·서명 검증은 보드 책임이다. */
+    private fun supportedPayload(run: KeyringSyncRun): Boolean = when (run.payloadFormat) {
+        "tingle-dev-settings-v1" -> run.payload == "AA" || run.payload == "AQ"
+        PROFILE_FORMAT -> encoded(run.payload, 196..196) &&
+            codec.decode(run.payload).take(4) == listOf(84, 80, 83, 49).map { it.toByte() }
+        else -> false
+    }
     private fun encoded(value: String, length: IntRange) = runCatching {
         Regex("[A-Za-z0-9_-]+").matches(value) && codec.decode(value).size in length && codec.encode(codec.decode(value)) == value
     }.getOrDefault(false)
@@ -76,7 +84,7 @@ internal object KeyringSyncProtocol {
             ?.also { require(validDeviceNonce(it)) } ?: error("Missing device challenge")
     }
     fun signed(run: KeyringSyncRun, deviceNonce: String): Boolean = run.deviceNonce == deviceNonce && validDeviceNonce(deviceNonce) &&
-        run.payloadFormat == "tingle-dev-settings-v1" &&
+        supportedPayload(run) &&
         KeyringRegistrationProtocol.validEpoch(run.proofProtocolVersion, run.ownershipEpoch) &&
         run.serverProofProtocolVersion == (if (run.proofProtocolVersion == KeyringRegistrationProtocol.VERSION_2)
             "tingle-dev-settings-proof-v2" else "tingle-dev-settings-proof-v1") &&
@@ -97,7 +105,7 @@ internal object KeyringSyncProtocol {
         return (buildJsonObject {
             put("protocolVersion", 1); put("type", "SYNC_SETTINGS"); put("requestId", requestId)
             put("syncRunId", run.syncRunId); put("deviceId", run.deviceId); put("ownerGeneration", run.ownerGeneration)
-            // 서명 규격만 v2다. BLE 봉투 protocolVersion=1과 payloadFormat=v1은 바꾸지 않는다.
+            // BLE 봉투 버전은 1이다. payloadFormat은 서버가 선택한 ON/OFF 또는 성향 형식을 그대로 쓴다.
             run.ownershipEpoch?.let { put("ownershipEpoch", it) }
             put("settingsVersion", run.settingsVersion); put("payload", run.payload); put("payloadEncoding", run.payloadEncoding)
             put("payloadFormat", run.payloadFormat); put("payloadHash", run.payloadHash); put("nonce", run.nonce)

@@ -27,13 +27,22 @@ private class ProbeFixture : KeyringBle {
     var extraInfo = emptyMap<String, JsonElement>()
     var commandReply: ((JsonObject) -> JsonObject)? = null
     val commands = mutableListOf<String>()
+    // 보호 경로 실패와 계정 변경 대기를 제어하며 일반 RX 우회 여부를 기록한다.
+    var protect: suspend () -> Unit = {}
+    var protectedRequest = false
     val linkState = MutableStateFlow(BleLinkState.Ready)
     val link = object : BleConnection {
         override val state = linkState
+        override suspend fun prepareProtectedTransport() { commands += "PROTECT"; protect() }
+        override suspend fun exchangeProtected(request: ByteArray, maxResponseBytes: Int, responseTimeoutMillis: Long): ByteArray {
+            protectedRequest = true
+            try { return exchange(request, maxResponseBytes, responseTimeoutMillis) }
+            finally { protectedRequest = false }
+        }
         override suspend fun exchange(request: ByteArray, maxResponseBytes: Int, responseTimeoutMillis: Long): ByteArray {
             delayResponse()
             val input = Json.parseToJsonElement(request.decodeToString()).jsonObject
-            commands += input.getValue("type").jsonPrimitive.content
+            commands += (if (protectedRequest) "PROTECTED_" else "") + input.getValue("type").jsonPrimitive.content
             if (input["type"] != JsonPrimitive("GET_DEVICE_INFO")) commandReply?.let { return it(input).toString().encodeToByteArray() }
             return buildJsonObject {
                 put("protocolVersion", 1)
@@ -70,6 +79,68 @@ private class ProbeFixture : KeyringBle {
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class BleProbeViewModelTest {
+    /** 서버 응답을 중계하는 시험 봉투. 성향 계산이나 실제 Ed25519 검증을 대신하지 않는다. */
+    private fun profileRun() = KeyringSyncRun("11111111-1111-4111-8111-111111111111", "11111111-1111-4111-8111-111111111111",
+        4, "22222222-2222-4222-8222-222222222222", 12, 12, "PENDING", false,
+        kotlin.io.encoding.Base64.UrlSafe.withPadding(kotlin.io.encoding.Base64.PaddingOption.ABSENT)
+            .encode("TPS1".encodeToByteArray() + ByteArray(192)), "base64url", KeyringSyncProtocol.PROFILE_FORMAT,
+        "a".repeat(64), "A".repeat(43), "key-1", "tingle-device-proof-v1", "2026-11-06T00:00:00Z", null,
+        "2026-11-06T00:00:01Z", "tingle-dev-settings-proof-v1", "dev-ed25519-799e2999c648fda3", "A".repeat(43), "A".repeat(86))
+
+    private fun profilePort(run: KeyringSyncRun) = ProbeFixture().apply {
+        extraInfo = mapOf("supportedFunctions" to JsonArray(listOf("GET_SYNC_CHALLENGE", "SYNC_SETTINGS").map(::JsonPrimitive)),
+            "supportedPayloadFormats" to JsonArray(listOf(JsonPrimitive(run.payloadFormat))),
+            "profileStorageCharacteristic" to JsonPrimitive(BleProfileStorageInfo.CHARACTERISTIC),
+            "profileRequiresEncryption" to JsonPrimitive(true))
+        commandReply = { input -> buildJsonObject {
+            put("protocolVersion", 1); put("requestId", input.getValue("requestId"))
+            if (input["type"] == JsonPrimitive("GET_SYNC_CHALLENGE")) {
+                put("type", "SYNC_CHALLENGE"); put("deviceNonce", "A".repeat(43))
+            } else {
+                assertEquals(run.payload, input["payload"]?.jsonPrimitive?.content)
+                put("type", "SETTINGS_RESULT"); put("syncRunId", run.syncRunId)
+                put("settingsVersion", run.settingsVersion); put("payloadHash", run.payloadHash)
+                put("stored", true); put("applied", false); put("timeReady", false)
+                putJsonObject("proof") { put("protocolVersion", run.proofProtocolVersion); put("keyId", run.keyId); put("signature", "A".repeat(86)) }
+            }
+        } }
+    }
+
+    /** 페어링은 nonce보다 먼저, 성향 데이터는 보호 경로로만 전송한다. */
+    @Test fun profileUsesProtectedChannelAfterProtectionBeforeNonce() = runTest(dispatcher) {
+        val run = profileRun(); val port = profilePort(run); val vm = model(port)
+        vm.scan(); runCurrent(); vm.connect("a"); runCurrent()
+        assertEquals(run.deviceNonce, vm.syncChallenge("XIAO-test"))
+        assertTrue(port.commands.indexOf("PROTECT") < port.commands.indexOf("GET_SYNC_CHALLENGE"))
+        assertEquals(run.payloadHash, vm.syncSettings(run, "XIAO-test").ack.payloadHash)
+        assertEquals(1, port.commands.count { it == "PROTECTED_SYNC_SETTINGS" })
+        assertFalse("SYNC_SETTINGS" in port.commands)
+    }
+
+    /** 지원 정보 누락 또는 보호 실패는 일반 RX로 우회하지 않고 전송 전에 중단한다. */
+    @Test fun profileUnsupportedOrProtectionFailureNeverFallsBack() = runTest(dispatcher) {
+        for (unsupported in listOf(true, false)) {
+            val run = profileRun(); val port = profilePort(run)
+            if (unsupported) port.extraInfo = emptyMap()
+            else port.protect = { throw BleException(BleFailure.SecureTransportRequired) }
+            val vm = model(port); vm.scan(); runCurrent(); vm.connect("a"); runCurrent()
+            assertFails { vm.syncSettings(run, "XIAO-test") }
+            assertFalse(port.commands.any { "SYNC_SETTINGS" in it })
+            store.clear()
+        }
+    }
+
+    /** OS 보호 확인 대기 중 로그아웃하면 늦게 성공해도 이전 계정의 성향을 보내지 않는다. */
+    @Test fun accountChangeDuringProtectionCannotSendProfile() = runTest(dispatcher) {
+        val run = profileRun(); val port = profilePort(run); val gate = CompletableDeferred<Unit>()
+        val session = TestSession(OnboardingStatus.SYNC_PENDING); val vm = model(port, session)
+        vm.scan(); runCurrent(); vm.connect("a"); runCurrent()
+        port.protect = { withContext(NonCancellable) { gate.await() } }
+        val send = async { runCatching { vm.syncSettings(run, "XIAO-test") } }; runCurrent()
+        session.state.value = Session.SignedOut; runCurrent(); gate.complete(Unit); runCurrent()
+        assertTrue(send.await().isFailure); assertFalse(port.commands.any { "SYNC_SETTINGS" in it })
+    }
+
     /** 앱이 캐시한 연결 정보 대신 직전 기기 정보로 v2 전송 자격을 확인하는 회귀 검사. */
     @Test fun registrationV2RechecksDeviceAndPreservesUnownedProof() = runTest(dispatcher) {
         val port = ProbeFixture().apply {
