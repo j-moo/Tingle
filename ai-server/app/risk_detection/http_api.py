@@ -52,7 +52,7 @@ class Manifest(StrictModel):
 
 
 class Message(StrictModel):
-    sequence: int = Field(gt=0)
+    sequence: int = Field(gt=0, le=9223372036854775807)
     speaker: Literal["A", "B"]
     text: str = Field(min_length=1, max_length=4000)
     fresh: bool
@@ -87,7 +87,7 @@ class Payload(StrictModel):
 
 
 class Finding(StrictModel):
-    sequence: int = Field(gt=0)
+    sequence: int = Field(gt=0, le=9223372036854775807)
     category: Literal["FRAUD", "HARASSMENT", "THREAT", "OTHER"]
     noticeType: Literal["MONEY_REQUEST", "PERSONAL_INFO", "OFF_PLATFORM", "HARASSMENT"]
     audience: Literal["SENDER", "RECIPIENT", "BOTH"]
@@ -192,6 +192,9 @@ def create_router(authenticate: Callable, catalog: ReleaseCatalog | None = None,
                 raise _error(400, "INVALID_REQUEST")
         try:
             payload = Payload.model_validate(_json(bytes(raw)))
+        except (ValueError, TypeError, ValidationError, RecursionError):
+            raise _error(400, "INVALID_REQUEST") from None
+        try:
             if not releases.supports(payload.manifest):
                 raise _error(422, "POLICY_UNRESOLVED")
             messages = [message.model_dump() for message in payload.contextBundle]
