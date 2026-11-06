@@ -13,9 +13,11 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import java.time.LocalDate;
 import java.time.ZoneId;
+import java.util.Base64;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -52,6 +54,9 @@ class OnboardingIntegrationTest extends IntegrationTestSupport {
 
 	@Autowired
 	private UserRepository userRepository;
+
+	@Autowired
+	private PendingEmails pendingEmails;
 
 	// ---------- 가입 단계 ----------
 
@@ -221,21 +226,44 @@ class OnboardingIntegrationTest extends IntegrationTestSupport {
 	}
 
 	@Test
-	@DisplayName("개인정보 동의 전에는 이메일을 저장하지 않고, 동의 뒤 로그인부터 최신 값으로 저장한다")
+	@DisplayName("개인정보 동의 전에는 이메일을 DB에 저장하지 않고, 동의할 때 로그인에서 받은 값을 저장한 뒤 로그인마다 최신 값으로 바꾼다")
 	void loginStoresLatestEmailOnlyAfterPrivacyConsent() throws Exception {
 		String socialId = newSocialId();
 		JsonNode tokens = loginWithEmail(socialId, "first@example.com");
 		assertThat(emailOf(socialId)).isNull();
 
 		agree(tokens).andExpect(status().isOk());
-		loginWithEmail(socialId, "first@example.com");
 		assertThat(emailOf(socialId)).isEqualTo("first@example.com");
 
 		loginWithEmail(socialId, "second@example.com");
 		assertThat(emailOf(socialId)).isEqualTo("second@example.com");
 
-		loginWithEmail(socialId, null);
+		JsonNode latest = loginWithEmail(socialId, null);
 		assertThat(emailOf(socialId)).isNull();
+
+		// 이미 동의한 회원의 재전송은 메모리의 옛 값으로 덮지 않는다(다른 서버에 남은 대기 값 흉내)
+		pendingEmails.hold(userIdOf(latest), "stale@example.com", sessionOf(latest));
+		agree(latest).andExpect(status().isOk());
+		assertThat(emailOf(socialId)).isNull();
+	}
+
+	@Test
+	@DisplayName("다른 서버에 남은 이전 로그인의 대기 이메일은, 더 새로운 로그인 뒤 동의해도 저장하지 않는다")
+	void pendingEmailFromOlderLoginSessionIsNotStored() throws Exception {
+		String socialId = newSocialId();
+		JsonNode first = loginWithEmail(socialId, "old@example.com");
+		// 다른 서버에서 이메일 제공을 철회하고 다시 로그인 → 이 서버 메모리에는 첫 로그인의 값이 남은 상황
+		JsonNode second = loginWithEmail(socialId, null);
+		pendingEmails.hold(userIdOf(first), "old@example.com", sessionOf(first));
+
+		agree(second).andExpect(status().isOk());
+		assertThat(emailOf(socialId)).isNull();
+	}
+
+	private UUID sessionOf(JsonNode tokens) {
+		String payload = tokens.path("accessToken").asString().split("\\.")[1];
+		return UUID.fromString(jsonMapper.readTree(Base64.getUrlDecoder().decode(payload))
+			.path("sid").asString());
 	}
 
 	// ---------- 프로필 ----------
