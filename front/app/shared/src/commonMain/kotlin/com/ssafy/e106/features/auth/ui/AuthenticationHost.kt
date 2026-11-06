@@ -28,6 +28,7 @@ import com.ssafy.e106.core.auth.SessionStore
 import com.ssafy.e106.core.network.AppError
 import com.ssafy.e106.core.ui.theme.AppSpacing
 import com.ssafy.e106.features.startup.ui.StartupScreen
+import com.ssafy.e106.features.onboarding.ui.KeyringPermissionGate
 import com.ssafy.e106.features.onboarding.ui.OnboardingRoute
 import kotlinx.coroutines.launch
 import org.koin.compose.koinInject
@@ -63,7 +64,8 @@ fun AuthenticationHost(
             Session.Restoring -> StartupScreen()
             Session.SignedOut -> SocialLoginRoute(snackbar)
             is Session.SignedIn -> when {
-                !current.needsAgreement() -> signedIn(current)
+                // 약관 다음부터는 키링 연결 권한이 있어야 앱을 쓸 수 있다. 권한 안내 시트를 모든 화면 위에 얹는다(✕ = 로그아웃)
+                !current.needsAgreement() -> KeyringPermissionGate(current.userId, onLogout = { scope.launch { auth.logout() } }) { signedIn(current) }
                 current.needsSignupAgreement() && !passedLogin -> StartupScreen()   // 위 자동 로그아웃이 끝날 때까지
                 // 로그인 직후 약관: 로그인 화면 위에 시트로. ✕ · 뒤로 가기 = 로그아웃
                 // 약관 개정으로 다시 동의하는 기존 회원은 이미 로그인한 사람이라 뒤에 로그인 화면 대신 시작 화면

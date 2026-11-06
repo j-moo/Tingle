@@ -39,12 +39,14 @@ fun OnboardingRoute(
     managedKeyringConnection: Boolean = false,
 ) {
     val state by model.state.collectAsStateWithLifecycle()
-    val canSkip = profileAccess.canSkipKeyring(session)
-    // 등록 전 계정도 개발 앱에서 실물 통신을 확인한다. 실제 귀속은 별도 확인창 수락과 서버 검증 뒤에만 진행한다.
-    // 계정/가입 단계 변경 시 진입 상태를 버린다. 연결은 서비스 호스트가 있으면 그 생명주기를 따른다.
-    val canSync = profileAccess.canSyncKeyring(session)
-    // 가입 입력이 끝나 SYNC_PENDING이 되면 연결/동기화 안내를 연다. 실제 탐색은 OS 권한 이후에 진행한다.
-    var openBleProbe by rememberSaveable(session.userId, session.status) { mutableStateOf(canSync) }
+    // 키링 등록(KEYRING_REQUIRED) · 첫 동기화(SYNC_PENDING) 단계의 키링 연결 화면은 운영 앱 · 개발 앱이 같다.
+    // 실제 귀속은 등록 확인창 수락과 서버 검증 뒤에만 진행한다. 계정/가입 단계가 바뀌면 진입 상태를 버린다.
+    val keyringStep = !session.isReady &&
+        (session.status == OnboardingStatus.KEYRING_REQUIRED || session.status == OnboardingStatus.SYNC_PENDING)
+    // 가입 입력이 끝나 SYNC_PENDING이 되면 연결/동기화 화면을 바로 연다. 권한은 로그인 직후 권한 시트에서 받았다.
+    var openBleProbe by rememberSaveable(session.userId, session.status) {
+        mutableStateOf(!session.isReady && session.status == OnboardingStatus.SYNC_PENDING)
+    }
     val canManage = profileAccess.canManageProfile(session)
     var manageProfile by rememberSaveable(session.userId, session.status, session.isReady) { mutableStateOf(false) }
     var openSurvey by rememberSaveable(session.userId, session.status, session.isReady) { mutableStateOf(false) }
@@ -53,24 +55,20 @@ fun OnboardingRoute(
     var openSettings by rememberSaveable(session) { mutableStateOf(false) }
     val canSettings = settingsAccess.allowed(session)
     when {
+        // 연결 화면을 로딩 분기보다 먼저 둔다. 등록 뒤 가입 단계가 바뀌는 순간 로딩 화면이 끼면 연결 화면이 빠지면서 BLE 연결이 끊긴다
+        // managedKeyringConnection 은 개발 앱 서비스 호스트에서만 true — 기기 진단도 그때만 보인다
+        keyringStep && openBleProbe -> ConnectedKeyringSetupRoute({ openBleProbe = false }, managedConnection = managedKeyringConnection,
+            diagnostics = managedKeyringConnection)
         state.session != session -> OnboardingPanel(stringResource(Res.string.onboarding_title)) { Text(stringResource(Res.string.onboarding_loading)) }
-        (canSkip || canSync) && openBleProbe -> ConnectedKeyringSetupRoute({ openBleProbe = false }, managedConnection = managedKeyringConnection)
         canSettings && openSettings -> ConnectedSettingsRoute(session, { openSettings = false }, showKeyringSync = managedKeyringConnection)
         canSurvey && openSurvey -> SurveyRoute(session, { openSurvey = false })
         canManage && manageProfile -> ProfileManagementRoute(session, { manageProfile = false })
         !session.isReady && session.status == OnboardingStatus.PROFILE_REQUIRED -> ProfileRoute(session)
-        else -> {
-            val screen = @Composable {
-                OnboardingScreen(state, model::check, model::submit, model::load, model::refresh, model::logout,
-                canManageProfile = canManage, onManageProfile = { if (canManage) manageProfile = true },
-                canOpenSurvey = canSurvey, onOpenSurvey = { if (canSurvey) openSurvey = true },
-                canOpenSettings = canSettings, onOpenSettings = { if (canSettings) openSettings = true },
-                onBleProbe = if (canSkip || canSync) ({ openBleProbe = true }) else null)
-            }
-            // 키링 단계: 권한 안내 시트를 먼저 얹는다(필수 미허용이면 다음 불가, 닫으면 로그아웃)
-            if (!session.isReady && session.status == OnboardingStatus.KEYRING_REQUIRED) KeyringPermissionGate(session.userId, model::logout, screen)
-            else screen()
-        }
+        else -> OnboardingScreen(state, model::check, model::submit, model::load, model::refresh, model::logout,
+            canManageProfile = canManage, onManageProfile = { if (canManage) manageProfile = true },
+            canOpenSurvey = canSurvey, onOpenSurvey = { if (canSurvey) openSurvey = true },
+            canOpenSettings = canSettings, onOpenSettings = { if (canSettings) openSettings = true },
+            onBleProbe = if (keyringStep) ({ openBleProbe = true }) else null)
     }
 }
 

@@ -33,7 +33,7 @@ import org.koin.compose.koinInject
 import org.koin.compose.viewmodel.koinViewModel
 
 // Keyrings는 서버의 등록 목록을 확인하는 경로이며 BLE 등록/초기화 경로와 구분한다.
-internal enum class ServicePage { Home, Proposals, Menu, Chats, Safety, Report, AiConsent, Profile, Survey, Settings, Help, Permissions, Keyrings, BleProbe, KeyringReset, Preparing }
+internal enum class ServicePage { Home, Proposals, Menu, Chats, Safety, Report, AiConsent, Profile, Survey, Settings, Help, Keyrings, BleProbe, KeyringReset, Preparing }
 
 /** 서버의 가입 완료 여부와 개발 화면 진입을 분리한다. 개발 진입으로 Session을 READY로 바꾸지 않는다. */
 @Composable fun SignedInServiceHost(session: Session.SignedIn, access: ProposalAccess = koinInject(),
@@ -46,6 +46,7 @@ internal enum class ServicePage { Home, Proposals, Menu, Chats, Safety, Report, 
     var consentFromChat by rememberSaveable(session.userId) { mutableStateOf(false) }
     val pendingPush by pushes.pending.collectAsStateWithLifecycle()
     var help by rememberSaveable { mutableStateOf(HelpGuideKind.Terms) }
+    val openNotificationSettings = rememberOpenNotificationSettings()
     // 키링 정보를 홈/마이 어느 쪽에서 열었는지 보존해 같은 메뉴로 돌아간다.
     var keyringFromMenu by rememberSaveable(session.userId) { mutableStateOf(false) }
     var resetDeviceId by rememberSaveable(session.userId) { mutableStateOf<Long?>(null) }
@@ -87,7 +88,7 @@ internal enum class ServicePage { Home, Proposals, Menu, Chats, Safety, Report, 
         return
     }
     if (state.session != session) return
-    if (page in listOf(ServicePage.Home, ServicePage.Menu, ServicePage.Help, ServicePage.Permissions, ServicePage.Preparing))
+    if (page in listOf(ServicePage.Home, ServicePage.Menu, ServicePage.Help, ServicePage.Preparing))
         ProfileBackHandler(page != ServicePage.Home || !session.isReady) {
             if (page == ServicePage.Home) { model.leave(); opened = false } else go(ServicePage.Home)
         }
@@ -138,7 +139,7 @@ internal enum class ServicePage { Home, Proposals, Menu, Chats, Safety, Report, 
                 }
                 // 진단 메뉴는 개발 앱 전용이다. 서버 가입 상태/소유 관계를 변경하지 않는다.
                 // 개발 등록 시험도 서버 권한을 그대로 사용하며 가입 완료 계정의 기존 기기를 임의 해제하지 않는다.
-                ServicePage.BleProbe -> if (access.development) ConnectedKeyringSetupRoute({ go(ServicePage.Keyrings) }, managedConnection = true)
+                ServicePage.BleProbe -> if (access.development) ConnectedKeyringSetupRoute({ go(ServicePage.Keyrings) }, managedConnection = true, diagnostics = true)
                 ServicePage.Menu -> AccountMenuScreen(state.account, onAction = { action -> when (action) {
                     AccountMenuAction.Refresh -> model.account()
                     AccountMenuAction.Home -> go(ServicePage.Home)
@@ -148,7 +149,8 @@ internal enum class ServicePage { Home, Proposals, Menu, Chats, Safety, Report, 
                     AccountMenuAction.Profile -> go(ServicePage.Profile)
                     AccountMenuAction.Survey -> go(ServicePage.Survey)
                     AccountMenuAction.Matching -> go(ServicePage.Settings)
-                    AccountMenuAction.Permissions -> go(ServicePage.Permissions)
+                    // 한 번 거절된 알림은 앱이 다시 켤 수 없어 휴대폰 설정의 이 앱 알림 화면으로 바로 보낸다
+                    AccountMenuAction.Permissions -> openNotificationSettings()
                     AccountMenuAction.Keyring -> { keyringFromMenu = true; go(ServicePage.Keyrings) }
                     AccountMenuAction.Logout -> logoutPrompt = true
                     AccountMenuAction.Terms, AccountMenuAction.Privacy, AccountMenuAction.Support, AccountMenuAction.Correction -> {
@@ -166,8 +168,6 @@ internal enum class ServicePage { Home, Proposals, Menu, Chats, Safety, Report, 
                     HelpGuideAction.Reload -> model.guide(help)
                     HelpGuideAction.Open -> state.guide?.openUrl?.let { if (runCatching { uri.openUri(it) }.isFailure) model.guideOpenFailed() }
                 } })
-                // 알림·BLE 권한은 실제 OS 상태를 관찰하며 서버 동의와 구분한다.
-                ServicePage.Permissions -> ConnectedDevicePermissionsRoute(onBack = { go(ServicePage.Menu) })
                 ServicePage.Preparing -> OnboardingPanel(stringResource(Res.string.proposals_not_connected)) {
                     AppButton(stringResource(Res.string.proposals_return), onClick = { go(ServicePage.Home) })
                 }

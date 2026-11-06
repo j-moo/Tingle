@@ -26,13 +26,9 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalInspectionMode
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
@@ -42,6 +38,8 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import com.ssafy.e106.core.ui.components.AppButton
 import com.ssafy.e106.core.ui.components.AppButtonVariant
+import com.ssafy.e106.core.ui.components.KeyringPebbleColors
+import com.ssafy.e106.core.ui.components.drawKeyringPebble
 import com.ssafy.e106.core.ui.theme.AppColors
 import com.ssafy.e106.core.ui.theme.AppSpacing
 import com.ssafy.e106.core.ui.theme.screenPaddingValues
@@ -50,7 +48,6 @@ import com.ssafy.e106.resources.onboarding_keyring_body
 import com.ssafy.e106.resources.onboarding_keyring_buy
 import com.ssafy.e106.resources.onboarding_keyring_find
 import com.ssafy.e106.resources.onboarding_keyring_no
-import com.ssafy.e106.resources.onboarding_keyring_search
 import com.ssafy.e106.resources.onboarding_keyring_title
 import com.ssafy.e106.resources.onboarding_link_failed
 import com.ssafy.e106.resources.onboarding_logout
@@ -58,17 +55,9 @@ import com.ssafy.e106.resources.onboarding_refresh
 import com.ssafy.e106.resources.onboarding_retry
 import org.jetbrains.compose.resources.stringResource
 
-private object Pebble {
-    val Light = Color(0xFFFFFDF8)
-    val Body = Color(0xFFF1ECE1)
-    val Shade = Color(0xFFE5DDCD)
-    val Ring = Color(0xFFB9B2A3)
-    val Signal = Color(0xFFA8C8B3)                        // 민트 — 키링 불빛 · 신호
-}
-
 /**
  * 가입 키링 단계 첫 화면(시안 02): 가운데 조약돌 키링에서 신호가 퍼지고, 그 아래 제목 · 안내, 맨 아래 키링 찾기 · 구매 안내.
- * [onFind] 가 없으면(운영 앱 — 아직 사용자용 등록 연결 전) 버튼을 "준비 중"으로 막는다. 개발 앱은 키링 연결 화면을 연다.
+ * [onFind] 는 키링 연결 화면을 연다(운영 앱 · 개발 앱 같음). 없으면(Preview 등) 버튼만 막는다.
  */
 @Composable
 internal fun KeyringIntro(
@@ -101,8 +90,8 @@ internal fun KeyringIntro(
                 error?.let { OnboardingError(it) }
                 if (linkFailed) OnboardingError(stringResource(Res.string.onboarding_link_failed))
                 Spacer(Modifier.weight(1f))
-                AppButton(stringResource(if (onFind != null) Res.string.onboarding_keyring_find else Res.string.onboarding_keyring_search),
-                    Modifier.fillMaxWidth(), enabled = onFind != null && !busy, onClick = { onFind?.invoke() })
+                AppButton(stringResource(Res.string.onboarding_keyring_find), Modifier.fillMaxWidth(), enabled = onFind != null && !busy,
+                    onClick = { onFind?.invoke() })
                 purchaseUrl?.let { url ->
                     // 큰 글자에서 "구매하기"가 쪼개지지 않게 넘치면 다음 줄로
                     FlowRow(horizontalArrangement = Arrangement.Center, itemVerticalAlignment = Alignment.CenterVertically) {
@@ -130,20 +119,17 @@ internal fun KeyringIntro(
 /** 아이보리 조약돌 키링 + 고리 + 민트 불빛, 바깥으로 퍼지는 신호 세 겹(장식이라 읽지 않음) */
 @Composable
 private fun SignalPebble(modifier: Modifier = Modifier) {
-    val wave by rememberInfiniteTransition().animateFloat(0f, 1f, infiniteRepeatable(tween(2600, easing = LinearEasing), RepeatMode.Restart))
+    // 프리뷰는 화면이 멈출 때까지 기다렸다 찍으므로 무한 애니메이션이면 끝나지 않는다. 프리뷰에선 한 장면으로 고정
+    val anim = if (LocalInspectionMode.current) null
+        else rememberInfiniteTransition().animateFloat(0f, 1f, infiniteRepeatable(tween(2600, easing = LinearEasing), RepeatMode.Restart))
     Canvas(modifier) {
+        val wave = anim?.value ?: 0.3f                     // 그리기 단계에서만 읽는다
         val c = center
         val maxR = size.minDimension / 2
         repeat(3) { i ->
             val t = (wave + i / 3f) % 1f
-            drawCircle(Pebble.Signal.copy(alpha = 0.9f * (1 - t)), radius = maxR * (0.32f + 0.68f * t), center = c, style = Stroke(1.5.dp.toPx()))
+            drawCircle(KeyringPebbleColors.Signal.copy(alpha = 0.9f * (1 - t)), radius = maxR * (0.32f + 0.68f * t), center = c, style = Stroke(1.5.dp.toPx()))
         }
-        val w = maxR * 0.62f; val h = w * 0.82f
-        val topLeft = Offset(c.x - w / 2, c.y - h / 2 + 6.dp.toPx())
-        drawCircle(Pebble.Ring, radius = w * 0.11f, center = Offset(c.x, topLeft.y - w * 0.06f), style = Stroke(2.5.dp.toPx()))   // 고리
-        drawOval(Color.Black.copy(alpha = 0.08f), topLeft + Offset(0f, 5.dp.toPx()), Size(w, h))                                     // 그림자
-        drawOval(Brush.radialGradient(listOf(Pebble.Light, Pebble.Body, Pebble.Shade), center = topLeft + Offset(w * 0.35f, h * 0.3f), radius = w * 0.85f),
-            topLeft, Size(w, h))
-        drawCircle(Pebble.Signal, radius = 3.5.dp.toPx(), center = Offset(c.x, topLeft.y + h * 0.56f))                              // 불빛
+        drawKeyringPebble(c, maxR * 0.62f)
     }
 }

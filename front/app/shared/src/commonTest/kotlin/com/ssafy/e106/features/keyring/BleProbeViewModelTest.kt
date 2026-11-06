@@ -228,6 +228,15 @@ class BleProbeViewModelTest {
         assertNotNull(vm.state.value.status); assertNull(vm.state.value.status?.batteryPercent)
         assertEquals(0, session.refreshes); assertEquals(OnboardingStatus.KEYRING_REQUIRED, (session.state.value as Session.SignedIn).status)
     }
+    @Test fun scanReportsWhetherItStarted() = runTest(dispatcher) {
+        val vm = model(ProbeFixture())
+        assertTrue(vm.scan())                                   // 화면은 true 일 때만 "찾았다"로 친다
+        assertFalse(vm.scan())                                  // 이미 찾는 중
+        runCurrent(); vm.connect("a"); assertTrue(vm.state.value.busy)
+        assertFalse(vm.scan())                                  // 연결 중에는 시작하지 않는다
+        val signedOut = TestSession(OnboardingStatus.KEYRING_REQUIRED).apply { state.value = Session.SignedOut }
+        assertFalse(model(ProbeFixture(), signedOut).scan())
+    }
     @Test fun leavingClosesConnectionAndClearsDeviceDetails() = runTest(dispatcher) {
         val port = ProbeFixture(); val vm = model(port)
         vm.scan(); runCurrent(); vm.connect("a"); runCurrent(); vm.leave(); runCurrent()

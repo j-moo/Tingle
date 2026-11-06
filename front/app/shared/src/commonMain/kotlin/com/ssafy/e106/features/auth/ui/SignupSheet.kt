@@ -35,6 +35,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.ssafy.e106.core.ui.theme.AppColors
 import com.ssafy.e106.core.ui.theme.AppSpacing
+import com.ssafy.e106.features.profile.ui.NoBackHandling
 import com.ssafy.e106.features.profile.ui.ProfileBackHandler
 import com.ssafy.e106.resources.Res
 import com.ssafy.e106.resources.agreement_sheet_close
@@ -49,7 +50,8 @@ fun SignupSheet(onClose: () -> Unit, background: @Composable () -> Unit, animate
     val shown = remember { MutableTransitionState(!animate).apply { targetState = true } }   // animate=false: 처음부터 올라온 상태(정지 Preview 용)
     ProfileBackHandler(enabled = true, onBack = onClose)
     Box(Modifier.fillMaxSize()) {
-        Box(Modifier.clearAndSetSemantics {}) { background() }   // 가려진 뒤 화면을 TalkBack이 읽거나 초점을 주지 않게
+        // 가려진 뒤 화면은 TalkBack이 읽지 않고 뒤로 가기도 가져가지 않는다(뒤로 가기 = 시트 닫기 = 로그아웃)
+        Box(Modifier.clearAndSetSemantics {}) { NoBackHandling { background() } }
         AnimatedVisibility(shown, enter = fadeIn()) {
             Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.4f))
                 .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {}.clearAndSetSemantics {})   // 뒤 로그인 화면 터치 막기

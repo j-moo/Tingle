@@ -98,7 +98,6 @@ private fun ResponsiveExample(screen: String) {
             deviceLabel = "시험 키링", ownershipConfirmed = true, connected = true, pendingRecordCount = 0),
             {}, {}, {}, {})
         "account" -> AccountMenuScreen(AccountMenuState(load = AccountMenuLoad.Ready, nickname = "화면 확인"), {})
-        "permissions" -> DevicePermissionsScreen(DevicePermissionsState(), {})
         "keyringWaiting" -> OnboardingScreen(OnboardingState(
             session = Session.SignedIn(1, OnboardingStatus.KEYRING_REQUIRED, false), purchaseUrl = "https://tingle.test/shop"),
             { _, _ -> }, {}, {}, {}, {})
@@ -117,7 +116,7 @@ class AdditionalResponsiveDeviceTest(private val screen: String, private val wid
     companion object {
         @JvmStatic @Parameterized.Parameters(name = "{0}-{1}x{2}-font{3}")
         fun cases(): List<Array<Any>> = listOf("login", "agreements", "lifestyle", "details", "age",
-            "proposal", "report", "matching", "reset", "account", "permissions", "keyringWaiting", "permissionSheet").flatMap { screen ->
+            "proposal", "report", "matching", "reset", "account", "keyringWaiting", "permissionSheet").flatMap { screen ->
             listOf(arrayOf(screen, 320, 480, 2f), arrayOf(screen, 640, 320, 1.3f),
                 arrayOf(screen, 800, 1280, 1.3f))
         }
@@ -140,8 +139,7 @@ class AdditionalResponsiveDeviceTest(private val screen: String, private val wid
                 "matching" -> listOf("키링 관리")
                 "reset" -> listOf("키링 초기화하기")
                 "account" -> listOf("로그아웃")
-                "permissions" -> listOf("상태 다시 확인")
-                "keyringWaiting" -> listOf("키링 찾기 · 준비 중", "구매하기", "가입 상태 다시 확인", "로그아웃")
+                "keyringWaiting" -> listOf("키링 찾기", "구매하기", "가입 상태 다시 확인", "로그아웃")
                 "permissionSheet" -> listOf("접근 권한 안내", "앱 설정 열기")
                 else -> listOf("로그아웃")
             }
