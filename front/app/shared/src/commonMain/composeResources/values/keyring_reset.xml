@@ -41,7 +41,9 @@
     <string name="reset_recovering">진행하던 초기화를 확인하고 있어요</string>
     <string name="reset_recovering_help">앱을 다시 열었거나 연결이 끊겼어요. 같은 키링인지 확인한 뒤 기존 작업의 결과를 조회해요.</string>
     <string name="reset_records_unknown">미전송 만남 기록 확인이 필요해요</string>
-    <string name="reset_records_unknown_help">기록을 확인하기 전에는 초기화를 시작할 수 없어요.</string>
+    <string name="reset_records_unknown_help">키링에 서버로 보내지 않은 만남 기록이 있을 수 있어요. 현재는 기록 개수를 확인할 수 없어요.</string>
+    <string name="reset_records_unknown_delete_help">계속하려면 미전송 기록 삭제에 별도로 동의해 주세요. 키링에 남아 있는 미전송 기록은 삭제되며 복구할 수 없어요. 서버에 이미 저장된 기록은 유지돼요.</string>
+    <string name="reset_records_unknown_delete_accept">개수를 확인할 수 없는 미전송 만남 기록의 삭제에 동의해요.</string>
     <string name="reset_records_refresh">미전송 기록 다시 확인</string>
     <string name="reset_records_empty">미전송 만남 기록이 없어요</string>
     <string name="reset_records_empty_help">서버에 이미 저장된 만남 기록은 이 초기화로 삭제하지 않아요.</string>

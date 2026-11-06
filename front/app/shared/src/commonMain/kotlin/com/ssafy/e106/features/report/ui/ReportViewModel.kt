@@ -105,7 +105,9 @@ class ReportViewModel(private val api: ReportRepository, private val chats: Chat
         val access = chats.room(room)
         if (!valid(stamp, owner)) return
         if(access is ApiResult.Fail || (access as ApiResult.Ok).value.let { it.chatRoomId != room || it.status != "ACTIVE" || !it.canRead || Instant.parse(it.expiresAt) <= Instant.parse(it.serverTime) }) {
-            mutable.update { it.copy(error = (access as? ApiResult.Fail)?.error, ui = it.ui.copy(canReport = false, evidence = emptyList(), selectedIds = emptySet())) }; return
+            val failure = (access as? ApiResult.Fail)?.error
+            mutable.update { it.copy(error = failure, ui = it.ui.copy(canReport = false, evidence = emptyList(), selectedIds = emptySet(),
+                evidenceLoad = EvidenceLoad.Failed, accessRetryAvailable = failure != null && !failure.revokesChat())) }; return
         }
         val roomRecord = (access as ApiResult.Ok).value
         expiry?.cancel()
@@ -114,13 +116,29 @@ class ReportViewModel(private val api: ReportRepository, private val chats: Chat
             if (mutable.value.owner == owner && mutable.value.room == room) {
                 // 제출 영수증 복구는 허용하되 종료된 대화 본문은 즉시 숨긴다.
                 if (!writing) { epoch++; job?.cancel() }
-                mutable.update { it.copy(busy = writing, ui = it.ui.copy(canReport = false, evidence = emptyList(), selectedIds = emptySet())) }
+                mutable.update { it.copy(busy = writing, ui = it.ui.copy(canReport = false, evidence = emptyList(), selectedIds = emptySet(), accessRetryAvailable = false)) }
             }
         }
         // 메시지를 못 받아도 증거 미첨부 신고는 계약상 가능하다. 방 권한은 위에서 확인했다.
-        mutable.update { it.copy(ui = it.ui.copy(canReport = true)) }
+        mutable.update { it.copy(ui = it.ui.copy(canReport = true, accessRetryAvailable = false)) }
         when(val page = chats.messages(room, next)) {
             is ApiResult.Ok -> if(valid(stamp, owner)) {
+                // 메시지 조회가 지연되는 동안 나가기·차단이 발생할 수 있다. 본문 공개 직전에 권한을 다시 확인한다.
+                // 기존 요청의 영수증 복구와 별개이며, 서버가 최신 권한을 확인하지 못하면 본문을 보류한다.
+                val latest = chats.room(room)
+                if(!valid(stamp, owner)) return
+                if(latest is ApiResult.Fail || (latest as ApiResult.Ok).value.let {
+                    it.chatRoomId != room || it.status != "ACTIVE" || !it.canRead ||
+                        Instant.parse(it.expiresAt) <= Instant.parse(it.serverTime)
+                }) {
+                    cursor = null
+                    val failure = (latest as? ApiResult.Fail)?.error
+                    mutable.update { it.copy(error = failure,
+                        ui = it.ui.copy(canReport = false, evidence = emptyList(), selectedIds = emptySet(),
+                            evidenceLoad = EvidenceLoad.Failed, hasMoreEvidence = false,
+                            accessRetryAvailable = failure != null && !failure.revokesChat())) }
+                    return
+                }
                 cursor = page.value.nextCursor
                 val evidence = page.value.items.map { ReportEvidence(it.messageId, room.toString(), it.sender == "ME", it.text, it.createdAt) }
                 mutable.update { it.copy(ui = it.ui.copy(evidenceLoad = EvidenceLoad.Ready,
@@ -128,7 +146,9 @@ class ReportViewModel(private val api: ReportRepository, private val chats: Chat
             }
             is ApiResult.Fail -> if(valid(stamp, owner)) mutable.update { it.copy(error = page.error,
                 ui = it.ui.copy(canReport = !page.error.revokesChat(), evidenceLoad = EvidenceLoad.Failed,
-                    evidence = if(page.error.revokesChat()) emptyList() else it.ui.evidence)) }
+                    evidence = if(page.error.revokesChat()) emptyList() else it.ui.evidence,
+                    // 본문 접근이 사라지면 이전에 골랐던 증거 ID도 더 이상 제출하지 않는다.
+                    selectedIds = if(page.error.revokesChat()) emptySet() else it.ui.selectedIds)) }
         }
     }
     fun reason(value: ReportReason) { edit { copy(reason = value) } }

@@ -12,6 +12,11 @@ class KeyringResetPresentationTest {
         assertFalse(confirmation.canConfirm)
         assertFalse(confirmation.copy(pendingRecordCount = -1).canConfirm)
         assertTrue(confirmation.copy(pendingRecordCount = 0).canConfirm)
+        val explicit = confirmation.copy(recordChoice = ResetRecordChoice.Delete, recordDeletionAccepted = true)
+        assertTrue(explicit.canConfirm)
+        assertNull(explicit.pendingRecordCount)
+        assertFalse(explicit.copy(accepted = false).canConfirm)
+        assertFalse(explicit.copy(pendingRecordCount = -1).canConfirm)
     }
 
     @Test fun deletingUnsentRecordsRequiresBothIndependentConsents() {

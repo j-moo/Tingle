@@ -40,12 +40,16 @@ fun ConnectedProposalRoute(session: Session.SignedIn, onHome: () -> Unit, onProf
         if (reason.accessLost) reason.context?.let(model::revokeProfile)
     }
     DisposableEffect(reasonModel) { onDispose { reasonModel.bind(null) } }
+    // NavHost 이동으로 컴포지션만 제거되어도 자동 조회를 멈춘다. ViewModel 정리와 화면 이탈은 다르다.
+    DisposableEffect(model) { onDispose { model.pause() } }
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { model.resume() }
     LifecycleEventEffect(Lifecycle.Event.ON_STOP) { model.pause() }
     if (state.session != session) return
-    fun leave(action: () -> Unit) { if (!state.busy) { model.pause(); action() } }
+    // 자동 GET은 이동을 막는 사용자 작업이 아니다. 이탈 시 pause/refresh가 취소와 응답 무효화를 맡는다.
+    val navigationBlocked = state.busy && !state.refreshingResult
+    fun leave(action: () -> Unit) { if (!navigationBlocked) { model.pause(); action() } }
     ProfileBackHandler(true) {
-        if (!state.busy) if (state.storageIssue || state.page == ProposalPageMode.List) leave(onHome) else model.refresh()
+        if (!navigationBlocked) if (state.storageIssue || state.page == ProposalPageMode.List) leave(onHome) else model.refresh()
     }
     // 저장소 복구 전에는 목록/푸시가 새 결정을 열지 않는다. 나가기는 허용하고 재조회만 제공한다.
     if (state.storageIssue) {
@@ -97,12 +101,13 @@ fun ConnectedProposalRoute(session: Session.SignedIn, onHome: () -> Unit, onProf
                     } }
                 }
                 ProposalPageMode.Result -> state.result?.let { result ->
-                    ProposalDecisionScreen(if (state.busy) result.copy(stage = ProposalDecisionStage.Checking) else result, onAction = { action ->
-                        if (!state.busy) when (action) {
-                            ProposalDecisionAction.CheckResult -> model.checkResult()
+                    // 자동 갱신 중에도 목록 복귀는 허용한다. 결과 재조회와 결정 관련 동작만 중복 요청을 막는다.
+                    ProposalDecisionScreen(if (state.busy && !state.refreshingResult) result.copy(stage = ProposalDecisionStage.Checking) else result, onAction = { action ->
+                        when (action) {
+                            ProposalDecisionAction.CheckResult -> if (!state.busy) model.checkResult()
                             ProposalDecisionAction.ProposalList -> model.refresh()
-                            ProposalDecisionAction.ReviewProfile -> model.reloadProfile()
-                            ProposalDecisionAction.OpenChat -> state.chatRoomId?.let { leave { onOpenChat(it) } }
+                            ProposalDecisionAction.ReviewProfile -> if (!state.busy) model.reloadProfile()
+                            ProposalDecisionAction.OpenChat -> if (!state.busy) state.chatRoomId?.let { leave { onOpenChat(it) } }
                         }
                     })
                 }

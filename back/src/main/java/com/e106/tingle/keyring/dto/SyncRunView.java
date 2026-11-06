@@ -9,7 +9,8 @@ public record SyncRunView(UUID syncRunId, UUID settingsSnapshotId, long deviceId
 	long settingsVersion, long currentSettingsVersion, KeyringSyncState state, boolean stale,
 	String payload, String payloadEncoding, String payloadFormat, String payloadHash, String nonce,
 	String keyId, String proofProtocolVersion, Instant createdAt, Instant ackedAt, Instant serverTime,
-	String serverProofProtocolVersion, String serverKeyId, String deviceNonce, String serverSignature) {
+	String serverProofProtocolVersion, String serverKeyId, String deviceNonce, String serverSignature,
+	Long ownershipEpoch) {
 	@Override
 	public String toString() {
 		return "SyncRunView[syncRunId=" + syncRunId + ", state=" + state + ", payload=REDACTED]";

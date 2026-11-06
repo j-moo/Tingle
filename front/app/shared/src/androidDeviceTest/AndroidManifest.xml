@@ -2,6 +2,20 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
     <application>
+        <!-- 차단/나가기 저장소 복구 실패 안내를 확인하는 별도 테스트 호스트. -->
+        <activity android:name="com.ssafy.e106.features.safety.SafetyRestoreTestActivity" android:exported="true"
+            android:theme="@android:style/Theme.Material.Light.NoActionBar" />
+        <!-- 신고 권한 재조회 실패 이후 실제 버튼 복구를 검사하는 서버와 분리된 호스트. -->
+        <activity android:name="com.ssafy.e106.features.report.ReportEvidenceTestActivity" android:exported="true"
+            android:theme="@android:style/Theme.Material.Light.NoActionBar" />
+        <!-- 초기화 복구 UI 전용. 실제 개발 앱 계정·키링에는 접근하지 않는다. -->
+        <activity android:name="com.ssafy.e106.features.keyring.KeyringResetTestActivity" android:exported="true"
+            android:theme="@android:style/Theme.Material.Light.NoActionBar" />
+        <!-- 화면 크기·큰 글씨 검사용 순수 UI 호스트. 배포 APK에는 포함되지 않는다. -->
+        <activity android:name="com.ssafy.e106.features.home.AdditionalResponsiveTestActivity" android:exported="true"
+            android:theme="@android:style/Theme.Material.Light.NoActionBar" android:windowSoftInputMode="adjustResize" />
+        <!-- 제안 대기 화면의 실제 자동 갱신·종료·방 이동을 확인하는 테스트 전용 호스트. -->
+        <activity android:name="com.ssafy.e106.features.proposals.ProposalPollingTestActivity" android:exported="true" />
         <!-- MainActivity와 동일한 adjustResize + edge-to-edge 조합으로 실제 IME 간격을 검사한다. -->
         <activity android:name="com.ssafy.e106.features.chat.ChatImeInsetsTestActivity" android:exported="true"
             android:theme="@android:style/Theme.Material.Light.NoActionBar" android:windowSoftInputMode="adjustResize" />

@@ -40,10 +40,53 @@ class KeyringAdditiveDdlTest {
 				+ "where table_schema=current_schema() and table_type='BASE TABLE'", Integer.class))
 				.isEqualTo(30);
 			assertThat(jdbc.queryForObject("select count(*) from information_schema.columns "
-				+ "where table_schema=current_schema()", Integer.class)).isEqualTo(272);
+				+ "where table_schema=current_schema()", Integer.class)).isEqualTo(274);
 			assertThat(jdbc.queryForObject("select count(*) from information_schema.table_constraints "
 				+ "where constraint_schema=current_schema() and constraint_type='FOREIGN KEY'", Integer.class))
 				.isZero();
+		});
+	}
+
+	@Test
+	void optionalResetSqlAddsOnlyItsSeventeenColumnTableBeyondTheJpaBaseline() throws Exception {
+		inDisposableSchema(jdbc -> {
+			jdbc.execute(new ClassPathResource("database/schema.sql").getContentAsString(StandardCharsets.UTF_8));
+			jdbc.execute(new ClassPathResource("database/keyring-reset-249.sql")
+				.getContentAsString(StandardCharsets.UTF_8));
+			assertThat(jdbc.queryForObject("select count(*) from information_schema.tables "
+				+ "where table_schema=current_schema() and table_type='BASE TABLE'", Integer.class)).isEqualTo(31);
+			assertThat(jdbc.queryForObject("select count(*) from information_schema.columns "
+				+ "where table_schema=current_schema()", Integer.class)).isEqualTo(291);
+			assertThat(jdbc.queryForObject("select count(*) from information_schema.columns "
+				+ "where table_schema=current_schema() and table_name='keyring_reset_run'", Integer.class))
+				.isEqualTo(17);
+			assertThat(jdbc.queryForList("select contype::text from pg_constraint where conrelid="
+				+ "'keyring_reset_run'::regclass", String.class)).containsExactlyInAnyOrder("p", "u", "u", "c");
+			assertThat(jdbc.queryForObject("select count(*) from keyring_reset_run", Long.class)).isZero();
+		});
+	}
+
+	@Test
+	void epochAdditionsPreserveLegacyOwnershipWithoutGuessingDeviceCounters() throws Exception {
+		inDisposableSchema(jdbc -> {
+			jdbc.execute(new ClassPathResource("database/schema.sql").getContentAsString(StandardCharsets.UTF_8));
+			jdbc.execute("alter table keyring drop column ownership_epoch");
+			jdbc.execute("alter table keyring_sync_run drop column ownership_epoch");
+			jdbc.update("insert into keyring(serial_number,firmware_version,owner_user_id,state,owner_generation,"
+				+ "synced_settings_version) values ('epoch-legacy','old',91,'REGISTERED',?,7)", UUID.randomUUID());
+			var before = jdbc.queryForMap("select * from keyring");
+			Long identity = jdbc.queryForObject("select 'keyring'::regclass::oid::bigint", Long.class);
+			String ddl = new ClassPathResource("database/keyring-ownership-epoch-249.sql")
+				.getContentAsString(StandardCharsets.UTF_8);
+			jdbc.execute(ddl);
+			jdbc.execute(ddl);
+			var after = jdbc.queryForMap("select * from keyring");
+			assertThat(after.remove("ownership_epoch")).isNull();
+			assertThat(after).isEqualTo(before);
+			assertThat(jdbc.queryForObject("select 'keyring'::regclass::oid::bigint", Long.class)).isEqualTo(identity);
+			assertThat(jdbc.queryForObject("select count(*) from information_schema.columns "
+				+ "where table_schema=current_schema() and column_name='ownership_epoch' and is_nullable='YES'",
+				Integer.class)).isEqualTo(2);
 		});
 	}
 

@@ -36,12 +36,12 @@ class PushBindingSchemaTest {
 	}
 
 	@Test
-	@DisplayName("설계 DDL은 30개 테이블·272개 컬럼과 nullable 연결 세대 두 칸을 만든다")
+	@DisplayName("설계 DDL은 30개 테이블·274개 컬럼과 nullable 연결 세대·기기 epoch를 보존한다")
 	void preservesApprovedLayoutAndNullableGenerationTypes() {
 		assertThat(jdbc.queryForObject("select count(*) from information_schema.tables "
 			+ "where table_schema='public' and table_type='BASE TABLE'", Integer.class)).isEqualTo(30);
 		assertThat(jdbc.queryForObject("select count(*) from information_schema.columns "
-			+ "where table_schema='public'", Integer.class)).isEqualTo(272);
+			+ "where table_schema='public'", Integer.class)).isEqualTo(274);
 		List<Map<String, Object>> columns = jdbc.queryForList("select column_name,data_type,is_nullable,column_default "
 			+ "from information_schema.columns where table_schema='public' and table_name='push_installation' "
 			+ "and column_name in ('binding_id','linked_at') order by column_name");
@@ -51,6 +51,12 @@ class PushBindingSchemaTest {
 		assertThat(columns.get(1)).containsEntry("column_name", "linked_at")
 			.containsEntry("data_type", "timestamp with time zone")
 			.containsEntry("is_nullable", "YES").containsEntry("column_default", null);
+		List<Map<String, Object>> epochs = jdbc.queryForList("select table_name,data_type,is_nullable,column_default"
+			+ " from information_schema.columns where table_schema='public' and column_name='ownership_epoch'");
+		assertThat(epochs).hasSize(2).allSatisfy(column -> assertThat(column).containsEntry("data_type", "bigint")
+			.containsEntry("is_nullable", "YES").containsEntry("column_default", null));
+		assertThat(epochs).extracting(column -> column.get("table_name"))
+			.containsExactlyInAnyOrder("keyring", "keyring_sync_run");
 	}
 
 	@Test

@@ -1,0 +1,25 @@
+plugins {
+	id 'com.android.application' version '9.1.1' apply false
+	id 'checkstyle'
+}
+
+allprojects {
+	layout.buildDirectory = rootProject.layout.projectDirectory.dir(
+		"../../build/apps/phone-test/${project == rootProject ? 'root' : project.name}")
+}
+
+checkstyle {
+	toolVersion = '10.26.1'
+	configFile = file('../virtual-keyring/config/checkstyle/naver-checkstyle-rules.xml')
+	configProperties = [suppressionFile: file('../virtual-keyring/config/checkstyle/naver-checkstyle-suppressions.xml').absolutePath]
+	maxWarnings = 0
+}
+
+tasks.register('checkstyleAll', Checkstyle) {
+	source fileTree('phone-app/src') { include '**/*.java' }
+	classpath = files()
+	reports {
+		xml.required = true
+		html.required = true
+	}
+}

@@ -21,7 +21,8 @@ public final class StoredAckProofVerifier {
 		String protocolVersion, String signature, String trustedPublicKey) {
 		if (run == null || run.getKeyringId() == null || run.getSettingsVersion() == null || keyId == null
 			|| !keyId.equals(run.getCredentialKeyId())
-			|| !KeyringProofTranscript.PROTOCOL_VERSION.equals(protocolVersion)
+			|| !(KeyringProofTranscript.PROTOCOL_VERSION.equals(protocolVersion)
+				|| KeyringProofTranscript.PROTOCOL_VERSION_2.equals(protocolVersion))
 			|| !protocolVersion.equals(run.getProtocolVersion())) {
 			return Optional.empty();
 		}
@@ -30,9 +31,12 @@ public final class StoredAckProofVerifier {
 			byte[] signatureBytes = KeyringProofTranscript.decodeBase64Url(signature, 64);
 			PublicKey trustedKey = KeyFactory.getInstance("Ed25519")
 				.generatePublic(new X509EncodedKeySpec(encodedKey));
-			KeyringProofTranscript transcript = KeyringProofTranscript.stored(keyId, deviceSerial,
-				run.getKeyringId(), run.getOwnerGeneration(), run.getSyncRunId(), run.getNonce(),
-				run.getSettingsVersion(), run.getPayloadHash());
+			KeyringProofTranscript transcript = KeyringProofTranscript.PROTOCOL_VERSION_2.equals(protocolVersion)
+				? KeyringProofTranscript.storedV2(keyId, deviceSerial, run.getKeyringId(), run.getOwnerGeneration(),
+					run.getSyncRunId(), run.getNonce(), run.getSettingsVersion(), run.getPayloadHash(),
+					run.getOwnershipEpoch() == null ? -1 : run.getOwnershipEpoch())
+				: KeyringProofTranscript.stored(keyId, deviceSerial, run.getKeyringId(), run.getOwnerGeneration(),
+					run.getSyncRunId(), run.getNonce(), run.getSettingsVersion(), run.getPayloadHash());
 			if (!verifier.verify(protocolVersion, transcript, signature, trustedKey)) {
 				return Optional.empty();
 			}

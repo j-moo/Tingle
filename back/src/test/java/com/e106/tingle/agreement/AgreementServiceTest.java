@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -15,15 +16,19 @@ import java.time.Instant;
 import java.time.ZoneId;
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.mockito.InOrder;
 
 import com.e106.tingle.agreement.dto.AgreementAnswer;
+import com.e106.tingle.auth.RefreshTokenRepository;
 import com.e106.tingle.global.error.BusinessException;
 import com.e106.tingle.global.error.ErrorCode;
+import com.e106.tingle.user.PendingEmails;
 import com.e106.tingle.user.User;
 import com.e106.tingle.user.UserRepository;
 
@@ -40,10 +45,13 @@ class AgreementServiceTest {
 	private UserRepository userRepository;
 	private Clock clock;
 	private AgreementService service;
+	private RefreshTokenRepository refreshTokens;
 
 	@BeforeEach
 	void setUp() {
 		repository = mock(UserConsentRepository.class);
+		refreshTokens = mock(RefreshTokenRepository.class);
+		given(refreshTokens.isSessionActive(any(), any())).willReturn(true);
 		userRepository = mock(UserRepository.class);
 		given(userRepository.findByIdForUpdate(1L)).willReturn(Optional.of(mock(User.class)));
 		clock = Clock.fixed(NOW, ZoneId.of("Asia/Seoul"));
@@ -51,7 +59,8 @@ class AgreementServiceTest {
 			new AgreementProperties.Item("TERMS", V, true, "https://example.com/terms"),
 			new AgreementProperties.Item("ADULT", V, true, null),
 			new AgreementProperties.Item("MARKETING", V, false, null)));
-		service = new AgreementService(properties, repository, userRepository, clock);
+		service = new AgreementService(properties, repository, userRepository, new PendingEmails(clock),
+			refreshTokens, clock);
 	}
 
 	@Test
@@ -97,9 +106,33 @@ class AgreementServiceTest {
 	@DisplayName("설정에 항목이 하나도 없으면 빈 목록으로 가입할 수 있다")
 	void emptyAnswersAllowedWhenNoItemsConfigured() {
 		AgreementService noItems = new AgreementService(new AgreementProperties(List.of()), repository,
-			userRepository, clock);
+			userRepository, new PendingEmails(clock), mock(RefreshTokenRepository.class), clock);
 
 		assertThatCode(() -> noItems.validate(List.of())).doesNotThrowAnyException();
+	}
+
+	@Test
+	@DisplayName("로그인 이메일 반영은 약관 동의와 같은 회원 행 잠금을 먼저 잡고 동의 여부를 본다")
+	void loginEmailChecksConsentUnderMemberLock() {
+		service.applyLoginEmail(1L, "a@example.com", UUID.randomUUID());
+
+		// 잠금 없이 동의 여부를 보면, 동시에 커밋되는 동의가 옛 대기 이메일을 DB에 저장한 뒤 이 로그인이 메모리만 바꿀 수 있다.
+		InOrder order = inOrder(userRepository, repository);
+		order.verify(userRepository).findByIdForUpdate(1L);
+		order.verify(repository).findByUserIdOrderByIdAsc(1L);
+		verify(userRepository, never()).updateEmail(any(Long.class), any());
+	}
+
+	@Test
+	@DisplayName("더 새로운 로그인에 밀려 끝난 세션의 로그인 이메일은 반영하지 않는다")
+	void loginEmailOfEndedSessionIsIgnored() {
+		UUID ended = UUID.randomUUID();
+		given(refreshTokens.isSessionActive(ended, 1L)).willReturn(false);
+
+		service.applyLoginEmail(1L, "old@example.com", ended);
+
+		verify(userRepository, never()).updateEmail(any(Long.class), any());
+		verify(repository, never()).findByUserIdOrderByIdAsc(1L);
 	}
 
 	@Test

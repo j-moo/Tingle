@@ -137,10 +137,16 @@ import org.koin.compose.viewmodel.koinViewModel
             val ordinals = state.definition?.questions?.filter { it.questionId in missing }?.map { it.ordinal }.orEmpty()
             if (ordinals.isNotEmpty()) Text(stringResource(Res.string.survey_api_missing, ordinals.joinToString(", ")))
         }
-        if (state.analysisResult?.status == AnalysisStatus.SUCCEEDED) Text(stringResource(Res.string.survey_api_stage_notice))
+        // 마이에서 결과를 다시 연 가입 완료 계정에는 남은 가입 준비가 있다고 안내하지 않는다.
+        // 분석 성공과 서비스 이용 가능 여부는 별개이며, 인증 기반의 서버 판정(isReady)을 그대로 따른다.
+        val signupReady = state.owner?.isReady == true
+        if (state.analysisResult?.status == AnalysisStatus.SUCCEEDED && !signupReady)
+            Text(stringResource(Res.string.survey_api_stage_notice))
         if (state.analysisResult?.status == AnalysisStatus.SUCCEEDED && state.analysisApplied == false)
             Text(stringResource(Res.string.survey_api_application_pending))
-        if (state.stageUnchanged) Text(stringResource(Res.string.survey_api_stage_unchanged))
+        // 조회 성공 후 같은 화면에 남아 있어도 READY는 정상 완료다. BLE 매칭 준비 완료를 뜻하지는 않는다.
+        if (state.stageUnchanged) Text(stringResource(if (signupReady)
+            Res.string.survey_api_signup_ready else Res.string.survey_api_stage_unchanged))
         if (state.exitRequested) Text(stringResource(Res.string.survey_api_leaving))
         state.stageError?.let { Text(it.message) }
         state.error?.let { Text(it.message) }

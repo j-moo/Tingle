@@ -1,6 +1,6 @@
 package com.ssafy.e106.features.keyring.ui
 
-// 검토용 화면 상태이며 BE 상태 코드나 BLE 명령 이름이 아니다. 확정 계약에서 별도로 매핑한다.
+// 화면 상태는 BE/BLE 코드와 분리한다. 실제 실행의 증명·소유 해제 결과를 ViewModel에서 매핑한다.
 enum class KeyringResetStage { Loading, Ready, Confirm, Disconnected, Preparing, Resetting, Unlinking, Partial, Recovering, Unknown, Failed, Complete, Unavailable }
 enum class KeyringResetAction { Back, OpenConfirm, Cancel, StartReset, UploadRecords, CheckConnection, CheckResult, Retry, Refresh, Close }
 enum class ResetRecordChoice { UploadFirst, Delete }
@@ -21,6 +21,7 @@ data class KeyringResetState(
     // 현재 펌웨어의 앱용 조회·선업로드는 미지원이다. 버전 이름만으로 켜지 않고 실제 연동 확인 후 전달한다.
     val recordQueryAvailable: Boolean = false,
     val recordUploadAvailable: Boolean = false,
+    val errorMessage: String? = null,
 ) {
     val displayStage: KeyringResetStage get() = when {
         stage == KeyringResetStage.Complete && !(deviceResetConfirmed && ownershipReleased) -> KeyringResetStage.Unknown
@@ -32,9 +33,9 @@ data class KeyringResetState(
     }
     val busy: Boolean get() = displayStage in listOf(KeyringResetStage.Loading, KeyringResetStage.Preparing,
         KeyringResetStage.Resetting, KeyringResetStage.Unlinking, KeyringResetStage.Recovering)
-    // 먼저 보내기는 초기화 허가가 아니다. 전송 후 기록을 다시 조회한 상태에서 동의받는다.
+    // 미확인도 별도 삭제 동의로만 해결한다. 선업로드 선택이나 잘못된 음수는 삭제 허가가 아니다.
     val recordsResolved: Boolean get() = pendingRecordCount == 0 ||
-        (pendingRecordCount != null && pendingRecordCount > 0 &&
+        ((pendingRecordCount == null || pendingRecordCount > 0) &&
             recordChoice == ResetRecordChoice.Delete && recordDeletionAccepted)
     val canConfirm: Boolean get() = displayStage == KeyringResetStage.Confirm && accepted && recordsResolved
     val canQueryRecords: Boolean get() = displayStage == KeyringResetStage.Confirm && recordQueryAvailable

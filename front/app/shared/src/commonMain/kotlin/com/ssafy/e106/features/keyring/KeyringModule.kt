@@ -16,9 +16,14 @@ val keyringModule = module {
     single { KeyringRegistrationStore(get()) }
     single<KeyringSyncRepository> { HttpKeyringSyncRepository(get()) }
     single { KeyringSyncStore(get()) }
+    // 초기화 복구도 계정별 내구 저장소를 사용한다. DI 등록만으로 서버/BLE 호출은 발생하지 않는다.
+    single<KeyringResetRepository> { HttpKeyringResetRepository(get()) }
+    single { KeyringResetStore(get()) }
+    single { KeyringResetRecovery(get(), get(), get(), get(), get()) }
+    viewModel { com.ssafy.e106.features.keyring.ui.KeyringResetViewModel(get(), get(), get(), get()) }
     single { com.ssafy.e106.features.keyring.data.KeyringSettingsChanges() }
     viewModel { KeyringSyncViewModel(get(), get(), get(), get(), changes = get()) }
-    viewModel { KeyringRegistrationViewModel(get(), get(), get(), get(), get()) }
+    viewModel { KeyringRegistrationViewModel(get(), get(), get(), get(), get(), get()) }
     viewModel { OwnedKeyringsViewModel(get(), get()) }
     viewModel { BleProbeViewModel(get(), get()) }
 }

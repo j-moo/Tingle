@@ -35,9 +35,13 @@
 }
 
 .clip {
+  display: block;
+  min-width: 0;
   flex: 1;
   aspect-ratio: 420 / 213;
   border-radius: 18px;
+  background: var(--neutral-150);
+  object-fit: cover;                     /* 16:9 컷을 칸 비율에 맞춰 위아래 조금 잘라 채움 */
 }
 .clip:nth-child(2) {
   transform: translateY(70px);

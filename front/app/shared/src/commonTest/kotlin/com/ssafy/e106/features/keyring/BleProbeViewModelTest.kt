@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModelStore
 import com.ssafy.e106.core.auth.*
 import com.ssafy.e106.core.ble.*
 import com.ssafy.e106.features.keyring.ui.*
+import com.ssafy.e106.features.keyring.data.*
 import com.ssafy.e106.features.onboarding.TestSession
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
@@ -22,18 +23,25 @@ private class ProbeFixture : KeyringBle {
     var scans = 0
     var currentId = "a"
     var finiteScan = false
+    // v2 검사에서 연결 이후 기기 정보가 바뀌는 상황과 실제 쓰기 전 재조회를 관찰한다.
+    var extraInfo = emptyMap<String, JsonElement>()
+    var commandReply: ((JsonObject) -> JsonObject)? = null
+    val commands = mutableListOf<String>()
     val linkState = MutableStateFlow(BleLinkState.Ready)
     val link = object : BleConnection {
         override val state = linkState
         override suspend fun exchange(request: ByteArray, maxResponseBytes: Int, responseTimeoutMillis: Long): ByteArray {
             delayResponse()
             val input = Json.parseToJsonElement(request.decodeToString()).jsonObject
+            commands += input.getValue("type").jsonPrimitive.content
+            if (input["type"] != JsonPrimitive("GET_DEVICE_INFO")) commandReply?.let { return it(input).toString().encodeToByteArray() }
             return buildJsonObject {
                 put("protocolVersion", 1)
                 put("requestId", if (wrongRequest) JsonPrimitive("wrong") else input.getValue("requestId"))
                 if (input["type"] == JsonPrimitive("GET_DEVICE_INFO")) {
                     put("type", "DEVICE_INFO"); put("deviceSerial", serial); put("firmwareVersion", "0.1.0-registration")
                     put("supportedFunctions", JsonArray(listOf(JsonPrimitive("GET_STATUS"))))
+                    extraInfo.forEach { (name, value) -> put(name, value) }
                 } else { put("type", "STATUS"); put("batteryPercent", JsonNull) }
             }.toString().encodeToByteArray()
         }
@@ -62,6 +70,48 @@ private class ProbeFixture : KeyringBle {
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class BleProbeViewModelTest {
+    /** 앱이 캐시한 연결 정보 대신 직전 기기 정보로 v2 전송 자격을 확인하는 회귀 검사. */
+    @Test fun registrationV2RechecksDeviceAndPreservesUnownedProof() = runTest(dispatcher) {
+        val port = ProbeFixture().apply {
+            extraInfo = mapOf("ownershipEpoch" to JsonPrimitive(1), "ownerState" to JsonPrimitive("UNOWNED"),
+                "supportedFunctions" to JsonArray(listOf(JsonPrimitive("GET_REGISTRATION_PROOF"))),
+                "supportedProofProtocolVersions" to JsonArray(listOf(JsonPrimitive("tingle-device-proof-v2"))))
+            commandReply = { request -> buildJsonObject {
+                put("protocolVersion", 1); put("requestId", request.getValue("requestId")); put("type", "REGISTRATION_PROOF")
+                put("deviceSerial", serial); put("ownershipEpoch", 1); put("ownerState", "UNOWNED")
+                putJsonObject("proof") { put("protocolVersion", "tingle-device-proof-v2"); put("keyId", "key-1"); put("signature", "A".repeat(86)) }
+            } }
+        }
+        val vm = model(port); vm.scan(); runCurrent(); vm.connect("a"); runCurrent()
+        val challenge = KeyringChallenge("11111111-1111-4111-8111-111111111111", "A".repeat(43),
+            "2026-11-06T00:00:00Z", "tingle-device-proof-v2")
+        assertEquals(1L, vm.registrationProof(challenge, "XIAO-test").ownershipEpoch)
+        assertEquals(listOf("GET_DEVICE_INFO", "GET_DEVICE_INFO", "GET_REGISTRATION_PROOF"), port.commands)
+        port.extraInfo = port.extraInfo + ("ownerState" to JsonPrimitive("BOUND"))
+        assertFails { vm.registrationProof(challenge, "XIAO-test") }
+        assertEquals(1, port.commands.count { it == "GET_REGISTRATION_PROOF" })
+    }
+
+    @Test fun settingsV2DoesNotWriteAfterOwnershipEpochChanges() = runTest(dispatcher) {
+        val port = ProbeFixture().apply { extraInfo = mapOf("ownershipEpoch" to JsonPrimitive(1),
+            "ownerState" to JsonPrimitive("BOUND"), "supportedProofProtocolVersions" to JsonArray(listOf(JsonPrimitive("tingle-device-proof-v2")))) }
+        val vm = model(port); vm.scan(); runCurrent(); vm.connect("a"); runCurrent()
+        val run = KeyringSyncRun("11111111-1111-4111-8111-111111111111", "11111111-1111-4111-8111-111111111111",
+            4, "22222222-2222-4222-8222-222222222222", 1, 1, "PENDING", false, "AQ", "base64url", "tingle-dev-settings-v1",
+            "a".repeat(64), "A".repeat(43), "key-1", "tingle-device-proof-v2", "2026-11-05T12:00:00Z", null,
+            "2026-11-05T12:00:01Z", "tingle-dev-settings-proof-v2", "dev-ed25519-799e2999c648fda3", "A".repeat(43), "A".repeat(86), 1)
+        port.commandReply = { request -> buildJsonObject {
+            put("protocolVersion", 1); put("requestId", request.getValue("requestId")); put("type", "SETTINGS_RESULT")
+            put("syncRunId", run.syncRunId); put("settingsVersion", 1); put("payloadHash", run.payloadHash)
+            put("stored", true); put("applied", false); put("timeReady", false)
+            putJsonObject("proof") { put("protocolVersion", run.proofProtocolVersion); put("keyId", run.keyId); put("signature", "A".repeat(86)) }
+        } }
+        assertEquals("tingle-device-proof-v2", vm.syncSettings(run, "XIAO-test").ack.proof.protocolVersion)
+        port.extraInfo = port.extraInfo + ("ownershipEpoch" to JsonPrimitive(2))
+        assertFails { vm.syncSettings(run, "XIAO-test") }
+        assertEquals(1, port.commands.count { it == "SYNC_SETTINGS" })
+        assertEquals(3, port.commands.count { it == "GET_DEVICE_INFO" })
+    }
     private val dispatcher = StandardTestDispatcher()
     private val store = ViewModelStore()
     @BeforeTest fun before() { Dispatchers.setMain(dispatcher) }

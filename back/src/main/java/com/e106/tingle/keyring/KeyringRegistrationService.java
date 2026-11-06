@@ -72,8 +72,19 @@ public class KeyringRegistrationService {
 			|| !request.proof().keyId().equals(device.getCredentialKeyId())) {
 			throw new BusinessException(ErrorCode.INVALID_DEVICE_PROOF);
 		}
+		boolean epochBound = com.e106.tingle.keyring.proof.KeyringProofTranscript.PROTOCOL_VERSION_2
+			.equals(request.proof().protocolVersion());
+		if (epochBound ? request.ownershipEpoch() == null || request.ownershipEpoch() < 0
+			|| !"UNOWNED".equals(request.ownerState())
+			|| (device.getOwnershipEpoch() == null ? request.ownershipEpoch() != 0
+				: !device.getOwnershipEpoch().equals(request.ownershipEpoch()))
+			: (device.getOwnershipEpoch() != null && device.getOwnershipEpoch() > 0)
+				|| request.ownershipEpoch() != null || request.ownerState() != null) {
+			throw new BusinessException(ErrorCode.INVALID_DEVICE_PROOF);
+		}
 		String proofHash = verifier.verify(challenge, request.deviceSerial(), request.proof().keyId(),
-			request.proof().protocolVersion(), request.proof().signature(), device.getCredentialPublicKey())
+			request.proof().protocolVersion(), request.proof().signature(), device.getCredentialPublicKey(),
+			request.ownershipEpoch())
 			.orElseThrow(() -> new BusinessException(ErrorCode.INVALID_DEVICE_PROOF));
 		// 잠금 대기/서명 확인 중 기한을 넘긴 요청을 최초 시각으로 소급해 허용하지 않는다.
 		Instant now = clock.instant();
@@ -88,6 +99,9 @@ public class KeyringRegistrationService {
 			throw new BusinessException(ErrorCode.DEVICE_ALREADY_BOUND);
 		}
 		UUID generation = UUID.randomUUID();
+		if (epochBound) {
+			device.confirmOwnershipEpoch(request.ownershipEpoch());
+		}
 		device.register(userId, generation);
 		keyrings.saveAndFlush(device);
 		KeyringView result = reads.findOwned(userId).stream().filter(view -> view.deviceId() == device.getId())
@@ -129,6 +143,10 @@ public class KeyringRegistrationService {
 				byte[] bytes = value.getBytes(StandardCharsets.UTF_8);
 				hash.update(ByteBuffer.allocate(4).putInt(bytes.length).array());
 				hash.update(bytes);
+			}
+			if (request.ownershipEpoch() != null || request.ownerState() != null) {
+				hash.update(("\nEPOCH:" + request.ownershipEpoch() + ":" + request.ownerState())
+					.getBytes(StandardCharsets.UTF_8));
 			}
 			return HexFormat.of().formatHex(hash.digest());
 		} catch (NoSuchAlgorithmException exception) {

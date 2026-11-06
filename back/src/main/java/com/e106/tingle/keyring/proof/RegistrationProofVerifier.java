@@ -19,8 +19,14 @@ public final class RegistrationProofVerifier {
 	/** 신뢰키·증명 형식 불일치는 empty, 암호 실행 환경의 알고리즘 부재는 예외다. */
 	public Optional<String> verify(RegistrationChallenge challenge, String deviceSerial, String keyId,
 		String protocolVersion, String signature, String trustedPublicKey) {
+		return verify(challenge, deviceSerial, keyId, protocolVersion, signature, trustedPublicKey, null);
+	}
+
+	public Optional<String> verify(RegistrationChallenge challenge, String deviceSerial, String keyId,
+		String protocolVersion, String signature, String trustedPublicKey, Long ownershipEpoch) {
 		if (challenge == null || challenge.getExpiresAt() == null
-			|| !KeyringProofTranscript.PROTOCOL_VERSION.equals(protocolVersion)
+			|| !(KeyringProofTranscript.PROTOCOL_VERSION.equals(protocolVersion)
+				|| KeyringProofTranscript.PROTOCOL_VERSION_2.equals(protocolVersion))
 			|| !protocolVersion.equals(challenge.getProtocolVersion())) {
 			return Optional.empty();
 		}
@@ -29,8 +35,12 @@ public final class RegistrationProofVerifier {
 			byte[] signatureBytes = KeyringProofTranscript.decodeBase64Url(signature, 64);
 			PublicKey trustedKey = KeyFactory.getInstance("Ed25519")
 				.generatePublic(new X509EncodedKeySpec(encodedKey));
-			KeyringProofTranscript transcript = KeyringProofTranscript.registration(keyId, deviceSerial,
-				challenge.getChallengeId(), challenge.getNonce(), challenge.getExpiresAt().getEpochSecond());
+			KeyringProofTranscript transcript = KeyringProofTranscript.PROTOCOL_VERSION_2.equals(protocolVersion)
+				? KeyringProofTranscript.registrationV2(keyId, deviceSerial, challenge.getChallengeId(),
+					challenge.getNonce(), challenge.getExpiresAt().getEpochSecond(),
+					ownershipEpoch == null ? -1 : ownershipEpoch)
+				: KeyringProofTranscript.registration(keyId, deviceSerial, challenge.getChallengeId(),
+					challenge.getNonce(), challenge.getExpiresAt().getEpochSecond());
 			if (!verifier.verify(protocolVersion, transcript, signature, trustedKey)) {
 				return Optional.empty();
 			}

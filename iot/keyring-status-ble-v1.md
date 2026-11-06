@@ -1,5 +1,7 @@
 # 키링 상태 조회 BLE 명세 v1
 
+현재 통합 펌웨어는 `iot/src/main.c`·`iot/src/nus.c`에서 실행하며 빌드 파일은 `iot/build/zephyr.uf2`다. [빌드·서명 설정 안내](dev-settings-signing-handoff-v1.md)를 참고한다. 이 문서의 `0.1.0-registration` 및 고정 커밋 링크는 이전 시험 기준을 보존한 것이다.
+
 | 항목 | 내용 |
 | --- | --- |
 | 버전·변경일 | v1 초안 / 2026-11-04 · 등록 시험 펌웨어 대조 |

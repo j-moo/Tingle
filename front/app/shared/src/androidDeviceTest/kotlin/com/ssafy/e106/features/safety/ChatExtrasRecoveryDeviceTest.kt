@@ -39,6 +39,30 @@ class ChatExtrasRecoveryTestActivity : ComponentActivity() {
 
 class ChatExtrasRecoveryDeviceTest {
     @get:Rule val compose = createEmptyComposeRule()
+    /** 실제 추천 화면에서 실패 후 로딩이 풀리고 새 생성 없이 조회만 복구하는지 확인한다. */
+    @Test fun pollingFailureEnablesRetryAndDoesNotCreateAnotherJob() {
+        ActivityScenario.launch<ChatExtrasRecoveryTestActivity>(Intent(
+            InstrumentationRegistry.getInstrumentation().context,ChatExtrasRecoveryTestActivity::class.java)).use { scenario ->
+            compose.onNodeWithText("대화 주제 추천").performClick()
+            scenario.onActivity {
+                it.chats.roomFailure = null
+                it.api.result = ApiResult.Fail(AppError.Server(404,"RESOURCE_NOT_FOUND",""))
+            }
+            compose.onNodeWithText("다시 시도").performClick()
+            compose.onNodeWithText("질문 준비하기").performClick()
+            scenario.onActivity { it.api.result = ApiResult.Fail(AppError.Offline) }
+            compose.waitUntil(10_000) { compose.onAllNodesWithText("다시 시도").fetchSemanticsNodes().isNotEmpty() }
+            compose.onNodeWithText("다시 시도").assertIsEnabled()
+            scenario.onActivity {
+                assertEquals(1,it.api.requests)
+                it.api.result = ApiResult.Ok(IcebreakerResult("SUCCEEDED",listOf("하나","둘","셋"),"GENERAL_FALLBACK","v1"))
+            }
+            compose.onNodeWithText("다시 시도").performClick()
+            compose.onNodeWithText("하나").assertExists()
+            compose.onNodeWithText("다시 시도").assertDoesNotExist()
+            scenario.onActivity { assertEquals(1,it.api.requests) }
+        }
+    }
     @Test fun offlineQuestionsShowRetryAndRecoverWithoutLeavingScreen() {
         ActivityScenario.launch<ChatExtrasRecoveryTestActivity>(Intent(
             InstrumentationRegistry.getInstrumentation().context,ChatExtrasRecoveryTestActivity::class.java)).use { scenario ->

@@ -13,7 +13,9 @@ public final class KeyringProofVerifier {
 	/** 형식·서명 불일치는 false, JCA 실행 환경의 알고리즘 부재는 예외로 구분한다. */
 	public boolean verify(String protocolVersion, KeyringProofTranscript expectedTranscript,
 		String encodedSignature, PublicKey trustedPublicKey) {
-		if (!KeyringProofTranscript.PROTOCOL_VERSION.equals(protocolVersion) || expectedTranscript == null
+		if (!(KeyringProofTranscript.PROTOCOL_VERSION.equals(protocolVersion)
+			|| KeyringProofTranscript.PROTOCOL_VERSION_2.equals(protocolVersion)) || expectedTranscript == null
+			|| !protocolVersion.equals(expectedTranscript.protocolVersion())
 			|| !(trustedPublicKey instanceof EdECPublicKey key)
 			|| !"Ed25519".equals(key.getParams().getName())) {
 			return false;

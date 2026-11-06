@@ -93,6 +93,41 @@ internal class LifecycleSurveyServer : SurveyRepository by SurveyServer() {
 
 class SurveyLifecycleDeviceTest {
     @get:Rule val compose = createEmptyComposeRule()
+    /** 결과 재조회와 화면 재생성에서도 가입 완료/미완료 안내를 구분하며 새 분석은 만들지 않는다. */
+    @Test fun completedAccountDoesNotShowRemainingSignupNotice() {
+        val remaining = "가입 단계를 확인했어요. 아직 같은 단계예요. 남은 준비가 완료되면 다시 확인해 주세요."
+        val complete = "가입이 완료된 계정이에요. 돌아가서 서비스를 이용할 수 있어요."
+        val preparation = "매칭 준비가 끝났는지는 가입 단계에서 확인해 주세요. 키링 등록과 동기화가 남아 있을 수 있어요."
+        // signupCompleted=true 호환 응답도 인증 기반과 동일하게 처리해야 한다.
+        for (account in listOf(
+            Session.SignedIn(1, OnboardingStatus.READY, true),
+            Session.SignedIn(1, OnboardingStatus.SYNC_PENDING, true),
+            Session.SignedIn(1, OnboardingStatus.SURVEY_REQUIRED, false),
+        )) {
+            val f = SurveyLifecycleFixture()
+            f.session.state.value = account
+            f.server.base.apply {
+                persist("Q001", JsonPrimitive(4)); persist("Q002", JsonPrimitive("any"))
+                data = data.copy(status = "COMPLETED", completedAt = "2026-11-03T01:00:00Z")
+                analysisStatus = AnalysisStatus.SUCCEEDED
+                recoveryResponse = ApiResult.Ok(SurveyAccountRecovery(null, 11,
+                    AnalysisReceipt(21, 11, "a1", AnalysisStatus.SUCCEEDED), 21))
+            }
+            launch(f).use { s ->
+                repeat(2) { round ->
+                    if (round == 1) s.recreate()
+                    ready(s, SurveyPage.Completed)
+                    compose.onNodeWithText(if (account.isReady) complete else remaining).assertExists()
+                    compose.onNodeWithText(if (account.isReady) remaining else complete).assertDoesNotExist()
+                    if (account.isReady) compose.onNodeWithText(preparation).assertDoesNotExist()
+                    else compose.onNodeWithText(preparation).assertExists()
+                    assertEquals(0, f.server.base.analysisRequests)
+                    assertEquals(0, f.server.base.starts)
+                    assertEquals(0, f.server.base.completes)
+                }
+            }
+        }
+    }
     @Test fun submittedRecoveryShowsHeldResultAndSurvivesActivityRecreation() {
         val f = SurveyLifecycleFixture()
         f.server.base.apply {

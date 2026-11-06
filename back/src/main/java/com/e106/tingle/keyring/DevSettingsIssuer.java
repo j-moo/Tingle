@@ -38,8 +38,9 @@ public final class DevSettingsIssuer {
 		Instant time = now.truncatedTo(ChronoUnit.SECONDS);
 		var transcript = ServerSettingsTranscript.create(signer.keyId(), serial, run.getCredentialKeyId(),
 			run.getKeyringId(), run.getOwnerGeneration(), run.getSyncRunId(), run.getSettingsVersion(),
-			run.getPayloadFormat(), run.getPayload(), run.getNonce(), deviceNonce, time);
-		return new DevSettingsProof(ServerSettingsTranscript.PROTOCOL_VERSION, signer.keyId(), deviceNonce,
+			run.getPayloadFormat(), run.getPayload(), run.getNonce(), deviceNonce, time, run.getOwnershipEpoch());
+		return new DevSettingsProof(run.getOwnershipEpoch() == null ? ServerSettingsTranscript.PROTOCOL_VERSION
+			: ServerSettingsTranscript.PROTOCOL_VERSION_2, signer.keyId(), deviceNonce,
 			time, signer.sign(transcript));
 	}
 
