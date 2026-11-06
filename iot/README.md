@@ -1,6 +1,6 @@
 # Tingle 키링 펌웨어
 
-기준일: 2026-11-05. `iot/` 전체가 Seeed XIAO nRF52840용 **단일 Zephyr 펌웨어 프로젝트**다. 등록·설정 저장·통신 코드를 함께 빌드하며, 보드에 복사하는 파일은 **[build/zephyr.uf2](build/zephyr.uf2)** 하나다.
+기준일: 2026-11-06. `iot/` 전체가 Seeed XIAO nRF52840용 **단일 Zephyr 펌웨어 프로젝트**다. 등록·설정 저장·통신 코드를 함께 빌드하며, 보드에 복사하는 파일은 **[build/zephyr.uf2](build/zephyr.uf2)** 하나다.
 
 ## 폴더 구조
 
@@ -20,6 +20,7 @@ iot/
 │  ├─ request.c                      # 기기 정보·등록·설정·상태 요청 처리
 │  ├─ proof.c                        # 등록·STORED 증명과 공통 검증 처리
 │  ├─ settings_auth.c                # 서버 설정 서명·기기 challenge 검증
+│  ├─ profile.c                      # 성향·최소 프로필 저장 payload 검증 (연동 후보)
 │  ├─ reset.c                        # 초기화 인증·영속 저널·완료 증명·소유 순번
 │  ├─ board.c                        # 기기 식별 키·설정 NVS 연결·보드 상태 읽기
 │  ├─ engine.c                       # 합성 시험용 키링 간 처리·큐·중복 억제
@@ -44,6 +45,7 @@ iot/
 │  ├─ build-phone.ps1                # 실물 진단 APK 빌드·lint·Checkstyle
 │  ├─ monitor-board.py               # USB 시리얼 로그 확인
 │  ├─ sign-dev-settings.mjs          # 개발 설정 서명 검산 도구
+│  ├─ profile_payload.py             # 골든 스냅샷·최소 프로필 저장 codec 참조
 │  ├─ lab_server.py                  # 합성 시험용 로컬 수신 서버
 │  ├─ phone-test/                    # 실물 키링용 Android 진단 앱
 │  └─ virtual-keyring/               # Android 가상 키링 앱
@@ -93,9 +95,10 @@ Get-Content ./iot/build/firmware-manifest.json
 
 ## 현재 개발 빌드 범위
 
-- 기본 버전은 `0.3.0-dev-signed`다. 팀 서버 검증키는 `config/dev-settings-public-key.hex`, 키 ID는 `dev-ed25519-799e2999c648fda3`다. 서버 비밀키는 보드에 넣지 않는다.
+- 기본 버전은 `0.3.1-dev-signed`다. 팀 서버 검증키는 `config/dev-settings-public-key.hex`, 키 ID는 `dev-ed25519-799e2999c648fda3`다. 서버 비밀키는 보드에 넣지 않는다.
 - 실제 앱의 NUS JSON 기기 정보 조회·등록 challenge 서명·설정 검증/영구 저장·서명된 `STORED` 응답 경로를 포함한다.
 - 현재 개발 설정은 매칭 ON/OFF의 **1바이트 payload**다. 정상 저장 후 `LAB ENABLE` 없이 확장 광고·스캔을 제어한다. 전체 성향 적용·신뢰 시각 준비·실제 양방향 매칭 완료와는 구분한다.
+- `0.3.1`에는 `tingle-profile-storage-v1` 성향·최소 프로필 **저장 후보**도 추가했다. AI r2 파생값·네 값 상태, 나이/성별/희망 조건/사진 여부/흡연/음주/종교/알림 옵션을 196B로 받아 기존 서명·영구 저장·STORED 경로를 사용한다. 추가 암호화 특성 `6e400004...`에서 먼저 Read probe(`01`)를 성공시킨 후 같은 연결로 전송한다. 이름·생년월일·사진 원문·원본 설문을 넣지 않는다. 현재 FE/BE는 아직 1바이트 형식에 묶여 있어 아래 인계 문서의 공급/중계 변경이 필요하다. 이를 앱 종단이나 매칭 계산 완료로 표시하지 않는다.
 - `LAB ENABLE`, 바이너리 진단 앱, 가상 키링은 합성 시험 경로다. 이 경로의 통과를 실제 앱·서버의 만남 검증 완료로 보고하지 않는다.
 - 공통 UF2를 여러 보드에서 사용할 수 있다. 보드별 기존 식별 키는 유지하며, 공통 펌웨어 탑재와 서버의 기기 신뢰/소유 등록은 별개다. 보드 업데이트 때 초기화·전체 erase·키 재생성을 함께 실행하지 않는다.
 - 서버 서명으로 허가한 `GET_RESET_CHALLENGE` → `RESET_DEVICE` → `GET_RESET_RESULT` 경로를 추가했다. 삭제 착수 저널·증가한 `ownershipEpoch`를 먼저 저장하고, 소유 데이터·설정·페어링을 논리적으로 정리한 뒤 기기 서명 `CLEARED`를 저장한다. serial·기기 키·keyId는 보존하며 전원 차단 후 같은 작업을 복구한다. 상세 규격과 BE/FE 후속은 [BLE 계약 6절](keyring-app-ble-contract-v1.md#6-초기화등록-해제양도)과 해당 절의 구현 현황을 따른다.

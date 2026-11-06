@@ -81,6 +81,7 @@ struct kr_core {
 	struct kr_settings current;
 	struct kr_platform platform;
 	bool storage_error;
+	bool profile_transport_protected; /* Per-request RAM state; never part of NVS. */
 	bool stop_peer;
 	struct kr_peer_plan peer_after_stored;
 	struct kr_reset_record reset;

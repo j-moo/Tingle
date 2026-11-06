@@ -28,5 +28,5 @@ if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 & $Java -cp $buildRoot WireTest $fixture
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-& (Join-Path $PSScriptRoot 'test-registration.ps1') -Zig $Zig -TinyCrypt $TinyCrypt -Javac $Javac -Java $Java
+& (Join-Path $PSScriptRoot 'test-registration.ps1') -Zig $Zig -Python $Python -TinyCrypt $TinyCrypt -Javac $Javac -Java $Java
 exit $LASTEXITCODE

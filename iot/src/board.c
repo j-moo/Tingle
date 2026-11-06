@@ -1,5 +1,6 @@
 #include "board.h"
 #include "nus.h"
+#include "profile.h"
 #include "monocypher.h"
 #include "monocypher-ed25519.h"
 #include <errno.h>
@@ -193,7 +194,15 @@ static const char *authorize(void *ctx, const struct kr_settings *next,
 	if (error) {
 		return error;
 	}
-	if (next->payload[0]) {
+	bool matching = next->payload[0] != 0;
+	if (!strcmp(next->format, KR_PROFILE_STORAGE_FORMAT)) {
+		struct kr_profile_data profile;
+		if (!kr_profile_data_decode(next->payload, next->payload_size, &profile)) {
+			return "INVALID_SETTINGS";
+		}
+		matching = (profile.options & 1u) != 0;
+	}
+	if (matching) {
 		static const uint8_t uuid[] = {KR_DEV_DISCOVERY_UUID};
 		memcpy(plan->service_data, uuid, sizeof(uuid));
 		if (sys_csrand_get(plan->service_data + sizeof(uuid), KR_DEV_DISCOVERY_BYTES - sizeof(uuid))) {

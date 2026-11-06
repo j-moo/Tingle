@@ -2,7 +2,7 @@
 
 | 항목 | 내용 |
 | --- | --- |
-| 버전·변경일 | v0.1.6-draft / 2026-11-05 · FE 복구 상태·예시·완료 증명 보관·미전송 기록 미지원 범위 명시 |
+| 버전·변경일 | v0.1.7-draft / 2026-11-06 · 성향·최소 프로필 저장 후보와 BE/FE 적용 경계 추가 |
 | 작성자 | 김종무(IoT) |
 | 관련 Story | [S15P31E106-251](https://ssafy.atlassian.net/browse/S15P31E106-251) — 초기화·인증키 보존·완료 증명 재조회·복구. 기존 계약 근거: 224 |
 | 구현 후속 | 초기화 251·BE249·FE171, 등록·동기화 225, 매칭 226, 상태 조회 227, 기록 전달 228, 실물 통합 검증 230 |
@@ -11,7 +11,7 @@
 | 이번 테스트 | 별도 사용자 버튼이 없는 키링을 가정. 초기화·등록 해제·양도는 후속으로 분리 |
 | 문서 상태 | 로컬 협의 초안. 팀 공유 외부 원본의 위치·버전 연결과 관련 파트 승인 필요. 펌웨어 구현·실물 연동 완료를 뜻하지 않음 |
 
-**현재 빌드는 `0.3.0-dev-signed`, 통합 소스는 `iot/`, 보드에 복사할 파일은 `iot/build/zephyr.uf2`다.** 현재 설정 서명·저장 흐름과 빌드 방법은 [개발 설정 연동 안내](dev-settings-signing-handoff-v1.md)를 따른다. 초기화의 IoT 로컬 구현·검증 현황은 6.10절에 구분한다. 아래 `0.1.0-registration` 표기와 MR !172의 검증 결과는 이전 등록 전용 펌웨어의 기록이다. JSON 예시는 읽기 위한 들여쓰기다. 실제 전송은 JSON 한 줄 뒤에 LF를 붙이고, 문자열 값과 payload 원본 바이트는 보존한다.
+**현재 빌드는 `0.3.1-dev-signed`, 통합 소스는 `iot/`, 보드에 복사할 파일은 `iot/build/zephyr.uf2`다.** 현재 설정 서명·저장 흐름, 성향 저장 후보와 빌드 방법은 [개발 설정 연동 안내](dev-settings-signing-handoff-v1.md)를 따른다. 초기화의 IoT 로컬 구현·검증 현황은 6.10절에 구분한다. 아래 `0.1.0-registration` 표기와 MR !172의 검증 결과는 이전 등록 전용 펌웨어의 기록이다. JSON 예시는 읽기 위한 들여쓰기다. 실제 전송은 JSON 한 줄 뒤에 LF를 붙이고, 문자열 값과 payload 원본 바이트는 보존한다.
 
 ## 기준과 이번에 확인한 결정
 
@@ -25,7 +25,7 @@
 | 항목 | 확인한 내용 |
 | --- | --- |
 | 실물 후보 | 이전 USB 부팅·BLE 탐색에 사용한 Seeed XIAO nRF52840 Sense 1대. 부트로더 ID `Seeed_XIAO_nRF52840_Sense`, 버전 `0.6.1`. 시험 직전에 보드 사용 가능 여부와 현재 설치 버전을 확인한다. |
-| 앱 연동 이미지 | 현재 `0.3.0-dev-signed` / Zephyr 4.2.0 / `xiao_ble/nrf52840`. 빌드 산출물은 `iot/build/zephyr.uf2`. |
+| 앱 연동 이미지 | 현재 `0.3.1-dev-signed` / Zephyr 4.2.0 / `xiao_ble/nrf52840`. 빌드 산출물은 `iot/build/zephyr.uf2`. |
 | 확인 범위 | UF2 빌드 및 호스트에서 C·Java 서명 호환성 검증 통과. 기존 `Tingle-Lab` 검색은 별도 바이너리 펌웨어의 실물 기록이다. 등록용 UF2의 실물 탑재·앱 종단 연동은 미확인이다. |
 | 첫 합동 시험 | IoT는 XIAO·UF2·USB 로그, FE는 테스트 앱·BLE 로그, BE는 테스트 계정과 기기 공개키 등록을 준비한다. 15~20분으로 제안하며 일정은 FE·BE·IoT가 조율한다. |
 
@@ -332,6 +332,16 @@ POST /api/keyrings/{deviceId}/sync-runs/{syncRunId}/ack → 기기 저장 증명
 - 재연결 후 `DEVICE_INFO`의 `storedSettingsVersion`·`storedPayloadHash`를 서버 실행과 대조할 수 있다. 이 필드는 저장 상태를 나타낸다. 적용 실행·정책/규칙 버전·신뢰 시간 조회는 후속 계약이다.
 - 변경 즉시·수동·재연결·한국시간 자정 자동 동기화를 시도하되 자정 정시 완료는 보장하지 않는다. 재시작 후 신뢰 시간·설정 확인 전 새 매칭 대기, 기존 기록 보존. 단순 24시간 경과만으로 전체 중단하지 않는다.
 - 기존 계약의 ‘시간 다시 맞추기’도 시간 적용 결과를 확인해야 한다. 시간만 맞췄다는 이유로 설정 동기화까지 완료 표시하지 않는다. 독립 시간 요청/응답·기준 시각 인증 방식은 미정이며 휴대폰의 임의 시각을 신뢰 시각으로 확정하지 않는다.
+
+### 2026-11-06 성향·최소 프로필 저장 확장 후보
+
+`0.3.1-dev-signed`는 기존 1바이트 ON/OFF와 함께 `tingle-profile-storage-v1` 196B payload를 수신·검증·저장한다. 골든 벡터의 파생 성향과 value/unknown/any/missing, 최소 프로필/희망 조건/기기 옵션을 보존한다. 원본 설문·닉네임·생년월일·사진 원문·토큰을 포함하지 않는다.
+
+기존 SYNC_SETTINGS 외피, Ed25519 v1/v2 서명 원문, deviceNonce, 소유 epoch, STORED 검증을 유지한다. 새 format과 원본 payload의 hash를 실제 서버가 서명해야 한다. 현 BE 발급기/서명 생성기와 FE `signed()`는 아직 1바이트 형식에 묶여 있어 각 파트의 수정과 공동 검토가 필요하다. 바이트 계약·코드북 hash·개인 enum 매핑·정상/거부 사례와 수정 파일은 [설정 인계 문서](dev-settings-signing-handoff-v1.md)의 2026-11-06 절에 있다.
+
+DEVICE_INFO에는 supportedPayloadFormats, storedPayloadFormat, profileStored, storedPayloadBytes를 추가한다. 기기 저장 hash/버전과 STORED 증명을 확인하며 진단 boolean을 인증 증명으로 사용하지 않는다. 저장 완료와 성향 계산·만남 처리·READY는 분리한다. 새 형식의 matchingEnabled는 발견용 광고/스캔만 제어하고 실제 성향이나 개인 필드는 광고하지 않는다. 기존 NVS 레코드·영역·키와 초기화 동작은 유지한다.
+
+성향 payload는 추가 특성 `6e400004-b5a3-f393-e0a9-e50e24dcca9e`의 암호화된 Read/Write로 전송한다. 먼저 개인정보 없는 Read에서 `01`을 받아 같은 연결의 암호화를 확인한 뒤 nonce/서버 서명/프로필 Write를 진행한다. 응답은 기존 TX를 쓴다. 기존 RX의 profile 요청은 SECURE_TRANSPORT_REQUIRED로 거부한다. DEVICE_INFO의 profileStorageCharacteristic/profileRequiresEncryption으로 요구 사항을 알린다. 실제 Android/iOS의 암호화·bond·GATT cache 동작은 합동 시험으로 검증한다.
 
 ## 4. 키링 간 오프라인 매칭·진동·LED
 
