@@ -89,7 +89,8 @@ public class SecurityConfig {
 			return path.equals("/api/agreements") || path.equals("/actuator/health");
 		}
 		return HttpMethod.POST.matches(method)
-			&& (path.equals("/api/auth/token/refresh") || SOCIAL_LOGIN.matcher(path).matches());
+			&& (path.equals("/api/auth/token/refresh") || SOCIAL_LOGIN.matcher(path).matches()
+				|| path.matches("^/api/withdrawals/[0-9a-fA-F-]{36}/result$"));
 	}
 
 	/**

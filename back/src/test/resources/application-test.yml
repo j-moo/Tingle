@@ -5,6 +5,9 @@ spring:
       ddl-auto: create-drop
 
 app:
+  withdrawal:
+    scheduling-enabled: false
+    photo-cleanup-scheduling-enabled: false
   async-observation:
     enabled: false
   auth:

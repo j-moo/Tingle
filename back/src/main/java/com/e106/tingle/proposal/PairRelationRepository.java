@@ -13,10 +13,10 @@ public class PairRelationRepository {
 	private final ProposalRepository proposals;
 
 	public Optional<PairRelation> findById(long id) {
-		return proposals.findById(id).map(PairRelation::from);
+		return proposals.findById(id).filter(MatchProposal::hasMembers).map(PairRelation::from);
 	}
 
 	public List<PairRelation> findAllById(Iterable<Long> ids) {
-		return proposals.findAllById(ids).stream().map(PairRelation::from).toList();
+		return proposals.findAllById(ids).stream().filter(MatchProposal::hasMembers).map(PairRelation::from).toList();
 	}
 }

@@ -166,8 +166,8 @@ CREATE INDEX "ix_operator_audit_retention" ON "operator_audit" ("kind", "occurre
 -- 만남·제안·차단 관계 — 두 사람당 한 줄. 사람별 기록(만남 기록·수락/거절·차단)은 matching_participant에
 CREATE TABLE "matching" (
     "id" bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
-    "user_low_id" bigint NOT NULL,
-    "user_high_id" bigint NOT NULL,
+    "user_low_id" bigint,
+    "user_high_id" bigint,
     "met_at" timestamptz,
     "policy_version" varchar(30),
     "opportunity_expires_at" timestamptz,
@@ -179,12 +179,14 @@ CREATE TABLE "matching" (
     "legacy_state" jsonb,
     "chat_deletion_state" jsonb,
     "chat_external_cleanup_state" jsonb,
-    CONSTRAINT "pk_matching" PRIMARY KEY ("id")
+    CONSTRAINT "pk_matching" PRIMARY KEY ("id"),
+    CONSTRAINT "ck_matching_withdrawn_pair" CHECK ((user_low_id IS NOT NULL AND user_high_id IS NOT NULL)
+        OR (user_low_id IS NULL AND user_high_id IS NULL AND status='CLOSED'))
 );
 COMMENT ON TABLE "matching" IS '만남·제안·차단 관계 — 두 사람당 한 줄. 사람별 기록(만남 기록·수락/거절·차단)은 matching_participant에';
 COMMENT ON COLUMN "matching"."id" IS '매칭 ID — 두 사람당 한 줄. 별도 제안 번호 칸은 없음. 앱이 제안을 조회·수락·거절할 때도 이 번호로 가리킴';
-COMMENT ON COLUMN "matching"."user_low_id" IS '작은 쪽 회원 ID — 두 회원 번호 중 작은 쪽. 탈퇴하면 이 행 삭제';
-COMMENT ON COLUMN "matching"."user_high_id" IS '큰 쪽 회원 ID — 두 회원 번호 중 큰 쪽. 탈퇴하면 이 행 삭제';
+COMMENT ON COLUMN "matching"."user_low_id" IS '작은 쪽 회원 ID — 두 회원 번호 중 작은 쪽. 탈퇴 후 채팅 삭제 작업용 행은 양쪽 회원 참조를 비움';
+COMMENT ON COLUMN "matching"."user_high_id" IS '큰 쪽 회원 ID — 두 회원 번호 중 큰 쪽. 탈퇴 후 채팅 삭제 작업용 행은 양쪽 회원 참조를 비움';
 COMMENT ON COLUMN "matching"."met_at" IS '만남 시각 — 기기 기록을 검증해 확정한 만남 시각';
 COMMENT ON COLUMN "matching"."policy_version" IS '매칭 정책 버전 — 이 만남에 적용한 정책(대기 시간·응답 기한 등)의 버전 이름. 숫자 값은 서버 설정 파일(matching-policy/{버전}.json)에 있음';
 COMMENT ON COLUMN "matching"."opportunity_expires_at" IS '만남 기회 마감 — 만남의 기회 마감. 확정된 만남 시각과 당시 정책으로 고정';
@@ -823,7 +825,7 @@ CREATE TABLE "rule_audit" (
     "content_hash" varchar(64),
     "detail" jsonb,
     "reason" text,
-    "actor_id" bigint NOT NULL,
+    "actor_id" bigint,
     "occurred_at" timestamptz NOT NULL,
     CONSTRAINT "pk_rule_audit" PRIMARY KEY ("id")
 );
@@ -842,3 +844,46 @@ CREATE INDEX "ix_rule_audit_target" ON "rule_audit" ("target_id", "occurred_at")
 -- rule_release.created_by > users.id
 -- rule_channel.release_id >? rule_release.id
 -- rule_audit.actor_id > users.id
+
+-- Member withdrawal additive storage (268).
+CREATE TABLE IF NOT EXISTS withdrawal_cooldown (
+    provider varchar(16) NOT NULL,
+    account_hash varchar(64) NOT NULL,
+    rejoin_available_at timestamptz NOT NULL,
+    PRIMARY KEY (provider, account_hash)
+);
+CREATE INDEX IF NOT EXISTS ix_withdrawal_cooldown_expiry ON withdrawal_cooldown(rejoin_available_at);
+
+CREATE TABLE IF NOT EXISTS withdrawal_relation (
+    first_hash varchar(64) NOT NULL,
+    second_hash varchar(64) NOT NULL,
+    expires_at timestamptz NOT NULL,
+    PRIMARY KEY (first_hash, second_hash)
+);
+CREATE INDEX IF NOT EXISTS ix_withdrawal_relation_expiry ON withdrawal_relation(expires_at);
+
+CREATE TABLE IF NOT EXISTS withdrawal_operation (
+    id uuid PRIMARY KEY,
+    user_id bigint,
+    session_id uuid,
+    request_key uuid,
+    kind varchar(10) NOT NULL,
+    prepared_at timestamptz NOT NULL,
+    expires_at timestamptz NOT NULL,
+    completed_at timestamptz,
+    rejoin_available_at timestamptz,
+    device_permanently_blocked boolean NOT NULL,
+    CONSTRAINT uq_withdrawal_prepared_member UNIQUE(user_id)
+);
+CREATE INDEX IF NOT EXISTS ix_withdrawal_operation_expiry ON withdrawal_operation(expires_at);
+
+CREATE TABLE IF NOT EXISTS withdrawal_photo_task (
+    id uuid PRIMARY KEY,
+    withdrawal_id uuid NOT NULL,
+    file_key varchar(255) NOT NULL,
+    attempts integer NOT NULL,
+    next_attempt_at timestamptz NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ix_withdrawal_photo_due ON withdrawal_photo_task(next_attempt_at);
+CREATE INDEX IF NOT EXISTS ix_withdrawal_photo_operation ON withdrawal_photo_task(withdrawal_id);
+CREATE TABLE IF NOT EXISTS withdrawal_identity_key (id integer PRIMARY KEY, key_hash varchar(64) NOT NULL);

@@ -1,6 +1,5 @@
 package com.e106.tingle.auth;
 
-import java.time.Clock;
 import java.util.UUID;
 
 import org.springframework.stereotype.Service;
@@ -11,7 +10,7 @@ import com.e106.tingle.auth.dto.TokenResponse;
 import com.e106.tingle.preference.PreferenceProvisioningService;
 import com.e106.tingle.user.OnboardingService;
 import com.e106.tingle.user.User;
-import com.e106.tingle.user.UserRepository;
+import com.e106.tingle.withdrawal.WithdrawalIdentityService;
 
 import lombok.RequiredArgsConstructor;
 
@@ -24,11 +23,10 @@ public class AuthService {
 
 	private final SocialVerifier socialVerifier;
 	private final TokenService tokenService;
-	private final UserRepository userRepository;
+	private final WithdrawalIdentityService withdrawalIdentities;
 	private final AgreementService agreementService;
 	private final OnboardingService onboardingService;
 	private final PreferenceProvisioningService preferenceProvisioning;
-	private final Clock clock;
 
 	/**
 	 * 소셜 토큰을 검증하고 새 로그인 세션의 토큰을 발급한다. 처음 로그인한 소셜 계정이면 회원을 만든다.
@@ -39,8 +37,7 @@ public class AuthService {
 	public TokenResponse login(String providerPath, LoginRequest request) {
 		SocialProvider provider = SocialProvider.fromPath(providerPath);
 		SocialVerifier.SocialAccount account = socialVerifier.verify(provider, request);
-		userRepository.insertIfAbsent(provider.name(), account.id(), clock.instant());
-		User user = userRepository.findByProviderAndProviderSubject(provider, account.id()).orElseThrow();
+		User user = withdrawalIdentities.provisionMember(provider, account.id());
 		// 신규 가입·재로그인 모두 누락된 초기 행만 채운다. 기존 희망 조건·기기 설정은 보존한다.
 		preferenceProvisioning.initializeForMember(user.getId());
 		TokenService.IssuedTokens tokens = tokenService.issue(user.getId());

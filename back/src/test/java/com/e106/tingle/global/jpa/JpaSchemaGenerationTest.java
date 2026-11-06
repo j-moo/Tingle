@@ -30,6 +30,7 @@ import com.e106.tingle.agreement.UserConsent;
 import com.e106.tingle.auth.RefreshToken;
 import com.e106.tingle.auth.SocialProvider;
 import com.e106.tingle.profile.PublicProfile;
+import com.e106.tingle.proposal.MatchProposal;
 import com.e106.tingle.push.PushInstallation;
 import com.e106.tingle.survey.SurveyResponse;
 import com.e106.tingle.user.Profile;
@@ -188,6 +189,26 @@ class JpaSchemaGenerationTest {
 				.hasStackTraceContaining("uq_survey_draft is incompatible");
 			assertThat(fixture.jdbc().queryForObject("select 'uq_survey_draft'::regclass::oid::bigint", Long.class))
 				.isEqualTo(before);
+		}
+	}
+
+	@Test
+	@DisplayName("JPA matching은 회원 참조 없는 CLOSED 삭제 작업 행만 허용한다")
+	void generatesNullableClosedMatchingTombstone() {
+		Fixture fixture = emptySchema();
+		try (Factory factory = boot(fixture, "create-drop", MatchProposal.class)) {
+			assertThat(fixture.jdbc().queryForList("select is_nullable from information_schema.columns "
+				+ "where table_schema=current_schema() and table_name='matching' "
+				+ "and column_name in ('user_low_id','user_high_id') order by column_name", String.class))
+				.containsExactly("YES", "YES");
+			Long id = fixture.jdbc().queryForObject("insert into matching(status) values ('CLOSED') returning id",
+				Long.class);
+			MatchProposal tombstone = factory.sessions()
+				.fromTransaction(session -> session.find(MatchProposal.class, id));
+			assertThat(tombstone.hasMembers()).isFalse();
+			assertThat(tombstone.isProposed()).isFalse();
+			assertThatThrownBy(() -> fixture.jdbc().update("insert into matching(status) values ('PENDING')"))
+				.isInstanceOf(DataIntegrityViolationException.class);
 		}
 	}
 

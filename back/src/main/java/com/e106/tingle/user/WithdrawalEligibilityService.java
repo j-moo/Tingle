@@ -27,7 +27,9 @@ public class WithdrawalEligibilityService {
 	public WithdrawalEligibilityResponse check(long userId) {
 		User user = users.findByIdForUpdate(userId)
 			.orElseThrow(() -> new BusinessException(ErrorCode.AUTH_REQUIRED));
-		if (user.getStatus() != UserStatus.ACTIVE) {
+		// A previously managed entity can predate a status change while waiting for this lock.
+		String status = jdbc.queryForObject("select status from users where id=?", String.class, user.getId());
+		if (!UserStatus.ACTIVE.name().equals(status)) {
 			throw new BusinessException(ErrorCode.SESSION_REVOKED);
 		}
 		// An inconsistent state must not make an owned device disappear from the withdrawal check.

@@ -24,6 +24,7 @@ import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 
+import com.e106.tingle.auth.MemberAccessRepository;
 import com.e106.tingle.encounter.EncounterEvaluationGateway.Input;
 import com.e106.tingle.encounter.EncounterEvaluationGateway.Outcome;
 import com.e106.tingle.encounter.EncounterEvaluationGateway.ParticipantInput;
@@ -50,11 +51,12 @@ public class EncounterEvaluationWorker {
 	private final ObjectProvider<EncounterEvaluationCompletion> completions;
 	private final Environment environment;
 	private final TransactionTemplate transaction;
+	private final MemberAccessRepository members;
 
 	public EncounterEvaluationWorker(JdbcTemplate jdbc, JsonMapper mapper, Clock clock, EncounterReceipts receipts,
 		ObjectProvider<EncounterEvaluationGateway> gateways, ObjectProvider<EncounterProposalPublisher> publishers,
 		ObjectProvider<EncounterEvaluationCompletion> completions, Environment environment,
-		PlatformTransactionManager transactions) {
+		PlatformTransactionManager transactions, MemberAccessRepository members) {
 		this.jdbc = jdbc;
 		this.mapper = mapper;
 		this.clock = clock;
@@ -63,6 +65,7 @@ public class EncounterEvaluationWorker {
 		this.publishers = publishers;
 		this.completions = completions;
 		this.environment = environment;
+		this.members = members;
 		transaction = new TransactionTemplate(transactions);
 		transaction.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
 	}
@@ -344,7 +347,8 @@ public class EncounterEvaluationWorker {
 			|| row.high() != input.rightUserId() || !row.metAt().equals(input.metAt())
 			|| !row.opportunity().equals(input.opportunityExpiresAt())
 			|| !row.counterpart().equals(input.counterpartDeadlineAt())
-			|| !Objects.equals(row.policy(), input.policyVersion()) || !now.isBefore(deadline(row))) {
+			|| !Objects.equals(row.policy(), input.policyVersion()) || !now.isBefore(deadline(row))
+			|| members.restrictedPair(row.low(), row.high())) {
 			return false;
 		}
 		jdbc.query("select id from keyring where id in (?,?) order by id for update",
