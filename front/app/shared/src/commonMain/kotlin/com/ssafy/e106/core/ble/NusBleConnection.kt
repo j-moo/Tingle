@@ -11,6 +11,9 @@ internal interface BlePacketLink {
     val state: StateFlow<BleLinkState>
     val packets: ReceiveChannel<ByteArray>
     suspend fun write(bytes: ByteArray)
+    // 기존 펌웨어/플랫폼은 일반 전송만 지원한다. 보호 요청을 일반 write로 우회하지 않는다.
+    suspend fun readProtection(): ByteArray = throw BleException(BleFailure.Unsupported)
+    suspend fun writeProtected(bytes: ByteArray) { throw BleException(BleFailure.Unsupported) }
     fun close()
 }
 
@@ -37,7 +40,27 @@ internal class NusBleConnection(private val link: BlePacketLink) : BleConnection
     private val exchangeLock = Mutex()
     override val state = link.state
 
-    override suspend fun exchange(request: ByteArray, maxResponseBytes: Int, responseTimeoutMillis: Long): ByteArray {
+    override suspend fun prepareProtectedTransport() = exchangeLock.withLock {
+        try { verifyProtection() } catch (failure: Throwable) { link.close(); throw failure }
+    }
+
+    // 일반/보호 교환이 같은 TX 알림을 공유하므로 하나의 잠금으로 요청 전체를 직렬화한다.
+    override suspend fun exchange(request: ByteArray, maxResponseBytes: Int, responseTimeoutMillis: Long): ByteArray =
+        exchangeFrame(request, maxResponseBytes, responseTimeoutMillis, protected = false)
+
+    override suspend fun exchangeProtected(request: ByteArray, maxResponseBytes: Int, responseTimeoutMillis: Long): ByteArray =
+        exchangeFrame(request, maxResponseBytes, responseTimeoutMillis, protected = true)
+
+    private suspend fun verifyProtection() {
+        if (state.value != BleLinkState.Ready) throw BleException(BleFailure.Disconnected)
+        // OS 페어링 UI의 사용자 응답 시간이다. nonce의 60초와 별개이며 이 확인 뒤 nonce를 받는다.
+        val probe = withTimeoutOrNull(60_000) { link.readProtection() }
+            ?: throw BleException(BleFailure.Timeout)
+        if (!probe.contentEquals(byteArrayOf(1))) throw BleException(BleFailure.SecureTransportRequired)
+    }
+
+    private suspend fun exchangeFrame(request: ByteArray, maxResponseBytes: Int, responseTimeoutMillis: Long,
+        protected: Boolean): ByteArray {
         require(maxResponseBytes in 1..4096 && responseTimeoutMillis > 0)
         require(request.size in 2..4096 && request.last() == 10.toByte() && request.dropLast(1).none { it == 10.toByte() })
         // 호출자의 배열 변경으로 전송 중 본문이 바뀌지 않게 먼저 복사한다.
@@ -47,11 +70,18 @@ internal class NusBleConnection(private val link: BlePacketLink) : BleConnection
                 if (state.value != BleLinkState.Ready) throw BleException(BleFailure.Disconnected)
                 // 이전 요청의 잔여 데이터/자발 알림은 현재 응답으로 사용할 수 없다.
                 if (link.packets.tryReceive().isSuccess) throw BleException(BleFailure.InvalidFrame)
+                // 확인에 실패하면 단 한 조각도 전송하지 않는다. 매 교환마다 같은 연결에서 확인한다.
+                if (protected) {
+                    verifyProtection()
+                    // 페어링 대기 중 들어온 다른 응답도 이번 요청의 응답으로 섞지 않는다.
+                    if (link.packets.tryReceive().isSuccess) throw BleException(BleFailure.InvalidFrame)
+                }
                 val written = withTimeoutOrNull(15_000) {
                     var offset = 0
                     while (offset < frame.size) {
                         val end = minOf(offset + 20, frame.size)
-                        link.write(frame.copyOfRange(offset, end))
+                        val chunk = frame.copyOfRange(offset, end)
+                        if (protected) link.writeProtected(chunk) else link.write(chunk)
                         offset = end
                     }
                     true

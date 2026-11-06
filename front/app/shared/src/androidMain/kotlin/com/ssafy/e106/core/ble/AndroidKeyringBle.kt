@@ -18,6 +18,7 @@ internal object NusUuid {
     val service: UUID = UUID.fromString("6E400001-B5A3-F393-E0A9-E50E24DCCA9E")
     val rx: UUID = UUID.fromString("6E400002-B5A3-F393-E0A9-E50E24DCCA9E")
     val tx: UUID = UUID.fromString("6E400003-B5A3-F393-E0A9-E50E24DCCA9E")
+    val profile: UUID = UUID.fromString("6E400004-B5A3-F393-E0A9-E50E24DCCA9E")
     val cccd: UUID = UUID.fromString("00002902-0000-1000-8000-00805f9b34fb")
 }
 
@@ -127,9 +128,14 @@ internal class AndroidNusLink(private val context: Context, private val handler:
     private var gatt: BluetoothGatt? = null
     private var rx: BluetoothGattCharacteristic? = null
     private var tx: BluetoothGattCharacteristic? = null
+    private var profile: BluetoothGattCharacteristic? = null
     private var ended = false
     private val ready = CompletableDeferred<Unit>()
     private var writeAck: CompletableDeferred<Unit>? = null
+    private var writeTarget: UUID? = null
+    private var protectionRead: CompletableDeferred<ByteArray>? = null
+    // bond 여부를 암호화 증명으로 쓰지 않는다. 이 GATT 연결에서 보호 Read가 성공해야 한다.
+    private var protectionVerified = false
 
     suspend fun open(device: BluetoothDevice) {
         try {
@@ -141,13 +147,42 @@ internal class AndroidNusLink(private val context: Context, private val handler:
     }
 
     /** API 33 이후 값 복사 API를 사용한다. 구형 버전도 다음 조각은 ACK 이후에만 쓴다. */
-    override suspend fun write(bytes: ByteArray) = withContext(Dispatchers.Main.immediate) {
+    override suspend fun write(bytes: ByteArray) = writeTo(bytes, protected = false)
+
+    override suspend fun writeProtected(bytes: ByteArray) = writeTo(bytes, protected = true)
+
+    /** 보호 Read는 Android의 인증 절차를 유도한다. 실패하면 일반 RX로 재전송하지 않는다. */
+    override suspend fun readProtection(): ByteArray = withContext(Dispatchers.Main.immediate) {
         val connection = gatt ?: throw BleException(BleFailure.Disconnected)
-        val characteristic = rx ?: throw BleException(BleFailure.ServiceMissing)
         if (ended || state.value != BleLinkState.Ready) throw BleException(BleFailure.Disconnected)
-        if (writeAck != null) throw BleException(BleFailure.Busy)
+        val characteristic = profile ?: throw BleException(BleFailure.ServiceMissing)
+        if (writeAck != null || protectionRead != null) throw BleException(BleFailure.Busy)
+        protectionVerified = false
+        val pending = CompletableDeferred<ByteArray>()
+        protectionRead = pending
+        try {
+            if (!connection.readCharacteristic(characteristic)) throw BleException(BleFailure.SecureTransportRequired)
+            val value = pending.await()
+            if (!value.contentEquals(byteArrayOf(1))) throw BleException(BleFailure.SecureTransportRequired)
+            protectionVerified = true
+            value
+        } catch (_: SecurityException) {
+            throw BleException(BleFailure.PermissionRequired)
+        } finally {
+            if (protectionRead === pending) protectionRead = null
+        }
+    }
+
+    /** 모든 조각은 선택한 특성의 Write ACK를 기다린다. 다른 특성의 늦은 콜백은 무시한다. */
+    private suspend fun writeTo(bytes: ByteArray, protected: Boolean) = withContext(Dispatchers.Main.immediate) {
+        val connection = gatt ?: throw BleException(BleFailure.Disconnected)
+        if (ended || state.value != BleLinkState.Ready) throw BleException(BleFailure.Disconnected)
+        val characteristic = (if (protected) profile else rx) ?: throw BleException(BleFailure.ServiceMissing)
+        if (protected && !protectionVerified) throw BleException(BleFailure.SecureTransportRequired)
+        if (writeAck != null || protectionRead != null) throw BleException(BleFailure.Busy)
         val pending = CompletableDeferred<Unit>()
         writeAck = pending
+        writeTarget = characteristic.uuid
         try {
             val started = if (Build.VERSION.SDK_INT >= 33) {
                 connection.writeCharacteristic(characteristic, bytes.copyOf(), BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT) == BluetoothStatusCodes.SUCCESS
@@ -163,7 +198,7 @@ internal class AndroidNusLink(private val context: Context, private val handler:
         } catch (_: SecurityException) {
             throw BleException(BleFailure.PermissionRequired)
         } finally {
-            if (writeAck === pending) writeAck = null
+            if (writeAck === pending) { writeAck = null; writeTarget = null }
         }
     }
 
@@ -195,6 +230,11 @@ internal class AndroidNusLink(private val context: Context, private val handler:
                 fail(BleFailure.ServiceMissing); return@handle
             }
             rx = input; tx = output
+            // 보호 특성이 없는 기존 펌웨어도 일반 등록/설정은 계속 사용할 수 있다.
+            profile = service.getCharacteristic(NusUuid.profile)?.takeIf {
+                it.properties and BluetoothGattCharacteristic.PROPERTY_READ != 0 &&
+                    it.properties and BluetoothGattCharacteristic.PROPERTY_WRITE != 0
+            }
             val descriptor = output.getDescriptor(NusUuid.cccd)
             if (descriptor == null || !connection.setCharacteristicNotification(output, true)) {
                 fail(BleFailure.SubscribeFailed); return@handle
@@ -219,8 +259,22 @@ internal class AndroidNusLink(private val context: Context, private val handler:
         }
 
         override fun onCharacteristicWrite(connection: BluetoothGatt, characteristic: BluetoothGattCharacteristic, status: Int) = handle(connection) {
-            if (characteristic.uuid != NusUuid.rx) return@handle
+            if (characteristic.uuid != writeTarget) return@handle
             if (status != BluetoothGatt.GATT_SUCCESS) fail(BleFailure.WriteFailed) else writeAck?.complete(Unit)
+        }
+
+        override fun onCharacteristicRead(connection: BluetoothGatt, characteristic: BluetoothGattCharacteristic,
+            value: ByteArray, status: Int) {
+            if (characteristic.uuid == NusUuid.profile) completeProtectionRead(connection, value.copyOf(), status)
+        }
+
+        @Deprecated("API 32 이하 콜백")
+        override fun onCharacteristicRead(connection: BluetoothGatt, characteristic: BluetoothGattCharacteristic, status: Int) {
+            if (Build.VERSION.SDK_INT < 33 && characteristic.uuid == NusUuid.profile) {
+                @Suppress("DEPRECATION")
+                val value = characteristic.value?.copyOf() ?: byteArrayOf()
+                completeProtectionRead(connection, value, status)
+            }
         }
 
         override fun onCharacteristicChanged(connection: BluetoothGatt, characteristic: BluetoothGattCharacteristic, value: ByteArray) {
@@ -238,6 +292,13 @@ internal class AndroidNusLink(private val context: Context, private val handler:
         }
     }
 
+    private fun completeProtectionRead(connection: BluetoothGatt, value: ByteArray, status: Int) = handle(connection) {
+        if (protectionRead == null) return@handle
+        if (status != BluetoothGatt.GATT_SUCCESS || !value.contentEquals(byteArrayOf(1))) {
+            fail(BleFailure.SecureTransportRequired)
+        } else protectionRead?.complete(value)
+    }
+
     private fun receive(connection: BluetoothGatt, value: ByteArray) = handle(connection) {
         if (state.value != BleLinkState.Ready) return@handle
         // 데이터 손실을 숨기지 않는다. 한 프레임 이상 버퍼가 밀리면 연결을 닫고 명시적으로 재시도한다.
@@ -253,10 +314,14 @@ internal class AndroidNusLink(private val context: Context, private val handler:
         ready.completeExceptionally(failure)
         writeAck?.completeExceptionally(failure)
         writeAck = null
+        writeTarget = null
+        protectionRead?.completeExceptionally(failure)
+        protectionRead = null
+        protectionVerified = false
         while (received.tryReceive().isSuccess) { /* 끊긴 연결의 미완성 바이트는 다음 요청에서 쓰지 않는다. */ }
         received.close(failure)
         val old = gatt
-        gatt = null; rx = null; tx = null
+        gatt = null; rx = null; tx = null; profile = null
         runCatching { old?.disconnect() }
         runCatching { old?.close() }
         onClosed(this)

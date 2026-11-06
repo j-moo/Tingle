@@ -7,7 +7,8 @@ import kotlinx.coroutines.flow.StateFlow
 data class BleCandidate(val id: String, val name: String?, val rssi: Int)
 enum class BleLinkState { Ready, Closed }
 enum class BleFailure { Unsupported, PermissionRequired, BluetoothOff, LocationOff, Busy, NotFound, ScanFailed,
-    ConnectFailed, ServiceMissing, SubscribeFailed, WriteFailed, Disconnected, Timeout, InvalidFrame, Overflow }
+    ConnectFailed, ServiceMissing, SubscribeFailed, WriteFailed, Disconnected, Timeout, InvalidFrame, Overflow,
+    SecureTransportRequired }
 class BleException(val reason: BleFailure) : Exception(reason.name)
 
 /**
@@ -27,5 +28,14 @@ interface BleConnection {
     val state: StateFlow<BleLinkState>
     /** UTF-8 JSON+LF 하나를 보내고 LF 응답 하나를 받는다. Write ACK 자체는 업무 성공이 아니다. */
     suspend fun exchange(request: ByteArray, maxResponseBytes: Int = 4096, responseTimeoutMillis: Long = 10_000): ByteArray
+    /**
+     * 개인정보 없는 보호 특성 Read(01)로 현재 연결의 암호화 준비를 확인한다.
+     * 유효 시간이 짧은 challenge 발급 전에 호출한다. 기기 신원/소유 인증을 대신하지 않는다.
+     * 미지원 플랫폼은 일반 RX로 대체하지 않고 거부한다.
+     */
+    suspend fun prepareProtectedTransport() { throw BleException(BleFailure.Unsupported) }
+    /** 보호 특성을 다시 확인한 뒤 그 특성에만 쓴다. 재연결한 객체는 이전 확인을 승계하지 않는다. */
+    suspend fun exchangeProtected(request: ByteArray, maxResponseBytes: Int = 4096,
+        responseTimeoutMillis: Long = 10_000): ByteArray = throw BleException(BleFailure.Unsupported)
     fun close()
 }
