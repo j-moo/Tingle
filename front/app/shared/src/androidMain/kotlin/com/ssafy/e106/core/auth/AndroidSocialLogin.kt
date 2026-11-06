@@ -13,6 +13,7 @@ import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
 import com.kakao.sdk.common.KakaoSdk
 import com.kakao.sdk.common.model.ClientError
 import com.kakao.sdk.common.model.ClientErrorCause
+import com.kakao.sdk.auth.model.OAuthToken
 import com.kakao.sdk.user.UserApiClient
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -76,9 +77,18 @@ internal class AndroidSocialLogin(app: Application, private val keys: SocialKeys
         SocialToken.Cancelled
     }
 
-    private suspend fun kakao(activity: Activity): SocialToken = suspendCancellableCoroutine { cont ->
-        UserApiClient.instance.loginWithKakaoAccount(activity) { token, error ->
-            if (!cont.isActive) return@loginWithKakaoAccount
+    /** 카카오톡이 있으면 카카오톡으로(입력 없이 동의만), 없거나 카카오톡 쪽이 실패하면 카카오계정(웹). 사용자가 취소하면 웹으로 넘기지 않는다. 토큰은 둘 다 같은 access token */
+    private suspend fun kakao(activity: Activity): SocialToken {
+        if (UserApiClient.instance.isKakaoTalkLoginAvailable(activity)) {
+            val talk = kakaoLogin { UserApiClient.instance.loginWithKakaoTalk(activity, callback = it) }
+            if (talk != SocialToken.Failed) return talk
+        }
+        return kakaoLogin { UserApiClient.instance.loginWithKakaoAccount(activity, callback = it) }
+    }
+
+    private suspend fun kakaoLogin(start: ((OAuthToken?, Throwable?) -> Unit) -> Unit): SocialToken = suspendCancellableCoroutine { cont ->
+        start { token, error ->
+            if (!cont.isActive) return@start
             cont.resume(
                 when {
                     error is ClientError && error.reason == ClientErrorCause.Cancelled -> SocialToken.Cancelled

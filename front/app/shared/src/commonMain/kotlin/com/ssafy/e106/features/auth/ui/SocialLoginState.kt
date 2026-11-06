@@ -10,4 +10,6 @@ data class SocialLoginState(
     val errorMessage: String? = null,
     val errorId: Long = 0,
     val completed: Boolean = false,
+    // 이 기기에서 마지막으로 로그인에 성공한 제공자("최근 로그인" 표시). 계정과 무관한 기기 기록
+    val lastProvider: LoginProvider? = null,
 )
