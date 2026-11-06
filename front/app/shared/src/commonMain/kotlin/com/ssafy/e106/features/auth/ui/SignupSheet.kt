@@ -28,6 +28,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
@@ -48,10 +49,10 @@ fun SignupSheet(onClose: () -> Unit, background: @Composable () -> Unit, animate
     val shown = remember { MutableTransitionState(!animate).apply { targetState = true } }   // animate=false: 처음부터 올라온 상태(정지 Preview 용)
     ProfileBackHandler(enabled = true, onBack = onClose)
     Box(Modifier.fillMaxSize()) {
-        background()
+        Box(Modifier.clearAndSetSemantics {}) { background() }   // 가려진 뒤 화면을 TalkBack이 읽거나 초점을 주지 않게
         AnimatedVisibility(shown, enter = fadeIn()) {
             Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.4f))
-                .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {})   // 뒤 로그인 화면 터치 막기
+                .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {}.clearAndSetSemantics {})   // 뒤 로그인 화면 터치 막기
         }
         AnimatedVisibility(shown, Modifier.align(Alignment.BottomCenter), enter = slideInVertically { it }) {
             Surface(
