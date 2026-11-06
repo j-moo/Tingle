@@ -90,6 +90,8 @@ app:
       enabled: ${KEYRING_DEV_SETTINGS_ENABLED:false}
       private-key-file: ${KEYRING_DEV_SETTINGS_PRIVATE_KEY_FILE:}
       public-key-file: ${KEYRING_DEV_SETTINGS_PUBLIC_KEY_FILE:}
+      # TPS1 저장 지원을 확인한 기기 일련번호만 등록한다. 쉼표로 구분하며 기본값은 비어 있다.
+      profile-device-serials: ${KEYRING_DEV_SETTINGS_PROFILE_DEVICE_SERIALS:}
 
   # 새 설문 회차가 쓰는 설문 버전 (resources/survey/questionnaires/{버전}.json). 바꿔도 이미 시작한 회차는 원래 버전을 쓴다.
   survey:

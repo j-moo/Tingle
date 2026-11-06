@@ -15,6 +15,8 @@ import com.e106.tingle.agreement.dto.OptionalConsentView;
 import com.e106.tingle.encounter.ReligionEvidenceRetirement;
 import com.e106.tingle.global.error.BusinessException;
 import com.e106.tingle.global.error.ErrorCode;
+import com.e106.tingle.keyring.KeyringSyncRunRepository;
+import com.e106.tingle.settings.snapshot.SettingsChangeCoordinator;
 import com.e106.tingle.settings.snapshot.SettingsSnapshotService;
 import com.e106.tingle.user.InactiveProfileCleaner;
 import com.e106.tingle.user.ProfilePhotoService;
@@ -45,6 +47,8 @@ public class OptionalConsentService {
 	private final InactiveProfileCleaner inactiveProfiles;
 	private final SettingsSnapshotService snapshots;
 	private final ReligionEvidenceRetirement retirement;
+	private final KeyringSyncRunRepository syncRuns;
+	private final SettingsChangeCoordinator settingsChanges;
 	private final JsonMapper jsonMapper;
 	private final Clock clock;
 
@@ -98,7 +102,7 @@ public class OptionalConsentService {
 			// 설정 입력 사본은 활성 회원만 만들 수 있다. 비활성 회원은 값만 지우고 설정 번호를 올린다.
 			inactiveProfiles.clear(userId, types.contains(OptionalConsent.PROFILE_RELIGION),
 				types.contains(OptionalConsent.PROFILE_INTRODUCTION), types.contains(OptionalConsent.PROFILE_PHOTO));
-			redactReligionHistory(userId, types);
+			redactReligionHistory(userId, types, false);
 		}
 	}
 
@@ -120,13 +124,24 @@ public class OptionalConsentService {
 		if (types.contains(OptionalConsent.PROFILE_PHOTO)) {
 			photos.delete(userId);
 		}
-		redactReligionHistory(userId, types);
+		redactReligionHistory(userId, types, true);
 	}
 
 	// 현재 프로필 값과 별개로, 철회 전에 만든 설정 입력 사본의 종교도 지운다(S15P31E106-232).
 	// 현재 값 삭제는 user_consents 철회 행, 과거 사본 삭제는 settings_snapshot.redacted_at·redaction_reason 으로 남는다.
-	private void redactReligionHistory(long userId, Set<OptionalConsent> types) {
+	private void redactReligionHistory(long userId, Set<OptionalConsent> types, boolean captureNewVersion) {
 		if (types.contains(OptionalConsent.PROFILE_RELIGION)) {
+			settingsChanges.lockIfPresent(userId).ifPresent(setting -> {
+				Long version = setting.getSettingsVersion();
+				if (version != null && syncRuns.hasProfileReligionAtVersion(userId, version)) {
+					// 기존 값이 이미 비어 있어도 삭제한 발급본의 버전을 재사용하지 않는다.
+					setting.advanceVersion();
+					if (captureNewVersion) {
+						settingsChanges.captureCurrent(userId);
+					}
+				}
+			});
+			syncRuns.deleteProfileReligionRuns(userId);
 			snapshots.redactReligion(userId);
 			retirement.retire(userId);
 		}
