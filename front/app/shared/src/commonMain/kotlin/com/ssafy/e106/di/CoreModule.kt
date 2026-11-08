@@ -42,6 +42,9 @@ fun coreModule(baseUrl: String, httpLog: Boolean, socialKeys: SocialKeys) = modu
     // 권한 요청은 화면의 사용자 동작에서만 한다. 플랫폼 인스턴스 생성은 무선 작업을 시작하지 않는다.
     single<KeyringBle> { platformKeyringBle() }
     single<TokenStore> { platformTokenStore(baseUrl) }
+    // 탈퇴 영수증은 로그아웃 캐시와 독립적으로 유지한다. 플랫폼 미지원 시 평문으로 우회하지 않는다.
+    single<com.ssafy.e106.core.storage.ProtectedRecordStore> { platformProtectedRecordStore(baseUrl) }
+    single<HttpClient>(named(RECEIPT_HTTP_CLIENT)) { com.ssafy.e106.core.network.createReceiptHttpClient(baseUrl) }
     single<SocialLogin>(createdAtStart = true) { platformSocialLogin(socialKeys) }   // 앞에 뜬 Activity 를 앱 시작부터 기억해야 한다
     // HttpClient(Bearer · 재발급)와 SessionStore 는 서로를 부른다. 같이 만들고 SessionStore 를 시작한다. 푸시 등록기도 같이 시작한다
     // (AppPrefs 가 앱 시작부터 세션을 보므로 FCM 이 프로세스를 깨울 때도 여기까지 돈다). 등록은 이전 계정의 로그아웃 재전송이 끝난 뒤에 —
@@ -55,6 +58,7 @@ fun coreModule(baseUrl: String, httpLog: Boolean, socialKeys: SocialKeys) = modu
         }
     }
     single<SessionStore> { get<DefaultSessionStore>() }
+    single<com.ssafy.e106.core.auth.WithdrawalSessionEnd> { get<DefaultSessionStore>() }
     single<HttpClient> { get<DefaultSessionStore>().client }
     single<AuthRepository> { DefaultAuthRepository(get(), get()) }
     single<PushDevice> { platformPushDevice() }
@@ -75,6 +79,9 @@ fun coreModule(baseUrl: String, httpLog: Boolean, socialKeys: SocialKeys) = modu
 }
 
 internal const val APP_FOREGROUND = "appForeground"
+internal const val RECEIPT_HTTP_CLIENT = "withdrawalReceiptHttpClient"
+
+internal expect fun Scope.platformProtectedRecordStore(baseUrl: String): com.ssafy.e106.core.storage.ProtectedRecordStore
 
 /** 토큰 저장소는 플랫폼마다. 서버 주소별로 따로 저장한다 */
 internal expect fun Scope.platformTokenStore(baseUrl: String): TokenStore
