@@ -60,6 +60,8 @@ fun AuthenticationHost(
         }
     }
     Box(Modifier.fillMaxSize()) {
+        // 탈퇴 완료로 로그인이 끝나도 결과/복구 화면을 인증 분기 밖에서 유지한다.
+        com.ssafy.e106.features.account.ui.WithdrawalRoot(session, content = {
         when (val current = session) {
             Session.Restoring -> StartupScreen()
             Session.SignedOut -> SocialLoginRoute(snackbar)
@@ -73,6 +75,7 @@ fun AuthenticationHost(
                     background = { if (current.signupCompleted) StartupScreen() else SocialLoginRoute(snackbar) }) { signedIn(current) }
             }
         }
+        })
         SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter).safeDrawingPadding().padding(AppSpacing.Medium))
     }
 }
