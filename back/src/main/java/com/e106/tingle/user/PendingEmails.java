@@ -65,6 +65,15 @@ public class PendingEmails {
 	}
 
 	/** 동의하지 않은 회원의 이메일이 30분을 넘겨 남지 않게 만료분을 지운다(아래 Purge 가 1분마다 부른다). */
+	public void forgetAfterCommit(long userId) {
+		TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+			@Override
+			public void afterCommit() {
+				entries.remove(userId);
+			}
+		});
+	}
+
 	void purgeExpired() {
 		Instant now = clock.instant();
 		entries.values().removeIf(entry -> !entry.expiresAt().isAfter(now));

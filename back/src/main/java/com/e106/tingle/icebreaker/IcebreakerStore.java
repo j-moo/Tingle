@@ -271,7 +271,7 @@ public class IcebreakerStore {
 	private void lockParticipants(long roomId, long actor) {
 		List<Long> users = jdbc.queryForList("select user_id from chat_participant where chat_id=? order by user_id",
 			Long.class, roomId);
-		if (!users.contains(actor)) {
+		if (users.size() != 2 || users.contains(null) || !users.contains(actor)) {
 			throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND);
 		}
 		for (long userId : users) {

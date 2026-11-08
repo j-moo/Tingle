@@ -5,6 +5,8 @@ import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.List;
 
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.context.properties.bind.Bindable;
 import org.springframework.boot.context.properties.bind.Binder;
 import org.springframework.core.env.Environment;
@@ -12,6 +14,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
 import com.e106.tingle.agreement.AgreementPolicy;
+import com.e106.tingle.withdrawal.WithdrawalIdentityService;
 
 @Repository
 public class MemberAccessRepository {
@@ -20,10 +23,20 @@ public class MemberAccessRepository {
 		+ "and (m.max_age is null or m.max_age>=m.min_age)))";
 	private final JdbcTemplate jdbc;
 	private final Environment environment;
+	private final WithdrawalIdentityService withdrawalIdentities;
 
 	public MemberAccessRepository(JdbcTemplate jdbc, Environment environment) {
 		this.jdbc = jdbc;
 		this.environment = environment;
+		this.withdrawalIdentities = null;
+	}
+
+	@Autowired
+	public MemberAccessRepository(JdbcTemplate jdbc, Environment environment,
+		ObjectProvider<WithdrawalIdentityService> withdrawalIdentities) {
+		this.jdbc = jdbc;
+		this.environment = environment;
+		this.withdrawalIdentities = withdrawalIdentities.getIfAvailable();
 	}
 
 	// 가입 단계별 완료 여부 (OnboardingService.statusOf). 마지막 키링 반영까지 끝났는지는 ready 가 판단한다.
@@ -119,6 +132,9 @@ public class MemberAccessRepository {
 	}
 
 	public boolean restrictedPair(long first, long second) {
+		if (withdrawalIdentities != null && withdrawalIdentities.restrictedPair(first, second)) {
+			return true;
+		}
 		return Boolean.TRUE.equals(jdbc.queryForObject("select exists (select 1 from matching m "
 			+ "join matching_participant p on p.matching_id=m.id "
 			+ "where ((m.user_low_id=? and m.user_high_id=?) or (m.user_low_id=? and m.user_high_id=?)) "

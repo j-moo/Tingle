@@ -1,5 +1,6 @@
 package com.e106.tingle.chat;
 
+import static com.e106.tingle.CanonicalStorageDesign.totalTables;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
@@ -66,7 +67,7 @@ class ChatLegacyMigrationTest {
 			Long.class);
 		migrate();
 		assertThat(jdbc.queryForObject("select count(*) from information_schema.tables where table_schema='public' "
-			+ "and table_type='BASE TABLE'", Integer.class)).isEqualTo(30);
+			+ "and table_type='BASE TABLE'", Integer.class)).isEqualTo(totalTables());
 		assertThat(jdbc.queryForMap("select legacy_public_id,matching_id,created_at,expires_at,retain_until "
 			+ "from chat where id=?", legacy.roomId()))
 			.containsEntry("legacy_public_id", legacy.roomUuid()).containsEntry("matching_id", 20L)

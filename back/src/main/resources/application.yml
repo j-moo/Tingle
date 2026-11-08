@@ -64,6 +64,12 @@ management:
       show-details: never
 
 app:
+  withdrawal:
+    enabled: ${WITHDRAWAL_ENABLED:false}
+    identity-secret: ${WITHDRAWAL_IDENTITY_SECRET:}
+    receipt-secret: ${WITHDRAWAL_RECEIPT_SECRET:}
+    scheduling-enabled: ${WITHDRAWAL_RETENTION_ENABLED:true}
+    photo-cleanup-scheduling-enabled: ${WITHDRAWAL_PHOTO_CLEANUP_ENABLED:true}
   # 인증 (팀 공유 인증 API 계약)
   auth:
     jwt-secret: ${JWT_SECRET:}

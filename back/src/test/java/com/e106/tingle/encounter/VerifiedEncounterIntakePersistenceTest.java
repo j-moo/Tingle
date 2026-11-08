@@ -69,7 +69,8 @@ class VerifiedEncounterIntakePersistenceTest {
 
 	@Configuration(proxyBeanMethods = false)
 	@EnableAutoConfiguration
-	@Import({EncounterReceipts.class, EncounterEvaluationWorker.class, ReligionEvidenceRetirement.class})
+	@Import({EncounterReceipts.class, EncounterEvaluationWorker.class, ReligionEvidenceRetirement.class,
+		MemberAccessRepository.class})
 	static class Config {
 		@Bean
 		@ServiceConnection

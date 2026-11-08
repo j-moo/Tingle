@@ -6,6 +6,7 @@ import java.time.temporal.ChronoUnit;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
+import org.hibernate.annotations.Check;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 
@@ -33,6 +34,8 @@ import lombok.NoArgsConstructor;
 		@Index(name = "ix_matching_counterpart_deadline", columnList = "counterpart_deadline_at"),
 		@Index(name = "ix_matching_raw_delete", columnList = "raw_delete_at")})
 @Getter
+@Check(name = "ck_matching_withdrawn_pair", constraints = "(user_low_id is not null and user_high_id is not null) "
+	+ "or (user_low_id is null and user_high_id is null and status='CLOSED')")
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class MatchProposal {
 	public enum Status { PENDING, WAITING_FOR_OTHER, ACCEPTED, REJECTED, EXPIRED }
@@ -42,10 +45,10 @@ public class MatchProposal {
 	@Id
 	@GeneratedValue(strategy = GenerationType.IDENTITY)
 	private Long id;
-	@Column(name = "user_low_id", nullable = false)
-	private long userLow;
-	@Column(name = "user_high_id", nullable = false)
-	private long userHigh;
+	@Column(name = "user_low_id")
+	private Long userLow;
+	@Column(name = "user_high_id")
+	private Long userHigh;
 	private Instant metAt;
 	@Column(length = 30)
 	private String policyVersion;
@@ -87,6 +90,19 @@ public class MatchProposal {
 		return id;
 	}
 
+	/** A retained deletion tombstone has no members and can never project a live pair. */
+	public boolean hasMembers() {
+		return userLow != null && userHigh != null;
+	}
+
+	public long getUserLow() {
+		return userLow == null ? 0 : userLow;
+	}
+
+	public long getUserHigh() {
+		return userHigh == null ? 0 : userHigh;
+	}
+
 	/** matching 행 잠금 안에서 설명 영역만 갱신하고 당시 판정 원본은 보존한다. */
 	public void recordExplanations(Map<String, Object> nextEvaluation) {
 		if (nextEvaluation == null || !nextEvaluation.containsKey("matchExplanations")) {
@@ -117,7 +133,7 @@ public class MatchProposal {
 	}
 
 	public boolean isProposed() {
-		return proposedAt != null && storageStatus != MatchingStatus.WAITING
+		return hasMembers() && proposedAt != null && storageStatus != MatchingStatus.WAITING
 			&& storageStatus != MatchingStatus.NOT_MATCHED;
 	}
 
