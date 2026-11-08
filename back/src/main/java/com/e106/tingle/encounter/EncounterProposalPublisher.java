@@ -89,6 +89,7 @@ public class EncounterProposalPublisher {
 				pair.low(), pair.high());
 			if (enabled.size() != 2 || enabled.stream().anyMatch(value -> !value)
 				|| !members.canRespondToProposal(pair.low()) || !members.canRespondToProposal(pair.high())
+				|| members.restrictedPair(pair.low(), pair.high())
 				|| Boolean.TRUE.equals(jdbc.queryForObject("select exists (select 1 from chat where matching_id=?)",
 					Boolean.class, matchingId))) {
 				return Optional.empty();

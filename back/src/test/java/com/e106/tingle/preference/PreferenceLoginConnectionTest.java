@@ -56,6 +56,7 @@ import com.e106.tingle.user.OnboardingService;
 import com.e106.tingle.user.OnboardingStatus;
 import com.e106.tingle.user.PendingEmails;
 import com.e106.tingle.user.User;
+import com.e106.tingle.withdrawal.WithdrawalIdentityService;
 
 /**
  * 실제 로그인 서비스·회원 JPA·초기 행 생성·희망 조건 MVC 연결. 외부 소셜·토큰·A 단계만 대체한다.
@@ -77,7 +78,7 @@ class PreferenceLoginConnectionTest {
 	@EnableJpaRepositories(basePackages = {"com.e106.tingle.preference", "com.e106.tingle.user"})
 	@Import({AuthService.class, PendingEmails.class, PreferenceProvisioningService.class,
 		PreferenceProvisioningAccess.class,
-		PreferencesService.class, PreferenceMemberAccess.class})
+		PreferencesService.class, PreferenceMemberAccess.class, WithdrawalIdentityService.class})
 	static class Config {
 
 		@Bean

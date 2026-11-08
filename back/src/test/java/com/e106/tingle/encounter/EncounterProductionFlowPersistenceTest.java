@@ -593,7 +593,8 @@ class EncounterProductionFlowPersistenceTest {
 	@SuppressWarnings("unchecked")
 	private EncounterEvaluationWorker restartedWorker(Environment settings) {
 		return new EncounterEvaluationWorker(jdbc, mapper, clock, receipts, mock(ObjectProvider.class),
-			mock(ObjectProvider.class), mock(ObjectProvider.class), settings, transactions);
+			mock(ObjectProvider.class), mock(ObjectProvider.class), settings, transactions,
+			new MemberAccessRepository(jdbc, settings));
 	}
 
 	private void assertPublishedAt(Instant first) {

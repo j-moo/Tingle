@@ -178,4 +178,9 @@ public class ProfilePhotoService {
 		}
 		return path;
 	}
+
+	/** Durable withdrawal tasks call this after the account transaction has committed. */
+	public void deleteWithdrawnFile(String key) throws IOException {
+		Files.deleteIfExists(resolve(key));
+	}
 }

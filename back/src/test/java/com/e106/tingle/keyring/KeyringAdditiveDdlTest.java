@@ -23,6 +23,8 @@ import org.springframework.test.context.ActiveProfiles;
 
 import com.e106.tingle.TestcontainersConfiguration;
 
+import tools.jackson.databind.json.JsonMapper;
+
 /** 공유 DB가 아닌 Testcontainers 안의 별도 schema에서 설계 SQL을 검증한다. */
 @SpringBootTest
 @ActiveProfiles("test")
@@ -32,15 +34,18 @@ class KeyringAdditiveDdlTest {
 	private DataSource dataSource;
 
 	@Test
-	void canonicalDdlCreatesExactlyThirtyTablesAndAllColumnsWithoutPhysicalReferences() throws Exception {
+	void canonicalDdlMatchesDeclaredTablesAndColumnsWithoutPhysicalReferences() throws Exception {
+		var canonical = JsonMapper.builder().build().readTree(new ClassPathResource("database/tables.json")
+			.getContentAsString(StandardCharsets.UTF_8));
 		inDisposableSchema(jdbc -> {
 			jdbc.execute(new ClassPathResource("database/schema.sql")
 				.getContentAsString(StandardCharsets.UTF_8));
 			assertThat(jdbc.queryForObject("select count(*) from information_schema.tables "
 				+ "where table_schema=current_schema() and table_type='BASE TABLE'", Integer.class))
-				.isEqualTo(30);
+				.isEqualTo(canonical.path("total_tables").asInt());
 			assertThat(jdbc.queryForObject("select count(*) from information_schema.columns "
-				+ "where table_schema=current_schema()", Integer.class)).isEqualTo(274);
+				+ "where table_schema=current_schema()", Integer.class))
+				.isEqualTo(canonical.path("total_columns").asInt());
 			assertThat(jdbc.queryForObject("select count(*) from information_schema.table_constraints "
 				+ "where constraint_schema=current_schema() and constraint_type='FOREIGN KEY'", Integer.class))
 				.isZero();
@@ -49,14 +54,18 @@ class KeyringAdditiveDdlTest {
 
 	@Test
 	void optionalResetSqlAddsOnlyItsSeventeenColumnTableBeyondTheJpaBaseline() throws Exception {
+		var canonical = JsonMapper.builder().build().readTree(new ClassPathResource("database/tables.json")
+			.getContentAsString(StandardCharsets.UTF_8));
 		inDisposableSchema(jdbc -> {
 			jdbc.execute(new ClassPathResource("database/schema.sql").getContentAsString(StandardCharsets.UTF_8));
 			jdbc.execute(new ClassPathResource("database/keyring-reset-249.sql")
 				.getContentAsString(StandardCharsets.UTF_8));
 			assertThat(jdbc.queryForObject("select count(*) from information_schema.tables "
-				+ "where table_schema=current_schema() and table_type='BASE TABLE'", Integer.class)).isEqualTo(31);
+				+ "where table_schema=current_schema() and table_type='BASE TABLE'", Integer.class))
+				.isEqualTo(canonical.path("total_tables").asInt() + 1);
 			assertThat(jdbc.queryForObject("select count(*) from information_schema.columns "
-				+ "where table_schema=current_schema()", Integer.class)).isEqualTo(291);
+				+ "where table_schema=current_schema()", Integer.class))
+				.isEqualTo(canonical.path("total_columns").asInt() + 17);
 			assertThat(jdbc.queryForObject("select count(*) from information_schema.columns "
 				+ "where table_schema=current_schema() and table_name='keyring_reset_run'", Integer.class))
 				.isEqualTo(17);

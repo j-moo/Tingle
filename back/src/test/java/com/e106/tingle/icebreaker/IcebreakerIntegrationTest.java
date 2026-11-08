@@ -77,6 +77,15 @@ class IcebreakerIntegrationTest extends IntegrationTestSupport {
 	}
 
 	@Test
+	void retainedRoomWithWithdrawnParticipantFailsClosedWithoutNullUnboxingOrNewAnalysis() throws Exception {
+		jdbc.update("update chat_participant set user_id=null where chat_id=? and user_id=?", room.getId(), firstId);
+		perform(get(path(room)), second, null).andExpect(status().isNotFound())
+			.andExpect(jsonPath("$.code").value("RESOURCE_NOT_FOUND"));
+		assertThat(storedState(room)).isEqualTo("{}");
+		then(gateway).should(never()).generate(anyLong(), any(UUID.class), anyMap(), any(Instant.class));
+	}
+
+	@Test
 	void unrequestedRoomDoesNotPretendThatGenerationHasStarted() throws Exception {
 		perform(get(path(room)), first, null).andExpect(status().isNotFound())
 			.andExpect(jsonPath("$.code").value("RESOURCE_NOT_FOUND"));

@@ -37,6 +37,7 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 import org.springframework.transaction.support.TransactionTemplate;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 
+import com.e106.tingle.auth.MemberAccessRepository;
 import com.e106.tingle.encounter.EncounterEvaluationGateway.Input;
 import com.e106.tingle.encounter.EncounterEvaluationGateway.Outcome;
 import com.e106.tingle.encounter.EncounterEvaluationGateway.ParticipantInput;
@@ -88,7 +89,8 @@ class EncounterEvaluationWorkerPersistenceTest {
 			ObjectProvider<EncounterEvaluationCompletion> completions = mock(ObjectProvider.class);
 			when(completions.getIfAvailable()).thenReturn(completion);
 			return new EncounterEvaluationWorker(jdbc, mapper, clock, receipts, gateways,
-				mock(ObjectProvider.class), completions, environment, transactions);
+				mock(ObjectProvider.class), completions, environment, transactions,
+				new MemberAccessRepository(jdbc, environment));
 		}
 	}
 
