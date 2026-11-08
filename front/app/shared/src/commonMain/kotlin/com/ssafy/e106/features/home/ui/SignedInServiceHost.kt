@@ -36,11 +36,17 @@ import org.koin.compose.viewmodel.koinViewModel
 // Keyrings는 서버의 등록 목록을 확인하는 경로이며 BLE 등록/초기화 경로와 구분한다.
 internal enum class ServicePage { Home, Proposals, Menu, Chats, Safety, Report, AiConsent, Profile, Survey, Settings, Help, Keyrings, BleProbe, KeyringReset, Preparing }
 
-/** 가입이 끝난(READY) 계정의 서비스 화면. 가입 중이면 가입 화면을 보여준다(운영 · 개발 앱 같음). */
+/** 가입 중에는 가입 화면을 유지하되, 탈퇴 제한을 해소할 소유 키링 관리 경로만 허용한다. */
 @Composable fun SignedInServiceHost(session: Session.SignedIn, access: ProposalAccess = koinInject(),
-    model: HomeSessionViewModel = koinViewModel(), pushes: PushEvents = koinInject()) {
-    var opened by rememberSaveable(session.userId, session.isReady, session.status) { mutableStateOf(session.isReady) }
-    var page by rememberSaveable(session.userId) { mutableStateOf(ServicePage.Home) }
+    model: HomeSessionViewModel = koinViewModel(), pushes: PushEvents = koinInject(),
+    // 기기 시험에서 BLE 부작용만 분리한다. 제품에서는 기존 Activity 범위의 자동 동기화를 사용한다.
+    foregroundSync: @Composable (Boolean) -> Unit = { KeyringForegroundSync(suspendSync = it) }) {
+    val withdrawal: WithdrawalCoordinator = koinInject()
+    // 탈퇴 루트가 닫힌 첫 프레임부터 목적지를 선택한다. 가입 화면을 먼저 구성해 이동을 다시 막지 않는다.
+    // 회전은 저장된 화면을 복원하고, 다른 계정의 이동 요청은 초기값으로 사용하지 않는다.
+    val pendingKeyring = withdrawal.state.value.keyringOwner == session.userId
+    var opened by rememberSaveable(session.userId, session.isReady, session.status) { mutableStateOf(session.isReady || pendingKeyring) }
+    var page by rememberSaveable(session.userId) { mutableStateOf(if (pendingKeyring) ServicePage.Keyrings else ServicePage.Home) }
     var roomId by rememberSaveable(session.userId) { mutableStateOf<Long?>(null) }
     var proposalId by rememberSaveable(session.userId) { mutableStateOf<Long?>(null) }
     var safetyOperation by rememberSaveable(session.userId) { mutableStateOf(SafetyOperation.Block) }
@@ -58,10 +64,16 @@ internal enum class ServicePage { Home, Proposals, Menu, Chats, Safety, Report, 
     val uri = LocalUriHandler.current
     // 같은 Activity의 동기화 모델을 BLE 화면에서도 공유한다. 가입 화면이 바뀌어도 대상 기록은 유지하며,
     // 앱이 화면에 떠 있는 동안 자동 발급한다(운영 · 개발 앱 같음). 회전/백그라운드에서는 취소 후 내구 기록으로 복구한다.
-    KeyringForegroundSync(suspendSync = page == ServicePage.KeyringReset)
+    foregroundSync(page == ServicePage.KeyringReset)
     fun go(destination: ServicePage) { model.leave(); page = destination }
     fun chats(room: Long? = null) { roomId = room; go(ServicePage.Chats) }
     fun proposals() { proposalId = null; go(ServicePage.Proposals) }
+    WithdrawalKeyringNavigation(session.userId, withdrawal) {
+        // 탈퇴 제한 안내의 버튼도 메뉴와 같은 키링 관리 화면으로 이동한다. 다른 계정의 늦은 이동은 소비하지 않는다.
+        opened = true
+        keyringFromMenu = true
+        go(ServicePage.Keyrings)
+    }
     // 알림은 이 화면에서만 소비한다. 입력/저장 중 화면을 빼앗지 않고 홈·마이 복귀 후 이동한다.
     LaunchedEffect(pendingPush, session, page, opened, logoutPrompt) {
         val target = pendingPush ?: return@LaunchedEffect
@@ -74,7 +86,7 @@ internal enum class ServicePage { Home, Proposals, Menu, Chats, Safety, Report, 
         // 이동 후 상세 화면이 서버의 최신 참여/만료 권한을 다시 검사한다.
         pushes.consume(target)
     }
-    fun load() { if (opened) when (page) {
+    fun load() { if (opened && access.allowed(session)) when (page) {
         ServicePage.Home -> model.home()
         ServicePage.Menu -> model.account()
         ServicePage.Help -> model.guide(help)
@@ -84,9 +96,14 @@ internal enum class ServicePage { Home, Proposals, Menu, Chats, Safety, Report, 
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { load() }
     LifecycleEventEffect(Lifecycle.Event.ON_STOP) { model.leave() }
 
-    if (!opened || !access.allowed(session)) {
+    // 가입 상태를 READY로 바꾸거나 홈·제안·채팅을 열지 않는다. 소유 해제에 필요한 화면만 예외다.
+    if (!opened || (!access.allowed(session) && !canManageOwnedKeyring(session, page))) {
         Column(Modifier.fillMaxSize()) {
             Box(Modifier.weight(1f)) { OnboardingRoute(session, managedKeyringConnection = true) }
+            // BE 탈퇴 API는 가입 중에도 허용한다. 키링 미등록 계정이 홈에 도달할 때까지 기다리지 않는다.
+            TextButton(onClick = { withdrawal.open(session.userId) }, modifier = Modifier.fillMaxWidth()) {
+                Text(stringResource(Res.string.account_withdrawal))
+            }
         }
         return
     }
@@ -160,6 +177,8 @@ internal enum class ServicePage { Home, Proposals, Menu, Chats, Safety, Report, 
                     AccountMenuAction.Permissions -> openNotificationSettings()
                     AccountMenuAction.Keyring -> { keyringFromMenu = true; go(ServicePage.Keyrings) }
                     AccountMenuAction.Logout -> logoutPrompt = true
+                    // 확인 화면으로만 진입한다. 메뉴 터치가 준비/탈퇴 POST를 실행하지 않는다.
+                    AccountMenuAction.Withdrawal -> withdrawal.open(session.userId)
                     AccountMenuAction.Terms, AccountMenuAction.Privacy, AccountMenuAction.Support, AccountMenuAction.Correction -> {
                         help = when (action) {
                             AccountMenuAction.Terms -> HelpGuideKind.Terms
@@ -189,3 +208,8 @@ internal enum class ServicePage { Home, Proposals, Menu, Chats, Safety, Report, 
 
 /** 편집·전송·신고 확인 화면에서는 알림 이동을 보류한다. */
 internal fun canOpenServicePush(page: ServicePage) = page in setOf(ServicePage.Home, ServicePage.Menu, ServicePage.Preparing)
+
+/** 약관 동의 이후의 가입 중 계정도 등록된 실물 키링을 해제할 수 있어야 한다. 서버 소유 검증은 각 API가 담당한다. */
+internal fun canManageOwnedKeyring(session: Session.SignedIn, page: ServicePage): Boolean =
+    session.status != OnboardingStatus.AGREEMENT_REQUIRED &&
+        page in setOf(ServicePage.Keyrings, ServicePage.KeyringReset, ServicePage.BleProbe)
