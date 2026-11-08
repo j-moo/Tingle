@@ -25,6 +25,10 @@ import org.koin.core.scope.Scope
 
 internal actual fun Scope.platformTokenStore(baseUrl: String): TokenStore = AndroidTokenStore(androidContext(), baseUrl)
 
+// noBackupFilesDir + 별도 Keystore 키를 사용해 TokenStore.clear와 함께 삭제되지 않는다.
+internal actual fun Scope.platformProtectedRecordStore(baseUrl: String): com.ssafy.e106.core.storage.ProtectedRecordStore =
+    com.ssafy.e106.core.storage.AndroidProtectedRecordStore(androidContext(), baseUrl)
+
 internal actual fun Scope.platformSocialLogin(keys: SocialKeys): SocialLogin = AndroidSocialLogin(androidContext() as Application, keys)
 
 internal actual fun Scope.platformPushDevice(): PushDevice = AndroidPushDevice(androidContext())

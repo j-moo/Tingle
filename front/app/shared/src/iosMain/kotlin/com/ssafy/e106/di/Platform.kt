@@ -12,6 +12,10 @@ import org.koin.core.scope.Scope
 // iOS Keychain 저장소는 S15P31E106-197. 그 전에는 iOS 에서 세션을 쓰지 않는다
 internal actual fun Scope.platformTokenStore(baseUrl: String): TokenStore = TODO("iOS TokenStore — S15P31E106-197")
 
+// iOS Keychain 기반이 준비되기 전에는 평문 영수증 저장으로 대체하지 않는다. Android MVP 범위다.
+internal actual fun Scope.platformProtectedRecordStore(baseUrl: String): com.ssafy.e106.core.storage.ProtectedRecordStore =
+    error("iOS protected recovery storage is not implemented")
+
 internal actual fun Scope.platformSocialLogin(keys: SocialKeys): SocialLogin = TODO("iOS 소셜 로그인 — S15P31E106-197")
 
 internal actual fun Scope.platformPushDevice(): PushDevice = TODO("iOS 푸시(APNs) — S15P31E106-197")

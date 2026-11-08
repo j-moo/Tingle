@@ -32,16 +32,19 @@ internal fun createHttpClient(
     engine: HttpClientEngine? = null,
     session: SessionAuth? = null,
     refreshRetryDelays: List<Long> = REFRESH_RETRY_DELAYS,
+    followRedirects: Boolean = true,
 ): HttpClient {
     val config: HttpClientConfig<*>.() -> Unit = {
         expectSuccess = false                            // 4xx·5xx 도 예외 대신 응답으로 받아 call 이 AppError 로 바꾼다
+        this.followRedirects = followRedirects
         install(ContentNegotiation) { json(ApiJson) }
         install(HttpTimeout) { connectTimeoutMillis = 10_000; requestTimeoutMillis = 15_000 }
         install(WebSockets)                              // 채팅 실시간 수신(core/realtime). ping 은 엔진 설정([platformEngine])
         if (httpLog) install(Logging) {                  // debug 빌드만. release 는 URL 도 남기지 않는다
             logger = Logger.SIMPLE
             level = LogLevel.INFO                        // URL·상태만. 본문 로그 금지(로그인·재발급 본문에 토큰이 있다)
-            sanitizeHeader { it == HttpHeaders.Authorization }   // 헤더는 Authorization 만 가린다
+            // 상세 로그 수준을 바꾸더라도 탈퇴 결과 영수증이 출력되지 않도록 함께 가린다.
+            sanitizeHeader { it.equals(HttpHeaders.Authorization, true) || it.equals("X-Withdrawal-Receipt", true) }
         }
         defaultRequest {
             url(baseUrl)                                 // 반드시 / 로 끝난다
@@ -57,3 +60,7 @@ internal fun createHttpClient(
 
 /** 플랫폼 HTTP 엔진. null 이면 Ktor 가 의존성에 있는 엔진을 고른다 */
 internal expect fun platformEngine(): HttpClientEngine?
+
+/** 세션이 폐기된 뒤에도 쓰는 결과 조회 전용. Bearer/refresh/세션 만료 콜백·HTTP 로그가 없고 영수증 리다이렉트도 금지한다. */
+internal fun createReceiptHttpClient(baseUrl: String, engine: HttpClientEngine? = null): HttpClient =
+    createHttpClient(baseUrl, httpLog = false, engine = engine, session = null, followRedirects = false)
