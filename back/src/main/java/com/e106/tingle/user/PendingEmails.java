@@ -64,7 +64,7 @@ public class PendingEmails {
 		return entry.email();
 	}
 
-	/** 동의하지 않은 회원의 이메일이 30분을 넘겨 남지 않게 만료분을 지운다(아래 Purge 가 1분마다 부른다). */
+	/** 탈퇴 트랜잭션이 커밋되면 이 회원이 보관 중인 이메일을 지운다(롤백되면 그대로 둔다). */
 	public void forgetAfterCommit(long userId) {
 		TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
 			@Override
@@ -74,6 +74,7 @@ public class PendingEmails {
 		});
 	}
 
+	/** 동의하지 않은 회원의 이메일이 30분을 넘겨 남지 않게 만료분을 지운다(아래 Purge 가 1분마다 부른다). */
 	void purgeExpired() {
 		Instant now = clock.instant();
 		entries.values().removeIf(entry -> !entry.expiresAt().isAfter(now));

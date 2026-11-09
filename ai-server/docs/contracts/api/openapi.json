@@ -153,6 +153,90 @@
               "INVALID_SOCIAL_TOKEN"
             ]
           },
+          "409": {
+            "description": "REJOIN_RESTRICTED: 탈퇴한 소셜 계정으로 72시간 안에 다시 로그인. 토큰을 발급하지 않는다.",
+            "headers": {
+              "X-Request-Id": {
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              },
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "민감 응답 no-store"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "rejoinAvailableAt"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "const": "REJOIN_RESTRICTED"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "rejoinAvailableAt": {
+                      "type": "string",
+                      "format": "date-time",
+                      "description": "다시 가입할 수 있는 시각(UTC)"
+                    }
+                  }
+                },
+                "example": {
+                  "code": "REJOIN_RESTRICTED",
+                  "message": "탈퇴 후 72시간이 지나면 다시 가입할 수 있어요.",
+                  "rejoinAvailableAt": "2026-11-12T01:30:00Z"
+                }
+              }
+            },
+            "x-error-codes": [
+              "REJOIN_RESTRICTED"
+            ]
+          },
+          "422": {
+            "description": "POLICY_UNRESOLVED: 서버 탈퇴 정보 설정 불일치(운영 설정 오류)",
+            "headers": {
+              "X-Request-Id": {
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              },
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "민감 응답 no-store"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "code": "POLICY_UNRESOLVED",
+                  "message": "POLICY_UNRESOLVED",
+                  "requestId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+                  "retryable": false
+                }
+              }
+            },
+            "x-error-codes": [
+              "POLICY_UNRESOLVED"
+            ]
+          },
           "502": {
             "description": "SOCIAL_PROVIDER_ERROR",
             "headers": {
