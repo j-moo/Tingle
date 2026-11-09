@@ -115,6 +115,28 @@ class WithdrawalRootDeviceTest {
         }
         WithdrawalRootTestActivity.scope.cancel()
     }
+    @Test fun failedExecuteWithPreparedResultExplainsRetryAndRequiresNewConsent() {
+        WithdrawalRootTestActivity.reset()
+        val context=InstrumentationRegistry.getInstrumentation().context
+        try {
+            ActivityScenario.launch<WithdrawalRootTestActivity>(Intent(context,WithdrawalRootTestActivity::class.java)).use { scenario ->
+                scenario.onActivity {
+                    // 실행은 500, 영수증 조회는 기존 PREPARED를 반환한 실서버 순서를 재현한다.
+                    WithdrawalRootTestActivity.server.sent={ ApiResult.Fail(AppError.Server(500,"INTERNAL_SERVER_ERROR","synthetic")) }
+                    WithdrawalRootTestActivity.controller.open(75)
+                }
+                compose.onNodeWithText("탈퇴 안내 확인하기").performScrollTo().performClick()
+                compose.onNodeWithText("이전 요청에서 탈퇴가 완료되지 않았어요.",substring=true).assertDoesNotExist()
+                compose.onNodeWithText("삭제되는 정보와 재가입 제한을 확인했고, 회원탈퇴에 동의해요.").performScrollTo().performClick()
+                compose.onNodeWithText("동의하고 회원탈퇴").performScrollTo().performClick()
+                compose.onNodeWithText("이전 요청에서 탈퇴가 완료되지 않았어요.",substring=true).performScrollTo().assertIsDisplayed()
+                compose.onNodeWithText("동의하고 회원탈퇴").performScrollTo().assertIsNotEnabled()
+                assertEquals(1,WithdrawalRootTestActivity.server.sends)
+            }
+        } finally {
+            WithdrawalRootTestActivity.scope.cancel()
+        }
+    }
     @Test fun finalClickEndsSessionButCompletionSurvivesActivityRecreation() {
         WithdrawalRootTestActivity.reset()
         val context=InstrumentationRegistry.getInstrumentation().context

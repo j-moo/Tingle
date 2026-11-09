@@ -48,7 +48,9 @@ fun WithdrawalScreen(state: WithdrawalState, onAccepted: (Boolean) -> Unit, onAc
                         Text(stringResource(Res.string.withdraw_rejoin))
                         Text(stringResource(Res.string.withdraw_recheck), style = MaterialTheme.typography.bodySmall)
                         if (stage == WithdrawalStage.Confirm) {
-                            Text(stringResource(Res.string.withdraw_prepare_only))
+                            // 이전 실행 후 서버가 같은 요청을 PREPARED로 확인하면 미완료 사실과 재동의 필요를 알린다.
+                            Text(stringResource(if (state.canCancelPreparation) Res.string.withdraw_prepare_only
+                                else Res.string.withdraw_execute_retry))
                             AppCheckbox(state.accepted, onAccepted, stringResource(Res.string.withdraw_accept))
                         }
                     }

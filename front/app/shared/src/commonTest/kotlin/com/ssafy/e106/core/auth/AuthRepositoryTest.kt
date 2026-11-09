@@ -19,7 +19,6 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.awaitCancellation
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
@@ -289,8 +288,9 @@ class AuthRepositoryTest {
         h.session.restore().join()
         h.auth.login(Provider.KAKAO)
         h.store.loadGate = CompletableDeferred()
-        val logout = launch(Dispatchers.Default) { h.auth.logout() }
-        withContext(Dispatchers.Default) { withTimeout(5_000) { while (!h.store.loadStarted) delay(10) } }
+        // 테스트 스레드에서 첫 중단점까지 즉시 진행한다. 토큰 읽기에서 대기 중인지 확인하고 그 시점에 취소한다.
+        val logout = launch(start = CoroutineStart.UNDISPATCHED) { h.auth.logout() }
+        assertTrue(h.store.loadStarted, "취소 전에 로그아웃이 토큰을 읽기 시작해야 한다")
         logout.cancel()                                  // 로그아웃을 누르자마자 화면이 바뀌었다
         logout.join()
         assertNull(h.store.saved, "처음 토큰을 읽다 취소돼도 기기 로그아웃은 끝난다")
