@@ -50,6 +50,29 @@ if (values.accountLockTranscript) {
 const text = values.settingsTranscript.toString('utf8').split('\n');
 assert.equal(text[10], hash(values.bundle).toString('hex'));
 assert.equal(text[9], v3 ? 'tingle-keyring-settings-v3' : 'tingle-keyring-settings-v2');
+if (values.appliedResponse) {
+  const [serial, keyId, deviceId, owner, run, version, , payloadHash, runNonce] = text.slice(3);
+  const epoch = text[14];
+  const response = JSON.parse(values.appliedResponse.toString('utf8'));
+  const proofVersion = 'tingle-settings-applied-v1';
+  const signature = Buffer.from(response.proof.signature, 'base64url');
+  assert.equal(signature.length, 64);
+  assert.deepEqual(response, {
+    protocolVersion: 1, type: 'SETTINGS_APPLIED_PROOF', requestId: 'test', syncRunId: run,
+    settingsVersion: Number(version), payloadHash,
+    proof: {protocolVersion: proofVersion, keyId, signature: signature.toString('base64url')},
+  });
+  const message = Buffer.from([
+    'TINGLE-KEYRING-APPLIED', proofVersion, keyId, serial, deviceId, owner, epoch,
+    run, runNonce, version, payloadHash, 'APPLIED', '',
+  ].join('\n'), 'utf8');
+  const devicePublic = values.grant.subarray(165, 197);
+  check(devicePublic, message, signature);
+  assert(!verify(null, message.subarray(0, -1), key(devicePublic), signature));
+  const wrongNonce = Buffer.from(message.toString('utf8').replace(`\n${runNonce}\n`, `\n${'B'.repeat(43)}\n`));
+  assert(!verify(null, wrongNonce, key(devicePublic), signature));
+  console.log('OpenSSL interop: applied proof verified over the server-run fields and final LF');
+}
 const envelope = values.encounter;
 assert.equal(envelope.toString('ascii',0,4), 'TER2');
 const wireBytes = envelope.readUInt16LE(4), evidenceBytes = envelope.readUInt16LE(6);
