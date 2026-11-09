@@ -35,11 +35,29 @@
     <string name="permission_unsupported">이 기기는 키링 연결을 지원하지 않아요.</string>
     <string name="permission_denied_hint">권한이 거절됐어요. 앱 설정에서 키링 연결 권한을 허용해 주세요.</string>
     <string name="permission_required_hint">필수 권한을 모두 허용해야 다음으로 넘어갈 수 있어요. 닫으면 로그아웃돼요.</string>
-    <!-- 화면 연결 여부가 아니라 서버가 알려 준 남은 가입 절차를 안내한다. 저장 증명만으로 가입 완료를 약속하지 않는다. -->
-    <string name="onboarding_survey_wait">프로필 등록이 완료됐어요. 성향테스트에 응답하고 분석을 완료해 주세요.</string>
-    <string name="onboarding_preferences_wait">희망 상대 나이를 선택하고 매칭 설정을 확인해 주세요.</string>
-    <string name="onboarding_sync_wait">등록된 키링을 연결해 최신 설정을 동기화해 주세요. 설정 저장 후에도 가입 준비가 남아 있으면 서버 확인이 더 필요해요.</string>
     <string name="onboarding_ready_wait">가입이 완료됐어요. 홈 화면 연결을 준비하고 있어요.</string>
     <string name="onboarding_link_failed">안내 페이지를 열지 못했어요. 잠시 후 다시 시도해 주세요.</string>
-    <string name="onboarding_profile_wait">프로필 입력 화면 연결을 준비하고 있어요.</string>
+    <!-- 가입 준비 허브: 진행 중인 단계만 펼친다 -->
+    <string name="onboarding_hub_count">%1$d / %2$d 단계</string>
+    <string name="onboarding_hub_done">완료</string>
+    <string name="onboarding_hub_now">진행 중</string>
+    <string name="onboarding_hub_wait">대기</string>
+    <string name="onboarding_hub_keyring">키링 등록</string>
+    <string name="onboarding_hub_profile">프로필 작성</string>
+    <string name="onboarding_hub_profile_desc">다른 사람에게 보일 내 소개예요. 닉네임 · 생년월일 · 생활 습관을 적어요.</string>
+    <string name="onboarding_hub_profile_start">프로필 작성 시작</string>
+    <string name="onboarding_hub_survey">성향테스트</string>
+    <string name="onboarding_hub_survey_desc">나와 잘 맞는 사람을 찾는 데 써요. 중간에 나가도 이어서 할 수 있어요.</string>
+    <string name="onboarding_hub_survey_start">성향테스트 시작</string>
+    <string name="onboarding_hub_preferences">희망 나이 · 매칭 설정</string>
+    <string name="onboarding_hub_preferences_desc">만나고 싶은 상대의 나이를 정해요. 나중에 설정에서 바꿀 수 있어요.</string>
+    <string name="onboarding_hub_preferences_start">희망 나이 정하기</string>
+    <string name="onboarding_hub_sync">키링 동기화</string>
+    <string name="onboarding_hub_sync_desc">키링을 휴대폰 가까이 두면 내 설정을 키링에 보내요. 이것만 끝나면 시작이에요.</string>
+    <string name="onboarding_hub_sync_start">키링에 설정 보내기</string>
+    <string name="onboarding_hub_fact_3min">약 3분</string>
+    <string name="onboarding_hub_fact_100">100문항</string>
+    <string name="onboarding_hub_fact_15min">약 15분</string>
+    <string name="onboarding_hub_fact_1min">1분</string>
+    <string name="onboarding_hub_fact_keyring">키링 필요</string>
 </resources>

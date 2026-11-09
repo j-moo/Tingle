@@ -55,6 +55,9 @@ fun OnboardingRoute(
     // 개발 메뉴에서도 실제 API 권한을 사용하며 가입 상태를 바꾸지 않는다.
     var openSettings by rememberSaveable(session) { mutableStateOf(false) }
     val canSettings = settingsAccess.allowed(session)
+    // 프로필은 허브의 "프로필 작성 시작"으로 연다. 허브가 마지막으로 펼쳐 둔 줄은 단계가 바뀌어도 남겨 접힘 · 펼침 연출에 쓴다
+    var openProfile by rememberSaveable(session.userId, session.status) { mutableStateOf(false) }
+    var hubSeen by rememberSaveable(session.userId) { mutableStateOf(-1) }
     when {
         // 연결 화면을 로딩 분기보다 먼저 둔다. 등록 뒤 가입 단계가 바뀌는 순간 로딩 화면이 끼면 연결 화면이 빠지면서 BLE 연결이 끊긴다
         keyringStep && openBleProbe -> ConnectedKeyringSetupRoute({ openBleProbe = false }, managedConnection = managedKeyringConnection)
@@ -62,12 +65,13 @@ fun OnboardingRoute(
         canSettings && openSettings -> ConnectedSettingsRoute(session, { openSettings = false })
         canSurvey && openSurvey -> SurveyRoute(session, { openSurvey = false })
         canManage && manageProfile -> ProfileManagementRoute(session, { manageProfile = false })
-        !session.isReady && session.status == OnboardingStatus.PROFILE_REQUIRED -> ProfileRoute(session)
+        openProfile && !session.isReady && session.status == OnboardingStatus.PROFILE_REQUIRED -> ProfileRoute(session)
         else -> OnboardingScreen(state, model::check, model::submit, model::load, model::refresh, model::logout,
             canManageProfile = canManage, onManageProfile = { if (canManage) manageProfile = true },
             canOpenSurvey = canSurvey, onOpenSurvey = { if (canSurvey) openSurvey = true },
             canOpenSettings = canSettings, onOpenSettings = { if (canSettings) openSettings = true },
-            onBleProbe = if (keyringStep) ({ openBleProbe = true }) else null)
+            onBleProbe = if (keyringStep) ({ openBleProbe = true }) else null,
+            onOpenProfile = { openProfile = true }, hubSeen = hubSeen, onHubSettled = { hubSeen = it })
     }
 }
 
@@ -88,6 +92,9 @@ fun OnboardingScreen(
     canOpenSettings: Boolean = false,
     onOpenSettings: () -> Unit = {},
     onBleProbe: (() -> Unit)? = null,
+    onOpenProfile: () -> Unit = {},
+    hubSeen: Int = -1,
+    onHubSettled: (Int) -> Unit = {},
 ) {
     val session = state.session ?: return
     val agreements = session.status == OnboardingStatus.AGREEMENT_REQUIRED
@@ -102,6 +109,18 @@ fun OnboardingScreen(
     if (keyring && !state.submitted) {
         KeyringIntro(state.busy, state.error?.message, linkFailed, state.purchaseUrl, onFind = onBleProbe, onOpen = ::open,
             onReload = onReload, onRefresh = onRefresh, onLogout = onLogout)
+        return
+    }
+    // 프로필 · 성향테스트 · 희망 나이 · 동기화: 가입 준비 허브(아코디언). 단계별 시작 버튼만 두고 개발용 진입 · 다시 확인 버튼은 두지 않는다
+    val hub = if (session.isReady || state.submitted) -1 else hubStep(session.status)
+    if (hub > 0) {
+        val start = when (session.status) {
+            OnboardingStatus.PROFILE_REQUIRED -> onOpenProfile
+            OnboardingStatus.SURVEY_REQUIRED -> onOpenSurvey.takeIf { canOpenSurvey }
+            OnboardingStatus.PREFERENCES_REQUIRED -> onOpenSettings.takeIf { canOpenSettings }
+            else -> onBleProbe
+        }
+        SignupHub(hub, hubSeen, onHubSettled, start, state.busy, state.error?.message, onLogout)
         return
     }
     OnboardingPanel(stringResource(when {
@@ -138,13 +157,7 @@ fun OnboardingScreen(
                 if (state.requiredAgreements.isEmpty() || state.error != null) AppButton(stringResource(Res.string.onboarding_retry),
                     variant = AppButtonVariant.Secondary, enabled = !state.busy, onClick = onReload)
             }
-            else -> Text(stringResource(when {
-                session.isReady -> Res.string.onboarding_ready_wait
-                session.status == OnboardingStatus.PROFILE_REQUIRED -> Res.string.onboarding_profile_wait
-                session.status == OnboardingStatus.SURVEY_REQUIRED -> Res.string.onboarding_survey_wait
-                session.status == OnboardingStatus.PREFERENCES_REQUIRED -> Res.string.onboarding_preferences_wait
-                else -> Res.string.onboarding_sync_wait
-            }))
+            else -> Text(stringResource(Res.string.onboarding_ready_wait))
         }
         state.error?.let { OnboardingError(it.message) }
         if (onBleProbe != null) AppButton(stringResource(Res.string.sync_live_open), enabled = !state.busy, onClick = onBleProbe)
