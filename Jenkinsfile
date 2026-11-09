@@ -198,6 +198,13 @@ sh gradlew check :androidApp:$APK_TASK --no-daemon -Dorg.gradle.jvmargs=-Xmx3g -
         script {
           def target = DEPLOY[env.gitlabSourceBranch]
           gitlabCommitStatus(name: "deploy-${env.gitlabSourceBranch}") {
+            def devWithdrawalCompose = '/srv/tingle/dev-runtime/withdrawal.compose.yml'
+            def composeOverride = ''
+            if (env.gitlabSourceBranch == 'develop') {
+              // 개발 백엔드에만 서버에 보관된 기존 탈퇴 설정과 서명 키를 전달한다.
+              sh "test -r '${devWithdrawalCompose}' || { echo '개발 탈퇴 Compose 설정을 읽을 수 없습니다'; exit 1; }"
+              composeOverride = "-f '${devWithdrawalCompose}'"
+            }
             if (target.backup) {
               // 두 DB 백업 계열 모두 최대 7일. 복원 후 재삭제 검증 전에는 서비스 개방 금지.
               sh '''
@@ -217,7 +224,7 @@ sh gradlew check :androidApp:$APK_TASK --no-daemon -Dorg.gradle.jvmargs=-Xmx3g -
               git -c core.quotePath=false ls-tree -r --name-only HEAD | sort > \$WORKSPACE/.deploy-files
               (cd ${target.dir} && find . -type f ! -name .deployed-commit | sed 's#^\\./##' | sort | comm -23 - \$WORKSPACE/.deploy-files | xargs -r -d '\\n' rm -f --)
               git rev-parse --short HEAD > ${target.dir}/.deployed-commit
-              docker compose --env-file /srv/tingle/.env --env-file /srv/tingle/app.env -f ${target.dir}/infra/docker-compose.yml up -d --build --no-deps ${target.services.keySet().join(' ')}
+              docker compose --env-file /srv/tingle/.env --env-file /srv/tingle/app.env -f ${target.dir}/infra/docker-compose.yml ${composeOverride} up -d --build --no-deps ${target.services.keySet().join(' ')}
               docker image prune -f
             """
             // 떠서 응답하는지 확인 (Jenkins 는 compose 내부망에 있어 서비스 이름으로 부른다)
