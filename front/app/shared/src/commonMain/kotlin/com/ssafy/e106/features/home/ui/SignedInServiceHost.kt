@@ -25,6 +25,7 @@ import com.ssafy.e106.features.settings.ui.ConnectedSettingsRoute
 import com.ssafy.e106.features.survey.ui.SurveyRoute
 import com.ssafy.e106.features.keyring.ui.ConnectedOwnedKeyringsRoute
 import com.ssafy.e106.features.keyring.ui.ConnectedKeyringSetupRoute
+import com.ssafy.e106.features.keyring.ui.ConnectedKeyringEncounterRoute
 import com.ssafy.e106.features.keyring.ui.KeyringForegroundSync
 import com.ssafy.e106.features.keyring.ui.ConnectedKeyringResetRoute
 import com.ssafy.e106.features.keyring.ui.BleProbeViewModel
@@ -149,20 +150,21 @@ internal enum class ServicePage { Home, Proposals, Menu, Chats, Safety, Report, 
                 ServicePage.Settings -> ConnectedSettingsRoute(session, { go(ServicePage.Menu) })
                 // 소유 정보 확인만 수행하므로 메뉴를 열었다고 등록/동기화를 요청하지 않는다.
                 ServicePage.Keyrings -> ConnectedOwnedKeyringsRoute(session, { go(if (keyringFromMenu) ServicePage.Menu else ServicePage.Home) },
-                    onReset = { id -> resetDeviceId = id; connectForReset = false; go(ServicePage.KeyringReset) })
+                    onReset = { id -> resetDeviceId = id; connectForReset = false; go(ServicePage.KeyringReset) },
+                    onConnectForRecords = { connectForReset = false; go(ServicePage.BleProbe) })
                 // 키링 초기화는 운영 · 개발 앱 같다. 초기화하려면 키링 연결이 필요해 연결 화면으로 보낸다
                 ServicePage.KeyringReset -> resetDeviceId?.let { id ->
                     ConnectedKeyringResetRoute(id, { go(ServicePage.Keyrings) }, { connectForReset = true; go(ServicePage.BleProbe) })
                 }
-                // 키링 연결 화면(초기화 전 연결용). 서버 가입 상태/소유 관계를 변경하지 않는다.
+                // 연결 목적을 분리해 기록 메뉴에서 초기화 화면으로 이동하거나 등록 요청을 시작하지 않는다.
                 ServicePage.BleProbe -> {
                     if (connectForReset) {
                         val link by koinViewModel<BleProbeViewModel>().state.collectAsStateWithLifecycle()
                         LaunchedEffect(link.connected && link.info != null) {
                             if (link.connected && link.info != null) { connectForReset = false; go(ServicePage.KeyringReset) }
                         }
-                    }
-                    ConnectedKeyringSetupRoute({ connectForReset = false; go(ServicePage.Keyrings) }, managedConnection = true)
+                        ConnectedKeyringSetupRoute({ connectForReset = false; go(ServicePage.Keyrings) }, managedConnection = true)
+                    } else ConnectedKeyringEncounterRoute { go(ServicePage.Keyrings) }
                 }
                 ServicePage.Menu -> AccountMenuScreen(state.account, onAction = { action -> when (action) {
                     AccountMenuAction.Refresh -> model.account()

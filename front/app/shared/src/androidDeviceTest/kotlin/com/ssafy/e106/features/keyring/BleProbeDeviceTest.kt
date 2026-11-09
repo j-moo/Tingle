@@ -4,6 +4,7 @@ import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.foundation.layout.Column
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
@@ -58,6 +59,28 @@ class BleProbeDeviceTest {
             scenario.recreate(); compose.waitForIdle()
             compose.onNodeWithText("주변 키링 찾기").assertExists()
             compose.onNodeWithText("연결 끊기").assertDoesNotExist()
+        }
+    }
+
+    /** 접수증을 받지 못한 결과를 정리 성공과 구별하고 수동 버튼으로만 작업을 시작한다. */
+    @Test fun encounterShowsReceiptMissingWithoutReportingDeletion() {
+        val context = InstrumentationRegistry.getInstrumentation().context
+        val state = mutableStateOf(EncounterTransferState.Idle)
+        ActivityScenario.launch<BleProbeTestActivity>(Intent(context, BleProbeTestActivity::class.java)).use { scenario ->
+            scenario.onActivity { activity ->
+                activity.setContent {
+                    AppTheme {
+                        Column {
+                            KeyringEncounterTransferContent(state.value, enabled = true,
+                                onSend = { state.value = EncounterTransferState.NoReceipt })
+                        }
+                    }
+                }
+            }
+            compose.onNodeWithText("서명된 접수증을 아직 받지 못했어요.", substring = true).assertDoesNotExist()
+            compose.onNodeWithText("만남 기록 한 건 보내기").performClick()
+            compose.onNodeWithText("서명된 접수증을 아직 받지 못했어요.", substring = true).assertExists()
+            compose.onNodeWithText("서버 접수와 키링의 정리를 확인했어요.").assertDoesNotExist()
         }
     }
 

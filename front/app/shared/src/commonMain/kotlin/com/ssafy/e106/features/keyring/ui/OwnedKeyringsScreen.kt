@@ -29,7 +29,7 @@ import org.koin.compose.viewmodel.koinViewModel
 @Composable fun ConnectedOwnedKeyringsRoute(session: Session.SignedIn, onBack: () -> Unit,
     model: OwnedKeyringsViewModel = koinViewModel(), onReset: (Long) -> Unit,
     // 서버 소유 해제 뒤에도 원 계정의 로컬 기록으로 중단된 초기화를 다시 찾는다
-    recoveryLinks: (@Composable () -> Unit)? = null) {
+    recoveryLinks: (@Composable () -> Unit)? = null, onConnectForRecords: (() -> Unit)? = null) {
     val state by model.state.collectAsStateWithLifecycle()
     // 진입과 복귀를 한 곳에서 처리해 첫 화면에서 GET 두 개가 동시에 시작되지 않게 한다.
     LifecycleResumeEffect(session, state.owner) {
@@ -37,11 +37,14 @@ import org.koin.compose.viewmodel.koinViewModel
         onPauseOrDispose { model.leave() }
     }
     ProfileBackHandler(true, onBack)
-    if (state.owner == session) OwnedKeyringsScreen(state, model::load, onBack, onReset, recoveryLinks ?: {
-        // 목록이 아직 없으면(불러오는 중 · 실패) 중복 여부를 모르므로 띄우지 않는다
-        val items = state.items
-        if (items != null) KeyringResetRecoveryLinks(session.userId, onReset, skip = items.map { it.deviceId }.toSet())
-    })
+    if (state.owner == session) OwnedKeyringsScreen(state, model::load, onBack, onReset, onConnectForRecords) {
+        if (recoveryLinks != null) recoveryLinks()
+        else {
+            // 목록이 아직 없으면(불러오는 중 · 실패) 중복 여부를 모르므로 띄우지 않는다
+            val items = state.items
+            if (items != null) KeyringResetRecoveryLinks(session.userId, onReset, skip = items.map { it.deviceId }.toSet())
+        }
+    }
 }
 
 /**
@@ -49,7 +52,7 @@ import org.koin.compose.viewmodel.koinViewModel
  * 목록은 들어올 때 · 돌아올 때 자동으로 불러오므로, 다시 불러오기 버튼은 실패했을 때만 둔다.
  */
 @Composable fun OwnedKeyringsScreen(state: OwnedKeyringsState, onRefresh: () -> Unit, onBack: () -> Unit,
-    onReset: (Long) -> Unit, recoveryLinks: @Composable () -> Unit = {}) {
+    onReset: (Long) -> Unit, onConnectForRecords: (() -> Unit)? = null, recoveryLinks: @Composable () -> Unit = {}) {
     Surface(Modifier.fillMaxSize(), color = AppColors.Background) {
         Column(Modifier.fillMaxSize().safeDrawingPadding(), horizontalAlignment = Alignment.CenterHorizontally) {
             BackArrowBar(onBack)
@@ -84,6 +87,11 @@ import org.koin.compose.viewmodel.koinViewModel
                                     color = AppColors.TextSecondary)
                             }
                         }
+                    }
+                    // 연결 화면만 연다. 사용자가 실물에 연결한 뒤 전송을 별도로 시작한다.
+                    if (!state.loading && state.error == null && !state.items.isNullOrEmpty() && onConnectForRecords != null) {
+                        AppButton(stringResource(Res.string.keyring_encounter_connect), Modifier.fillMaxWidth(),
+                            variant = AppButtonVariant.Secondary, onClick = onConnectForRecords)
                     }
                     // 서버 소유 해제 후에도 원 계정의 로컬 실행 기록으로 초기화 결과를 다시 찾을 수 있다
                     recoveryLinks()

@@ -19,6 +19,9 @@ val keyringModule = module {
     // 301 기록 흐름에서 같은 연결의 권한을 열 때만 사용한다. DI 등록만으로 허가를 발급하지 않는다.
     single<KeyringOwnerSessionRepository> { HttpKeyringOwnerSessionRepository(get()) }
     single { KeyringOwnerAuthorizer(get()) }
+    single { KeyringEncounterRepository(get()) }
+    single { KeyringEncounterJournal(get()) }
+    viewModel { com.ssafy.e106.features.keyring.ui.KeyringEncounterViewModel(get(), get(), get(), get(), get()) }
     // 초기화 복구도 계정별 내구 저장소를 사용한다. DI 등록만으로 서버/BLE 호출은 발생하지 않는다.
     single<KeyringResetRepository> { HttpKeyringResetRepository(get()) }
     single { KeyringResetStore(get()) }
