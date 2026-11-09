@@ -2,7 +2,7 @@ package com.ssafy.e106.features.home.ui
 
 enum class HomeLoadState { Loading, Ready, Failed }
 enum class HomeKeyringState {
-    Ready, Disconnected, DisconnectedPending, Syncing, SyncFailed, Missing, RecheckRequired, StorageFull, Unknown,
+    Checking, Registered, Ready, Disconnected, DisconnectedPending, Syncing, SyncFailed, Missing, RecheckRequired, StorageFull, Unknown,
 }
 
 /** 표시용 스냅샷. null은 미확인이며 0/OFF/미등록으로 바꾸지 않는다. */

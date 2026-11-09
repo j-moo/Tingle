@@ -24,7 +24,7 @@ class HomeNavigationTestActivity : ComponentActivity() {
             var page by remember { mutableStateOf(0) }
             AppTheme {
                 when (page) {
-                    0 -> HomeScreen(HomeState(HomeLoadState.Ready), {}, onAction = {
+                    0 -> HomeScreen(HomeState(HomeLoadState.Ready, keyring = HomeKeyringState.Registered), {}, onAction = {
                         if (it == HomeAction.Proposals) page = 1
                         if (it == HomeAction.Profile) page = 2
                     })
@@ -47,6 +47,9 @@ class HomeNavigationDeviceTest {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         ActivityScenario.launch<HomeNavigationTestActivity>(Intent(context, HomeNavigationTestActivity::class.java)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)).use {
+            // 서버 등록이 확인된 홈에서는 등록 문구와 기존 상세 화면 진입 버튼을 함께 보여준다.
+            compose.onNodeWithText("등록된 키링이 있어요").performScrollTo().assertIsDisplayed()
+            compose.onNodeWithText("키링 상태·동기화 보기").assertExists()
             compose.onNodeWithText("받은 제안").performScrollTo().performClick()
             compose.onNodeWithText("제안", useUnmergedTree = true).assertExists()
             compose.onNodeWithText("마이").performClick()

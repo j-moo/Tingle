@@ -168,7 +168,7 @@ class WithdrawalSignupHostActivity : ComponentActivity() {
         val controller = WithdrawalRootTestActivity.controller
         // 첫 진입은 탈퇴 제한 화면이다. 회전 때는 소비한 이동 요청을 다시 만들지 않는다.
         if (savedInstanceState == null) controller.open(75)
-        val home = HomeSessionViewModel(unused(), unused(), unused(), sessions, unused())
+        val home = HomeSessionViewModel(unused(), unused(), unused(), sessions, unused(), unused())
         viewModelStore.put("signup-home", home)
         val owned = object : OwnedKeyringRepository {
             override suspend fun list(): ApiResult<List<OwnedKeyring>> {

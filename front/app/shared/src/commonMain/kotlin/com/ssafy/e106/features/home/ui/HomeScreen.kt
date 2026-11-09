@@ -128,6 +128,8 @@ private fun countText(count: Int?, empty: StringResource, nonempty: StringResour
 }
 
 private fun keyringCopy(state: HomeKeyringState): Pair<StringResource, StringResource> = when (state) {
+    HomeKeyringState.Checking -> Res.string.home_device_checking to Res.string.home_device_checking_help
+    HomeKeyringState.Registered -> Res.string.home_device_registered to Res.string.home_device_registered_help
     HomeKeyringState.Ready -> Res.string.home_device_ready to Res.string.home_device_ready_help
     HomeKeyringState.Disconnected -> Res.string.home_device_disconnected to Res.string.home_device_disconnected_help
     HomeKeyringState.DisconnectedPending -> Res.string.home_device_pending to Res.string.home_device_pending_help
