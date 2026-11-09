@@ -2,8 +2,8 @@
 
 | 항목 | 내용 |
 | --- | --- |
-| 버전 | v0.1.6 |
-| 변경일 | 2026-11-05 |
+| 버전 | v0.1.7 |
+| 변경일 | 2026-11-09 |
 | 담당자 | 가을 (BE) |
 | 관련 Story | S15P31E106-35 [BE] 소셜 로그인 인증 흐름과 API 명세 작성 |
 | 연관 Story | S15P31E106-34 [DOC] 가입 항목과 매칭 정책 v1 작성 (`docs/contracts/matching/profile-policy-v1.md`. 가입 입력 항목이 바뀌면 이 명세도 함께 수정) |
@@ -202,10 +202,23 @@ POST /api/auth/{provider}
 | 400 | INVALID_PROVIDER | provider가 `google`, `kakao`, `naver`가 아님 |
 | 400 | INVALID_REQUEST | token 누락 |
 | 401 | INVALID_SOCIAL_TOKEN | 만료·위조된 토큰, 우리 앱에서 발급되지 않은 토큰 |
+| 409 | REJOIN_RESTRICTED | 탈퇴한 소셜 계정으로 72시간 안에 다시 로그인. 본문에 `rejoinAvailableAt`(다시 가입할 수 있는 시각, ISO-8601 UTC)이 온다. 아래 예시 참고 |
+| 422 | POLICY_UNRESOLVED | 서버의 탈퇴 정보 설정이 맞지 않음(운영 설정 오류). 앱은 잠시 후 다시 시도 안내, 서버 담당자가 확인 |
 | 502 | SOCIAL_PROVIDER_ERROR | 소셜 서버 오류나 응답 없음. 잠시 후 재시도 |
+
+`409 REJOIN_RESTRICTED` 본문은 공통 오류 형식과 달리 아래 세 필드다.
+
+```json
+{
+  "code": "REJOIN_RESTRICTED",
+  "message": "탈퇴 후 72시간이 지나면 다시 가입할 수 있어요.",
+  "rejoinAvailableAt": "2026-11-12T01:30:00Z"
+}
+```
 
 ### 주의사항
 
+- (탈퇴 기능이 켜진 서버에서) 탈퇴한 소셜 계정은 탈퇴 완료 72시간 뒤부터 새 회원으로 다시 가입된다. 그 전에는 `409 REJOIN_RESTRICTED`이며 토큰을 발급하지 않는다. 화면에는 `rejoinAvailableAt`을 기기 시간대로 바꿔 보여 준다.
 - 처음 로그인한 소셜 계정은 `AGREEMENT_REQUIRED`부터 시작한다. 가입 도중 앱을 끄고 다시 로그인하면 마치지 않은 단계가 온다.
 - 만료 시각은 미리 재발급할 시점을 정하는 데만 쓴다. 기기 시계가 틀릴 수 있으므로 만료 판단은 서버의 `401 ACCESS_TOKEN_EXPIRED`를 기준으로 한다.
 - **구글은 ID 토큰을 보낸다.** 서버는 토큰의 `aud`가 서버용 웹 클라이언트 ID인지 확인하므로, 앱의 구글 로그인 설정에서 서버용 웹 클라이언트 ID를 지정해야 한다. 실제 값은 서버·앱 모두 환경변수로 주입하며 저장소에 올리지 않는다. 변수 이름은 `.env.example`을 따른다.
@@ -887,6 +900,7 @@ A151의 인증·약관·프로필·가입 단계와 숫자 설문 회차 조회�
 | v0.1.4 | 2026-10-28 | A151 공통 저장 매핑: 22표 보존 보완, 회원 상태·생성 시각과 항목별 동의 이력, 실제 복수 키링 확인 버전, OpenAPI /api·본인 userId·403 및 설문 revision/metadata·ETag 정합화 | 기존 /v1·/users/me 호출자와 숫자 회차 계약 반영 필요 |
 | v0.1.5 | 2026-11-03 | 가입 단계 조회에 제출 회차 복구 필드 `latestCompletedSessionId`·`latestAnalysis`·`activeResultId` 추가(FE !156 요청), OpenAPI `surveySessionId`를 숫자로 정정 | FE 가입 단계 조회 모델에 세 필드 추가 필요 |
 | v0.1.6 | 2026-11-05 | 이메일 저장 시점: 동의 전 로그인에서 받은 이메일을 약관(`PRIVACY`) 동의 때 저장(서버 메모리 30분, DB에는 동의 전 저장 안 함) | 앱 변경 없음 |
+| v0.1.7 | 2026-11-09 | 회원탈퇴(S15P31E106-268) 병합 반영: 로그인 `409 REJOIN_RESTRICTED`(탈퇴 72시간 재가입 제한, `rejoinAvailableAt`)·`422 POLICY_UNRESOLVED` 추가 | 앱 로그인 오류 처리에 409 추가 필요 |
 
 ## 로그아웃의 설치 연결 정리 · 2026-10-28
 
