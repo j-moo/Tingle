@@ -10,6 +10,7 @@ public final class KeyringProofTranscript {
 
 	public static final String PROTOCOL_VERSION = "tingle-device-proof-v1";
 	public static final String PROTOCOL_VERSION_2 = "tingle-device-proof-v2";
+	public static final String APPLIED_PROTOCOL_VERSION = "tingle-settings-applied-v1";
 
 	private static final Pattern KEY_ID = Pattern.compile("[A-Za-z0-9._-]{1,64}");
 	private static final Pattern SERIAL = Pattern.compile("[A-Za-z0-9._-]{1,64}");
@@ -54,6 +55,14 @@ public final class KeyringProofTranscript {
 			identifier(keyId, KEY_ID), identifier(serial, SERIAL), positive(deviceId), identifier(ownerGeneration),
 			identifier(run), nonce(nonce), positive(version), identifier(hash, HASH), "STORED",
 			nonnegative(ownershipEpoch));
+	}
+
+	public static KeyringProofTranscript applied(String keyId, String serial, long deviceId,
+		UUID ownerGeneration, long ownershipEpoch, UUID run, String nonce, long version, String hash) {
+		return new KeyringProofTranscript("TINGLE-KEYRING-APPLIED", APPLIED_PROTOCOL_VERSION,
+			identifier(keyId, KEY_ID), identifier(serial, SERIAL), positive(deviceId), identifier(ownerGeneration),
+			nonnegative(ownershipEpoch), identifier(run), nonce(nonce), positive(version), identifier(hash, HASH),
+			"APPLIED");
 	}
 
 	public byte[] bytes() {

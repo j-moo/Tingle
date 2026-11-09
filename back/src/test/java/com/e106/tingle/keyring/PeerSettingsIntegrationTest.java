@@ -2,6 +2,7 @@ package com.e106.tingle.keyring;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.BDDMockito.given;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -80,6 +81,46 @@ class PeerSettingsIntegrationTest extends IntegrationTestSupport {
 			profile = Arrays.copyOfRange(payload, 4, 200);
 		}
 		ReflectionTestUtils.setField(issuer, "expectedServerPublicKey", PUBLIC);
+	}
+
+	@Test
+	void appliedProofCompletesSignupAndCanBeRetried() throws Exception {
+		Fixture fixture = fixture();
+		JsonNode run = create(fixture, UUID.randomUUID(), nonce(1), 201);
+		UUID key = UUID.randomUUID();
+		String body = appliedBody(fixture, run, "APPLIED");
+		applied(fixture, run, key, body).andExpect(status().isConflict())
+			.andExpect(jsonPath("$.code").value("SYNC_STORAGE_ACK_REQUIRED"));
+		ack(fixture, run).andExpect(status().isOk()).andExpect(jsonPath("$.state").value("ACKED"));
+		perform(get("/api/users/" + fixture.userId() + "/onboarding"), fixture.tokens(), null)
+			.andExpect(status().isOk()).andExpect(jsonPath("$.nextStep").value("SYNC_PENDING"));
+		applied(fixture, run, key, body).andExpect(status().isOk());
+		assertThat(jdbc.queryForObject("select signup_completed_at is not null from users where id=?", Boolean.class,
+			fixture.userId())).isTrue();
+		perform(get("/api/users/" + fixture.userId() + "/onboarding"), fixture.tokens(), null)
+			.andExpect(status().isOk()).andExpect(jsonPath("$.nextStep").value("READY"))
+			.andExpect(jsonPath("$.onboardingCompleted").value(true));
+		Instant retryTime = clock.instant().plusSeconds(1);
+		given(clock.instant()).willReturn(retryTime);
+		applied(fixture, run, key, body).andExpect(status().isOk());
+		assertThat(jdbc.queryForObject("select synced_settings_version from keyring where id=?", Long.class,
+			fixture.deviceId())).isEqualTo(run.path("settingsVersion").asLong());
+	}
+
+	@Test
+	void rejectsTamperedAndStaleAppliedProofsWithoutUpdatingDevice() throws Exception {
+		Fixture fixture = fixture();
+		JsonNode run = create(fixture, UUID.randomUUID(), nonce(1), 201);
+		ack(fixture, run).andExpect(status().isOk());
+		applied(fixture, run, UUID.randomUUID(), appliedBody(fixture, run, "STORED"))
+			.andExpect(status().isUnprocessableContent()).andExpect(jsonPath("$.code").value("INVALID_DEVICE_PROOF"));
+		Instant renewalTime = clock.instant().plusSeconds(61);
+		given(clock.instant()).willReturn(renewalTime);
+		create(fixture, UUID.randomUUID(), nonce(2), 201);
+		applied(fixture, run, UUID.randomUUID(), appliedBody(fixture, run, "APPLIED"))
+			.andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("SYNC_VERSION_STALE"));
+		assertThat(jdbc.queryForObject("select synced_settings_version from keyring where id=?", Long.class,
+			fixture.deviceId())).isNull();
 	}
 
 	@Test
@@ -259,6 +300,26 @@ class PeerSettingsIntegrationTest extends IntegrationTestSupport {
 			toJson(Map.of("settingsVersion", run.path("settingsVersion").asLong(), "payloadHash",
 				run.path("payloadHash").asString(), "proof", Map.of("protocolVersion", "tingle-device-proof-v2",
 					"keyId", fixture.keyId(), "signature", encode(signature.sign())))));
+	}
+
+	private ResultActions applied(Fixture fixture, JsonNode run, UUID key, String body) throws Exception {
+		return perform(post(path(fixture) + "/" + run.path("syncRunId").asString() + "/applied")
+			.header("Idempotency-Key", key), fixture.tokens(), body);
+	}
+
+	private String appliedBody(Fixture fixture, JsonNode run, String outcome) throws Exception {
+		// Build independently from the published firmware wire format.
+		String protocol = "tingle-settings-applied-v1";
+		long version = run.path("settingsVersion").asLong();
+		String hash = run.path("payloadHash").asString();
+		String transcript = String.join("\n", "TINGLE-KEYRING-APPLIED", protocol, fixture.keyId(), fixture.serial(),
+			Long.toString(fixture.deviceId()), fixture.generation().toString(), "0", run.path("syncRunId").asString(),
+			run.path("nonce").asString(), Long.toString(version), hash, outcome) + "\n";
+		var signature = Signature.getInstance("Ed25519");
+		signature.initSign(fixture.keys().getPrivate());
+		signature.update(transcript.getBytes(StandardCharsets.UTF_8));
+		return toJson(Map.of("settingsVersion", version, "payloadHash", hash, "proof",
+			Map.of("protocolVersion", protocol, "keyId", fixture.keyId(), "signature", encode(signature.sign()))));
 	}
 
 	private static String nonce(int value) {
