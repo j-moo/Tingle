@@ -127,7 +127,7 @@ class PreferenceLoginConnectionTest {
 			return new TokenService.IssuedTokens(userId, UUID.randomUUID(), "test-access", NOW.plusSeconds(1800),
 				"test-refresh", NOW.plusSeconds(3600));
 		});
-		mvc = MockMvcBuilders.standaloneSetup(new PreferencesController(preferences))
+		mvc = MockMvcBuilders.standaloneSetup(new PreferencesController(preferences, onboarding))
 			.setCustomArgumentResolvers(new AuthenticationPrincipalArgumentResolver())
 			.setControllerAdvice(new GlobalExceptionHandler()).build();
 	}

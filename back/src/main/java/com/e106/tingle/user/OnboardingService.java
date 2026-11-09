@@ -2,6 +2,7 @@ package com.e106.tingle.user;
 
 import java.time.Clock;
 
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -32,33 +33,41 @@ public class OnboardingService {
 	private final PersonalAnalysisService analysisService;
 	private final Clock clock;
 	private final SettingsChangeCoordinator settingsChanges;
+	// 서버 전체 신규 가입 키링 요구. false 면 키링 없이도 가입을 마칠 수 있다(TINGLE_SIGNUP_KEYRING_REQUIRED).
+	@Value("${app.signup.keyring-required:true}")
+	private boolean keyringRequired;
 
 	// 미구현 단계도 통과시키지 않는다. 각 도메인의 실제 데이터로 판단하고, READY 는 매칭 제안과 같은 기준(ready)을 쓴다.
 	@Transactional(readOnly = true)
 	public OnboardingStatus statusOf(long userId) {
-		return statusUpTo(userId, OnboardingStatus.READY);
+		return statusUpTo(userId, OnboardingStatus.READY, keyringRequirement());
 	}
 
 	// limit 앞 단계만 차례로 확인한다. 모두 마쳤으면 limit 을, 아니면 처음 못 마친 단계를 돌려준다.
 	// API 권한 검사는 필요한 단계까지만 보면 되므로 뒤 단계 조회(키링·설문·매칭 준비 등)를 하지 않는다.
-	private OnboardingStatus statusUpTo(long userId, OnboardingStatus limit) {
+	private OnboardingStatus statusUpTo(long userId, OnboardingStatus limit, KeyringRequirement requirement) {
 		for (OnboardingStatus step : OnboardingStatus.values()) {
-			if (!step.isBefore(limit) || !passed(userId, step)) {
+			if (!step.isBefore(limit) || !passed(userId, step, requirement)) {
 				return step;
 			}
 		}
 		return limit;
 	}
 
-	private boolean passed(long userId, OnboardingStatus step) {
+	private KeyringRequirement keyringRequirement() {
+		return keyringRequired ? KeyringRequirement.REQUIRED : KeyringRequirement.OPTIONAL;
+	}
+
+	private boolean passed(long userId, OnboardingStatus step, KeyringRequirement requirement) {
 		return switch (step) {
 			case AGREEMENT_REQUIRED -> agreementService.hasAgreedRequiredForAccess(userId,
 				members.signupCompleted(userId));
-			case KEYRING_REQUIRED -> members.hasKeyring(userId);
+			case KEYRING_REQUIRED -> requirement == KeyringRequirement.OPTIONAL || members.hasKeyring(userId);
 			case PROFILE_REQUIRED -> profileRepository.findById(userId).map(Profile::isRegistered).orElse(false);
 			case SURVEY_REQUIRED -> members.surveyCompleted(userId);
 			case PREFERENCES_REQUIRED -> members.preferencesSet(userId);
-			case SYNC_PENDING -> members.ready(userId, clock.instant());
+			case SYNC_PENDING -> members.signupReady(userId, clock.instant(),
+				requirement == KeyringRequirement.REQUIRED);
 			case READY -> true;
 		};
 	}
@@ -76,7 +85,8 @@ public class OnboardingService {
 		boolean completedBefore = user.getSignupCompletedAt() != null;
 		boolean active = user.getStatus() == UserStatus.ACTIVE;
 		settingsChanges.refreshAgeReferenceIfPresent(userId);
-		OnboardingStatus status = statusOf(userId);
+		KeyringRequirement requirement = keyringRequirement();
+		OnboardingStatus status = statusUpTo(userId, OnboardingStatus.READY, requirement);
 		boolean ready = status == OnboardingStatus.READY;
 		// 이미 가입을 마친 회원은 남길 것이 없으므로 UPDATE 와 다시 읽기를 하지 않는다(앱 실행마다 부르는 API).
 		if (ready && !completedBefore) {
@@ -87,11 +97,12 @@ public class OnboardingService {
 		Long activeResultId = profileRepository.findById(userId).map(Profile::getActivePersonalityId).orElse(null);
 		MemberAccessRepository.SettingsVersions versions = members.settingsVersions(userId);
 		// signupCompleted 는 MemberAccessRepository.signupCompleted 와 같은 기준(ACTIVE 이고 가입 완료 시각이 있음).
-		return new OnboardingDetailResponse(status, active && (completedBefore || ready), ready,
-			ready && members.matchingEnabled(userId),
+		boolean matchingReady = ready && members.matchingEnabled(userId)
+			&& (requirement == KeyringRequirement.REQUIRED || members.ready(userId, clock.instant()));
+		return new OnboardingDetailResponse(status, active && (completedBefore || ready), ready, matchingReady,
 			survey.sessionId(), survey.answeredCount(), survey.questionCount(), survey.nextQuestionId(),
 			submitted.sessionId(), submitted.analysis(), activeResultId,
-			versions.required(), versions.acknowledged(), clock.instant());
+			versions.required(), versions.acknowledged(), clock.instant(), requirement);
 	}
 
 	/**
@@ -102,7 +113,7 @@ public class OnboardingService {
 	 */
 	@Transactional(readOnly = true)
 	public boolean canAccess(long userId, OnboardingStatus required) {
-		OnboardingStatus status = statusUpTo(userId, required);
+		OnboardingStatus status = statusUpTo(userId, required, keyringRequirement());
 		if (status == required) {
 			return true;
 		}

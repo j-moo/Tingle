@@ -81,10 +81,14 @@ public class MemberAccessRepository {
 	}
 
 	public boolean ready(long userId, Instant now) {
+		return signupReady(userId, now, true);
+	}
+
+	public boolean signupReady(long userId, Instant now, boolean requireKeyring) {
 		if (!requiredAgreementsSatisfied(userId, signupCompleted(userId))) {
 			return false;
 		}
-		return matchingDataReady(userId, now);
+		return signupDataReady(userId, now, requireKeyring);
 	}
 
 	// 기존 제안 응답은 기기·현재 설문/설정 반영과 분리한다. 회원 행 잠금 후 최신 상태를 검사한다.
@@ -116,19 +120,19 @@ public class MemberAccessRepository {
 		return true;
 	}
 
-	private boolean matchingDataReady(long userId, Instant now) {
+	private boolean signupDataReady(long userId, Instant now, boolean requireKeyring) {
 		LocalDate adultBefore = now.atZone(ZoneId.of("Asia/Seoul")).toLocalDate().minusYears(19);
 		return Boolean.TRUE.equals(jdbc.queryForObject("select exists (select 1 from users u "
 			+ "join profile p on p.user_id=u.id join matching_preference m on m.user_id=u.id "
-			+ "join user_setting us on us.user_id=u.id "
 			+ "join personality a on a.id=p.active_personality_id join survey s on s.id=a.survey_id "
 			+ "where u.id=? and u.status='ACTIVE' and p.nickname is not null "
 			+ "and p.birth_date<=? and p.gender in ('MALE','FEMALE') and p.smoking_status is not null "
 			+ "and p.drinking_frequency is not null and p.completed_at is not null and " + AGE_SELECTED
 			+ " and s.user_id=u.id and s.completed_at is not null and a.status='SUCCEEDED' "
-			+ "and us.settings_version>0 and exists (select 1 from keyring k where k.owner_user_id=u.id "
-			+ "and k.state='REGISTERED' and k.synced_settings_version=us.settings_version))",
-			Boolean.class, userId, java.sql.Date.valueOf(adultBefore)));
+			+ "and (not ? or exists (select 1 from user_setting us join keyring k on k.owner_user_id=us.user_id "
+			+ "where us.user_id=u.id and us.settings_version>0 and k.state='REGISTERED' "
+			+ "and k.synced_settings_version=us.settings_version)))",
+			Boolean.class, userId, java.sql.Date.valueOf(adultBefore), requireKeyring));
 	}
 
 	public boolean restrictedPair(long first, long second) {
