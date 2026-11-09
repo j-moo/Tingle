@@ -97,6 +97,8 @@ services:
       TERMS_CONTENT_URL: https://${DOMAIN:?}/terms/
       PRIVACY_CONTENT_URL: https://${DOMAIN:?}/privacy/
       AI_RISK_CONTENT_URL: https://${DOMAIN:?}/ai-risk/
+      # 키링 구매 안내 링크(back application.yml keyring purchase-url). app.env 에 있으면 그 값, 없으면 빈 값 → 서버가 null → 앱이 구매하기 줄을 숨긴다(S15P31E106-308)
+      KEYRING_PURCHASE_URL: ${KEYRING_PURCHASE_URL:-}
     volumes: &back-volumes
       - /srv/tingle/secrets:/run/secrets/tingle:ro # Jenkins 가 쓰는 비밀 파일 (fcm.json)
       - /data/uploads/prod:/data/photos # 운영 사진. 블루 · 그린이 같은 폴더를 함께 쓴다. 호스트 폴더 소유자는 이미지 실행 사용자(uid 1000)
