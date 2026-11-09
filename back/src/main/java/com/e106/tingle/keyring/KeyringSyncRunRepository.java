@@ -14,16 +14,17 @@ public interface KeyringSyncRunRepository extends JpaRepository<KeyringSyncRun, 
 	// TPS1 tag 0x40의 프로필 종교 코드는 원본의 185번째 바이트다. 0은 값 없음이다.
 	@Query(value = """
 		select exists(select 1 from keyring_sync_run where owner_user_id=:userId
-		and payload_format='tingle-profile-storage-v1' and settings_version=:version
-		and substring(payload from 185 for 1) > decode('00','hex'))
+		and settings_version=:version and (
+		(payload_format='tingle-profile-storage-v1' and substring(payload from 185 for 1) > decode('00','hex'))
+		or (payload_format='tingle-keyring-settings-v3' and substring(payload from 189 for 1) > decode('00','hex'))))
 		""", nativeQuery = true)
 	boolean hasProfileReligionAtVersion(long userId, long version);
 
 	@Modifying
 	@Query(value = """
 		delete from keyring_sync_run where owner_user_id=:userId
-		and payload_format='tingle-profile-storage-v1'
-		and substring(payload from 185 for 1) > decode('00','hex')
+		and ((payload_format='tingle-profile-storage-v1' and substring(payload from 185 for 1) > decode('00','hex'))
+		or (payload_format='tingle-keyring-settings-v3' and substring(payload from 189 for 1) > decode('00','hex')))
 		""", nativeQuery = true)
 	void deleteProfileReligionRuns(long userId);
 

@@ -5,9 +5,12 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+
+import com.e106.tingle.encounter.peer.PeerEvidenceRetirement;
 
 import lombok.RequiredArgsConstructor;
 import tools.jackson.databind.JsonNode;
@@ -24,11 +27,13 @@ public class ReligionEvidenceRetirement {
 	private static final String INPUT = "encounter:verified-input";
 	private final JdbcTemplate jdbc;
 	private final JsonMapper json;
+	private final ObjectProvider<PeerEvidenceRetirement> peerEvidence;
 
 	@Transactional
 	public void retire(long userId) {
 		// 다른 참여자의 users 잠금을 추가하지 않는다. writer는 양쪽 users를 잡은 뒤 matching을 잡는다.
 		jdbc.queryForList("select id from users where id=? for update", Long.class, userId);
+		peerEvidence.ifAvailable(retirement -> retirement.retire(userId));
 		Set<Long> versions = new HashSet<>(jdbc.queryForList("select settings_version from settings_snapshot "
 			+ "where user_id=? and redaction_reason='PROFILE_RELIGION_WITHDRAWN'", Long.class, userId));
 		if (versions.isEmpty()) {

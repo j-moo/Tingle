@@ -7,6 +7,8 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.e106.tingle.encounter.privacy.KeyringPeerDataRetirement;
+
 import lombok.RequiredArgsConstructor;
 
 /**
@@ -22,6 +24,7 @@ public class UnderAgeWithdrawalService {
 	private final JdbcTemplate jdbc;
 	private final ProfilePhotoService profilePhotos;
 	private final Clock clock;
+	private final KeyringPeerDataRetirement peerData;
 
 	@Transactional
 	public void withdraw(long userId) {
@@ -31,6 +34,7 @@ public class UnderAgeWithdrawalService {
 		}
 		// 설정 저장이 입력을 보존하기 전에 탈퇴의 입력 삭제를 지나가지 못하게 같은 행을 먼저 잠근다.
 		jdbc.queryForList("select user_id from user_setting where user_id=? for update", Long.class, userId);
+		peerData.retireForWithdrawal(userId, clock.instant());
 		// 생일을 넣기 전에도 사진을 올릴 수 있다. 프로필 행과 함께 지우고, 커밋되면 파일도 지운다.
 		jdbc.queryForList("select photo_url from profile where user_id=?", String.class, userId)
 			.forEach(profilePhotos::deleteFileAfterCommit);

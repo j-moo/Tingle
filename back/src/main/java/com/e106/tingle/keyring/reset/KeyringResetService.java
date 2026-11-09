@@ -22,6 +22,7 @@ import com.e106.tingle.global.error.ErrorCode;
 import com.e106.tingle.keyring.Keyring;
 import com.e106.tingle.keyring.KeyringRegistrationRepository;
 import com.e106.tingle.keyring.KeyringState;
+import com.e106.tingle.keyring.ownership.PeerOwnershipService;
 import com.e106.tingle.user.UserRepository;
 import com.e106.tingle.user.UserStatus;
 
@@ -37,6 +38,7 @@ public class KeyringResetService {
 	private final JdbcTemplate jdbc;
 	private final Clock clock;
 	private final ObjectProvider<ResetDeviceProtocol> protocols;
+	private final ObjectProvider<PeerOwnershipService> peerOwnership;
 
 	@Transactional
 	public Created create(long userId, UUID family, long deviceId, UUID key, boolean discard) {
@@ -156,6 +158,10 @@ public class KeyringResetService {
 			throw new BusinessException(ErrorCode.INVALID_DEVICE_PROOF);
 		}
 		requireSession(userId, family);
+		PeerOwnershipService history = peerOwnership.getIfAvailable();
+		if (history != null) {
+			history.close(device, clock.instant());
+		}
 		device.releaseAfterVerifiedReset(run.generation(), run.fromEpoch());
 		jdbc.update("update keyring_reset_run set proof_hash=?,completed_at=? where run_id=?", hash,
 			Timestamp.from(clock.instant()), runId);

@@ -5,7 +5,6 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
-import java.util.Base64;
 import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
@@ -22,9 +21,11 @@ import com.e106.tingle.encounter.EncounterEvaluationGateway.Input;
 import com.e106.tingle.encounter.EncounterEvaluationGateway.ParticipantInput;
 import com.e106.tingle.encounter.EncounterReceipts.FrozenEvidence;
 import com.e106.tingle.encounter.EncounterReceipts.StoredReceipt;
+import com.e106.tingle.encounter.EncounterSubmissionProofVerifier.Claims;
 import com.e106.tingle.encounter.VerifiedEncounterSubmissionMapper.Prepared;
 import com.e106.tingle.encounter.dto.EncounterSyncRequest.Submission;
 import com.e106.tingle.encounter.dto.EncounterSyncResponse.Receipt;
+import com.e106.tingle.encounter.peer.Ter2BusinessStoredEvidence;
 import com.e106.tingle.global.error.BusinessException;
 import com.e106.tingle.global.error.ErrorCode;
 
@@ -45,12 +46,20 @@ public final class VerifiedEncounterIntake {
 	private final MemberAccessRepository members;
 	private final BiFunction<String, String, UUID> releases;
 	private final TransactionTemplate transaction;
+	private final MatchingEvaluationRuntimeVerifier approvedRuntime;
 
 	/** releases는 승인된 정책/규칙 조합만 고정 release로 해석하며 미지원이면 null을 반환해야 한다. */
 	public VerifiedEncounterIntake(JdbcTemplate jdbc, JsonMapper json, Clock clock,
 		VerifiedEncounterSubmissionMapper submissions, StoredEncounterInputLookup inputs, EncounterReceipts receipts,
 		EncounterEvaluationWorker worker, MemberAccessRepository members, BiFunction<String, String, UUID> releases,
 		PlatformTransactionManager transactions) {
+		this(jdbc, json, clock, submissions, inputs, receipts, worker, members, releases, transactions, null);
+	}
+
+	public VerifiedEncounterIntake(JdbcTemplate jdbc, JsonMapper json, Clock clock,
+		VerifiedEncounterSubmissionMapper submissions, StoredEncounterInputLookup inputs, EncounterReceipts receipts,
+		EncounterEvaluationWorker worker, MemberAccessRepository members, BiFunction<String, String, UUID> releases,
+		PlatformTransactionManager transactions, MatchingEvaluationRuntimeVerifier approvedRuntime) {
 		this.jdbc = Objects.requireNonNull(jdbc);
 		this.json = json.rebuild().enable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES).build();
 		this.clock = Objects.requireNonNull(clock);
@@ -60,6 +69,7 @@ public final class VerifiedEncounterIntake {
 		this.worker = Objects.requireNonNull(worker);
 		this.members = Objects.requireNonNull(members);
 		this.releases = Objects.requireNonNull(releases);
+		this.approvedRuntime = approvedRuntime;
 		transaction = new TransactionTemplate(transactions);
 		transaction.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
 	}
@@ -89,8 +99,15 @@ public final class VerifiedEncounterIntake {
 			|| members.restrictedPair(low, high)) {
 			throw unresolved();
 		}
-		requireDevice(claims.userId(), claims.deviceId(), claims.ownerGeneration());
-		requireDevice(claims.peerUserId(), claims.peerDeviceId(), null);
+		if (claims.expiresAt() == null) {
+			requireDevice(claims.userId(), claims.deviceId(), claims.ownerGeneration());
+			requireDevice(claims.peerUserId(), claims.peerDeviceId(), null);
+		} else {
+			requireHistoricalDevice(claims.userId(), claims.deviceId(), claims.ownerGeneration(),
+				claims.ownershipEpoch(), claims.occurredAt());
+			requireHistoricalDevice(claims.peerUserId(), claims.peerDeviceId(), claims.peerOwnerGeneration(),
+				claims.peerOwnershipEpoch(), claims.occurredAt());
+		}
 		Prepared locked = submissions.prepare(claims.userId(), claims.deviceId(), submission);
 		if (!prepared.equals(locked)) {
 			throw conflict();
@@ -106,7 +123,7 @@ public final class VerifiedEncounterIntake {
 			throw unresolved();
 		}
 		Instant now = clock.instant().truncatedTo(ChronoUnit.MICROS);
-		Instant opportunity = claims.occurredAt().plus(Duration.ofDays(7));
+		Instant opportunity = opportunity(claims);
 		if (!now.isBefore(opportunity)) {
 			throw unresolved();
 		}
@@ -119,7 +136,7 @@ public final class VerifiedEncounterIntake {
 				+ "where jsonb_exists(request_state,cast(? as text))", Long.class, eventKey).isEmpty()) {
 				throw conflict();
 			}
-			Instant deadline = now.plus(Duration.ofDays(7));
+			Instant deadline = claims.expiresAt() == null ? now.plus(Duration.ofDays(7)) : opportunity;
 			if (opportunity.isBefore(deadline)) {
 				deadline = opportunity;
 			}
@@ -167,7 +184,7 @@ public final class VerifiedEncounterIntake {
 		int updated = jdbc.update("update matching_participant set encounter_keyring_id=?,encounter_signature=?,"
 			+ "encounter_reported_at=?,encounter_verified_at=? where matching_id=? and user_id=? "
 			+ "and encounter_signature is null and response is null and blocked_at is null", claims.deviceId(),
-			Base64.getDecoder().decode(submission.evidence().payload()), Timestamp.from(now), Timestamp.from(now),
+			VerifiedEncounterSubmissionMapper.evidenceBytes(submission), Timestamp.from(now), Timestamp.from(now),
 			matchingId, claims.userId());
 		if (updated != 1) {
 			throw conflict();
@@ -187,14 +204,25 @@ public final class VerifiedEncounterIntake {
 		if (left != null && right != null) {
 			ParticipantInput first = json.readValue(left, ParticipantInput.class);
 			ParticipantInput second = json.readValue(right, ParticipantInput.class);
-			requireDevice(first.userId(), first.deviceId(), first.ownerGeneration());
-			requireDevice(second.userId(), second.deviceId(), second.ownerGeneration());
-			if (inputs.find(first, context.metAt()).isEmpty() || inputs.find(second, context.metAt()).isEmpty()) {
+			if (claims.expiresAt() == null) {
+				requireDevice(first.userId(), first.deviceId(), first.ownerGeneration());
+				requireDevice(second.userId(), second.deviceId(), second.ownerGeneration());
+			} else if (!Ter2BusinessStoredEvidence.matches(jdbc, first, context.metAt())
+				|| !Ter2BusinessStoredEvidence.matches(jdbc, second, context.metAt())) {
 				throw unresolved();
 			}
-			worker.enqueue(new Input(matchingId, context.generation(), low, high, context.metAt(),
+			var firstSnapshot = inputs.find(first, context.metAt()).orElseThrow(VerifiedEncounterIntake::unresolved);
+			var secondSnapshot = inputs.find(second, context.metAt()).orElseThrow(VerifiedEncounterIntake::unresolved);
+			Input input = new Input(matchingId, context.generation(), low, high, context.metAt(),
 				context.opportunity(), context.deadline(), context.policy(), context.release(), context.rule(),
-				first, second));
+				first, second);
+			if (claims.expiresAt() != null && approvedRuntime == null) {
+				throw unresolved();
+			}
+			if (claims.expiresAt() != null) {
+				approvedRuntime.requireApprovedRelease(input, firstSnapshot, secondSnapshot);
+			}
+			worker.enqueue(input);
 		}
 		return response;
 	}
@@ -245,8 +273,8 @@ public final class VerifiedEncounterIntake {
 		if (archived != 2) {
 			throw conflict();
 		}
-		Instant opportunity = claims.occurredAt().plus(Duration.ofDays(7));
-		Instant deadline = now.plus(Duration.ofDays(7));
+		Instant opportunity = opportunity(claims);
+		Instant deadline = claims.expiresAt() == null ? now.plus(Duration.ofDays(7)) : opportunity;
 		if (opportunity.isBefore(deadline)) {
 			deadline = opportunity;
 		}
@@ -270,6 +298,20 @@ public final class VerifiedEncounterIntake {
 		if (!Boolean.TRUE.equals(valid)) {
 			throw unresolved();
 		}
+	}
+
+	private void requireHistoricalDevice(long owner, long device, UUID generation, Long epoch, Instant metAt) {
+		if (generation == null || epoch == null || epoch < 0 || !Boolean.TRUE.equals(jdbc.queryForObject(
+			"select exists(select 1 from keyring_peer_ownership where keyring_id=? and owner_user_id=? "
+				+ "and owner_generation=? and ownership_epoch=? and valid_from<=? "
+				+ "and (valid_until is null or valid_until>?))", Boolean.class, device, owner, generation, epoch,
+			Timestamp.from(metAt), Timestamp.from(metAt)))) {
+			throw unresolved();
+		}
+	}
+
+	private static Instant opportunity(Claims claims) {
+		return claims.expiresAt() == null ? claims.occurredAt().plus(Duration.ofDays(7)) : claims.expiresAt();
 	}
 
 	private String state(long matching, long user, String key) {
