@@ -6,6 +6,11 @@ from .dto import Evidence, ModelInput, ModelOutput, Viewer
 from .fallback import rule_fallback
 
 
+SHARED_ACTIVITY_FACT = re.compile(
+    r"(?:두 사람|A와 B) 모두 (공원 산책을|산책을|독서를|운동을) (선호한|즐긴)다고 응답했다\."
+)
+
+
 # Each full match enables only the corresponding renderings. Captures are limited
 # to explicit alternatives, so no arbitrary fragment of a fact becomes public text.
 DETAIL_PHRASINGS = {
@@ -29,20 +34,6 @@ DETAIL_PHRASINGS = {
             r"(?:두 사람|A와 B) 모두 약속을 (미리|그때그때) 정하는 편(?:이다|이라고 응답했다)\.",
             ("두 분은 약속 시간을 {} 정하는 편이라는 공통점이 있어요.",
              "약속을 {} 정한다는 공통점도 있어요."),
-        ),
-    ),
-    ("SHARED_REPORTED_BEHAVIOR", "activity"): (
-        (
-            r"(?:두 사람|A와 B) 모두 (공원 산책을|산책을|독서를|운동을) (선호한|즐긴)다고 응답했다\.",
-            ("두 분 모두 {} {}다는 공통점이 있어요.",),
-        ),
-        (
-            r"(?:두 사람|A와 B) 모두 산책을 (?:선호한다고|즐긴다고) 응답했다\.",
-            ("두 분 모두 산책을 즐긴다는 연결점이 있어요.",),
-        ),
-        (
-            r"(?:두 사람|A와 B) 모두 공원 산책을 즐긴다고 응답했다\.",
-            ("두 분은 공원에서 산책하는 활동을 즐긴다는 공통점이 있어요.",),
         ),
     ),
     ("SHARED_REPORTED_BEHAVIOR", "experience"): (
@@ -75,6 +66,17 @@ def _claim_phrasings(viewer: Viewer, item: Evidence) -> set[str]:
         match = re.fullmatch(pattern, item.fact)
         if match:
             phrases.update(variant.format(*match.groups()) for variant in variants)
+
+    if (item.kind, item.topic) == ("SHARED_REPORTED_BEHAVIOR", "activity"):
+        match = SHARED_ACTIVITY_FACT.fullmatch(item.fact)
+        if match:
+            activity, verb = match.groups()
+            phrases.add(f"두 분 모두 {activity} {verb}다는 공통점이 있어요.")
+            # Preserve the existing variants for each activity and response.
+            if activity == "산책을":
+                phrases.add("두 분 모두 산책을 즐긴다는 연결점이 있어요.")
+            elif (activity, verb) == ("공원 산책을", "즐긴"):
+                phrases.add("두 분은 공원에서 산책하는 활동을 즐긴다는 공통점이 있어요.")
 
     if item.kind == "ONE_WAY_PREFERENCE_FIT":
         owner, other = ("A", "B") if item.direction == "A_TO_B" else ("B", "A")
