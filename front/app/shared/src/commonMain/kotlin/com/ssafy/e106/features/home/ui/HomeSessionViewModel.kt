@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.ssafy.e106.core.auth.*
 import com.ssafy.e106.core.network.*
 import com.ssafy.e106.features.account.ui.*
+import com.ssafy.e106.features.keyring.data.OwnedKeyringRepository
 import com.ssafy.e106.features.onboarding.data.OnboardingRepository
 import com.ssafy.e106.features.profile.data.ProfileRepository
 import com.ssafy.e106.features.settings.data.*
@@ -18,7 +19,8 @@ data class HomeSessionState(val session: Session.SignedIn? = null, val home: Hom
 
 /** 홈에서는 조회만 조합한다. 변경은 기존 설정/프로필 화면의 검증·버전 충돌 흐름으로 보낸다. */
 class HomeSessionViewModel(private val profiles: ProfileRepository, private val settings: MatchingSettingsRepository,
-    private val agreements: OnboardingRepository, private val sessions: SessionStore, private val auth: AuthRepository) : ViewModel() {
+    private val agreements: OnboardingRepository, private val sessions: SessionStore, private val auth: AuthRepository,
+    private val ownedKeyrings: OwnedKeyringRepository) : ViewModel() {
     private val mutable = MutableStateFlow(HomeSessionState())
     val state = mutable.asStateFlow()
     private var generation = 0L
@@ -43,10 +45,21 @@ class HomeSessionViewModel(private val profiles: ProfileRepository, private val 
         mutable.update { it.copy(home = HomeState()) }
         when (val result = settings.get(user, SettingsKind.MATCHING)) {
             is ApiResult.Ok -> if (valid(stamp)) mutable.update { it.copy(home = HomeState(HomeLoadState.Ready,
-                matchingEnabled = (result.value.values as? ConflictValues.Matching)?.enabled)) }
-            is ApiResult.Fail -> if (valid(stamp)) mutable.update { it.copy(home = HomeState(HomeLoadState.Failed), error = result.error) }
+                matchingEnabled = (result.value.values as? ConflictValues.Matching)?.enabled,
+                keyring = HomeKeyringState.Checking)) }
+            is ApiResult.Fail -> {
+                if (valid(stamp)) mutable.update { it.copy(home = HomeState(HomeLoadState.Failed), error = result.error) }
+                return@read
+            }
         }
-        // 목록에는 전체 건수가 없고 BLE 상태도 아직 없으므로 null/Unknown을 그대로 둔다.
+        if (!valid(stamp)) return@read
+        // 서버 목록으로는 등록 여부만 확인한다. 연결·매칭 준비 상태는 기기에서 직접 확인한다.
+        val keyring = when (val result = ownedKeyrings.list()) {
+            is ApiResult.Ok -> if (result.value.isEmpty()) HomeKeyringState.Missing else HomeKeyringState.Registered
+            is ApiResult.Fail -> HomeKeyringState.Unknown
+        }
+        // 계정 전환이나 화면 이탈 뒤 도착한 응답은 현재 화면에 반영하지 않는다.
+        if (valid(stamp)) mutable.update { it.copy(home = it.home.copy(keyring = keyring)) }
     }
     fun account() = read { user, stamp ->
         mutable.update { it.copy(account = AccountMenuState()) }

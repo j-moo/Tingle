@@ -55,6 +55,10 @@
     <string name="home_device_recheck_help">키링이 다시 켜진 뒤 시간과 설정을 확인하기 전까지 새 매칭을 기다려요. 키링을 연결해 주세요.</string>
     <string name="home_device_full">만남 기록을 정리할 때까지 대기해요</string>
     <string name="home_device_full_help">기록 공간이 가득 차 새 매칭을 기다리고 있어요. 키링을 연결해 기록을 업로드하면 준비 상태를 다시 확인해요. 기존 기록은 유지돼요.</string>
+    <string name="home_device_checking">등록된 키링 확인 중</string>
+    <string name="home_device_checking_help">서버에서 등록된 키링을 불러오고 있어요.</string>
+    <string name="home_device_registered">등록된 키링이 있어요</string>
+    <string name="home_device_registered_help">연결과 매칭 준비 상태는 키링 상태 화면에서 확인해 주세요.</string>
     <string name="home_device_unknown">키링 상태를 확인하지 못했어요</string>
     <string name="home_device_unknown_help">연결·등록 여부를 아직 확인할 수 없어요. 키링 상태 화면에서 다시 확인해 주세요.</string>
 </resources>
