@@ -30,6 +30,7 @@ import com.ssafy.e106.core.ui.theme.AppColors
 import com.ssafy.e106.core.ui.theme.AppSpacing
 import com.ssafy.e106.core.ui.theme.screenGutter
 import com.ssafy.e106.resources.*
+import org.jetbrains.compose.resources.StringResource
 import org.jetbrains.compose.resources.stringResource
 
 /**
@@ -53,7 +54,8 @@ import org.jetbrains.compose.resources.stringResource
     val needList = pickExisting && list.owner != null && list.items == null && list.error == null && !list.loading
     LaunchedEffect(needList) { if (needList) owned.load() }
     KeyringSyncPanelContent(state, bleState, list, registrationBusy, pickExisting, onRetry = model::retry, onLatest = model::latest,
-        onRetryRecovery = model::retryRecovery, onRefreshOwned = owned::load, onUseExisting = model::useExisting)
+        onRetryRecovery = model::retryRecovery, onRefreshOwned = owned::load, onUseExisting = model::useExisting,
+        onReadStatus = ble::readStatus)
 }
 
 /** 순수 화면(Preview 용). 동기화 · 내 키링 목록 · 연결 상태만 받아 그리고, 서버 · 기기 호출은 콜백으로 넘긴다 */
@@ -69,6 +71,7 @@ import org.jetbrains.compose.resources.stringResource
     onRetryRecovery: () -> Unit = {},
     onRefreshOwned: () -> Unit = {},
     onUseExisting: (deviceId: Long, serial: String) -> Unit = { _, _ -> },
+    onReadStatus: () -> Unit = {},
 ) {
     val serial = bleState.info?.serial?.takeIf { bleState.connected }
     // 사용자가 손대야 하는 실패. 진행 상황은 띄우지 않고(연결되면 알아서 보낸다), 실패는 하단 시트로 알린다
@@ -114,9 +117,36 @@ import org.jetbrains.compose.resources.stringResource
         KeyringSyncProgressList(state.copy(items = mine, recoveryFailed = false), onRetry, onLatest,
             numbers = list.items.orEmpty().mapIndexed { i, item -> item.deviceId to i + 1 }.toMap())
     }
+    // ACK는 저장만 확인한다. 현재 연결된 키링이 같은 설정 버전을 보고할 때만 준비 상태를 표시한다.
+    val confirmed = state.items.singleOrNull { it.serial == serial && it.confirmedTsv3Version != null }
+    if (serial != null && bleState.info?.supportsStatus == true && confirmed != null) {
+        val observation = bleState.status?.ownerFlow?.takeIf {
+            it.storedSettingsVersion == confirmed.confirmedTsv3Version
+        }
+        Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(AppSpacing.Small)) {
+            SyncReadinessLine(Res.string.sync_live_applied, observation?.applied)
+            SyncReadinessLine(Res.string.sync_live_time_ready, observation?.timeReady)
+            val matching = observation?.takeUnless {
+                it.matchingReady == true && (it.readinessConflict || it.applied != true || it.timeReady != true)
+            }?.matchingReady
+            SyncReadinessLine(Res.string.sync_live_matching_ready, matching)
+            AppButton(stringResource(Res.string.sync_live_read_status), Modifier.fillMaxWidth(), AppButtonVariant.Secondary,
+                enabled = !locked && !registrationBusy && !bleState.busy, onClick = onReadStatus)
+        }
+    }
     // ✕로 닫은 뒤에도 같은 실패를 다시 시도할 길을 남긴다. 고르기 화면에서 키링 실패는 "선택한 키링으로 맞추기"가 그 역할
     if (failed && closed && (!pickExisting || stuck.isEmpty())) AppButton(stringResource(Res.string.sync_live_retry), Modifier.fillMaxWidth(),
         enabled = !locked, onClick = { closedFor = null; retrying = true; retryAll() })   // 다시 하면 결과 시트를 다시 띄운다
+}
+
+@Composable private fun SyncReadinessLine(label: StringResource, value: Boolean?) {
+    val display = stringResource(when (value) {
+        true -> Res.string.sync_live_ready_yes
+        false -> Res.string.sync_live_ready_no
+        null -> Res.string.sync_live_ready_unknown
+    })
+    Text(stringResource(label, display), color = AppColors.TextSecondary, textAlign = TextAlign.Center)
 }
 
 /** 설정 전송 실패 시트 안쪽. 화면 높이의 70%를 채우고 ✕로 닫는다 */
@@ -187,12 +217,12 @@ import org.jetbrains.compose.resources.stringResource
             SyncPhase.Sending -> Res.string.sync_live_sending
             SyncPhase.Stored -> Res.string.sync_live_stored
             SyncPhase.Confirming -> Res.string.sync_live_confirming
-            SyncPhase.Confirmed -> Res.string.sync_live_confirmed
+            SyncPhase.Confirmed -> if (item.confirmedTsv3Version != null) Res.string.sync_live_full_confirmed else Res.string.sync_live_confirmed
             SyncPhase.PolicyWaiting -> Res.string.sync_live_policy
             SyncPhase.Stale -> Res.string.sync_live_stale
             SyncPhase.Failed -> Res.string.sync_live_failed
         }), textAlign = TextAlign.Center)
-        if (item.phase == SyncPhase.Confirmed && (item.applied == false || item.timeReady == false))
+        if (item.phase == SyncPhase.Confirmed && item.confirmedTsv3Version == null && (item.applied == false || item.timeReady == false))
             Text(stringResource(Res.string.sync_live_not_applied), color = AppColors.TextSecondary, textAlign = TextAlign.Center)
         if (item.phase == SyncPhase.Failed) item.error?.let { Text(it.message, color = MaterialTheme.colorScheme.error, textAlign = TextAlign.Center) }
         if (item.phase == SyncPhase.Stale) AppButton(stringResource(Res.string.sync_live_latest), full, enabled = !state.busy, onClick = { latest(item.deviceId) })

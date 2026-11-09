@@ -2,7 +2,7 @@ package com.ssafy.e106.features.keyring.data
 
 import kotlinx.serialization.json.*
 
-/** 0.7 지원 선언만 보관한다. 서버 소유 증명·보호 연결 성공과 구분하며 제어 경로에서는 사용하지 않는다. */
+/** 0.7 지원 선언이다. 발급 형식 선택에 사용하며 서버 소유 증명·보호 연결 성공과 구분한다. */
 data class BleOwnerFlowInfo(
     val keyId: String? = null,
     val peerProtocol: String? = null,
@@ -15,7 +15,7 @@ data class BleOwnerFlowInfo(
         info.profileStorage.characteristic?.lowercase() == BleProfileStorageInfo.CHARACTERISTIC &&
         info.profileStorage.requiresEncryption == true &&
         info.supportedFunctions.containsAll(listOf("GET_SYNC_CHALLENGE", "SYNC_SETTINGS")) &&
-        info.ownershipEpoch != null && info.ownershipEpoch >= 0 &&
+        info.supportsProof(KeyringRegistrationProtocol.VERSION_2) &&
         peerProtocol == "tingle-peer-v3" && peerOwnerScopeVersion == 1L &&
         accountLockProofVersion == "tingle-account-lock-v2"
 

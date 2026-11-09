@@ -55,10 +55,13 @@ class BleOwnerFlowStatusTest {
             supportedFunctions = listOf("GET_SYNC_CHALLENGE", "SYNC_SETTINGS"),
             profileStorage = BleProfileStorageInfo(listOf(BleOwnerFlowInfo.FULL_SETTINGS_FORMAT), BleProfileStorageInfo.CHARACTERISTIC, true),
             ownerFlow = BleOwnerFlowInfo("key", "tingle-peer-v3", 1, "tingle-account-lock-v2"))
-        assertTrue(declared.ownerFlow.supportsFullSettings(declared))
-        assertFalse(declared.ownerFlow.supportsFullSettings(declared.copy(profileStorage = declared.profileStorage.copy(requiresEncryption = false))))
-        assertFalse(declared.ownerFlow.supportsFullSettings(declared.copy(ownershipEpoch = null)))
-        assertFalse(declared.ownerFlow.copy(peerOwnerScopeVersion = 2).supportsFullSettings(declared))
+        val bound = declared.copy(ownerState = "BOUND",
+            supportedProofProtocolVersions = listOf(KeyringRegistrationProtocol.VERSION_2))
+        assertFalse(declared.ownerFlow.supportsFullSettings(declared))
+        assertTrue(bound.ownerFlow.supportsFullSettings(bound))
+        assertFalse(bound.ownerFlow.supportsFullSettings(bound.copy(profileStorage = bound.profileStorage.copy(requiresEncryption = false))))
+        assertFalse(bound.ownerFlow.supportsFullSettings(bound.copy(ownershipEpoch = null)))
+        assertFalse(bound.ownerFlow.copy(peerOwnerScopeVersion = 2).supportsFullSettings(bound))
     }
     @Test fun deviceInfoParsesNewDeclarationsWithoutChangingProofContract() {
         val info = BleProbeProtocol.info(Json.parseToJsonElement("""{"deviceSerial":"test","firmwareVersion":"0.7.2-owner-flow","keyId":"key-1","peerExchangeProtocol":"tingle-peer-v3","peerOwnerScopeVersion":1,"accountLockProofVersion":"tingle-account-lock-v2"}""").jsonObject)

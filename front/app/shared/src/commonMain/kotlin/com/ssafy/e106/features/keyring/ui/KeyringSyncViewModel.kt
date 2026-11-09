@@ -15,7 +15,8 @@ import kotlin.time.Duration.Companion.seconds
 
 enum class SyncPhase { WaitingStage, Issuing, WaitingConnection, Sending, Stored, Confirming, Confirmed, PolicyWaiting, Stale, Failed }
 data class KeyringSyncProgress(val deviceId: Long, val phase: SyncPhase, val error: AppError? = null,
-    val applied: Boolean? = null, val timeReady: Boolean? = null, val serial: String? = null)
+    val applied: Boolean? = null, val timeReady: Boolean? = null, val serial: String? = null,
+    val confirmedTsv3Version: Long? = null)
 data class KeyringSyncState(val owner: Long? = null, val busy: Boolean = false,
     val items: List<KeyringSyncProgress> = emptyList(), val recoveryFailed: Boolean = false)
 
@@ -255,7 +256,7 @@ class KeyringSyncViewModel(private val api: KeyringSyncRepository, private val s
                 nonceBindings[id] != (binding to ticket.createKey)) {
                 val body = freshChallenge(); ensure(owner, stamp)
                 check(KeyringSyncProtocol.validDeviceNonce(body.deviceNonce) &&
-                    body.payloadFormat in setOf(null, KeyringSyncProtocol.PROFILE_FORMAT))
+                    KeyringSyncProtocol.supportsIssuanceFormat(body.payloadFormat))
                 ticket = SyncTicket(id, ticket.serial, Uuid.random().toString(), deviceNonce = body.deviceNonce,
                     nonceReceivedAt = now().toString(), createBody = body)
                 // 새 본문에는 새 키를 사용한다. POST보다 먼저 둘을 함께 디스크에 고정한다.
@@ -279,7 +280,7 @@ class KeyringSyncViewModel(private val api: KeyringSyncRepository, private val s
         // GET은 최초 발급 별칭의 서명을 돌려줄 수 있다. 전송용 서명은 같은 키/본문 POST에서만 받는다.
         if (!recoveringAck) {
             check(KeyringSyncProtocol.signed(run, requireNotNull(ticket.deviceNonce)))
-            // 명시한 성향 요청에 ON/OFF가 돌아와도 성공으로 낮춰 처리하지 않는다.
+            // 명시한 전체 설정이나 성향 요청에는 같은 형식의 응답만 허용한다.
             check(ticket.createBody?.payloadFormat?.let { it == run.payloadFormat } != false)
         }
         ticket = ticket.copy(identity = run.identity())
@@ -294,13 +295,14 @@ class KeyringSyncViewModel(private val api: KeyringSyncRepository, private val s
         }
         if (ticket.complete && run.state == "ACKED") {
             if (connected() && delivered[id] != delivery && mayRenew) renewOrShowStale()
-            else show(id, if (!connected() && delivered[id]?.second != delivery.second) SyncPhase.WaitingConnection else SyncPhase.Confirmed)
+            else if (!connected() && delivered[id]?.second != delivery.second) show(id, SyncPhase.WaitingConnection)
+            else showConfirmed(run)
             return
         }
         if (recoveringAck && run.state == "ACKED" && ticket.ack == null) {
             store.save(owner, ticket.copy(complete = true)); ensure(owner, stamp)
             if (connected() && delivered[id] != delivery && mayRenew) renewOrShowStale()
-            else show(id, SyncPhase.Confirmed)
+            else showConfirmed(run)
             return
         }
         var result: KeyringStoredResult? = null
@@ -340,7 +342,7 @@ class KeyringSyncViewModel(private val api: KeyringSyncRepository, private val s
             renewOrShowStale(); return
         }
         if (result != null) delivered[id] = delivery
-        show(id, SyncPhase.Confirmed, applied = result?.applied, timeReady = result?.timeReady)
+        showConfirmed(run, result)
         // 서버가 실제로 가입 단계를 갱신했는지 재조회한다. FE에서 READY를 만들어 넣지 않는다.
         sessions.refreshOnboarding(); ensure(owner, stamp)
     }
@@ -360,8 +362,15 @@ class KeyringSyncViewModel(private val api: KeyringSyncRepository, private val s
         ensure(owner, stamp)
         return when (result) { is ApiResult.Ok -> result.value; is ApiResult.Fail -> throw SyncApiFailure(result.error) }
     }
-    private fun show(id: Long, phase: SyncPhase, error: AppError? = null, applied: Boolean? = null, timeReady: Boolean? = null) {
-        mutable.update { it.copy(items = it.items.filterNot { item -> item.deviceId == id } + KeyringSyncProgress(id, phase, error, applied, timeReady, serials[id])) }
+    // 서버가 확인한 버전을 보관해야 같은 키링의 STATUS를 현재 설정에 대한 관측으로 표시할 수 있다.
+    private fun showConfirmed(run: KeyringSyncRun, result: KeyringStoredResult? = null) {
+        val version = run.settingsVersion.takeIf { run.payloadFormat == KeyringSyncProtocol.FULL_SETTINGS_FORMAT }
+        show(run.deviceId, SyncPhase.Confirmed, applied = result?.applied, timeReady = result?.timeReady, confirmedTsv3Version = version)
+    }
+    private fun show(id: Long, phase: SyncPhase, error: AppError? = null, applied: Boolean? = null, timeReady: Boolean? = null,
+        confirmedTsv3Version: Long? = null) {
+        val progress = KeyringSyncProgress(id, phase, error, applied, timeReady, serials[id], confirmedTsv3Version)
+        mutable.update { it.copy(items = it.items.filterNot { item -> item.deviceId == id } + progress) }
     }
     override fun onCleared() { pause() }
 }

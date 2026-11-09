@@ -4,6 +4,7 @@ import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import androidx.lifecycle.*
@@ -12,6 +13,9 @@ import androidx.test.platform.app.InstrumentationRegistry
 import com.ssafy.e106.core.auth.OnboardingStatus
 import com.ssafy.e106.core.ble.*
 import com.ssafy.e106.core.ui.theme.AppTheme
+import com.ssafy.e106.features.keyring.data.BleDeviceInfo
+import com.ssafy.e106.features.keyring.data.BleDeviceStatus
+import com.ssafy.e106.features.keyring.data.BleOwnerFlowStatus
 import com.ssafy.e106.features.keyring.ui.*
 import com.ssafy.e106.features.onboarding.TestSession
 import kotlinx.coroutines.runBlocking
@@ -54,6 +58,37 @@ class BleProbeDeviceTest {
             scenario.recreate(); compose.waitForIdle()
             compose.onNodeWithText("주변 키링 찾기").assertExists()
             compose.onNodeWithText("연결 끊기").assertDoesNotExist()
+        }
+    }
+
+    /** 서버 저장 확인 뒤에도 이전 버전의 보드 상태를 현재 준비 완료로 표시하지 않는다. */
+    @Test fun matchingReadinessUsesOnlyCurrentBoardVersion() {
+        val context = InstrumentationRegistry.getInstrumentation().context
+        val serial = "XIAO-test"
+        val connected = BleProbeState(connected = true, info = BleDeviceInfo(serial, "0.7.2-owner-flow", supportsStatus = true))
+        val reading = mutableStateOf(connected)
+        val confirmed = KeyringSyncState(items = listOf(KeyringSyncProgress(4, SyncPhase.Confirmed,
+            serial = serial, confirmedTsv3Version = 12L)))
+        ActivityScenario.launch<BleProbeTestActivity>(Intent(context, BleProbeTestActivity::class.java)).use { scenario ->
+            scenario.onActivity { activity ->
+                activity.setContent {
+                    AppTheme {
+                        KeyringSyncPanelContent(confirmed, reading.value, OwnedKeyringsState(), onReadStatus = {
+                            reading.value = connected.copy(status = BleDeviceStatus(null, null, null, null,
+                                BleOwnerFlowStatus(applied = true, timeReady = true, matchingReady = true, storedSettingsVersion = 12L)))
+                        })
+                    }
+                }
+            }
+            compose.runOnIdle {
+                reading.value = connected.copy(status = BleDeviceStatus(null, null, null, null,
+                    BleOwnerFlowStatus(applied = true, timeReady = true, matchingReady = true, storedSettingsVersion = 11L)))
+            }
+            compose.onNodeWithText("매칭 준비 · 미확인").assertExists()
+            compose.onNodeWithText("키링 준비 상태 확인").performClick()
+            compose.onNodeWithText("설정 적용 · 완료").assertExists()
+            compose.onNodeWithText("기기 시각 · 완료").assertExists()
+            compose.onNodeWithText("매칭 준비 · 완료").assertExists()
         }
     }
 }
