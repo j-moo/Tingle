@@ -36,7 +36,7 @@ import kotlin.time.Instant
     override fun toString() = "KeyringSyncAck(REDACTED)"
 }
 data class KeyringStoredResult(val ack: KeyringSyncAck, val applied: Boolean, val timeReady: Boolean)
-/** null 형식은 구형 ON/OFF 요청처럼 JSON에서 생략한다. 성향 발급은 BE257의 명시 선택을 사용한다. */
+/** 구형 ON/OFF는 형식을 생략하고, 개인 데이터가 포함된 설정은 지원 형식을 명시한다. */
 @Serializable data class SyncChallengeBody(val deviceNonce: String, val payloadFormat: String? = null) {
     override fun toString() = "SyncChallengeBody(REDACTED)"
 }
@@ -62,13 +62,33 @@ class HttpKeyringSyncRepository(private val client: HttpClient) : KeyringSyncRep
 
 /** JSON 숫자를 Long으로 유지한다. 서버 payload를 재인코딩하거나 FE 설정으로 대체하지 않는다. */
 internal object KeyringSyncProtocol {
-    const val PROFILE_FORMAT = "tingle-profile-storage-v1"
+    const val PROFILE_FORMAT = BleProfileStorageInfo.FORMAT
+    const val FULL_SETTINGS_FORMAT = BleOwnerFlowInfo.FULL_SETTINGS_FORMAT
+    private const val TSV3_HEADER_BYTES = 487
+    private const val TSV3_RESTRICTION_BYTES = 25
+    private const val TSV3_MAX_RESTRICTIONS = 60
     private val codec = Base64.UrlSafe.withPadding(Base64.PaddingOption.ABSENT)
+
+    // 최초 발급과 앱 재시작 복구가 같은 형식을 받아야 멱등 키에 묶인 본문을 재사용할 수 있다.
+    fun supportsIssuanceFormat(format: String?) = format == null || requiresProtectedTransport(format)
+
+    fun requiresProtectedTransport(format: String) = format == PROFILE_FORMAT || format == FULL_SETTINGS_FORMAT
+
+    // 서버 서명을 검증하는 보드가 내부 정책을 해석한다. 앱은 봉투의 버전과 길이만 대조한다.
+    private fun fullSettingsPayload(run: KeyringSyncRun): Boolean {
+        val maxLength = TSV3_HEADER_BYTES + TSV3_RESTRICTION_BYTES * TSV3_MAX_RESTRICTIONS
+        if (run.proofProtocolVersion != KeyringRegistrationProtocol.VERSION_2 ||
+            !encoded(run.payload, TSV3_HEADER_BYTES..maxLength)) return false
+        val bytes = codec.decode(run.payload)
+        return bytes.decodeToString(endIndex = 4) == "TSV3" &&
+            (bytes.size - TSV3_HEADER_BYTES) % TSV3_RESTRICTION_BYTES == 0
+    }
     /** 형식과 길이만 검사하고 서버 바이트는 그대로 중계한다. 성향 해석·서명 검증은 보드 책임이다. */
     private fun supportedPayload(run: KeyringSyncRun): Boolean = when (run.payloadFormat) {
         "tingle-dev-settings-v1" -> run.payload == "AA" || run.payload == "AQ"
         PROFILE_FORMAT -> encoded(run.payload, 196..196) &&
             codec.decode(run.payload).take(4) == listOf(84, 80, 83, 49).map { it.toByte() }
+        FULL_SETTINGS_FORMAT -> fullSettingsPayload(run)
         else -> false
     }
     private fun encoded(value: String, length: IntRange) = runCatching {
@@ -106,7 +126,7 @@ internal object KeyringSyncProtocol {
         return (buildJsonObject {
             put("protocolVersion", 1); put("type", "SYNC_SETTINGS"); put("requestId", requestId)
             put("syncRunId", run.syncRunId); put("deviceId", run.deviceId); put("ownerGeneration", run.ownerGeneration)
-            // BLE 봉투 버전은 1이다. payloadFormat은 서버가 선택한 ON/OFF 또는 성향 형식을 그대로 쓴다.
+            // BLE 봉투 버전은 1이다. payloadFormat과 서명된 설정은 서버 응답 그대로 쓴다.
             run.ownershipEpoch?.let { put("ownershipEpoch", it) }
             put("settingsVersion", run.settingsVersion); put("payload", run.payload); put("payloadEncoding", run.payloadEncoding)
             put("payloadFormat", run.payloadFormat); put("payloadHash", run.payloadHash); put("nonce", run.nonce)

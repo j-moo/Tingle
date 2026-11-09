@@ -216,14 +216,15 @@ class BleProbeViewModel(private val ble: KeyringBle, private val sessions: Sessi
         val channel = connection ?: throw BleException(BleFailure.Disconnected)
         check(!mutable.value.busy && mutable.value.info?.serial == expectedSerial)
         val stamp = generation
-        mutable.update { it.copy(busy = true) }
+        // 새 설정을 발급하면 직전 버전의 준비 상태는 화면에서 다시 확인해야 한다.
+        mutable.update { it.copy(busy = true, status = null) }
         try {
             // 서버 형식은 발급 후 알 수 있다. 성향 지원 기기는 페어링 대기를 60초 nonce 발급보다
             // 먼저 끝내며, 전송 직전에도 같은 연결에서 다시 보호를 확인한다. 기존 기기는 일반 흐름을 유지한다.
             val info = readInfo(channel)
             check(stamp == generation && channel === connection && info.serial == expectedSerial)
             mutable.update { it.copy(info = info) }
-            if (info.supportsProtectedProfileStorage) {
+            if (info.issuanceFormat() != null) {
                 channel.prepareProtectedTransport()
                 check(stamp == generation && channel === connection)
             }
@@ -246,7 +247,14 @@ class BleProbeViewModel(private val ble: KeyringBle, private val sessions: Sessi
         val nonce = syncChallenge(expectedSerial)
         val info = requireNotNull(mutable.value.info)
         check(mutable.value.connected && info.serial == expectedSerial)
-        return SyncChallengeBody(nonce, if (info.supportsProtectedProfileStorage) KeyringSyncProtocol.PROFILE_FORMAT else null)
+        return SyncChallengeBody(nonce, info.issuanceFormat())
+    }
+
+    // 현재 기기가 증명 버전과 보호 전송을 선언한 형식 중 가장 구체적인 형식을 발급받는다.
+    private fun BleDeviceInfo.issuanceFormat() = when {
+        ownerFlow.supportsFullSettings(this) -> KeyringSyncProtocol.FULL_SETTINGS_FORMAT
+        supportsProtectedProfileStorage -> KeyringSyncProtocol.PROFILE_FORMAT
+        else -> null
     }
 
     /** 서버가 이번 보드 challenge에 서명한 설정만 전송한다. 서명은 앱이 생성하지 않는다. */
@@ -267,9 +275,12 @@ class BleProbeViewModel(private val ble: KeyringBle, private val sessions: Sessi
             // NUS 기반이 Notify 구독 및 20바이트 순차 Write with Response를 보장한다.
             // 전송 재시도는 조정 모델이 새 보드 challenge/서명을 발급받은 뒤에만 진입한다.
             val request = KeyringSyncProtocol.request(run, requestId)
-            val bytes = if (run.payloadFormat == KeyringSyncProtocol.PROFILE_FORMAT) {
-                // 성향은 일반 RX로 우회하지 않는다. 직전 지원 정보와 같은 연결의 보호 Read 성공이 모두 필요하다.
-                check(info.supportsProtectedProfileStorage)
+            val bytes = if (KeyringSyncProtocol.requiresProtectedTransport(run.payloadFormat)) {
+                // 개인 데이터는 일반 RX로 우회하지 않는다. 전송 직전 형식별 지원과 보호 Read를 다시 확인한다.
+                check(when (run.payloadFormat) {
+                    KeyringSyncProtocol.FULL_SETTINGS_FORMAT -> info.ownerFlow.supportsFullSettings(info)
+                    else -> info.supportsProtectedProfileStorage
+                })
                 channel.prepareProtectedTransport()
                 check(stamp == generation && connection === channel)
                 channel.exchangeProtected(request)

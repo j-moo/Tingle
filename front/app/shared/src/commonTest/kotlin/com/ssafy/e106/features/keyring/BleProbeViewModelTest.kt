@@ -119,6 +119,36 @@ class BleProbeViewModelTest {
         assertFalse("SYNC_SETTINGS" in port.commands)
     }
 
+    /** 전체 설정은 v2 소유 세대를 대조하고 기존 보호 경로를 사용한다. */
+    @Test fun fullSettingsSelectsTsv3AndRejectsAnotherOwnershipEpoch() = runTest(dispatcher) {
+        val run = profileRun().copy(
+            payload = kotlin.io.encoding.Base64.UrlSafe.withPadding(kotlin.io.encoding.Base64.PaddingOption.ABSENT)
+                .encode("TSV3".encodeToByteArray() + ByteArray(483)),
+            payloadFormat = KeyringSyncProtocol.FULL_SETTINGS_FORMAT,
+            proofProtocolVersion = KeyringRegistrationProtocol.VERSION_2,
+            serverProofProtocolVersion = "tingle-dev-settings-proof-v2",
+            ownershipEpoch = 2L,
+        )
+        val port = profilePort(run).apply {
+            extraInfo += mapOf(
+                "ownershipEpoch" to JsonPrimitive(2),
+                "ownerState" to JsonPrimitive("BOUND"),
+                "supportedProofProtocolVersions" to JsonArray(listOf(JsonPrimitive(run.proofProtocolVersion))),
+                "peerExchangeProtocol" to JsonPrimitive("tingle-peer-v3"),
+                "peerOwnerScopeVersion" to JsonPrimitive(1),
+                "accountLockProofVersion" to JsonPrimitive("tingle-account-lock-v2"),
+            )
+        }
+        val vm = model(port)
+        vm.scan(); runCurrent(); vm.connect("a"); runCurrent()
+        assertEquals(run.payloadFormat, vm.syncIssuanceRequest("XIAO-test").payloadFormat)
+        assertTrue(port.commands.indexOf("PROTECT") < port.commands.indexOf("GET_SYNC_CHALLENGE"))
+        assertEquals(run.payloadHash, vm.syncSettings(run, "XIAO-test").ack.payloadHash)
+        assertFails { vm.syncSettings(run.copy(ownershipEpoch = 1L), "XIAO-test") }
+        assertEquals(1, port.commands.count { it == "PROTECTED_SYNC_SETTINGS" })
+        assertFalse("SYNC_SETTINGS" in port.commands)
+    }
+
     /** 지원 정보 누락 또는 보호 실패는 일반 RX로 우회하지 않고 전송 전에 중단한다. */
     @Test fun issuanceKeepsLegacyBodyAndDoesNotDowngradeProtectionFailure() = runTest(dispatcher) {
         val port = profilePort(profileRun()).apply { extraInfo = emptyMap() }

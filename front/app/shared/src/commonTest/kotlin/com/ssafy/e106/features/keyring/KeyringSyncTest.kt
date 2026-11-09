@@ -583,6 +583,37 @@ class KeyringSyncTest {
         assertEquals(server.bodies[0], server.bodies[1]); assertEquals(SyncPhase.Confirmed, m.state.value.items.single().phase)
     }
 
+    /** TSV3 응답이 유실돼도 원래 본문과 키를 다시 쓰고, 저장 증명 접수 전에는 완료로 올리지 않는다. */
+    @Test fun fullSettingsSelectionSurvivesHttpRetryWithOriginalBody() = runTest(dispatcher) {
+        val prefs = SyncPrefs()
+        val store = KeyringSyncStore(prefs)
+        val server = SyncServer()
+        val payload = kotlin.io.encoding.Base64.UrlSafe.withPadding(kotlin.io.encoding.Base64.PaddingOption.ABSENT)
+            .encode("TSV3".encodeToByteArray() + ByteArray(483))
+        server.run = syncRun.copy(payloadFormat = KeyringSyncProtocol.FULL_SETTINGS_FORMAT, payload = payload,
+            proofProtocolVersion = KeyringRegistrationProtocol.VERSION_2,
+            serverProofProtocolVersion = "tingle-dev-settings-proof-v2", ownershipEpoch = 2L,
+            settingsVersion = 12L, currentSettingsVersion = 12L)
+        store.rememberTarget(1, syncRun.deviceId, "XIAO-test")
+        server.createAction = { ApiResult.Fail(AppError.Offline) }
+        val request = SyncChallengeBody("A".repeat(43), KeyringSyncProtocol.FULL_SETTINGS_FORMAT)
+        val m = model(server, store)
+        m.attachRequest("XIAO-test", { request }) { run ->
+            assertEquals(payload, run.payload)
+            assertEquals(SyncPhase.Sending, m.state.value.items.single().phase)
+            stored(run)
+        }
+        runCurrent()
+        val persisted = KeyringSyncStore(prefs).read(1).single()
+        assertEquals(request, persisted.createBody)
+        server.createAction = { ApiResult.Ok(server.run) }
+        m.retry(syncRun.deviceId); runCurrent()
+        assertEquals(listOf(persisted.createKey, persisted.createKey), server.creates.map { it.second })
+        assertEquals(listOf(request, request), server.bodies)
+        assertEquals(SyncPhase.Confirmed, m.state.value.items.single().phase)
+        assertEquals(server.run.settingsVersion, m.state.value.items.single().confirmedTsv3Version)
+    }
+
     /** 구형 내구 파일은 형식을 추측해 덧붙이지 않고 기존 nonce 단독 요청을 먼저 복구한다. */
     @Test fun legacyPendingBodyIsReplayedBeforeNewProfileRequest() = runTest(dispatcher) {
         val prefs = SyncPrefs(); val store = KeyringSyncStore(prefs)

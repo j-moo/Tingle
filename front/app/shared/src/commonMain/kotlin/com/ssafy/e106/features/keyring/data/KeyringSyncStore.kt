@@ -43,7 +43,7 @@ class KeyringSyncStore(private val prefs: AppPrefs) {
         (!t.complete || t.identity != null) && (t.deviceNonce == null || KeyringSyncProtocol.validDeviceNonce(t.deviceNonce)) &&
         // 구버전 파일에는 본문이 없다. 새 파일은 nonce와 선택 형식을 검증해 같은 키에 다른 본문을 보내지 않는다.
         (t.createBody == null || (t.createBody.deviceNonce == t.deviceNonce &&
-            t.createBody.payloadFormat in setOf(null, KeyringSyncProtocol.PROFILE_FORMAT)))
+            KeyringSyncProtocol.supportsIssuanceFormat(t.createBody.payloadFormat)))
 
     /** 등록 성공 시 호출한다. 기존 실행을 보존하고 새 대상이 생긴 경우에만 자동 진행을 깨운다. */
     @OptIn(ExperimentalUuidApi::class)
