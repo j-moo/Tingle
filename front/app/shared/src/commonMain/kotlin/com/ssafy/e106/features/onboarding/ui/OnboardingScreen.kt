@@ -103,7 +103,7 @@ fun OnboardingScreen(
     var linkFailed by remember(session.userId, session.status) { mutableStateOf(false) }
     // 약관 "내용 보기" — 브라우저로 나가지 않고 이 화면 위에 전문을 띄운다(체크 상태 유지)
     var reading by remember(session.userId, session.status) { mutableStateOf<AgreementItem?>(null) }
-    reading?.let { item -> item.reviewUrl?.let { url -> AgreementDocument(item.title, url, onClose = { reading = null }); return } }
+    reading?.let { item -> item.reviewUrl?.let { url -> AgreementDocument(item.signupTitle, url, onClose = { reading = null }); return } }
     fun open(url: String) { linkFailed = runCatching { uri.openUri(url) }.isFailure }
     // 키링 단계: 가운데 키링 그림 · 키링 찾기 · 구매 안내(시안 02). 개발용 진입(설정 · 성향테스트 · 프로필 수정)은 두지 않는다
     if (keyring && !state.submitted) {
@@ -130,7 +130,7 @@ fun OnboardingScreen(
         when {
             state.submitted -> Text(stringResource(Res.string.onboarding_saved))
             agreements -> {
-                // 전체동의 · 구분선 · 필수 항목(오른쪽 내용 보기) · 다음. 선택 동의(사진 · 자기소개 · 종교)는 프로필에서 따로 받는다
+                // 전체동의 · 구분선 · 필수 항목(오른쪽 내용 보기) · 다음. 프로필 사진 · 자기소개 동의도 여기서 필수로 받고, 종교 동의만 프로필에서 따로 받는다
                 if (state.allowUnpublishedAgreements && state.requiredAgreements.any { !it.canReview }) {
                     Text(developmentNotice ?: stringResource(Res.string.onboarding_development_agreements), style = MaterialTheme.typography.bodySmall)
                 }
@@ -143,7 +143,7 @@ fun OnboardingScreen(
                     HorizontalDivider(color = AppColors.BorderSubtle)
                 }
                 state.requiredAgreements.forEach { item ->
-                    AgreementRow(stringResource(Res.string.onboarding_required, item.title), item.type in state.checked,
+                    AgreementRow(stringResource(Res.string.onboarding_required, item.signupTitle), item.type in state.checked,
                         enabled = !state.busy && state.canCheck(item), onToggle = { onCheck(item.type, it) },
                         onRead = item.reviewUrl?.let { { reading = item } })
                     if (!item.canReview && !state.allowUnpublishedAgreements) {

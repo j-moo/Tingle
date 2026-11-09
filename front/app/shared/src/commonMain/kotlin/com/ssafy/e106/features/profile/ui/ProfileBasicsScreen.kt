@@ -74,7 +74,6 @@ fun ProfileBasicsScreen(
     onContinue: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val editable = !state.saving
     Surface(modifier.fillMaxSize(), color = AppColors.Background) {
         BoxWithConstraints(Modifier.fillMaxSize().safeDrawingPadding().imePadding()) {
             // 가로+IME처럼 실제 남은 높이가 짧으면 제목/다음을 스크롤 안으로 옮긴다.
@@ -96,52 +95,66 @@ fun ProfileBasicsScreen(
                             Text(stringResource(Res.string.profile_intro),
                                 style = MaterialTheme.typography.bodyMedium, color = AppColors.TextSecondary)
                         }
-                        AppTextField(
-                            value = state.nickname, onValueChange = onNicknameChange,
-                            label = stringResource(Res.string.profile_nickname), required = true,
-                            placeholder = stringResource(Res.string.profile_nickname_placeholder),
-                            supportingText = stringResource(Res.string.profile_nickname_help),
-                            errorText = state.nicknameError, enabled = editable,
-                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
-                        )
-                        AppTextField(
-                            value = state.birthDateDigits,
-                            onValueChange = { value -> onBirthDateChange(value.filter { it in '0'..'9' }.take(8)) },
-                            label = stringResource(Res.string.profile_birth_date), required = true,
-                            placeholder = stringResource(Res.string.profile_birth_date_placeholder),
-                            supportingText = stringResource(Res.string.profile_birth_date_help),
-                            errorText = state.birthDateError, enabled = editable,
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Done),
-                            visualTransformation = BirthDateVisualTransformation,
-                        )
-                        Column(verticalArrangement = Arrangement.spacedBy(AppSpacing.Small)) {
-                            Text(stringResource(Res.string.profile_gender), style = MaterialTheme.typography.labelLarge,
-                                color = if (editable) AppColors.TextPrimary else AppColors.TextDisabled)
-                            Row(Modifier.fillMaxWidth().selectableGroup(), horizontalArrangement = Arrangement.spacedBy(AppSpacing.Small)) {
-                                ProfileGender.entries.forEach { gender ->
-                                    val selected = state.gender == gender
-                                    AppRadio(selected = selected, onSelect = { onGenderChange(gender) },
-                                        label = stringResource(if (gender == ProfileGender.Male) Res.string.profile_male else Res.string.profile_female),
-                                        enabled = editable,
-                                        modifier = Modifier.weight(1f).background(
-                                            if (selected && editable) AppColors.SelectionContainer else AppColors.SurfaceMuted,
-                                            AppShapes.Control,
-                                        ),
-                                    )
-                                }
-                            }
-                            if (editable && state.genderError != null) {
-                                Text(state.genderError, style = MaterialTheme.typography.bodySmall, color = AppColors.Error,
-                                    modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite })
-                            }
-                        }
-                        StatusCard(stringResource(Res.string.profile_notice_title), stringResource(Res.string.profile_notice_body))
+                        ProfileBasicsFields(state, onNicknameChange, onBirthDateChange, onGenderChange)
                         if (compactHeight) ProfileContinueButton(state, onContinue)
                     }
                 }
                 if (!compactHeight) ProfileContinueButton(state, onContinue)
             }
         }
+    }
+}
+
+/** 닉네임 · 생년월일 · 성별 · 안내. 한 화면(위)과 가입 아코디언이 같이 쓴다 */
+@Composable
+internal fun ProfileBasicsFields(
+    state: ProfileBasicsState,
+    onNicknameChange: (String) -> Unit,
+    onBirthDateChange: (String) -> Unit,
+    onGenderChange: (ProfileGender) -> Unit,
+) {
+    val editable = !state.saving
+    Column(verticalArrangement = Arrangement.spacedBy(AppSpacing.Section)) {
+        AppTextField(
+            value = state.nickname, onValueChange = onNicknameChange,
+            label = stringResource(Res.string.profile_nickname), required = true,
+            placeholder = stringResource(Res.string.profile_nickname_placeholder),
+            supportingText = stringResource(Res.string.profile_nickname_help),
+            errorText = state.nicknameError, enabled = editable,
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
+        )
+        AppTextField(
+            value = state.birthDateDigits,
+            onValueChange = { value -> onBirthDateChange(value.filter { it in '0'..'9' }.take(8)) },
+            label = stringResource(Res.string.profile_birth_date), required = true,
+            placeholder = stringResource(Res.string.profile_birth_date_placeholder),
+            supportingText = stringResource(Res.string.profile_birth_date_help),
+            errorText = state.birthDateError, enabled = editable,
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Done),
+            visualTransformation = BirthDateVisualTransformation,
+        )
+        Column(verticalArrangement = Arrangement.spacedBy(AppSpacing.Small)) {
+            Text(stringResource(Res.string.profile_gender), style = MaterialTheme.typography.labelLarge,
+                color = if (editable) AppColors.TextPrimary else AppColors.TextDisabled)
+            Row(Modifier.fillMaxWidth().selectableGroup(), horizontalArrangement = Arrangement.spacedBy(AppSpacing.Small)) {
+                ProfileGender.entries.forEach { gender ->
+                    val selected = state.gender == gender
+                    AppRadio(selected = selected, onSelect = { onGenderChange(gender) },
+                        label = stringResource(if (gender == ProfileGender.Male) Res.string.profile_male else Res.string.profile_female),
+                        enabled = editable,
+                        modifier = Modifier.weight(1f).background(
+                            if (selected && editable) AppColors.SelectionContainer else AppColors.SurfaceMuted,
+                            AppShapes.Control,
+                        ),
+                    )
+                }
+            }
+            if (editable && state.genderError != null) {
+                Text(state.genderError, style = MaterialTheme.typography.bodySmall, color = AppColors.Error,
+                    modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite })
+            }
+        }
+        StatusCard(stringResource(Res.string.profile_notice_title), stringResource(Res.string.profile_notice_body))
     }
 }
 

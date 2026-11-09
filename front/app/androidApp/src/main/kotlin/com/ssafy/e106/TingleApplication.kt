@@ -26,8 +26,10 @@ class TingleApplication : Application() {
             androidContext(this@TingleApplication)
             val socialKeys = SocialKeys(BuildConfig.GOOGLE_WEB_CLIENT_ID, BuildConfig.KAKAO_NATIVE_APP_KEY, BuildConfig.NAVER_CLIENT_ID, BuildConfig.NAVER_REDIRECT_URI)
             // 운영 앱 · 개발 앱은 같은 화면 · 같은 가입 흐름을 쓴다(개발용 우회 · 진단 화면 없음). 서버 주소 · 키만 다르다.
+            // 약관 전문 정적 페이지(front/web/public)는 API 와 같은 곳에 있다(…/api/ → …/). 운영 · 개발 모두 같은 규칙
+            val siteBase = BuildConfig.API_BASE_URL.removeSuffix("api/")
             modules(coreModule(BuildConfig.API_BASE_URL, BuildConfig.HTTP_LOG, socialKeys), authUiModule,
-                onboardingModule(), profileModule(), surveyModule(), settingsModule(),
+                onboardingModule(siteBase = siteBase), profileModule(siteBase = siteBase), surveyModule(), settingsModule(),
                 // 키링 소유 조회는 실제 서버 모듈을 사용하며 BLE 연결 성공을 대체하지 않는다.
                 proposalModule(), matchReasonModule, homeModule, chatModule, safetyModule, reportModule, keyringModule)
         }

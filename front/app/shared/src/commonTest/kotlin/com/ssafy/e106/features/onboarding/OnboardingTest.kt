@@ -54,6 +54,34 @@ class OnboardingTest {
         assertEquals(1, session.refreshes)
         assertEquals(OnboardingStatus.AGREEMENT_REQUIRED, m.state.value.session?.status)
     }
+    // 약관 개정으로 다시 동의하는 기존 회원에게는 사진 · 자기소개 동의를 묶지 않는다(계정 메뉴에서 따로 관리)
+    @Test fun completedMemberReconsentKeepsProfileConsentsOptional() = runTest(dispatcher) {
+        val repo = TestAgreements()
+        repo.items += AgreementItem("PROFILE_PHOTO", "v1", "photo", false, "https://tingle.test/photo")
+        val session = TestSession(OnboardingStatus.AGREEMENT_REQUIRED)
+        session.state.value = Session.SignedIn(1, OnboardingStatus.AGREEMENT_REQUIRED, true)
+        val m = vm(repo, session); runCurrent()
+        m.check("TERMS", true); m.submit(); runCurrent()
+        assertEquals(listOf(listOf(AgreementAnswer("TERMS", "v1", true))), repo.submitted)
+    }
+    // 문서 주소가 없는 프로필 동의는 체크할 수 없으니 필수로 묶지 않는다(묶으면 가입이 막힌다)
+    @Test fun profileConsentWithoutDocumentDoesNotBlockSignup() = runTest(dispatcher) {
+        val repo = TestAgreements()
+        repo.items += AgreementItem("PROFILE_PHOTO", "v1", "(선택) photo", false)
+        val m = vm(repo, TestSession(OnboardingStatus.AGREEMENT_REQUIRED)); runCurrent()
+        m.check("TERMS", true); m.submit(); runCurrent()
+        assertEquals(listOf(listOf(AgreementAnswer("TERMS", "v1", true))), repo.submitted)
+    }
+    // 서버가 전문 주소를 안 줘도 랜딩 정적 페이지로 채워 운영 · 개발 모두 약관 시트에서 필수로 받는다. 서버 주소가 있으면 그걸 쓴다
+    @Test fun profileConsentDocumentFallsBackToLandingPage() {
+        val photo = AgreementItem("PROFILE_PHOTO", "v1", "photo", false)
+        assertEquals("https://tingle.test/dev/profile-photo/", photo.withProfileDocument("https://tingle.test/dev/").reviewUrl)
+        assertEquals("https://tingle.test/profile-introduction/",
+            AgreementItem("PROFILE_INTRODUCTION", "v1", "intro", false).withProfileDocument("https://tingle.test/").reviewUrl)
+        assertEquals("https://server.test/photo", photo.copy(contentUrl = "https://server.test/photo").withProfileDocument("https://tingle.test/").reviewUrl)
+        assertNull(AgreementItem("PROFILE_RELIGION", "v1", "religion", false).withProfileDocument("https://tingle.test/").contentUrl)
+        assertNull(photo.withProfileDocument(null).contentUrl)
+    }
     @Test fun refreshFailureAfterSuccessfulConsentDoesNotResubmit() = runTest(dispatcher) {
         val repo = TestAgreements(); val session = TestSession(OnboardingStatus.AGREEMENT_REQUIRED)
         session.refreshResult = ApiResult.Fail(AppError.Offline)
@@ -73,16 +101,16 @@ class OnboardingTest {
         assertFalse(m.state.value.canSubmit)
         assertTrue(repo.submitted.isEmpty())
     }
-    @Test fun requiredReconsentWirePayloadOmitsAllProfileChoices() = runTest(dispatcher) {
-        val optionalTypes = setOf("PROFILE_PHOTO", "PROFILE_INTRODUCTION", "PROFILE_RELIGION")
+    // 사진 · 자기소개 동의는 가입 때 약관과 함께 필수로 받는다. 종교(민감정보)는 보내지 않아 프로필에서 따로 받는다
+    @Test fun signupPayloadIncludesPhotoAndIntroductionButOmitsReligion() = runTest(dispatcher) {
         val bodies = mutableListOf<JsonArray>()
         val client = createHttpClient("https://test/dev/api/", httpLog = false, engine = MockEngine { request ->
             val response = when (request.method) {
                 HttpMethod.Get -> """{"agreements":[
                     {"type":"TERMS","version":"v2","title":"terms","required":true,"contentUrl":"https://tingle.test/terms"},
                     {"type":"ADULT","version":"v1","title":"adult","required":true},
-                    {"type":"PROFILE_PHOTO","version":"v3","title":"photo","required":false},
-                    {"type":"PROFILE_INTRODUCTION","version":"v4","title":"introduction","required":false},
+                    {"type":"PROFILE_PHOTO","version":"v3","title":"photo","required":false,"contentUrl":"https://tingle.test/photo"},
+                    {"type":"PROFILE_INTRODUCTION","version":"v4","title":"introduction","required":false,"contentUrl":"https://tingle.test/introduction"},
                     {"type":"PROFILE_RELIGION","version":"v5","title":"religion","required":false}]}"""
                 HttpMethod.Post -> {
                     assertEquals("/dev/api/users/1/agreements", request.url.encodedPath)
@@ -101,14 +129,16 @@ class OnboardingTest {
             m.state.first { !it.busy }
             assertNull(m.state.value.error)
             assertEquals(5, m.state.value.agreements.size)
-            optionalTypes.forEach { m.check(it, true); m.check(it, false) }
+            m.check("PROFILE_RELIGION", true)
             assertTrue(m.state.value.checked.isEmpty())
-            m.check("TERMS", true); m.check("ADULT", true); m.submit()
+            m.check("TERMS", true); m.check("ADULT", true)
+            assertFalse(m.state.value.canSubmit)
+            m.check("PROFILE_PHOTO", true); m.check("PROFILE_INTRODUCTION", true); m.submit()
             m.state.first { !it.busy }
             assertTrue(m.state.value.submitted, "Consent failed: ${m.state.value.error}")
             val answers = bodies.single().map { it.jsonObject }
-            assertEquals(listOf("TERMS", "ADULT"), answers.map { it.getValue("type").jsonPrimitive.content })
-            assertEquals(listOf("v2", "v1"), answers.map { it.getValue("version").jsonPrimitive.content })
+            assertEquals(listOf("TERMS", "ADULT", "PROFILE_PHOTO", "PROFILE_INTRODUCTION"), answers.map { it.getValue("type").jsonPrimitive.content })
+            assertEquals(listOf("v2", "v1", "v3", "v4"), answers.map { it.getValue("version").jsonPrimitive.content })
             assertTrue(answers.all { it.getValue("agreed").jsonPrimitive.boolean })
         } finally { client.close() }
     }
