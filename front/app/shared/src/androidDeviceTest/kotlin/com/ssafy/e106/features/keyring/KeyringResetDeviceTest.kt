@@ -43,6 +43,7 @@ class KeyringResetTestActivity : ComponentActivity() {
             override suspend fun create(deviceId: Long, key: String, body: SyncChallengeBody) = ApiResult.Fail(AppError.Offline)
             override suspend fun get(deviceId: Long, runId: String) = ApiResult.Fail(AppError.Offline)
             override suspend fun ack(deviceId: Long, runId: String, key: String, body: KeyringSyncAck) = ApiResult.Fail(AppError.Offline)
+            override suspend fun applied(deviceId: Long, runId: String, key: String, body: KeyringSyncAck) = ApiResult.Fail(AppError.Offline)
         }, f.sync, f.server, f.session)
         viewModelStore.put("managed-sync", managedSync)
         setContent { AppTheme {
