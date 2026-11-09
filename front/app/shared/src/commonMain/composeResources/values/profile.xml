@@ -19,4 +19,11 @@
     <string name="profile_confirm_basics_body">생년월일: %1$s\n성별: %2$s\n\n등록 후에는 직접 바꿀 수 없어요. 입력한 생년월일이 만 19세 미만이면 서버에서 계정이 탈퇴 처리돼요. 오타가 없는지 확인해 주세요.</string>
     <string name="profile_confirm_basics_save">확인하고 저장</string>
     <string name="profile_confirm_basics_edit">다시 수정</string>
+    <!-- 가입 중 프로필 입력(아코디언 한 화면) -->
+    <string name="profile_flow_title">프로필 작성</string>
+    <string name="profile_section_basics">기본 정보</string>
+    <string name="profile_section_lifestyle">생활 습관</string>
+    <string name="profile_section_optional">선택 프로필</string>
+    <string name="profile_section_expanded">펼침</string>
+    <string name="profile_section_collapsed">접힘</string>
 </resources>

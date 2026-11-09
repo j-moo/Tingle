@@ -45,24 +45,6 @@ fun ProfileDetailsScreen(
     continueEnabled: Boolean = state.canContinue,
     continueLabel: String? = null,
 ) {
-    val introductionIntoView = remember { BringIntoViewRequester() }
-    var introductionFocused by remember { mutableStateOf(false) }
-    val ime = WindowInsets.ime
-    val density = LocalDensity.current
-    // 여러 줄 입력은 AppTextField의 자동 스크롤을 사용하지 않는다. 키보드로 창이 줄어들면
-    // 작성 중인 입력칸을 다시 보여 준다. IME 표시 전에는 기본 포커스 이동에 맡긴다.
-    LaunchedEffect(introductionFocused, state.editable, state.introductionConsent, density) {
-        if (introductionFocused && state.editable && state.introductionConsent) {
-            snapshotFlow { ime.getBottom(density) }.collect { bottom ->
-                if (bottom > 0) introductionIntoView.bringIntoView()
-            }
-        }
-    }
-    val introductionError = state.introductionError ?: when {
-        state.introductionTooLong -> stringResource(Res.string.profile_intro_too_long)
-        state.introductionTooManyLines -> stringResource(Res.string.profile_intro_too_many_lines)
-        else -> null
-    }
     // 저장 동작은 동일하게 유지하고 배치만 바꾼다. 키보드로 짧아진 창에서는 본문 끝까지 스크롤한다.
     val submit: @Composable () -> Unit = {
         Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
@@ -94,90 +76,128 @@ fun ProfileDetailsScreen(
                             DetailHelp(Res.string.profile_details_intro)
                             DetailHelp(Res.string.profile_details_public)
                         }
-                        Column(verticalArrangement = Arrangement.spacedBy(AppSpacing.Small)) {
-                            DetailTitle(Res.string.profile_photo_title)
-                            Box(Modifier.size(144.dp).align(Alignment.CenterHorizontally).clip(AppShapes.Card),
-                                contentAlignment = Alignment.Center) {
-                                if (state.hasPhoto) photoContent()
-                                else ProfilePlaceholder(stringResource(Res.string.profile_photo_empty))
-                            }
-                            AppCheckbox(state.photoConsent,
-                                onCheckedChange = { if (state.editable) onPhotoConsentChange(it) },
-                                label = stringResource(Res.string.profile_photo_consent), enabled = state.editable && canChangeConsent(OptionalConsentType.PROFILE_PHOTO))
-                            consentInfo(OptionalConsentType.PROFILE_PHOTO)
-                            AppButton(
-                                stringResource(if (state.hasPhoto) Res.string.profile_photo_replace else Res.string.profile_photo_add),
-                                modifier = Modifier.fillMaxWidth(), variant = AppButtonVariant.Secondary,
-                                enabled = state.editable && state.photoConsent,
-                                loading = state.photoBusy,
-                                loadingText = stringResource(Res.string.profile_photo_uploading),
-                                onClick = onChoosePhoto,
-                            )
-                            if (state.hasPhoto) AppButton(
-                                stringResource(Res.string.profile_photo_delete),
-                                modifier = Modifier.fillMaxWidth(), variant = AppButtonVariant.Secondary,
-                                enabled = state.editable, onClick = onDeletePhoto,
-                            )
-                            if (state.photoStatus == ProfilePhotoStatus.Replacing) DetailHelp(Res.string.profile_photo_replacing)
-                            state.photoError?.let { DetailError(it) }
-    //                        DetailHelp(Res.string.profile_photo_rule)
-                            DetailHelp(Res.string.profile_photo_matching)
-                        }
+                        ProfilePhotoBlock(state, onPhotoConsentChange, onChoosePhoto, onDeletePhoto, photoContent, consentInfo, canChangeConsent)
                         HorizontalDivider(color = AppColors.BorderSubtle)
-                        Column(verticalArrangement = Arrangement.spacedBy(AppSpacing.Small)) {
-                            DetailTitle(Res.string.profile_intro_title)
-                            AppCheckbox(state.introductionConsent,
-                                onCheckedChange = { if (state.editable) onIntroductionConsentChange(it) },
-                                label = stringResource(Res.string.profile_intro_consent), enabled = state.editable && canChangeConsent(OptionalConsentType.PROFILE_INTRODUCTION))
-                            consentInfo(OptionalConsentType.PROFILE_INTRODUCTION)
-                            // AppTextField는 한 줄 전용이므로 이 화면의 여러 줄 입력과 스크롤 복구를 연결한다.
-                            OutlinedTextField(
-                                value = state.introduction,
-                                onValueChange = { if (state.editable && state.introductionConsent) onIntroductionChange(it) },
-                                enabled = state.editable && state.introductionConsent,
-                                modifier = Modifier.fillMaxWidth()
-                                    .bringIntoViewRequester(introductionIntoView)
-                                    .onFocusChanged { introductionFocused = it.isFocused },
-                                label = { Text(stringResource(Res.string.profile_intro_title)) },
-                                placeholder = { Text(stringResource(Res.string.profile_intro_placeholder)) },
-                                minLines = 4, maxLines = 6, shape = AppShapes.Control,
-                                isError = introductionError != null,
-                                textStyle = MaterialTheme.typography.bodyLarge,
-                                colors = OutlinedTextFieldDefaults.colors(
-                                    focusedBorderColor = AppColors.TextPrimary, unfocusedBorderColor = AppColors.BorderControl,
-                                    disabledContainerColor = AppColors.SurfaceMuted, errorBorderColor = AppColors.Error,
-                                ),
-                            )
-                            Text(stringResource(Res.string.profile_intro_count, state.introductionLength),
-                                modifier = Modifier.align(Alignment.End), style = MaterialTheme.typography.bodySmall,
-                                color = if (state.introductionLength > 200) AppColors.Error else AppColors.TextSecondary)
-                            introductionError?.let { DetailError(it) }
-                            DetailHelp(Res.string.profile_intro_rule)
-                        }
+                        ProfileIntroductionBlock(state, onIntroductionChange, onIntroductionConsentChange, consentInfo, canChangeConsent)
                         HorizontalDivider(color = AppColors.BorderSubtle)
-                        Column(verticalArrangement = Arrangement.spacedBy(AppSpacing.Small)) {
-                            DetailTitle(Res.string.profile_religion_title)
-                            DetailHelp(Res.string.profile_religion_private_help)
-                            AppCheckbox(state.religionConsent,
-                                onCheckedChange = { if (state.editable) onReligionConsentChange(it) },
-                                label = stringResource(Res.string.profile_religion_consent), enabled = state.editable && canChangeConsent(OptionalConsentType.PROFILE_RELIGION))
-                            consentInfo(OptionalConsentType.PROFILE_RELIGION)
-                            Column(Modifier.selectableGroup(), verticalArrangement = Arrangement.spacedBy(AppSpacing.Small)) {
-                                ProfileReligion.entries.forEach { option ->
-                                    val selected = state.religion == option
-                                    AppRadio(selected = selected, onSelect = { onReligionChange(option) },
-                                        label = stringResource(option.label()),
-                                        enabled = state.editable && state.religionConsent,
-                                        modifier = Modifier.background(
-                                            if (selected) AppColors.SelectionContainer else AppColors.SurfaceMuted, AppShapes.Control))
-                                }
-                            }
-                        }
+                        ProfileReligionBlock(state, onReligionChange, onReligionConsentChange, consentInfo, canChangeConsent)
                         footer()
                         if (compactHeight) submit()
                     }
                 }
                 if (!compactHeight) submit()
+            }
+        }
+    }
+}
+
+/** 사진 칸. [onConsentChange] 가 null 이면 동의 칸을 그리지 않는다(가입 중: 약관 시트에서 이미 받음) */
+@Composable
+internal fun ProfilePhotoBlock(
+    state: ProfileDetailsState, onConsentChange: ((Boolean) -> Unit)?, onChoosePhoto: () -> Unit, onDeletePhoto: () -> Unit,
+    photoContent: @Composable () -> Unit, consentInfo: @Composable (OptionalConsentType) -> Unit = {},
+    canChangeConsent: (OptionalConsentType) -> Boolean = { true },
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(AppSpacing.Small)) {
+        DetailTitle(Res.string.profile_photo_title)
+        Box(Modifier.size(144.dp).align(Alignment.CenterHorizontally).clip(AppShapes.Card), contentAlignment = Alignment.Center) {
+            if (state.hasPhoto) photoContent()
+            else ProfilePlaceholder(stringResource(Res.string.profile_photo_empty))
+        }
+        if (onConsentChange != null) {
+            AppCheckbox(state.photoConsent, onCheckedChange = { if (state.editable) onConsentChange(it) },
+                label = stringResource(Res.string.profile_photo_consent), enabled = state.editable && canChangeConsent(OptionalConsentType.PROFILE_PHOTO))
+            consentInfo(OptionalConsentType.PROFILE_PHOTO)
+        }
+        AppButton(
+            stringResource(if (state.hasPhoto) Res.string.profile_photo_replace else Res.string.profile_photo_add),
+            modifier = Modifier.fillMaxWidth(), variant = AppButtonVariant.Secondary,
+            enabled = state.editable && state.photoConsent, loading = state.photoBusy,
+            loadingText = stringResource(Res.string.profile_photo_uploading), onClick = onChoosePhoto,
+        )
+        if (state.hasPhoto) AppButton(stringResource(Res.string.profile_photo_delete),
+            modifier = Modifier.fillMaxWidth(), variant = AppButtonVariant.Secondary, enabled = state.editable, onClick = onDeletePhoto)
+        if (state.photoStatus == ProfilePhotoStatus.Replacing) DetailHelp(Res.string.profile_photo_replacing)
+        state.photoError?.let { DetailError(it) }
+        DetailHelp(Res.string.profile_photo_matching)
+    }
+}
+
+/** 자기소개 칸. [onConsentChange] 가 null 이면 동의 칸을 그리지 않는다 */
+@Composable
+internal fun ProfileIntroductionBlock(
+    state: ProfileDetailsState, onIntroductionChange: (String) -> Unit, onConsentChange: ((Boolean) -> Unit)?,
+    consentInfo: @Composable (OptionalConsentType) -> Unit = {}, canChangeConsent: (OptionalConsentType) -> Boolean = { true },
+) {
+    val introductionIntoView = remember { BringIntoViewRequester() }
+    var introductionFocused by remember { mutableStateOf(false) }
+    val ime = WindowInsets.ime
+    val density = LocalDensity.current
+    // 여러 줄 입력은 AppTextField의 자동 스크롤을 사용하지 않는다. 키보드로 창이 줄어들면
+    // 작성 중인 입력칸을 다시 보여 준다. IME 표시 전에는 기본 포커스 이동에 맡긴다.
+    LaunchedEffect(introductionFocused, state.editable, state.introductionConsent, density) {
+        if (introductionFocused && state.editable && state.introductionConsent) {
+            snapshotFlow { ime.getBottom(density) }.collect { bottom ->
+                if (bottom > 0) introductionIntoView.bringIntoView()
+            }
+        }
+    }
+    val introductionError = state.introductionError ?: when {
+        state.introductionTooLong -> stringResource(Res.string.profile_intro_too_long)
+        state.introductionTooManyLines -> stringResource(Res.string.profile_intro_too_many_lines)
+        else -> null
+    }
+    Column(verticalArrangement = Arrangement.spacedBy(AppSpacing.Small)) {
+        DetailTitle(Res.string.profile_intro_title)
+        if (onConsentChange != null) {
+            AppCheckbox(state.introductionConsent, onCheckedChange = { if (state.editable) onConsentChange(it) },
+                label = stringResource(Res.string.profile_intro_consent), enabled = state.editable && canChangeConsent(OptionalConsentType.PROFILE_INTRODUCTION))
+            consentInfo(OptionalConsentType.PROFILE_INTRODUCTION)
+        }
+        // AppTextField는 한 줄 전용이므로 이 화면의 여러 줄 입력과 스크롤 복구를 연결한다.
+        OutlinedTextField(
+            value = state.introduction,
+            onValueChange = { if (state.editable && state.introductionConsent) onIntroductionChange(it) },
+            enabled = state.editable && state.introductionConsent,
+            modifier = Modifier.fillMaxWidth()
+                .bringIntoViewRequester(introductionIntoView)
+                .onFocusChanged { introductionFocused = it.isFocused },
+            label = { Text(stringResource(Res.string.profile_intro_title)) },
+            placeholder = { Text(stringResource(Res.string.profile_intro_placeholder)) },
+            minLines = 4, maxLines = 6, shape = AppShapes.Control,
+            isError = introductionError != null,
+            textStyle = MaterialTheme.typography.bodyLarge,
+            colors = OutlinedTextFieldDefaults.colors(
+                focusedBorderColor = AppColors.TextPrimary, unfocusedBorderColor = AppColors.BorderControl,
+                disabledContainerColor = AppColors.SurfaceMuted, errorBorderColor = AppColors.Error,
+            ),
+        )
+        Text(stringResource(Res.string.profile_intro_count, state.introductionLength),
+            modifier = Modifier.align(Alignment.End), style = MaterialTheme.typography.bodySmall,
+            color = if (state.introductionLength > 200) AppColors.Error else AppColors.TextSecondary)
+        introductionError?.let { DetailError(it) }
+        DetailHelp(Res.string.profile_intro_rule)
+    }
+}
+
+/** 종교 칸. 민감정보라 가입 중에도 여기서 따로 동의받는다 */
+@Composable
+internal fun ProfileReligionBlock(
+    state: ProfileDetailsState, onReligionChange: (ProfileReligion) -> Unit, onConsentChange: (Boolean) -> Unit,
+    consentInfo: @Composable (OptionalConsentType) -> Unit = {}, canChangeConsent: (OptionalConsentType) -> Boolean = { true },
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(AppSpacing.Small)) {
+        DetailTitle(Res.string.profile_religion_title)
+        DetailHelp(Res.string.profile_religion_private_help)
+        AppCheckbox(state.religionConsent, onCheckedChange = { if (state.editable) onConsentChange(it) },
+            label = stringResource(Res.string.profile_religion_consent), enabled = state.editable && canChangeConsent(OptionalConsentType.PROFILE_RELIGION))
+        consentInfo(OptionalConsentType.PROFILE_RELIGION)
+        Column(Modifier.selectableGroup(), verticalArrangement = Arrangement.spacedBy(AppSpacing.Small)) {
+            ProfileReligion.entries.forEach { option ->
+                val selected = state.religion == option
+                AppRadio(selected = selected, onSelect = { onReligionChange(option) },
+                    label = stringResource(option.label()), enabled = state.editable && state.religionConsent,
+                    modifier = Modifier.background(if (selected) AppColors.SelectionContainer else AppColors.SurfaceMuted, AppShapes.Control))
             }
         }
     }

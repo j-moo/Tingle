@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.ssafy.e106.core.auth.*
 import com.ssafy.e106.core.network.*
 import com.ssafy.e106.features.onboarding.data.AgreementItem
+import com.ssafy.e106.features.onboarding.ui.withProfileDocuments
 import com.ssafy.e106.features.profile.data.*
 import com.ssafy.e106.features.profile.DevelopmentProfileAccess
 import kotlinx.coroutines.*
@@ -49,6 +50,7 @@ class OptionalProfileViewModel(
     private val sessions: SessionStore,
     private val allowUnpublished: Boolean = false,
     private val access: DevelopmentProfileAccess = DevelopmentProfileAccess(),
+    private val siteBase: String? = null,   // 서버가 전문 주소를 안 준 프로필 동의를 랜딩 정적 페이지로 채운다(약관 시트와 같게)
 ) : ViewModel() {
     private val mutable = MutableStateFlow(OptionalProfileState(allowUnpublished = allowUnpublished))
     val state = mutable.asStateFlow()
@@ -107,7 +109,7 @@ class OptionalProfileViewModel(
         val d = optional.documents()
         if (!valid(stamp)) return false
         // Existing valid consent remains valid even if a document is newer or unavailable.
-        val docs = (d as? ApiResult.Ok)?.value?.agreements.orEmpty()
+        val docs = (d as? ApiResult.Ok)?.value?.agreements.orEmpty().withProfileDocuments(siteBase)
         mutable.update { old ->
             fun agreed(type: OptionalConsentType) = records.single { it.type == type }.agreed
             val intro = agreed(OptionalConsentType.PROFILE_INTRODUCTION)

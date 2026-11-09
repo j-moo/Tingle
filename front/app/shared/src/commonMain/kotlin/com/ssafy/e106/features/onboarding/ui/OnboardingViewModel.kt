@@ -18,11 +18,27 @@ data class OnboardingState(
     val purchaseUrl: String? = null,
     val allowUnpublishedAgreements: Boolean = false,
 ) {
-    val requiredAgreements get() = agreements.filter { it.required }
-    fun canCheck(item: AgreementItem) = item.required && (item.canReview || allowUnpublishedAgreements)
+    val requiredAgreements get() = agreements.filter(::isRequired)
+    fun canCheck(item: AgreementItem) = isRequired(item) && (item.canReview || allowUnpublishedAgreements)
+    // 가입 전에만 사진 · 자기소개 동의를 필수로 묶는다. 약관 개정으로 다시 동의하는 기존 회원은 계정 메뉴에서 따로 관리하므로 건드리지 않는다.
+    // 문서가 없어 체크할 수 없는 항목은 묶지 않는다(묶으면 가입이 막힌다). 그때는 프로필 화면에서 동의 칸을 보여 받는다
+    private fun isRequired(item: AgreementItem) = item.required ||
+        (session?.signupCompleted == false && item.type in SignupRequiredConsents && (item.canReview || allowUnpublishedAgreements))
     val canSubmit get() = !busy && !submitted && requiredAgreements.isNotEmpty() &&
         requiredAgreements.all { canCheck(it) && it.type in checked }
 }
+
+/** 프로필 사진 · 자기소개 동의는 서버에선 선택 항목이지만 가입 때 약관과 함께 필수로 받는다(프로필 화면엔 동의 칸이 없다). 종교는 민감정보라 프로필에서 따로 받는다 */
+internal val SignupRequiredConsents = setOf("PROFILE_PHOTO", "PROFILE_INTRODUCTION")
+/** 프로필 동의 전문은 랜딩 정적 페이지(front/web/public). 서버가 주소를 안 줘도 운영 · 개발이 같게 보이도록 앱이 채운다 */
+private val ProfileDocumentPaths = mapOf("PROFILE_PHOTO" to "profile-photo/", "PROFILE_INTRODUCTION" to "profile-introduction/")
+internal fun AgreementItem.withProfileDocument(siteBase: String?): AgreementItem {
+    val path = ProfileDocumentPaths[type] ?: return this
+    return if (reviewUrl != null || siteBase == null) this else copy(contentUrl = siteBase + path)
+}
+internal fun List<AgreementItem>.withProfileDocuments(siteBase: String?) = map { it.withProfileDocument(siteBase) }
+/** 서버 제목은 "(선택) 프로필 사진 …"이라 가입 시트에서 "(필수)"와 함께 보이지 않게 앞의 "(선택)"을 뗀다 */
+internal val AgreementItem.signupTitle get() = if (type in SignupRequiredConsents) title.removePrefix("(선택)").trim() else title
 
 /** Activity survives rotation; session changes cancel work and erase the previous account's state. */
 class OnboardingViewModel(
@@ -30,6 +46,7 @@ class OnboardingViewModel(
     private val sessions: SessionStore,
     private val auth: AuthRepository,
     private val allowUnpublishedAgreements: Boolean = false,
+    private val siteBase: String? = null,
 ) : ViewModel() {
     private val mutable = MutableStateFlow(OnboardingState(allowUnpublishedAgreements = allowUnpublishedAgreements))
     val state = mutable.asStateFlow()
@@ -66,7 +83,7 @@ class OnboardingViewModel(
         launchWork { stamp ->
             when (session.status) {
                 OnboardingStatus.AGREEMENT_REQUIRED -> when (val result = repository.agreements()) {
-                    is ApiResult.Ok -> if (valid(stamp)) mutable.update { it.copy(agreements = result.value.agreements, checked = emptySet()) }
+                    is ApiResult.Ok -> if (valid(stamp)) mutable.update { it.copy(agreements = result.value.agreements.withProfileDocuments(siteBase), checked = emptySet()) }
                     is ApiResult.Fail -> if (valid(stamp)) mutable.update { it.copy(error = result.error) }
                 }
                 OnboardingStatus.KEYRING_REQUIRED -> when (val result = repository.purchaseInfo()) {
@@ -100,7 +117,7 @@ class OnboardingViewModel(
                         // Clear old checks immediately; they do not express consent to the new version.
                         mutable.update { it.copy(agreements = emptyList(), checked = emptySet()) }
                         val latest = repository.agreements()
-                        if (valid(stamp) && latest is ApiResult.Ok) mutable.update { it.copy(agreements = latest.value.agreements) }
+                        if (valid(stamp) && latest is ApiResult.Ok) mutable.update { it.copy(agreements = latest.value.agreements.withProfileDocuments(siteBase)) }
                     }
                     if (valid(stamp)) mutable.update { it.copy(error = result.error) }
                 }

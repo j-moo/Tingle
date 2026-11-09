@@ -34,6 +34,7 @@ fun ProfileConfirmationScreen(
     onRegister: () -> Unit,
     photoContent: @Composable () -> Unit,
     modifier: Modifier = Modifier,
+    error: String? = null,
 ) {
     Surface(modifier.fillMaxSize(), color = AppColors.Background) {
         Column(Modifier.fillMaxSize().safeDrawingPadding()) {
@@ -50,6 +51,7 @@ fun ProfileConfirmationScreen(
                             modifier = Modifier.semantics { heading() })
                         SummaryHelp(Res.string.profile_confirmation_intro)
                     }
+                    error?.let { Text(it, Modifier.semantics { liveRegion = LiveRegionMode.Polite }, style = MaterialTheme.typography.bodySmall, color = AppColors.Error) }
                     SummarySection(Res.string.profile_confirmation_basics,
                         Res.string.profile_confirmation_edit_basics, !state.registering, onEditBasics) {
                         SummaryValue(Res.string.profile_nickname, state.nickname)

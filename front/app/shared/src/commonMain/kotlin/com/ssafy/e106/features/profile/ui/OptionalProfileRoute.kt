@@ -79,8 +79,6 @@ fun OptionalProfileScreen(
     editingExisting: Boolean = false,
 ) {
     var skipPrompt by remember(state.session) { mutableStateOf(false) }
-    var openFailed by remember { mutableStateOf(false) }
-    val uri = LocalUriHandler.current
     val skipLabel = stringResource(if (editingExisting) Res.string.profile_manage_optional_back else Res.string.optional_skip)
     ProfileDetailsScreen(state.details.copy(saving = state.busy, interactionEnabled = state.editable),
         onReligion, { onDecision(OptionalConsentType.PROFILE_RELIGION, it) },
@@ -94,39 +92,9 @@ fun OptionalProfileScreen(
         },
         // 결과 미확인 상태에서는 수정만 잠근다. 뒤로가기는 확인창을 거쳐 허용한다.
         onBack = onBack.takeIf { !state.busy },
-        header = {
-            if (state.busy) { LinearProgressIndicator(); Text(stringResource(Res.string.optional_loading)) }
-            if (!state.loaded && !state.busy) Text(stringResource(Res.string.optional_unavailable))
-            if (state.recoveryRequired) Text(stringResource(Res.string.optional_unknown))
-            state.notice?.let { Text(stringResource(when (it) {
-                OptionalProfileNotice.VersionChanged -> Res.string.optional_version_changed
-                OptionalProfileNotice.ConsentRequired -> Res.string.optional_consent_required
-                OptionalProfileNotice.Unknown -> Res.string.optional_unknown
-                OptionalProfileNotice.Saved -> Res.string.optional_saved
-                OptionalProfileNotice.Checked -> Res.string.optional_checked
-                else -> Res.string.optional_changed
-            })) }
-            state.error?.let { Text(it.message, color = MaterialTheme.colorScheme.error) }
-            if (!state.loaded || state.recoveryRequired || state.error != null || state.photoFailed) {
-                TextButton(onClick = onReload, enabled = !state.busy) { Text(stringResource(Res.string.optional_refresh)) }
-            }
-            if (state.canRetryConsent) TextButton(onClick = onRetryConsent, enabled = !state.busy) {
-                Text(stringResource(Res.string.optional_retry_consent))
-            }
-        },
+        header = { OptionalProfileStatus(state, onReload, onRetryConsent) },
         canChangeConsent = { type -> state.canDecide(type, state.consent(type)?.agreed != true) },
-        consentInfo = { type ->
-            val doc = state.document(type)
-            val url = doc?.reviewUrl
-            if (url != null) TextButton(onClick = {
-                openFailed = try { uri.openUri(url); false } catch (_: Exception) { true }
-            }, enabled = !state.busy) { Text(stringResource(Res.string.optional_document)) }
-            else Text(stringResource(if (state.allowUnpublished) Res.string.optional_development_document else Res.string.optional_document_missing),
-                style = MaterialTheme.typography.bodySmall)
-            if (openFailed) Text(stringResource(Res.string.optional_document_failed))
-            if (type == OptionalConsentType.PROFILE_RELIGION) Text(stringResource(Res.string.optional_religion_help),
-                style = MaterialTheme.typography.bodySmall)
-        },
+        consentInfo = { OptionalConsentInfo(state, it) },
         footer = {
             if (state.loaded) TextButton(onClick = { skipPrompt = true }, enabled = state.canContinue) {
                 Text(skipLabel)
@@ -134,6 +102,56 @@ fun OptionalProfileScreen(
         },
         continueEnabled = if (!state.loaded) state.canContinue else state.editable && state.details.canContinue,
         continueLabel = if (!state.loaded) skipLabel else if (editingExisting) stringResource(Res.string.profile_manage_optional_save) else null)
+    OptionalProfileDialogs(state, onConfirm, onDismiss, onConfirmDeletePhoto)
+    if (skipPrompt) AlertDialog(onDismissRequest = { skipPrompt = false },
+        title = { Text(stringResource(Res.string.optional_skip_title)) },
+        text = { Text(stringResource(Res.string.optional_skip_body)) },
+        confirmButton = { TextButton(enabled = state.canContinue, onClick = { skipPrompt = false; onSkip() }) { Text(skipLabel) } },
+        dismissButton = { TextButton(onClick = { skipPrompt = false }) { Text(stringResource(Res.string.optional_cancel)) } })
+}
+
+/** 불러오기 · 결과 미확인 · 오류 안내와 새로고침. 계정 메뉴의 선택 프로필과 가입 아코디언이 같이 쓴다 */
+@Composable
+internal fun OptionalProfileStatus(state: OptionalProfileState, onReload: () -> Unit, onRetryConsent: () -> Unit) {
+    if (state.busy) { LinearProgressIndicator(); Text(stringResource(Res.string.optional_loading)) }
+    if (!state.loaded && !state.busy) Text(stringResource(Res.string.optional_unavailable))
+    if (state.recoveryRequired) Text(stringResource(Res.string.optional_unknown))
+    state.notice?.let { Text(stringResource(when (it) {
+        OptionalProfileNotice.VersionChanged -> Res.string.optional_version_changed
+        OptionalProfileNotice.ConsentRequired -> Res.string.optional_consent_required
+        OptionalProfileNotice.Unknown -> Res.string.optional_unknown
+        OptionalProfileNotice.Saved -> Res.string.optional_saved
+        OptionalProfileNotice.Checked -> Res.string.optional_checked
+        else -> Res.string.optional_changed
+    })) }
+    state.error?.let { Text(it.message, color = MaterialTheme.colorScheme.error) }
+    if (!state.loaded || state.recoveryRequired || state.error != null || state.photoFailed) {
+        TextButton(onClick = onReload, enabled = !state.busy) { Text(stringResource(Res.string.optional_refresh)) }
+    }
+    if (state.canRetryConsent) TextButton(onClick = onRetryConsent, enabled = !state.busy) {
+        Text(stringResource(Res.string.optional_retry_consent))
+    }
+}
+
+/** 동의 칸 아래 문서 보기 링크와 도움말 */
+@Composable
+internal fun OptionalConsentInfo(state: OptionalProfileState, type: OptionalConsentType) {
+    var openFailed by remember { mutableStateOf(false) }
+    val uri = LocalUriHandler.current
+    val url = state.document(type)?.reviewUrl
+    if (url != null) TextButton(onClick = {
+        openFailed = try { uri.openUri(url); false } catch (_: Exception) { true }
+    }, enabled = !state.busy) { Text(stringResource(Res.string.optional_document)) }
+    else Text(stringResource(if (state.allowUnpublished) Res.string.optional_development_document else Res.string.optional_document_missing),
+        style = MaterialTheme.typography.bodySmall)
+    if (openFailed) Text(stringResource(Res.string.optional_document_failed))
+    if (type == OptionalConsentType.PROFILE_RELIGION) Text(stringResource(Res.string.optional_religion_help),
+        style = MaterialTheme.typography.bodySmall)
+}
+
+/** 동의 · 철회 확인창과 사진 삭제 확인창 */
+@Composable
+internal fun OptionalProfileDialogs(state: OptionalProfileState, onConfirm: () -> Unit, onDismiss: () -> Unit, onConfirmDeletePhoto: () -> Unit) {
     state.decision?.let { d ->
         AlertDialog(onDismissRequest = onDismiss,
             title = { Text(stringResource(if (d.agreed) Res.string.optional_grant_title else Res.string.optional_withdraw_title)) },
@@ -150,9 +168,4 @@ fun OptionalProfileScreen(
         text = { Text(stringResource(Res.string.optional_photo_delete_body)) },
         confirmButton = { TextButton(onClick = onConfirmDeletePhoto) { Text(stringResource(Res.string.profile_photo_delete)) } },
         dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(Res.string.optional_cancel)) } })
-    if (skipPrompt) AlertDialog(onDismissRequest = { skipPrompt = false },
-        title = { Text(stringResource(Res.string.optional_skip_title)) },
-        text = { Text(stringResource(Res.string.optional_skip_body)) },
-        confirmButton = { TextButton(enabled = state.canContinue, onClick = { skipPrompt = false; onSkip() }) { Text(skipLabel) } },
-        dismissButton = { TextButton(onClick = { skipPrompt = false }) { Text(stringResource(Res.string.optional_cancel)) } })
 }
