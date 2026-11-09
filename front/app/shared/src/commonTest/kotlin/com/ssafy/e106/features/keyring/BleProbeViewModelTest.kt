@@ -3,6 +3,8 @@ package com.ssafy.e106.features.keyring
 import androidx.lifecycle.ViewModelStore
 import com.ssafy.e106.core.auth.*
 import com.ssafy.e106.core.ble.*
+import com.ssafy.e106.core.network.ApiResult
+import com.ssafy.e106.core.network.AppError
 import com.ssafy.e106.features.keyring.ui.*
 import com.ssafy.e106.features.keyring.data.*
 import com.ssafy.e106.features.onboarding.TestSession
@@ -11,6 +13,8 @@ import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.test.*
 import kotlinx.serialization.json.*
 import kotlin.test.*
+import kotlin.time.Duration.Companion.seconds
+import kotlin.time.TestTimeSource
 
 /** VM의 동시 작업·계정 경계를 검증하는 테스트 전용 기기. 실제 무선 검증과 구분한다. */
 private class ProbeFixture : KeyringBle {
@@ -79,6 +83,185 @@ private class ProbeFixture : KeyringBle {
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class BleProbeViewModelTest {
+    private val ownerIdentity = SyncIdentity("11111111-1111-4111-8111-111111111111", 4,
+        "22222222-2222-4222-8222-222222222222", 12, "a".repeat(64), "A".repeat(43),
+        "key-1", "tingle-keyring-settings-v3", 2, KeyringRegistrationProtocol.VERSION_2)
+
+    private fun ownerPort() = ProbeFixture().apply {
+        extraInfo = mapOf(
+            "supportedFunctions" to JsonArray(listOf("GET_OWNER_CHALLENGE", "AUTHORIZE_OWNER").map(::JsonPrimitive)),
+            "ownershipEpoch" to JsonPrimitive(2), "ownerState" to JsonPrimitive("BOUND"),
+            "supportedProofProtocolVersions" to JsonArray(listOf(JsonPrimitive(KeyringRegistrationProtocol.VERSION_2))),
+            "keyId" to JsonPrimitive(ownerIdentity.keyId),
+            "profileStorageCharacteristic" to JsonPrimitive(BleProfileStorageInfo.CHARACTERISTIC),
+            "profileRequiresEncryption" to JsonPrimitive(true),
+        )
+        commandReply = { input -> buildJsonObject {
+            put("protocolVersion", 1)
+            put("requestId", input.getValue("requestId"))
+            if (input["type"] == JsonPrimitive("GET_OWNER_CHALLENGE")) {
+                put("type", "OWNER_CHALLENGE")
+                put("deviceNonce", "A".repeat(43))
+                put("expiresInSeconds", 60)
+            } else {
+                put("type", "OWNER_RESULT")
+                put("authorized", true)
+                put("permissions", input.getValue("permissions"))
+            }
+        } }
+    }
+
+    private fun ownerGrant(request: KeyringOwnerGrantRequest) = KeyringOwnerGrant(
+        "tingle-owner-session-v2", "dev-ed25519-test", ownerIdentity.deviceId,
+        request.ownerGeneration, request.ownershipEpoch, request.deviceNonce, request.permissions,
+        "2026-11-06T03:00:00Z", 1793934060L, "A".repeat(86))
+
+    /** 이전 허가가 늦게 도착해도 자동 복구한 연결과 그 연결의 새 작업을 유지한다. */
+    @Test fun lateOwnerGrantCannotClearReconnectedBoardOrBusyState() = runTest(dispatcher) {
+        val port = ownerPort()
+        val vm = model(port)
+        val replies = List(2) { CompletableDeferred<Unit>() }
+        var requests = 0
+        val authorizer = KeyringOwnerAuthorizer(object : KeyringOwnerSessionRepository {
+            override suspend fun create(deviceId: Long, key: String, body: KeyringOwnerGrantRequest): ApiResult<KeyringOwnerGrant> {
+                replies[requests++].await()
+                return ApiResult.Ok(ownerGrant(body))
+            }
+            override suspend fun get(deviceId: Long, key: String): ApiResult<KeyringOwnerGrant> = error("Unexpected lookup")
+        })
+        vm.setForeground(true)
+        vm.scan(); runCurrent(); vm.connect(port.currentId); runCurrent()
+        val old = async {
+            runCatching { vm.withOwnerSession("XIAO-test", ownerIdentity, KeyringOwnerPermission.Read, authorizer) {} }
+        }
+        runCurrent()
+        assertEquals(1, requests)
+        port.link.close()
+        advanceTimeBy(1_001); runCurrent()
+        assertEquals(2, port.connections)
+        assertTrue(vm.state.value.connected)
+        val current = async { vm.withOwnerSession("XIAO-test", ownerIdentity, KeyringOwnerPermission.Ack, authorizer) {} }
+        runCurrent()
+        assertEquals(2, requests)
+        replies[0].complete(Unit)
+        assertIs<BleException>(old.await().exceptionOrNull())
+        assertTrue(vm.state.value.connected)
+        assertTrue(vm.state.value.busy)
+        replies[1].complete(Unit)
+        current.await()
+        assertFalse(vm.state.value.busy)
+        assertEquals(1, port.commands.count { it == "PROTECTED_AUTHORIZE_OWNER" })
+    }
+
+    /** 지연된 허가는 폐기하고 재연결 뒤 새 challenge와 요청 키로만 권한을 연다. */
+    @Test fun ownerSessionExpiresAndReconnectObtainsFreshGrant() = runTest(dispatcher) {
+        val port = ownerPort()
+        val initialReply = requireNotNull(port.commandReply)
+        val vm = model(port)
+        val time = TestTimeSource()
+        val requests = mutableListOf<Pair<String, KeyringOwnerGrantRequest>>()
+        val authorizer = KeyringOwnerAuthorizer(object : KeyringOwnerSessionRepository {
+            override suspend fun create(deviceId: Long, key: String, body: KeyringOwnerGrantRequest): ApiResult<KeyringOwnerGrant> {
+                requests += key to body
+                if (requests.size == 1) time += 60.seconds
+                return ApiResult.Ok(ownerGrant(body))
+            }
+            override suspend fun get(deviceId: Long, key: String): ApiResult<KeyringOwnerGrant> = error("Unexpected lookup")
+        }, time)
+        vm.scan(); runCurrent(); vm.connect(port.currentId); runCurrent()
+        val failure = assertFailsWith<BleCommandException> {
+            vm.withOwnerSession("XIAO-test", ownerIdentity, KeyringOwnerPermission.Read, authorizer) {}
+        }
+        assertEquals("OWNER_CHALLENGE_REQUIRED", failure.code)
+        assertFalse(port.commands.any { it.contains("AUTHORIZE_OWNER") })
+
+        vm.leave()
+        port.commandReply = { input ->
+            val response = initialReply(input)
+            if (input["type"] == JsonPrimitive("GET_OWNER_CHALLENGE"))
+                JsonObject(response + ("deviceNonce" to JsonPrimitive("B" + "A".repeat(42))))
+            else response
+        }
+        vm.scan(); runCurrent(); vm.connect(port.currentId); runCurrent()
+        vm.withOwnerSession("XIAO-test", ownerIdentity, KeyringOwnerPermission.Read, authorizer) {}
+        assertNotEquals(requests[0].first, requests[1].first)
+        assertNotEquals(requests[0].second.deviceNonce, requests[1].second.deviceNonce)
+        assertEquals(1, port.commands.count { it == "PROTECTED_AUTHORIZE_OWNER" })
+    }
+
+    /** 발급 응답 유실 뒤 같은 키로 조회하며, 현재 연결에서 최소 권한으로 인증한다. */
+    @Test fun ownerSessionRecoversOriginalGrantOverProtectedChannel() = runTest(dispatcher) {
+        val port = ownerPort()
+        val vm = model(port)
+        vm.scan(); runCurrent(); vm.connect("a"); runCurrent()
+        lateinit var requestKey: String
+        lateinit var request: KeyringOwnerGrantRequest
+        val authorizer = KeyringOwnerAuthorizer(object : KeyringOwnerSessionRepository {
+            override suspend fun create(deviceId: Long, key: String, body: KeyringOwnerGrantRequest): ApiResult<KeyringOwnerGrant> {
+                assertEquals(1, body.permissions)
+                requestKey = key
+                request = body
+                return ApiResult.Fail(AppError.Offline)
+            }
+            override suspend fun get(deviceId: Long, key: String): ApiResult<KeyringOwnerGrant> {
+                assertEquals(ownerIdentity.deviceId, deviceId)
+                assertEquals(requestKey, key)
+                return ApiResult.Ok(ownerGrant(request))
+            }
+        })
+        assertEquals("read", vm.withOwnerSession("XIAO-test", ownerIdentity, KeyringOwnerPermission.Read, authorizer) { "read" })
+        assertEquals(listOf("PROTECT", "PROTECTED_GET_OWNER_CHALLENGE", "PROTECTED_AUTHORIZE_OWNER"), port.commands.takeLast(3))
+    }
+
+    /** 소유 세대가 다르거나 서버가 다른 권한을 반환하면 권한을 설치하지 않는다. */
+    @Test fun ownerSessionRejectsWrongBoardEpochAndOverbroadGrant() = runTest(dispatcher) {
+        val port = ownerPort()
+        val vm = model(port)
+        var creations = 0
+        val authorizer = KeyringOwnerAuthorizer(object : KeyringOwnerSessionRepository {
+            override suspend fun create(deviceId: Long, key: String, body: KeyringOwnerGrantRequest): ApiResult<KeyringOwnerGrant> {
+                creations++
+                return ApiResult.Ok(ownerGrant(body).copy(permissions = 3))
+            }
+            override suspend fun get(deviceId: Long, key: String): ApiResult<KeyringOwnerGrant> = error("Unexpected lookup")
+        })
+        vm.scan(); runCurrent(); vm.connect("a"); runCurrent()
+        assertFails {
+            vm.withOwnerSession("XIAO-test", ownerIdentity.copy(ownershipEpoch = 1), KeyringOwnerPermission.Ack, authorizer) {}
+        }
+        assertEquals(0, creations)
+        vm.scan(); runCurrent(); vm.connect(port.currentId); runCurrent()
+        assertFails { vm.withOwnerSession("XIAO-test", ownerIdentity, KeyringOwnerPermission.Ack, authorizer) {} }
+        assertEquals(1, creations)
+        assertFalse(port.commands.any { it.contains("AUTHORIZE_OWNER") })
+    }
+
+    /** 계정이 바뀌면 먼저 보낸 HTTP 요청이 성공하더라도 옛 허가를 보드에 전달하지 않는다. */
+    @Test fun ownerSessionRejectsLateGrantAfterSignOut() = runTest(dispatcher) {
+        val port = ownerPort()
+        val session = TestSession(OnboardingStatus.KEYRING_REQUIRED)
+        val vm = model(port, session)
+        val request = CompletableDeferred<KeyringOwnerGrantRequest>()
+        val result = CompletableDeferred<KeyringOwnerGrant>()
+        val authorizer = KeyringOwnerAuthorizer(object : KeyringOwnerSessionRepository {
+            override suspend fun create(deviceId: Long, key: String, body: KeyringOwnerGrantRequest): ApiResult<KeyringOwnerGrant> {
+                request.complete(body)
+                return ApiResult.Ok(result.await())
+            }
+            override suspend fun get(deviceId: Long, key: String): ApiResult<KeyringOwnerGrant> = error("Unexpected lookup")
+        })
+        vm.scan(); runCurrent(); vm.connect("a"); runCurrent()
+        val work = async {
+            runCatching { vm.withOwnerSession("XIAO-test", ownerIdentity, KeyringOwnerPermission.Read, authorizer) {} }
+        }
+        val pending = request.await()
+        session.state.value = Session.SignedOut
+        runCurrent()
+        result.complete(ownerGrant(pending))
+        assertIs<BleException>(work.await().exceptionOrNull())
+        assertFalse(port.commands.any { it.contains("AUTHORIZE_OWNER") })
+    }
+
     /** 서버 응답을 중계하는 시험 봉투. 성향 계산이나 실제 Ed25519 검증을 대신하지 않는다. */
     private fun profileRun() = KeyringSyncRun("11111111-1111-4111-8111-111111111111", "11111111-1111-4111-8111-111111111111",
         4, "22222222-2222-4222-8222-222222222222", 12, 12, "PENDING", false,

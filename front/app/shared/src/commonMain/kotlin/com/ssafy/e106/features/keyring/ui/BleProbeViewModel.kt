@@ -91,9 +91,9 @@ class BleProbeViewModel(private val ble: KeyringBle, private val sessions: Sessi
     private fun watch(channel: BleConnection, stamp: Long, serial: String) {
         watcher = viewModelScope.launch {
             channel.state.first { it == BleLinkState.Closed }
-            if (stamp != generation) return@launch
+            if (stamp != generation || channel !== connection) return@launch
             connection = null
-            mutable.update { it.copy(connected = false, info = null, status = null, error = BleFailure.Disconnected) }
+            mutable.update { it.copy(connected = false, busy = false, info = null, status = null, error = BleFailure.Disconnected) }
             if (!foreground) return@launch
             val previous = work
             reconnect = viewModelScope.launch {
@@ -123,9 +123,11 @@ class BleProbeViewModel(private val ble: KeyringBle, private val sessions: Sessi
                             if (info.serial != serial) {
                                 next.close(); showFailure(BleException(BleFailure.InvalidFrame)); return@launch
                             }
+                            // 새 연결의 세대를 올려 이전 작업의 실패 정리와 finally가 새 작업 상태를 건드리지 않게 한다.
+                            val nextStamp = ++generation
                             connection = next
-                            mutable.update { it.copy(connected = true, info = info, error = null, commandError = null) }
-                            watch(next, stamp, serial)
+                            mutable.update { it.copy(connected = true, busy = false, info = info, error = null, commandError = null) }
+                            watch(next, nextStamp, serial)
                             return@launch
                         } catch (cancelled: CancellationException) { next?.close(); throw cancelled }
                         catch (failure: Exception) { next?.close(); if (stamp == generation) showFailure(failure) }
@@ -308,6 +310,58 @@ class BleProbeViewModel(private val ble: KeyringBle, private val sessions: Sessi
             }
             throw failure
         } finally { if (stamp == generation) mutable.update { it.copy(busy = false) } }
+    }
+
+    /** 기록 작업과 소유자 인증을 같은 연결 안에서 실행한다. 권한은 작업 밖으로 돌려주거나 보관하지 않는다. */
+    internal suspend fun <T> withOwnerSession(
+        serial: String,
+        identity: SyncIdentity,
+        permission: KeyringOwnerPermission,
+        authorizer: KeyringOwnerAuthorizer,
+        action: suspend (exchange: suspend (ByteArray) -> ByteArray) -> T,
+    ): T {
+        val channel = connection ?: throw BleException(BleFailure.Disconnected)
+        val owner = (sessions.state.value as? Session.SignedIn)?.userId ?: error("No active session")
+        check(!mutable.value.busy && mutable.value.info?.serial == serial)
+        val stamp = generation
+        // busy로 다른 명령을 막고, 로그인/연결이 바뀌면 늦게 받은 허가도 사용하지 않는다.
+        mutable.update { it.copy(busy = true, status = null) }
+        fun ensureCurrent() {
+            if (stamp != generation || channel !== connection || channel.state.value != BleLinkState.Ready ||
+                (sessions.state.value as? Session.SignedIn)?.userId != owner) throw BleException(BleFailure.Disconnected)
+        }
+        var active = true
+        try {
+            val info = readInfo(channel)
+            ensureCurrent()
+            check(info.serial == serial && info.ownerState == "BOUND" &&
+                info.supportsProof(KeyringRegistrationProtocol.VERSION_2) && info.ownershipEpoch == identity.ownershipEpoch &&
+                info.ownerFlow.keyId == identity.keyId &&
+                info.supportedFunctions.containsAll(listOf("GET_OWNER_CHALLENGE", "AUTHORIZE_OWNER")) &&
+                info.profileStorage.characteristic?.lowercase() == BleProfileStorageInfo.CHARACTERISTIC &&
+                info.profileStorage.requiresEncryption == true)
+            authorizer.authorize(channel, identity, permission, ::ensureCurrent)
+            val result = action { request ->
+                check(active)
+                ensureCurrent()
+                channel.exchangeProtected(request).also { ensureCurrent() }
+            }
+            ensureCurrent()
+            return result
+        } catch (failure: Exception) {
+            // 서버가 허가 발급을 거부했을 때는 BLE 프레임에 영향이 없다. 전송 중 연결이 어긋났다면 닫는다.
+            if (stamp == generation && channel === connection &&
+                failure !is BleCommandException && failure !is KeyringOwnerSessionFailure) {
+                watcher?.cancel()
+                channel.close()
+                connection = null
+                mutable.update { it.copy(connected = false, info = null, error = BleFailure.Disconnected, busy = false) }
+            }
+            throw failure
+        } finally {
+            active = false
+            if (stamp == generation && channel === connection) mutable.update { it.copy(busy = false) }
+        }
     }
 
     /** 실제 앱 중지/권한 상실/계정 변경/사용자 해제 시 뒤늦은 응답과 재연결을 함께 차단한다. */
