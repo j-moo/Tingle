@@ -53,35 +53,21 @@ fun SurveyQuestionScreen(
         )
         Text(state.text, style = MaterialTheme.typography.headlineMedium,
             modifier = Modifier.semantics { heading() })
-        Text(stringResource(if (state.maxChoices == 1) Res.string.survey_choose_one else Res.string.survey_choose_many, state.maxChoices),
+        if (state.maxChoices == 1) Text(stringResource(Res.string.survey_choose_one),
             style = MaterialTheme.typography.bodyMedium, color = AppColors.TextSecondary)
         val chosen = (state.answer as? SurveyAnswer.Choices)?.keys.orEmpty()
-        Column(
-            if (state.maxChoices == 1) Modifier.selectableGroup() else Modifier,
-            verticalArrangement = Arrangement.spacedBy(AppSpacing.Small),
-        ) {
-            state.options.forEach { option ->
-                val selected = option.key in chosen
-                val optionModifier = Modifier.background(
-                    if (selected) AppColors.SelectionContainer else AppColors.SurfaceMuted, AppShapes.Control,
-                )
-                if (state.maxChoices == 1) {
-                    AppRadio(selected, { onAnswerChange(SurveyAnswer.Choices(setOf(option.key))) },
-                        option.label, optionModifier, enabled = !locked)
-                } else {
-                    AppCheckbox(selected, { checked ->
-                        onAnswerChange(SurveyAnswer.Choices(if (checked) chosen + option.key else chosen - option.key))
-                    }, option.label, optionModifier,
-                        enabled = !locked && (selected || chosen.size < state.maxChoices))
-                }
+        val select: (String) -> Unit = { onAnswerChange(SurveyAnswer.Choices(setOf(it))) }
+        // 유형별 화면(11-09 시안 ①E · ②B · ③A · ④C). 저장 · 다음 조건은 그대로
+        when (state.answerStyle()) {
+            SurveyAnswerStyle.Scale -> ScaleAnswer(state.options, chosen, !locked, ordinal = false, onSelect = select)
+            SurveyAnswerStyle.Ordinal -> ScaleAnswer(state.options, chosen, !locked, ordinal = true, onSelect = select)
+            SurveyAnswerStyle.Level -> LevelSlider(state.options, chosen, !locked, select)
+            SurveyAnswerStyle.Single -> SingleTiles(state.options, chosen, !locked, select)
+            SurveyAnswerStyle.Multi -> MultiChips(state.options, chosen, state.maxChoices, !locked) { key, on ->
+                onAnswerChange(SurveyAnswer.Choices(if (on) chosen + key else chosen - key))
             }
-            if (state.allowUnknown) SpecialAnswer(
-                stringResource(Res.string.survey_unknown), state.answer == SurveyAnswer.Unknown, !locked,
-            ) { onAnswerChange(SurveyAnswer.Unknown) }
-            if (state.allowAny) SpecialAnswer(
-                stringResource(Res.string.survey_any), state.answer == SurveyAnswer.Any, !locked,
-            ) { onAnswerChange(SurveyAnswer.Any) }
         }
+        SpecialAnswers(state, !locked, onAnswerChange)
         if (state.allowAny) Text(stringResource(Res.string.survey_special_help),
             style = MaterialTheme.typography.bodySmall, color = AppColors.TextSecondary)
         Text(stringResource(when (state.saveState) {
@@ -101,12 +87,6 @@ fun SurveyQuestionScreen(
         if (state.ordinal > 1) AppButton(stringResource(Res.string.survey_previous),
             variant = AppButtonVariant.Secondary, enabled = !locked, onClick = onPrevious)
     }
-}
-
-@Composable
-private fun SpecialAnswer(label: String, selected: Boolean, enabled: Boolean, onSelect: () -> Unit) {
-    AppRadio(selected, onSelect, label,
-        Modifier.background(if (selected) AppColors.SelectionContainer else AppColors.SurfaceMuted, AppShapes.Control), enabled)
 }
 
 @Composable
