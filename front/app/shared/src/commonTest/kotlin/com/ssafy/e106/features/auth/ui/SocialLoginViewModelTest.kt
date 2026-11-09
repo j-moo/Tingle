@@ -31,6 +31,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import kotlin.time.Instant
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class SocialLoginViewModelTest {
@@ -111,6 +112,20 @@ class SocialLoginViewModelTest {
         vm.login(LoginProvider.Google)
         assertNull(vm.state.value.errorMessage)
         assertEquals(LoginProvider.Google, vm.state.value.busyProvider)
+    }
+
+    /** 이전 계정의 제한 시각은 새 로그인 시도에 남지 않는다. */
+    @Test fun rejoinAvailabilityIsClearedOnRetry() = runTest(dispatcher) {
+        val auth = ControlledAuth()
+        val vm = viewModel(auth)
+        val availableAt = Instant.parse("2026-11-12T03:03:55Z")
+        vm.login(LoginProvider.Kakao)
+        auth.answer.complete(LoginResult.Failed(AppError.Server(409, "REJOIN_RESTRICTED", "제한 중", availableAt)))
+        runCurrent()
+        assertEquals(availableAt, vm.state.value.rejoinAvailableAt)
+        auth.answer = CompletableDeferred()
+        vm.login(LoginProvider.Google)
+        assertNull(vm.state.value.rejoinAvailableAt)
     }
 
     @Test fun coroutineCancellationIsNotDisplayedAsLoginFailure() = runTest(dispatcher) {

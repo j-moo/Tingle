@@ -37,6 +37,7 @@ import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import kotlin.time.Instant
 
 private fun jwt(sub: Long, tag: String) = "h." + Base64.UrlSafe.withPadding(Base64.PaddingOption.ABSENT).encode("""{"sub":"$sub","t":"$tag"}""".encodeToByteArray()) + ".s"
 
@@ -103,6 +104,21 @@ private class AuthHarness(scope: TestScope, saved: StoredTokens? = null, val soc
 }
 
 class AuthRepositoryTest {
+    /** 로그인 거절 본문에 실린 시각을 보존하고, 차단된 계정의 세션은 만들지 않는다. */
+    @Test fun restrictedRejoinPreservesServerAvailabilityWithoutCreatingSession() = runTest {
+        val h = AuthHarness(this) { req ->
+            assertTrue(req.path.endsWith("auth/kakao"))
+            json(HttpStatusCode.Conflict, """{"code":"REJOIN_RESTRICTED","message":"다시 가입할 수 없어요",
+                "rejoinAvailableAt":"2026-11-12T03:03:55Z"}""")
+        }
+        val failed = assertIs<LoginResult.Failed>(h.auth.login(Provider.KAKAO))
+        val error = assertIs<AppError.Server>(failed.error)
+        assertEquals(409, error.status)
+        assertEquals("REJOIN_RESTRICTED", error.code)
+        assertEquals(Instant.parse("2026-11-12T03:03:55Z"), error.rejoinAvailableAt)
+        assertNull(h.store.saved)
+    }
+
     @Test
     fun loginSavesTokensAndSignsInWithServerStep() = runTest {
         val h = AuthHarness(this) { req ->

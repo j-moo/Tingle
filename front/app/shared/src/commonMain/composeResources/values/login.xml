@@ -18,4 +18,5 @@
     <string name="login_next_preferences">다음은 매칭 조건 설정이에요.</string>
     <string name="login_next_sync">키링과 설정을 동기화할 차례예요.</string>
     <string name="login_next_ready">서비스 이용 준비가 완료됐어요.</string>
+    <string name="login_rejoin_available_at">%1$s 다시 가입할 수 있는 시각은 %2$s (UTC)예요.</string>
 </resources>

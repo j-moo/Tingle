@@ -1,5 +1,7 @@
 package com.ssafy.e106.core.network
 
+import kotlin.time.Instant
+
 // 서버가 문구를 줄 수 없는 경우에만 쓰는 기본 문구. 다국어로 갈 때 이 넷만 리소스로 옮긴다
 const val OFFLINE_MESSAGE = "연결을 확인해 주세요"
 const val SERVER_FALLBACK_MESSAGE = "잠시 후 다시 시도해 주세요"
@@ -23,8 +25,9 @@ sealed interface AppError {
     /** 연결 실패 · 타임아웃 */
     data object Offline : AppError
 
-    /** 서버가 준 오류 응답. [serverMessage] 는 서버 문구 그대로 */
-    data class Server(val status: Int, val code: String, val serverMessage: String) : AppError
+    /** 서버 문구를 그대로 보존한다. 재가입 시각은 로그인 409 계약에서만 채운다. */
+    data class Server(val status: Int, val code: String, val serverMessage: String,
+        val rejoinAvailableAt: Instant? = null) : AppError
 
     /** 재로그인 필요 (AUTH_REQUIRED · ACCESS_TOKEN_INVALID · SESSION_REVOKED · 재발급 실패) */
     data object SessionExpired : AppError

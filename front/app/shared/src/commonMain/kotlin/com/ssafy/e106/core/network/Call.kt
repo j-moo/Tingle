@@ -7,6 +7,7 @@ import io.ktor.http.isSuccess
 import kotlinx.coroutines.CancellationException
 import kotlinx.io.IOException
 import kotlinx.serialization.Serializable
+import kotlin.time.Instant
 
 /**
  * 응답을 [ApiResult] 로 바꾸는 유일한 자리. Api 함수는 전부 이걸 감싼다.
@@ -39,10 +40,10 @@ internal suspend inline fun <T> catchingNonCancel(block: suspend () -> T): Resul
     Result.failure(e)
 }
 
-/** 서버 오류 본문은 {code, message} 두 필드뿐(B/global/error/ErrorResponse.java). 본문이 깨져 있으면 빈 값 → 기본 문구 */
+/** 일반 오류는 코드와 문구를 쓰고, 재가입 제한은 서버가 확정한 시각도 사용한다. */
 @Serializable
 @PublishedApi
-internal class ErrorBody(val code: String = "", val message: String = "")
+internal class ErrorBody(val code: String = "", val message: String = "", val rejoinAvailableAt: String? = null)
 
 @PublishedApi
 internal suspend fun errorOf(res: HttpResponse): AppError {
@@ -56,6 +57,11 @@ internal suspend fun errorOf(res: HttpResponse): AppError {
     return when {
         res.status.value == 401 && body.code in SESSION_CODES -> AppError.SessionExpired
         res.status.value == 403 && body.code == "ONBOARDING_REQUIRED" -> AppError.OnboardingRequired(body.message)
+        res.status.value == 409 && body.code == "REJOIN_RESTRICTED" -> {
+            // 서버 시각이 없거나 형식이 틀리면 제한 문구만 유지하고 앱이 기한을 추정하지 않는다.
+            val availableAt = body.rejoinAvailableAt?.let { runCatching { Instant.parse(it) }.getOrNull() }
+            AppError.Server(res.status.value, body.code, body.message, availableAt)
+        }
         else -> AppError.Server(res.status.value, body.code, body.message)
     }
 }
