@@ -45,6 +45,7 @@ interface KeyringSyncRepository {
     suspend fun create(deviceId: Long, key: String, body: SyncChallengeBody): ApiResult<KeyringSyncRun>
     suspend fun get(deviceId: Long, runId: String): ApiResult<KeyringSyncRun>
     suspend fun ack(deviceId: Long, runId: String, key: String, body: KeyringSyncAck): ApiResult<KeyringSyncRun>
+    suspend fun applied(deviceId: Long, runId: String, key: String, body: KeyringSyncAck): ApiResult<Unit>
 }
 
 /** 환경별 접두사는 공통 클라이언트 소유다. 저장해 둔 nonce·형식을 그대로 보내 멱등 재시도 본문을 유지한다. */
@@ -58,12 +59,18 @@ class HttpKeyringSyncRepository(private val client: HttpClient) : KeyringSyncRep
     override suspend fun ack(deviceId: Long, runId: String, key: String, body: KeyringSyncAck) = client.call<KeyringSyncRun> {
         post("keyrings/$deviceId/sync-runs/$runId/ack") { header("Idempotency-Key", key); setBody(body) }
     }
+    // 두 증명은 JSON 모양만 같다. 저장 ACK의 경로나 멱등 키를 재사용하지 않는다.
+    override suspend fun applied(deviceId: Long, runId: String, key: String, body: KeyringSyncAck) = client.call<Unit> {
+        post("keyrings/$deviceId/sync-runs/$runId/applied") { header("Idempotency-Key", key); setBody(body) }
+    }
 }
 
 /** JSON 숫자를 Long으로 유지한다. 서버 payload를 재인코딩하거나 FE 설정으로 대체하지 않는다. */
 internal object KeyringSyncProtocol {
     const val PROFILE_FORMAT = BleProfileStorageInfo.FORMAT
     const val FULL_SETTINGS_FORMAT = BleOwnerFlowInfo.FULL_SETTINGS_FORMAT
+    const val APPLIED_COMMAND = "GET_SETTINGS_APPLIED_PROOF"
+    private const val APPLIED_VERSION = "tingle-settings-applied-v1"
     private const val TSV3_HEADER_BYTES = 487
     private const val TSV3_RESTRICTION_BYTES = 25
     private const val TSV3_MAX_RESTRICTIONS = 60
@@ -147,4 +154,29 @@ internal object KeyringSyncProtocol {
         fun flag(name: String) = (value[name] as? JsonPrimitive)?.takeUnless { it.isString }?.booleanOrNull ?: error("Missing flag")
         return KeyringStoredResult(KeyringSyncAck(run.settingsVersion, run.payloadHash, proof), flag("applied"), flag("timeReady"))
     }
+
+    /** 저장된 동일 실행을 질의한다. 적용 증명은 상태 플래그로 만들거나 앱에서 서명하지 않는다. */
+    fun appliedRequest(identity: SyncIdentity, requestId: String): ByteArray {
+        require(identity.payloadFormat == FULL_SETTINGS_FORMAT && KeyringRegistrationProtocol.uuid(identity.syncRunId) &&
+            KeyringRegistrationProtocol.uuid(requestId))
+        return (buildJsonObject {
+            put("protocolVersion", 1); put("type", APPLIED_COMMAND); put("requestId", requestId)
+            put("syncRunId", identity.syncRunId)
+        }.toString() + "\n").encodeToByteArray()
+    }
+
+    fun appliedResponse(bytes: ByteArray, requestId: String, identity: SyncIdentity): KeyringSyncAck {
+        val value = BleProbeProtocol.response(bytes, requestId, "SETTINGS_APPLIED_PROOF")
+        require(value["syncRunId"] == JsonPrimitive(identity.syncRunId) &&
+            value["settingsVersion"] == JsonPrimitive(identity.settingsVersion) &&
+            value["payloadHash"] == JsonPrimitive(identity.payloadHash))
+        val proof = ApiJson.decodeFromJsonElement<KeyringProof>(value["proof"] ?: error("Missing application proof"))
+        return KeyringSyncAck(identity.settingsVersion, identity.payloadHash, proof)
+            .also { require(validApplied(identity, it)) }
+    }
+
+    fun validApplied(identity: SyncIdentity, body: KeyringSyncAck): Boolean =
+        identity.payloadFormat == FULL_SETTINGS_FORMAT && body.settingsVersion == identity.settingsVersion &&
+            body.payloadHash == identity.payloadHash && body.proof.keyId == identity.keyId &&
+            body.proof.protocolVersion == APPLIED_VERSION && encoded(body.proof.signature, 64..64)
 }

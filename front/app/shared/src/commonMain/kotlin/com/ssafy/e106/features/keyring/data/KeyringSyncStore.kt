@@ -13,7 +13,9 @@ import kotlin.uuid.Uuid
 @Serializable data class SyncTicket(val deviceId: Long, val serial: String, val createKey: String,
     val identity: SyncIdentity? = null, val ackKey: String? = null, val ack: KeyringSyncAck? = null,
     val complete: Boolean = false, val deviceNonce: String? = null, val bleAttempted: Boolean = false,
-    val nonceReceivedAt: String? = null, val createBody: SyncChallengeBody? = null) {
+    val nonceReceivedAt: String? = null, val createBody: SyncChallengeBody? = null,
+    val appliedKey: String? = null, val appliedProof: KeyringSyncAck? = null, val appliedConfirmed: Boolean = false,
+    val appliedDuringSignup: Boolean = false, val appliedOnboardingChecked: Boolean = false) {
     override fun toString() = "SyncTicket(REDACTED)"
 }
 @Serializable private data class SyncRecovery(val tickets: List<SyncTicket>)
@@ -41,6 +43,12 @@ class KeyringSyncStore(private val prefs: AppPrefs) {
             t.ack.payloadHash == t.identity.payloadHash && t.ack.proof.keyId == t.identity.keyId &&
             t.ack.proof.protocolVersion == t.identity.proofProtocolVersion)) &&
         (!t.complete || t.identity != null) && (t.deviceNonce == null || KeyringSyncProtocol.validDeviceNonce(t.deviceNonce)) &&
+        // 저장 ACK 이후에만 적용 요청을 보관한다. 재시작 후에도 두 요청의 키를 섞지 않는다.
+        (!t.appliedOnboardingChecked || t.appliedConfirmed) &&
+        ((t.appliedKey == null && t.appliedProof == null && !t.appliedConfirmed && !t.appliedDuringSignup) ||
+            (t.complete && t.identity != null && t.appliedKey != null && t.appliedProof != null &&
+                t.appliedKey != t.ackKey && KeyringRegistrationProtocol.uuid(t.appliedKey) &&
+                KeyringSyncProtocol.validApplied(t.identity, t.appliedProof))) &&
         // 구버전 파일에는 본문이 없다. 새 파일은 nonce와 선택 형식을 검증해 같은 키에 다른 본문을 보내지 않는다.
         (t.createBody == null || (t.createBody.deviceNonce == t.deviceNonce &&
             KeyringSyncProtocol.supportsIssuanceFormat(t.createBody.payloadFormat)))

@@ -13,7 +13,10 @@ import kotlin.time.Clock
 import kotlin.time.Instant
 import kotlin.time.Duration.Companion.seconds
 
-enum class SyncPhase { WaitingStage, Issuing, WaitingConnection, Sending, Stored, Confirming, Confirmed, PolicyWaiting, Stale, Failed }
+enum class SyncPhase {
+    WaitingStage, Issuing, WaitingConnection, Sending, Stored, Confirming, Confirmed, PolicyWaiting, Stale, Failed,
+    ApplyChecking, ApplyWaitingConnection, ApplyConfirming, ApplyRetry, ApplyFailed, ApplyFirmwareRequired, ApplyConfirmed,
+}
 data class KeyringSyncProgress(val deviceId: Long, val phase: SyncPhase, val error: AppError? = null,
     val applied: Boolean? = null, val timeReady: Boolean? = null, val serial: String? = null,
     val confirmedTsv3Version: Long? = null)
@@ -44,6 +47,7 @@ class KeyringSyncViewModel(private val api: KeyringSyncRepository, private val s
     private var boardSerial: String? = null
     private var transmit: (suspend (KeyringSyncRun) -> KeyringStoredResult)? = null
     private var challenge: (suspend () -> SyncChallengeBody)? = null
+    private var readApplied: (suspend (SyncIdentity) -> KeyringSyncAck)? = null
     private var observed: Session? = sessions.state.value
     // 서버 ACK와 현재 BLE 연결에서의 저장 확인은 다르다. 새 연결은 재부팅 여부를 단정하지 않고
     // 새 challenge로 한 번 다시 인증한다. 같은 연결/변경 횟수에는 반복 전송하지 않는다.
@@ -72,7 +76,7 @@ class KeyringSyncViewModel(private val api: KeyringSyncRepository, private val s
     private fun retryOfflineAfterRestore() {
         if (!active || networkAvailable != true) return
         val eligible = mutable.value.items.filter {
-            it.phase == SyncPhase.Failed && it.error == AppError.Offline &&
+            it.phase in setOf(SyncPhase.Failed, SyncPhase.ApplyRetry) && it.error == AppError.Offline &&
                 offlineAttempts[it.deviceId]?.let { revision -> revision < networkRevision } == true
         }.map { it.deviceId }
         if (eligible.isEmpty()) return
@@ -87,7 +91,7 @@ class KeyringSyncViewModel(private val api: KeyringSyncRepository, private val s
         }.collect { (session, revision) ->
             val owner = (session as? Session.SignedIn)?.userId
             if (owner != mutable.value.owner) {
-                cancelWork(); boardSerial = null; transmit = null; challenge = null
+                cancelWork(); boardSerial = null; transmit = null; challenge = null; readApplied = null
                 mutable.value = KeyringSyncState(owner)
                 delivered.clear(); nonceBindings.clear(); serials.clear()
             }
@@ -118,16 +122,27 @@ class KeyringSyncViewModel(private val api: KeyringSyncRepository, private val s
     }
     /** 기존 nonce 전용 호출은 ON/OFF로 유지한다. 실행 경로는 최신 기기 지원을 포함한 attachRequest를 쓴다. */
     fun attach(serial: String, getChallenge: suspend () -> String, send: suspend (KeyringSyncRun) -> KeyringStoredResult) =
-        attachRequest(serial, { SyncChallengeBody(getChallenge()) }, send)
+        attachRequest(serial, { SyncChallengeBody(getChallenge()) }, send = send)
 
     /** 기기 조회와 보호 연결 확인 뒤 만든 본문을 받는다. 재시도 중에는 이 콜백으로 본문을 다시 만들지 않는다. */
-    fun attachRequest(serial: String, getChallenge: suspend () -> SyncChallengeBody, send: suspend (KeyringSyncRun) -> KeyringStoredResult) {
+    fun attachRequest(serial: String, getChallenge: suspend () -> SyncChallengeBody,
+        getApplied: (suspend (SyncIdentity) -> KeyringSyncAck)? = null, send: suspend (KeyringSyncRun) -> KeyringStoredResult) {
         if (boardSerial == serial && transmit != null) return
         binding++
-        boardSerial = serial; transmit = send; challenge = getChallenge; attempted.clear(); drive()
+        boardSerial = serial; transmit = send; challenge = getChallenge; readApplied = getApplied; attempted.clear(); drive()
     }
     fun detach() {
-        if (transmit != null) { boardSerial = null; transmit = null; challenge = null; cancelWork() }
+        if (transmit != null) {
+            val disconnected = boardSerial
+            val recoverHttp = mutable.value.items.any { it.serial == disconnected &&
+                it.phase in setOf(SyncPhase.ApplyConfirming, SyncPhase.ApplyConfirmed) }
+            boardSerial = null; transmit = null; challenge = null; readApplied = null; cancelWork()
+            mutable.update { state -> state.copy(items = state.items.map {
+                if (it.serial == disconnected && it.phase == SyncPhase.ApplyChecking) it.copy(phase = SyncPhase.ApplyWaitingConnection) else it
+            }) }
+            // HTTP 증명이 내구 저장된 경우에는 BLE 없이도 같은 요청으로 복구할 수 있다.
+            if (recoverHttp) drive()
+        }
     }
     private fun cancelWork() {
         generation++; job?.cancel(); job = null; requested = false; attempted.clear()
@@ -208,9 +223,15 @@ class KeyringSyncViewModel(private val api: KeyringSyncRepository, private val s
                         ensure(owner, stamp)
                         val error = (failure as? SyncApiFailure)?.error
                         val code = (error as? AppError.Server)?.code ?: (failure as? BleCommandException)?.code
-                        show(ticket.deviceId, when (code) {
-                            "POLICY_UNRESOLVED", "UNKNOWN_COMMAND", "UNSUPPORTED_COMMAND", "UNSUPPORTED_TYPE" -> SyncPhase.PolicyWaiting
-                            "SYNC_VERSION_STALE" -> SyncPhase.Stale
+                        val phase = mutable.value.items.firstOrNull { it.deviceId == ticket.deviceId }?.phase
+                        val applying = phase in setOf(SyncPhase.ApplyChecking, SyncPhase.ApplyConfirming, SyncPhase.ApplyConfirmed)
+                        show(ticket.deviceId, when {
+                            applying && code in setOf("SETTINGS_APPLIED_UNSUPPORTED", "UNKNOWN_COMMAND", "UNSUPPORTED_COMMAND", "UNSUPPORTED_TYPE") ->
+                                SyncPhase.ApplyFirmwareRequired
+                            applying && code == "SETTINGS_APPLY_FAILED" -> SyncPhase.ApplyFailed
+                            applying -> SyncPhase.ApplyRetry
+                            code == "SYNC_VERSION_STALE" -> SyncPhase.Stale
+                            code in setOf("POLICY_UNRESOLVED", "UNKNOWN_COMMAND", "UNSUPPORTED_COMMAND", "UNSUPPORTED_TYPE") -> SyncPhase.PolicyWaiting
                             else -> SyncPhase.Failed
                         }, error)
                         if (error == AppError.Offline) {
@@ -243,6 +264,12 @@ class KeyringSyncViewModel(private val api: KeyringSyncRepository, private val s
                 store.save(owner, fresh); ensure(owner, stamp)
                 process(owner, stamp, fresh, mayRenew = false)
             } else show(id, if (connected()) SyncPhase.Stale else SyncPhase.WaitingConnection)
+        }
+        // 응답 유실 복구는 GET이나 BLE보다 먼저 동일 /applied 본문을 재전송한다. 이미 처리된 요청은
+        // 서버의 가입·설정 상태가 바뀌었더라도 최초 키로 결과를 확인해야 한다.
+        if (ticket.complete && ticket.appliedProof != null && ticket.needsAppliedConfirmation()) {
+            finishApplied(owner, stamp, ticket, ::renewOrShowStale)
+            return
         }
         // 저장 증명이 있으면 BLE를 다시 건드리지 않고 GET/동일 ACK로 복구한다.
         // 그 전의 BLE 재전송은 60초·1회용 challenge를 재사용하면 안 된다.
@@ -293,6 +320,10 @@ class KeyringSyncViewModel(private val api: KeyringSyncRepository, private val s
             // HTTP 결과는 확인됐지만 예전 보드 challenge는 새 연결에서 신뢰할 수 없다.
             renewOrShowStale(); return
         }
+        if (run.state == "ACKED" && ticket.complete && ticket.needsAppliedConfirmation()) {
+            finishApplied(owner, stamp, ticket, ::renewOrShowStale)
+            return
+        }
         if (ticket.complete && run.state == "ACKED") {
             if (connected() && delivered[id] != delivery && mayRenew) renewOrShowStale()
             else if (!connected() && delivered[id]?.second != delivery.second) show(id, SyncPhase.WaitingConnection)
@@ -300,7 +331,11 @@ class KeyringSyncViewModel(private val api: KeyringSyncRepository, private val s
             return
         }
         if (recoveringAck && run.state == "ACKED" && ticket.ack == null) {
-            store.save(owner, ticket.copy(complete = true)); ensure(owner, stamp)
+            ticket = ticket.copy(complete = true)
+            store.save(owner, ticket); ensure(owner, stamp)
+            if (ticket.needsAppliedConfirmation()) {
+                finishApplied(owner, stamp, ticket, ::renewOrShowStale); return
+            }
             if (connected() && delivered[id] != delivery && mayRenew) renewOrShowStale()
             else showConfirmed(run)
             return
@@ -336,15 +371,82 @@ class KeyringSyncViewModel(private val api: KeyringSyncRepository, private val s
         run = unwrap(ackResponse, owner, stamp)
         check(KeyringSyncProtocol.valid(run, id) && run.identity() == ticket.identity)
         check(run.state == "ACKED")
-        store.save(owner, ticket.copy(complete = true)); ensure(owner, stamp)
+        ticket = ticket.copy(complete = true)
+        store.save(owner, ticket); ensure(owner, stamp)
+        if (!run.stale && result != null) delivered[id] = delivery
+        if (!run.stale && ticket.needsAppliedConfirmation()) {
+            finishApplied(owner, stamp, ticket, ::renewOrShowStale)
+            return
+        }
         // 기존 ACK 응답 복구가 끝났거나 설정이 바뀌었다면, 그 다음에만 새 연결용 설정을 발급한다.
         if (run.stale || (result == null && connected() && delivered[id] != delivery && mayRenew)) {
             renewOrShowStale(); return
         }
-        if (result != null) delivered[id] = delivery
         showConfirmed(run, result)
         // 서버가 실제로 가입 단계를 갱신했는지 재조회한다. FE에서 READY를 만들어 넣지 않는다.
         sessions.refreshOnboarding(); ensure(owner, stamp)
+    }
+
+    private fun awaitingSignup() = (sessions.state.value as? Session.SignedIn)?.let {
+        it.status == OnboardingStatus.SYNC_PENDING && !it.isReady
+    } == true
+
+    // 서버는 가입 단계와 무관하게 현재 TSV3 버전의 적용 증명을 확인해야 기기 동기화를 반영한다.
+    private fun SyncTicket.needsAppliedConfirmation() =
+        identity?.payloadFormat == KeyringSyncProtocol.FULL_SETTINGS_FORMAT && !appliedOnboardingChecked
+
+    /** 이미 저장된 실행에서 적용 증명만 이어간다. 증명과 HTTP 키가 저장된 뒤에는 보드 없이도 복구한다. */
+    private suspend fun finishApplied(owner: Long, stamp: Long, original: SyncTicket, renew: suspend () -> Unit) {
+        var ticket = original
+        val id = ticket.deviceId
+        val identity = requireNotNull(ticket.identity)
+        val duringSignup = ticket.appliedDuringSignup || awaitingSignup()
+        if (!ticket.appliedConfirmed) {
+            if (ticket.appliedProof == null) {
+                if (boardSerial != ticket.serial || transmit == null) { show(id, SyncPhase.ApplyWaitingConnection); return }
+                show(id, SyncPhase.ApplyChecking)
+                val read = readApplied ?: throw BleCommandException("SETTINGS_APPLIED_UNSUPPORTED")
+                val proof = try { pollApplied(identity, read) } catch (failure: BleCommandException) {
+                    if (failure.code != "SETTINGS_RUN_MISMATCH") throw failure
+                    renew(); return
+                }
+                ensure(owner, stamp)
+                check(KeyringSyncProtocol.validApplied(identity, proof))
+                ticket = ticket.copy(appliedKey = Uuid.random().toString(), appliedProof = proof, appliedDuringSignup = duringSignup)
+                store.save(owner, ticket); ensure(owner, stamp)
+            }
+            show(id, SyncPhase.ApplyConfirming)
+            val response = api.applied(id, identity.syncRunId, requireNotNull(ticket.appliedKey), requireNotNull(ticket.appliedProof))
+            ensure(owner, stamp)
+            if (response.isStaleRejection()) { renew(); return }
+            unwrap(response, owner, stamp)
+            // GET 유실은 이미 성공한 /applied를 반복할 이유가 아니다. 상태 조회부터 복구한다.
+            ticket = ticket.copy(appliedConfirmed = true)
+            store.save(owner, ticket); ensure(owner, stamp)
+        }
+        show(id, SyncPhase.ApplyConfirmed)
+        unwrap(sessions.refreshOnboarding(), owner, stamp)
+        val status = (sessions.state.value as? Session.SignedIn)?.status
+        // 서버가 동기화 대기를 반환하면 적용 POST를 반복하지 않고 가입 상태를 다시 확인할 수 있게 둔다.
+        if (status == OnboardingStatus.SYNC_PENDING) return
+        store.save(owner, ticket.copy(appliedOnboardingChecked = true)); ensure(owner, stamp)
+        if (duringSignup && status == OnboardingStatus.READY) {
+            // 첫 가입 완료에서만 새 설정을 발급한다. 이미 READY인 계정의 적용 확인은 재발급을 반복하지 않는다.
+            delivered.remove(id)
+            attempted.remove(id)
+            drive()
+        } else show(id, SyncPhase.Confirmed, confirmedTsv3Version = identity.settingsVersion)
+    }
+
+    /** 최초 1회와 대기 재조회 2회로 제한한다. 다른 오류나 취소는 즉시 기존 복구 경로로 보낸다. */
+    private suspend fun pollApplied(identity: SyncIdentity, read: suspend (SyncIdentity) -> KeyringSyncAck): KeyringSyncAck {
+        for (attempt in 1..3) {
+            try { return read(identity) } catch (failure: BleCommandException) {
+                if (failure.code != "SETTINGS_APPLY_PENDING" || attempt == 3) throw failure
+                delay(1_000)
+            }
+        }
+        error("Application proof polling exhausted")
     }
     private fun ensure(owner: Long, stamp: Long) {
         if (!active || stamp != generation || (sessions.state.value as? Session.SignedIn)?.userId != owner) throw CancellationException()
@@ -354,7 +456,7 @@ class KeyringSyncViewModel(private val api: KeyringSyncRepository, private val s
         elapsed >= 0.seconds && elapsed < 55.seconds
     }.getOrDefault(false)
     /** 상태와 오류 코드가 모두 맞을 때만 실행 교체를 허용한다. 5xx·오프라인·다른409는 복구 자료를 유지한다. */
-    private fun ApiResult<KeyringSyncRun>.isStaleRejection(): Boolean {
+    private fun ApiResult<*>.isStaleRejection(): Boolean {
         val error = (this as? ApiResult.Fail)?.error as? AppError.Server
         return error?.status == 409 && error.code == "SYNC_VERSION_STALE"
     }

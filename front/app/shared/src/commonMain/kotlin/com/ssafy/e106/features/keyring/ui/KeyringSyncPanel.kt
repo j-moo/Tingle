@@ -47,7 +47,8 @@ import org.jetbrains.compose.resources.stringResource
     // 서비스 호스트와 화면이 동시에 attach/detach하지 않도록 소유자를 하나로 제한한다.
     if (!managedConnection) DisposableEffect(serial, state.owner) {
         // 호스트 없이 이 화면만 쓸 때도 서비스 호스트와 동일한 형식 선택을 사용한다.
-        if (serial != null) model.attachRequest(serial, { ble.syncIssuanceRequest(serial) }) { run -> ble.syncSettings(run, serial) }
+        if (serial != null) model.attachRequest(serial, { ble.syncIssuanceRequest(serial) },
+            getApplied = { ble.readSettingsApplied(it, serial) }) { run -> ble.syncSettings(run, serial) }
         onDispose { model.detach() }
     }
     // 고르기 화면에서 목록이 비어 있으면(첫 진입 · 세션 갱신으로 초기화됨) 불러온다
@@ -116,6 +117,14 @@ import org.jetbrains.compose.resources.stringResource
         // 카드와 같은 "내 키링 N" 번호를 붙인다(목록에 없는 키링은 번호 없이)
         KeyringSyncProgressList(state.copy(items = mine, recoveryFailed = false), onRetry, onLatest,
             numbers = list.items.orEmpty().mapIndexed { i, item -> item.deviceId to i + 1 }.toMap())
+    }
+    if (!pickExisting) {
+        // 새로 등록한 키링이나 연결이 끊긴 경우에도 저장 이후의 적용 확인을 가입 화면에서 이어간다.
+        val application = state.items.filter { it.phase in setOf(SyncPhase.ApplyChecking, SyncPhase.ApplyWaitingConnection,
+            SyncPhase.ApplyConfirming, SyncPhase.ApplyRetry, SyncPhase.ApplyFailed, SyncPhase.ApplyFirmwareRequired,
+            SyncPhase.ApplyConfirmed) && (serial == null || it.serial == serial) }
+        if (application.isNotEmpty()) KeyringSyncProgressList(
+            state.copy(items = application, recoveryFailed = false), onRetry, onLatest)
     }
     // ACK는 저장만 확인한다. 현재 연결된 키링이 같은 설정 버전을 보고할 때만 준비 상태를 표시한다.
     val confirmed = state.items.singleOrNull { it.serial == serial && it.confirmedTsv3Version != null }
@@ -221,10 +230,20 @@ import org.jetbrains.compose.resources.stringResource
             SyncPhase.PolicyWaiting -> Res.string.sync_live_policy
             SyncPhase.Stale -> Res.string.sync_live_stale
             SyncPhase.Failed -> Res.string.sync_live_failed
+            SyncPhase.ApplyChecking -> Res.string.sync_apply_checking
+            SyncPhase.ApplyWaitingConnection -> Res.string.sync_apply_connect
+            SyncPhase.ApplyConfirming -> Res.string.sync_apply_confirming
+            SyncPhase.ApplyRetry -> Res.string.sync_apply_retry_message
+            SyncPhase.ApplyFailed -> Res.string.sync_apply_failed
+            SyncPhase.ApplyFirmwareRequired -> Res.string.sync_apply_firmware
+            SyncPhase.ApplyConfirmed -> Res.string.sync_apply_confirmed
         }), textAlign = TextAlign.Center)
         if (item.phase == SyncPhase.Confirmed && item.confirmedTsv3Version == null && (item.applied == false || item.timeReady == false))
             Text(stringResource(Res.string.sync_live_not_applied), color = AppColors.TextSecondary, textAlign = TextAlign.Center)
         if (item.phase == SyncPhase.Failed) item.error?.let { Text(it.message, color = MaterialTheme.colorScheme.error, textAlign = TextAlign.Center) }
+        if (item.phase == SyncPhase.ApplyRetry) item.error?.let { Text(it.message, color = MaterialTheme.colorScheme.error, textAlign = TextAlign.Center) }
+        if (item.phase in setOf(SyncPhase.ApplyRetry, SyncPhase.ApplyFailed, SyncPhase.ApplyConfirmed))
+            AppButton(stringResource(Res.string.sync_apply_retry_button), full, enabled = !state.busy, onClick = { retry(item.deviceId) })
         if (item.phase == SyncPhase.Stale) AppButton(stringResource(Res.string.sync_live_latest), full, enabled = !state.busy, onClick = { latest(item.deviceId) })
         else if (item.phase in setOf(SyncPhase.Failed, SyncPhase.PolicyWaiting, SyncPhase.WaitingConnection))
             AppButton(stringResource(Res.string.sync_live_retry), full, enabled = !state.busy, onClick = { retry(item.deviceId) })

@@ -26,6 +26,13 @@ private val syncRun = KeyringSyncRun("11111111-1111-4111-8111-111111111111", "11
     "tingle-device-proof-v1", "2026-11-04T12:00:00Z", null, "2026-11-04T12:00:01Z", "tingle-dev-settings-proof-v1", "dev-ed25519-704492dbf4e64e2b", "A".repeat(43), "A".repeat(86))
 private fun stored(run: KeyringSyncRun = syncRun) = KeyringStoredResult(
     KeyringSyncAck(run.settingsVersion, run.payloadHash, KeyringProof(run.proofProtocolVersion, run.keyId, "A".repeat(86))), false, false)
+private fun appliedProof(identity: SyncIdentity) = KeyringSyncAck(identity.settingsVersion, identity.payloadHash,
+    KeyringProof("tingle-settings-applied-v1", identity.keyId, "A".repeat(86)))
+private fun tsv3Run() = syncRun.copy(payloadFormat = KeyringSyncProtocol.FULL_SETTINGS_FORMAT,
+    payload = kotlin.io.encoding.Base64.UrlSafe.withPadding(kotlin.io.encoding.Base64.PaddingOption.ABSENT)
+        .encode("TSV3".encodeToByteArray() + ByteArray(483)),
+    proofProtocolVersion = KeyringRegistrationProtocol.VERSION_2, serverProofProtocolVersion = "tingle-dev-settings-proof-v2",
+    ownershipEpoch = 2L, settingsVersion = 12L, currentSettingsVersion = 12L)
 
 // 테스트 전용 기기 포트. 실제 앱은 BleProbeViewModel에서 보드 challenge를 읽는다.
 private fun KeyringSyncViewModel.attach(serial: String, send: suspend (KeyringSyncRun) -> KeyringStoredResult) =
@@ -49,6 +56,8 @@ private class SyncServer : KeyringSyncRepository, OwnedKeyringRepository {
     var run = syncRun
     val creates = mutableListOf<Pair<Long, String>>()
     val acks = mutableListOf<Pair<String, KeyringSyncAck>>()
+    val applications = mutableListOf<Pair<String, KeyringSyncAck>>()
+    var appliedAction: suspend () -> ApiResult<Unit> = { ApiResult.Ok(Unit) }
     var getCount = 0
     // 조회409·응답유실을 발급/ACK와 독립적으로 재현한다.
     var getAction: suspend () -> ApiResult<KeyringSyncRun> = { ApiResult.Ok(run) }
@@ -61,6 +70,9 @@ private class SyncServer : KeyringSyncRepository, OwnedKeyringRepository {
     override suspend fun get(deviceId: Long, runId: String): ApiResult<KeyringSyncRun> { getCount++; return getAction() }
     override suspend fun ack(deviceId: Long, runId: String, key: String, body: KeyringSyncAck): ApiResult<KeyringSyncRun> {
         acks += key to body; return ackAction()
+    }
+    override suspend fun applied(deviceId: Long, runId: String, key: String, body: KeyringSyncAck): ApiResult<Unit> {
+        applications += key to body; return appliedAction()
     }
     override suspend fun list() = ApiResult.Ok(listOf(OwnedKeyring(run.deviceId, "REGISTERED", "test")))
 }
@@ -143,7 +155,7 @@ class KeyringSyncTest {
     private val models = ViewModelStore()
     @BeforeTest fun before() = Dispatchers.setMain(dispatcher)
     @AfterTest fun after() { models.clear(); Dispatchers.resetMain() }
-    private fun model(server: SyncServer, store: KeyringSyncStore, session: TestSession = TestSession(OnboardingStatus.SYNC_PENDING)) =
+    private fun model(server: SyncServer, store: KeyringSyncStore, session: SessionStore = TestSession(OnboardingStatus.SYNC_PENDING)) =
         KeyringSyncViewModel(server, store, server, session).also { models.put("sync", it); it.resume() }
 
     // 실제 NetworkMonitor는 OS 콜백을 Flow로 제공한다. 시험은 신호만 제어하고 기존 내구 복구 경로를 검증한다.
@@ -610,8 +622,152 @@ class KeyringSyncTest {
         m.retry(syncRun.deviceId); runCurrent()
         assertEquals(listOf(persisted.createKey, persisted.createKey), server.creates.map { it.second })
         assertEquals(listOf(request, request), server.bodies)
-        assertEquals(SyncPhase.Confirmed, m.state.value.items.single().phase)
-        assertEquals(server.run.settingsVersion, m.state.value.items.single().confirmedTsv3Version)
+        assertEquals(SyncPhase.ApplyFirmwareRequired, m.state.value.items.single().phase)
+        assertTrue(store.read(1).single().complete)
+        assertTrue(server.applications.isEmpty())
+    }
+
+    /** 첫 READY 직후 발급한 새 버전도 적용 POST에 성공한 뒤 서버에서 READY를 다시 읽는다. */
+    @Test fun signupAndFollowUpVersionBothRequireApplicationBeforeReadyLookup() = runTest(dispatcher) {
+        val signup = tsv3Run().copy(settingsVersion = 8, currentSettingsVersion = 8)
+        val nextId = "44444444-4444-4444-8444-444444444444"
+        val ready = signup.copy(syncRunId = nextId, settingsSnapshotId = nextId,
+            settingsVersion = 9, currentSettingsVersion = 9, payloadHash = "b".repeat(64))
+        val followUpResponse = CompletableDeferred<Unit>()
+        val events = mutableListOf<String>()
+        val lookups = mutableListOf<Long>()
+        val server = SyncServer().apply {
+            run = signup
+            createAction = {
+                val issued = listOf(signup, ready)[creates.lastIndex]
+                run = issued.copy(deviceNonce = bodies.last().deviceNonce)
+                events += "issue:${run.settingsVersion}"
+                ApiResult.Ok(run)
+            }
+            appliedAction = {
+                if (applications.last().second.settingsVersion == 9L) followUpResponse.await()
+                events += "applied:${applications.last().second.settingsVersion}"
+                ApiResult.Ok(Unit)
+            }
+        }
+        val store = KeyringSyncStore(SyncPrefs()); store.rememberTarget(1, syncRun.deviceId, "XIAO-test")
+        val session = object : SessionStore {
+            override val state = MutableStateFlow<Session>(Session.SignedIn(1, OnboardingStatus.SYNC_PENDING, false))
+            override val events = emptyFlow<SessionEvent>()
+            override suspend fun refreshOnboarding(): ApiResult<Unit> {
+                val confirmedVersion = server.applications.last().second.settingsVersion
+                assertTrue(store.read(1).single().appliedConfirmed)
+                lookups += confirmedVersion
+                state.value = Session.SignedIn(1, OnboardingStatus.READY, true)
+                return ApiResult.Ok(Unit)
+            }
+        }
+        val m = model(server, store, session)
+        m.attachRequest("XIAO-test", { SyncChallengeBody("A".repeat(43), KeyringSyncProtocol.FULL_SETTINGS_FORMAT) },
+            getApplied = {
+                assertEquals(it.settingsVersion, server.acks.last().second.settingsVersion)
+                assertEquals(it.syncRunId, store.read(1).single().takeIf { ticket -> ticket.complete }?.identity?.syncRunId)
+                assertEquals(if (it.settingsVersion == 8L) OnboardingStatus.SYNC_PENDING else OnboardingStatus.READY,
+                    (session.state.value as Session.SignedIn).status)
+                events += "proof:${it.settingsVersion}"
+                appliedProof(it)
+            }) { stored(it) }
+        runCurrent()
+        assertEquals(listOf(8L), lookups)
+        assertEquals(listOf(8L, 9L), server.applications.map { it.second.settingsVersion })
+        assertFalse(store.read(1).single().appliedConfirmed)
+        followUpResponse.complete(Unit); runCurrent()
+        assertEquals(listOf("issue:8", "proof:8", "applied:8", "issue:9", "proof:9", "applied:9"), events)
+        assertEquals(listOf(8L, 9L), lookups)
+        assertEquals(4, (server.acks + server.applications).map { it.first }.distinct().size)
+        assertEquals(2, server.creates.size)
+        assertEquals(9L, store.read(1).single().takeIf { it.appliedOnboardingChecked }?.identity?.settingsVersion)
+        assertEquals(OnboardingStatus.READY, (session.state.value as Session.SignedIn).status)
+    }
+
+    /** READY 계정에서 적용 확인 뒤 상태 조회가 끊기면, 재시작 후 조회만 다시 한다. */
+    @Test fun readyAccountRetriesOnlyOnboardingAfterAppliedSuccess() = runTest(dispatcher) {
+        val server = SyncServer().apply { run = tsv3Run() }
+        val prefs = SyncPrefs()
+        val store = KeyringSyncStore(prefs); store.rememberTarget(1, syncRun.deviceId, "XIAO-test")
+        val session = TestSession(OnboardingStatus.READY).apply { refreshResult = ApiResult.Fail(AppError.Offline) }
+        val m = model(server, store, session)
+        m.attachRequest("XIAO-test", { SyncChallengeBody("A".repeat(43), KeyringSyncProtocol.FULL_SETTINGS_FORMAT) },
+            getApplied = ::appliedProof) { stored(it) }
+        runCurrent()
+        assertEquals(SyncPhase.ApplyRetry, m.state.value.items.single().phase)
+        assertTrue(store.read(1).single().appliedConfirmed)
+        assertFalse(store.read(1).single().appliedOnboardingChecked)
+        models.clear()
+        session.refreshResult = ApiResult.Ok(Unit)
+        model(server, KeyringSyncStore(prefs), session); runCurrent()
+        assertEquals(1, server.creates.size)
+        assertEquals(1, server.acks.size)
+        assertEquals(1, server.applications.size)
+        assertEquals(2, session.refreshes)
+        assertTrue(store.read(1).single().appliedOnboardingChecked)
+    }
+
+    /** HTTP 결과가 유실되면 앱 재시작 뒤에도 BLE나 저장 ACK 없이 동일 적용 본문과 키를 사용한다. */
+    @Test fun unknownAppliedResponseReusesProofWithoutBleAfterRestart() = runTest(dispatcher) {
+        val server = SyncServer().apply { run = tsv3Run(); appliedAction = { ApiResult.Fail(AppError.Offline) } }
+        val prefs = SyncPrefs()
+        val store = KeyringSyncStore(prefs); store.rememberTarget(1, syncRun.deviceId, "XIAO-test")
+        val session = TestSession(OnboardingStatus.SYNC_PENDING)
+        val m = model(server, store, session)
+        m.attachRequest("XIAO-test", { SyncChallengeBody("A".repeat(43), KeyringSyncProtocol.FULL_SETTINGS_FORMAT) },
+            getApplied = ::appliedProof) { stored(it) }
+        runCurrent()
+        assertEquals(SyncPhase.ApplyRetry, m.state.value.items.single().phase)
+        assertEquals(0, session.refreshes)
+        val first = server.applications.single()
+        models.clear()
+        server.appliedAction = { ApiResult.Ok(Unit) }
+        model(server, KeyringSyncStore(prefs), session); runCurrent()
+        assertEquals(listOf(first, first), server.applications)
+        assertEquals(1, server.acks.size)
+        assertEquals(1, session.refreshes)
+        assertTrue(store.read(1).single().appliedConfirmed)
+    }
+
+    /** 기기 적용 대기는 제한된 횟수로 멈춘 뒤 저장을 반복하지 않고 적용 확인만 재시도한다. */
+    @Test fun pendingProofStopsPollingAndCanRetrySameStoredRun() = runTest(dispatcher) {
+        val server = SyncServer().apply { run = tsv3Run() }
+        val store = KeyringSyncStore(SyncPrefs()); store.rememberTarget(1, syncRun.deviceId, "XIAO-test")
+        val m = model(server, store)
+        var reads = 0
+        m.attachRequest("XIAO-test", { SyncChallengeBody("A".repeat(43), KeyringSyncProtocol.FULL_SETTINGS_FORMAT) },
+            getApplied = { identity ->
+                if (++reads <= 3) throw BleCommandException("SETTINGS_APPLY_PENDING")
+                appliedProof(identity)
+            }) { stored(it) }
+        advanceTimeBy(2_001); runCurrent()
+        assertEquals(3, reads)
+        assertEquals(SyncPhase.ApplyRetry, m.state.value.items.single().phase)
+        m.retry(syncRun.deviceId); runCurrent()
+        assertEquals(4, reads)
+        assertEquals(1, server.creates.size)
+        assertEquals(1, server.acks.size)
+        assertEquals(1, server.applications.size)
+    }
+
+    @Test fun appliedProofMustMatchRequestAndStoredRun() {
+        val identity = tsv3Run().identity()
+        val id = "33333333-3333-4333-8333-333333333333"
+        val request = Json.parseToJsonElement(KeyringSyncProtocol.appliedRequest(identity, id).decodeToString()).jsonObject
+        assertEquals(JsonPrimitive("GET_SETTINGS_APPLIED_PROOF"), request["type"])
+        assertEquals(JsonPrimitive(identity.syncRunId), request["syncRunId"])
+        val response = buildJsonObject {
+            put("protocolVersion", 1); put("type", "SETTINGS_APPLIED_PROOF"); put("requestId", id)
+            put("syncRunId", identity.syncRunId); put("settingsVersion", identity.settingsVersion); put("payloadHash", identity.payloadHash)
+            put("proof", ApiJson.encodeToJsonElement(KeyringProof.serializer(), appliedProof(identity).proof))
+        }
+        assertEquals(appliedProof(identity), KeyringSyncProtocol.appliedResponse(response.toString().encodeToByteArray(), id, identity))
+        for ((field, wrong) in mapOf("requestId" to JsonPrimitive("wrong"), "syncRunId" to JsonPrimitive("wrong"),
+            "settingsVersion" to JsonPrimitive(identity.settingsVersion + 1), "payloadHash" to JsonPrimitive("wrong"))) {
+            val bad = JsonObject(response + (field to wrong)).toString().encodeToByteArray()
+            assertFails { KeyringSyncProtocol.appliedResponse(bad, id, identity) }
+        }
     }
 
     /** 구형 내구 파일은 형식을 추측해 덧붙이지 않고 기존 nonce 단독 요청을 먼저 복구한다. */

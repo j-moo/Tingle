@@ -41,6 +41,29 @@ class BleProbeTestActivity : ComponentActivity() {
 class BleProbeDeviceTest {
     @get:Rule val compose = createEmptyComposeRule()
 
+    /** 저장 ACK 뒤 미지원 안내와 적용 확인 재시도는 가입 완료 UI로 바뀌지 않는다. */
+    @Test fun signupShowsFirmwareRequirementAndRetriesApplicationOnly() {
+        val context = InstrumentationRegistry.getInstrumentation().context
+        val serial = "XIAO-test"
+        val connected = BleProbeState(connected = true, info = BleDeviceInfo(serial, "test", supportsStatus = true))
+        val phase = mutableStateOf(SyncPhase.ApplyFirmwareRequired)
+        ActivityScenario.launch<BleProbeTestActivity>(Intent(context, BleProbeTestActivity::class.java)).use { scenario ->
+            scenario.onActivity { activity ->
+                activity.setContent {
+                    AppTheme {
+                        KeyringSyncPanelContent(KeyringSyncState(items = listOf(KeyringSyncProgress(4, phase.value, serial = serial))),
+                            connected, OwnedKeyringsState(), onRetry = { phase.value = SyncPhase.ApplyChecking })
+                    }
+                }
+            }
+            compose.onNodeWithText("설정은 저장됐어요. 적용 확인에는 키링 펌웨어 업데이트가 필요해요.").assertExists()
+            compose.onNodeWithText("적용 확인 다시 시도").assertDoesNotExist()
+            compose.runOnIdle { phase.value = SyncPhase.ApplyRetry }
+            compose.onNodeWithText("적용 확인 다시 시도").performClick()
+            compose.onNodeWithText("설정 저장 완료 · 적용 확인 중").assertExists()
+        }
+    }
+
     @Test fun realPermissionGuardAndRecreatedScreenDoNotPretendConnected() {
         val context = InstrumentationRegistry.getInstrumentation().context
         val availability = context.bleAvailability()

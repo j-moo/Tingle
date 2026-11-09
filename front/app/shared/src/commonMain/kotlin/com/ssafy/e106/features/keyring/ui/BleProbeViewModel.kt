@@ -299,6 +299,34 @@ class BleProbeViewModel(private val ble: KeyringBle, private val sessions: Sessi
         } finally { if (stamp == generation) mutable.update { it.copy(busy = false) } }
     }
 
+    /** 재연결 시에도 동일 보드와 소유 세대를 대조하고 보호 특성으로만 적용 증명을 읽는다. */
+    @OptIn(ExperimentalUuidApi::class)
+    suspend fun readSettingsApplied(identity: SyncIdentity, serial: String): KeyringSyncAck {
+        val channel = connection ?: throw BleException(BleFailure.Disconnected)
+        check(!mutable.value.busy && mutable.value.info?.serial == serial)
+        val stamp = generation
+        mutable.update { it.copy(busy = true) }
+        fun ensureLink() {
+            if (stamp != generation || channel !== connection || channel.state.value != BleLinkState.Ready)
+                throw BleException(BleFailure.Disconnected)
+        }
+        try {
+            val info = readInfo(channel)
+            ensureLink()
+            check(info.serial == serial && info.ownershipEpoch == identity.ownershipEpoch && info.ownerFlow.keyId == identity.keyId)
+            mutable.update { it.copy(info = info) }
+            if (KeyringSyncProtocol.APPLIED_COMMAND !in info.supportedFunctions)
+                throw BleCommandException("SETTINGS_APPLIED_UNSUPPORTED")
+            check(info.ownerFlow.supportsFullSettings(info))
+            channel.prepareProtectedTransport()
+            ensureLink()
+            val requestId = Uuid.random().toString()
+            val response = channel.exchangeProtected(KeyringSyncProtocol.appliedRequest(identity, requestId))
+            ensureLink()
+            return KeyringSyncProtocol.appliedResponse(response, requestId, identity)
+        } finally { if (stamp == generation) mutable.update { it.copy(busy = false) } }
+    }
+
     /** 초기화 통신마다 실물 식별·지원 명령을 재확인한다. 같은 연결의 다른 작업과 응답이 섞이지 않게 한다. */
     internal suspend fun <T> resetExchange(serial: String, action: suspend (BleConnection, BleDeviceInfo) -> T): T {
         val channel = connection ?: throw BleException(BleFailure.Disconnected)
