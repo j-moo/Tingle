@@ -21,6 +21,8 @@ import com.e106.tingle.global.error.ErrorCode;
 import com.e106.tingle.keyring.dto.SyncAckRequest;
 import com.e106.tingle.keyring.dto.SyncRunView;
 import com.e106.tingle.keyring.peer.PeerSettingsIssuer;
+import com.e106.tingle.keyring.proof.KeyringProofTranscript;
+import com.e106.tingle.keyring.proof.KeyringProofVerifier;
 import com.e106.tingle.keyring.proof.PeerSettingsCodec;
 import com.e106.tingle.keyring.proof.ServerSettingsTranscript;
 import com.e106.tingle.keyring.proof.StoredAckProofVerifier;
@@ -56,6 +58,7 @@ public class KeyringSyncService {
 	private Set<String> profileDeviceSerials;
 	private final SecureRandom random = new SecureRandom();
 	private final StoredAckProofVerifier verifier = new StoredAckProofVerifier();
+	private final KeyringProofVerifier appliedVerifier = new KeyringProofVerifier();
 
 	@Transactional
 	public Created create(long userId, UUID familyId, long deviceId, UUID requestKey) {
@@ -312,6 +315,45 @@ public class KeyringSyncService {
 			onboarding.recordProgress(userId);
 		}
 		runs.flush();
+		return view(run, current);
+	}
+
+	@Transactional
+	public SyncRunView confirmApplied(long userId, UUID familyId, long deviceId, UUID runId, SyncAckRequest request) {
+		Keyring device = access(userId, familyId, deviceId, OnboardingStatus.SYNC_PENDING);
+		KeyringSyncRun run = ownedRun(userId, device, runId);
+		requireCredential(device);
+		var proof = request.proof();
+		if (!PeerSettingsCodec.FORMAT.equals(run.getPayloadFormat()) || run.getOwnershipEpoch() == null
+			|| !run.getOwnershipEpoch().equals(device.getOwnershipEpoch())
+			|| !run.getCredentialKeyId().equals(device.getCredentialKeyId())
+			|| !run.getCredentialKeyId().equals(proof.keyId())
+			|| !KeyringProofTranscript.APPLIED_PROTOCOL_VERSION.equals(proof.protocolVersion())
+			|| request.settingsVersion() != run.getSettingsVersion()
+			|| !request.payloadHash().equals(run.getPayloadHash())) {
+			throw new BusinessException(ErrorCode.INVALID_DEVICE_PROOF);
+		}
+		var transcript = KeyringProofTranscript.applied(proof.keyId(), device.getSerialNumber(), deviceId,
+			run.getOwnerGeneration(), run.getOwnershipEpoch(), runId, run.getNonce(), run.getSettingsVersion(),
+			run.getPayloadHash());
+		if (!appliedVerifier.verifyEncodedKey(transcript, proof.signature(), device.getCredentialPublicKey())) {
+			throw new BusinessException(ErrorCode.INVALID_DEVICE_PROOF);
+		}
+		long current = version(userId);
+		if (current != run.getSettingsVersion()) {
+			throw new BusinessException(ErrorCode.SYNC_VERSION_STALE);
+		}
+		if (run.getState() != KeyringSyncState.ACKED) {
+			throw new BusinessException(ErrorCode.SYNC_STORAGE_ACK_REQUIRED);
+		}
+		// The locked device/version pair makes retries safe even after signup changes the peer policy.
+		if (!Objects.equals(device.getSyncedSettingsVersion(), current)) {
+			requireCurrentProfileRun(run, device);
+			requireSession(userId, familyId);
+			device.acknowledgeSettings(current, clock.instant());
+			keyrings.flush();
+			onboarding.recordProgress(userId);
+		}
 		return view(run, current);
 	}
 

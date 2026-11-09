@@ -68,6 +68,15 @@ public class KeyringSyncController {
 		return service.acknowledge(userId(jwt), family(jwt), deviceId, uuid(syncRunId), uuid(requestKey), request);
 	}
 
+	@PostMapping("/{syncRunId}/applied")
+	@RequiresOnboarding(OnboardingStatus.SYNC_PENDING)
+	public SyncRunView confirmApplied(@AuthenticationPrincipal Jwt jwt, @PathVariable @Positive long deviceId,
+		@PathVariable String syncRunId, @RequestHeader("Idempotency-Key") String requestKey,
+		@Valid @RequestBody SyncAckRequest request) {
+		uuid(requestKey);
+		return service.confirmApplied(userId(jwt), family(jwt), deviceId, uuid(syncRunId), request);
+	}
+
 	private static long userId(Jwt jwt) {
 		return Long.parseLong(jwt.getSubject());
 	}
