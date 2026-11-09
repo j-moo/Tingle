@@ -18,6 +18,8 @@ struct kr_peer_plan {
 	uint8_t service_data[KR_DISCOVERY_MAX_BYTES];
 	struct kr_peer_material peer;
 	uint32_t generation;
+	/* Zero for stop and legacy plans. A verified TSV3 submission gets its own attempt. */
+	uint32_t settings_apply_attempt;
 };
 
 #endif

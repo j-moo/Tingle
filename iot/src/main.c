@@ -678,7 +678,8 @@ static int set_peer_scan(bool enable)
 static int apply_service_peer(void *ctx, const struct kr_peer_plan *plan)
 {
 	ARG_UNUSED(ctx);
-	if (!kr_nus_apply_application(plan, &peers)) { return -EAGAIN; }
+	int result = kr_nus_apply_application(plan, &peers);
+	if (result) { return result; }
 	if (plan->peer.valid && peers.active && !memcmp(peers.own.public_key, plan->peer.public_key, 32)) {
 		/* Phone advertising/cache retries must not reset a live crypto session. */
 		kr_runtime_owner_lock();
@@ -686,7 +687,7 @@ static int apply_service_peer(void *ctx, const struct kr_peer_plan *plan)
 		atomic_set(&peer_exchange_enabled, 1); kr_runtime_owner_unlock(); return set_peer_scan(true);
 	}
 	atomic_clear(&peer_exchange_enabled);
-	int result = peer_adv ? bt_le_ext_adv_stop(peer_adv) : 0;
+	result = peer_adv ? bt_le_ext_adv_stop(peer_adv) : 0;
 	if (result) {
 		return result;
 	}
@@ -751,9 +752,15 @@ static uint32_t service_block_reset(void *ctx)
 }
 static int service_refresh_phone(void *ctx) { ARG_UNUSED(ctx); return phone_advertising_data(false); }
 static const char *service_finish_reset(void *ctx) { ARG_UNUSED(ctx); return kr_nus_finish_reset(); }
+static void service_apply_result(void *ctx, const struct kr_peer_plan *plan, int error)
+{
+	ARG_UNUSED(ctx);
+	kr_nus_application_result(plan, error);
+}
 static const struct kr_service_io service_io = {
 	.reset_pending = service_reset_pending, .block_reset = service_block_reset,
 	.apply = apply_service_peer, .refresh_phone = service_refresh_phone, .finish_reset = service_finish_reset,
+	.apply_result = service_apply_result,
 };
 
 static int enable_lab(void)

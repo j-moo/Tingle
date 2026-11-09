@@ -1,5 +1,41 @@
 # 앱 등록부터 만남 접수까지 — 펌웨어 v2 연동
 
+## TSV3 설정 적용 증명 — 0.7.3-applied-proof
+
+앱은 `GET_DEVICE_INFO.supportedFunctions`에 `GET_SETTINGS_APPLIED_PROOF`가 있는 기기에서 호출한다. `SYNC_SETTINGS`의 저장 및 서명된 `SETTINGS_RESULT/STORED` 처리를 유지하고, 적용 확인은 같은 보호된 NUS 연결에서 별도로 요청한다. 요청은 LF로 끝나는 JSON 한 줄이다.
+
+```json
+{"protocolVersion":1,"type":"GET_SETTINGS_APPLIED_PROOF","requestId":"apply-1","syncRunId":"22222222-2222-4222-8222-222222222222"}
+```
+
+성공 응답 `SETTINGS_APPLIED_PROOF`는 요청의 `requestId`와 실제 적용한 `syncRunId`, `settingsVersion`, `payloadHash`, `proof`를 반환한다. `proof`는 `protocolVersion: "tingle-settings-applied-v1"`, `keyId`, `signature`를 담는다. 기기 키로 생성한 64바이트 Ed25519 서명은 패딩 없는 Base64url로 전달한다. 서버는 아래 원문을 동기화 실행의 값으로 재구성한다.
+
+```text
+TINGLE-KEYRING-APPLIED
+tingle-settings-applied-v1
+<keyId>
+<deviceSerial>
+<deviceId>
+<ownerGeneration>
+<ownershipEpoch>
+<syncRunId>
+<syncRunNonce>
+<settingsVersion>
+<payloadHash>
+APPLIED
+```
+
+UTF-8과 LF를 사용하며 마지막 `APPLIED` 뒤에도 LF를 넣는다. 숫자는 10진수, UUID·해시는 소문자다. `syncRunNonce`는 서버 실행의 `nonce`이며 `requestId`와 `deviceNonce`는 원문에서 제외한다.
+
+| `ERROR.code` | 반환 조건 |
+| --- | --- |
+| `SETTINGS_APPLY_PENDING` | 해당 실행을 저장했고 적용이 완료되기 전 |
+| `SETTINGS_APPLY_FAILED` | 해당 실행의 적용 시도가 실패했거나 저장 응답 전송에 실패해 적용이 시작되지 않음 |
+| `SETTINGS_RUN_MISMATCH` | 확인할 수 없는 실행, 다른 실행으로 교체됨, 소유 세대 변경, 또는 재부팅 후 미적용 |
+| `SECURE_TRANSPORT_REQUIRED` | 보호된 NUS 쓰기 조건을 충족하지 않음 |
+
+설정과 무선 모드 적용을 마치면 매칭 OFF인 실행도 증명을 발급한다. 현재 적용 상태가 유지되는 동안 BLE 재연결 후에도 같은 실행으로 재조회할 수 있다. 적용 상태는 휘발성이라 전원 재시작 뒤에는 기존 저장 설정을 다시 적용한 뒤 조회한다.
+
 ## 2026-11-06 최신 — 0.7.2-owner-flow
 
 **현재 UF2는 `0.7.2-owner-flow`이며 이 절을 이전 버전 설명보다 우선한다.** 정상 TSV3/타입4 grant·TER2·기존 초기화/바깥 설정 서명은 유지한다. 전체 내부 요구와 검사 범위는 [41개 항목 대조표](user-flow-coverage-v1.md)에 정리했다. 정확한 배터리 잔량 계측·제품 LED/진동 및 보류한 물리 버튼 배선은 제외한다. 로컬 구현/검사·UF2 빌드와 실물 탑재·실제 앱/서버 종단은 별개다.

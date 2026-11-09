@@ -13,6 +13,7 @@ struct kr_service_io {
 	int (*apply)(void *, const struct kr_peer_plan *);
 	int (*refresh_phone)(void *);
 	const char *(*finish_reset)(void *);
+	void (*apply_result)(void *, const struct kr_peer_plan *, int error);
 };
 struct kr_service_progress {
 	int radio_error;

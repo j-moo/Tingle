@@ -11,6 +11,7 @@
 #define KR_SETTINGS_PROOF_VERSION "tingle-dev-settings-proof-v1"
 #define KR_PROOF_VERSION_2 "tingle-device-proof-v2"
 #define KR_SETTINGS_PROOF_VERSION_2 "tingle-dev-settings-proof-v2"
+#define KR_SETTINGS_APPLIED_PROOF_VERSION "tingle-settings-applied-v1"
 #define KR_DEV_PAYLOAD_FORMAT "tingle-dev-settings-v1"
 #define KR_SETTINGS_CHALLENGE_SECONDS 60
 #ifndef KR_FIRMWARE_VERSION
@@ -79,6 +80,10 @@ struct kr_platform {
 		struct kr_status status, char *response);
 };
 
+enum kr_settings_apply_state {
+	KR_SETTINGS_APPLY_NONE, KR_SETTINGS_APPLY_PENDING, KR_SETTINGS_APPLY_FAILED, KR_SETTINGS_APPLIED,
+};
+
 struct kr_core {
 	struct kr_identity identity;
 	struct kr_settings current;
@@ -88,6 +93,10 @@ struct kr_core {
 	uint32_t connection_epoch;
 	bool stop_peer;
 	struct kr_peer_plan peer_after_stored;
+	/* RAM-only outcome for the current settings, invalidated on each accepted submission. */
+	uint32_t settings_apply_attempt;
+	int64_t settings_apply_epoch;
+	enum kr_settings_apply_state settings_apply_state;
 	struct kr_reset_record reset;
 	struct kr_reset_challenge reset_challenge;
 };
@@ -113,6 +122,9 @@ const char *kr_verify_dev_settings(const struct kr_identity *id, const struct kr
 	const struct kr_settings_auth *auth, struct kr_settings_nonce *challenge, int64_t now_ms,
 	const char *server_key_id, const uint8_t server_key[32], int64_t *verified_time);
 bool kr_peer_after_response(struct kr_core *core, bool sent, struct kr_peer_plan *out);
+bool kr_settings_apply_current(const struct kr_core *core, const struct kr_peer_plan *plan);
+void kr_settings_apply_finished(struct kr_core *core, const struct kr_peer_plan *plan, bool success);
+const char *kr_settings_applied_proof(const struct kr_core *core, const char *run, char signature[87]);
 
 /* Flat JSON requests, strict duplicate/type/overflow checks. Values are decoded
  * in-place only after complete LF framing. No heap or floating-point integers. */
