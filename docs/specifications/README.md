@@ -8,6 +8,7 @@
 | --- | --- | --- |
 | 현재 MVP 요약 | [MVP 필수 기능 명세](functional-spec-mvp.md) | P0 29개 기능의 현재 개발 기준 |
 | 전체 상세 명세 | [functional-spec-v3](functional-spec-v3.md) | 공통 기준과 기능 영역 9개, 운영·검증·협의/이력으로 이동 |
+| 키링 v3 연동 | [전체 설정·소유 세션·만남 접수](functional-spec-v3/keyring-peer-settings-v3.md) | BE270 개발 기준. 구현·관련 검증과 병합·배포·실물 상태를 구분 |
 | UX 설계 초안 | [유저플로우](ux/mvp-user-flow-v1.md) · [와이어프레임](ux/mvp-service-wireframes-20261026.md) | 최신 CM01~16과 화면·Mermaid·Figma의 정합성 갱신 대기 |
 | 요구사항 대조 기록 | [기획서·후속 합의 대조](reviews/requirements-reconciliation-20261023.md) | 날짜·버전별 근거 및 잔여 항목. 현재 구현 완료 목록이 아님 |
 | 개인 관리 원본 | [자료 목록](sources.md) | 계약·정책·ERD 원본은 이재준이 저장소 밖에서 관리 |

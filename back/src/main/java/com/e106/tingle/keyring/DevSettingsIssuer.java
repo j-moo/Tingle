@@ -22,6 +22,18 @@ public final class DevSettingsIssuer {
 	private final JdbcTemplate jdbc;
 	private final ServerSettingsSigner signer;
 
+	public String keyId() {
+		return signer.keyId();
+	}
+
+	public String publicKeyRawHex() {
+		return signer.publicKeyRawHex();
+	}
+
+	public String signCanonical(byte[] transcript) {
+		return signer.sign(transcript);
+	}
+
 	public KeyringPayload prepare(long userId, long deviceId, UUID generation) {
 		return jdbc.queryForObject("select s.settings_version,p.matching_enabled from user_setting s "
 			+ "join matching_preference p on p.user_id=s.user_id where s.user_id=?", (row, index) -> {

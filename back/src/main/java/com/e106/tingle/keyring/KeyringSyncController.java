@@ -43,13 +43,13 @@ public class KeyringSyncController {
 			throw new BusinessException(ErrorCode.INVALID_REQUEST);
 		}
 		String nonce = body == null ? null : body.get("deviceNonce").asString();
-		boolean profileRequested = body != null && body.has("payloadFormat");
-		if (profileRequested && !ServerSettingsTranscript.PROFILE_PAYLOAD_FORMAT
-			.equals(body.get("payloadFormat").asString(""))) {
+		String format = body != null && body.has("payloadFormat") ? body.get("payloadFormat").asString("") : null;
+		if (format != null && !ServerSettingsTranscript.PROFILE_PAYLOAD_FORMAT.equals(format)
+			&& !ServerSettingsTranscript.PEER_PAYLOAD_FORMAT.equals(format)) {
 			throw new BusinessException(ErrorCode.INVALID_REQUEST);
 		}
 		KeyringSyncService.Created result = service.create(userId(jwt), family(jwt), deviceId, uuid(requestKey),
-			nonce, profileRequested);
+			nonce, format);
 		return ResponseEntity.status(result.created() ? HttpStatus.CREATED : HttpStatus.OK).body(result.run());
 	}
 

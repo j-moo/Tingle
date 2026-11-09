@@ -37,6 +37,7 @@ import com.e106.tingle.chat.deletion.ChatDeletionService.Outcome;
 import com.e106.tingle.chat.deletion.ChatDeletionState;
 import com.e106.tingle.chat.deletion.ChatDeletionState.Status;
 import com.e106.tingle.chat.deletion.restore.DeletionJournal;
+import com.e106.tingle.encounter.privacy.KeyringPeerDataRetirement;
 import com.e106.tingle.settings.snapshot.SettingsChangeCoordinator;
 
 import tools.jackson.databind.json.JsonMapper;
@@ -71,7 +72,7 @@ class MemberWithdrawalCleanupIntegrationTest {
 		changes = mock(SettingsChangeCoordinator.class);
 		deletionRepository = new ChatDeletionRepository(jdbc, JsonMapper.builder().build());
 		cleanup = new MemberWithdrawalCleanup(jdbc, changes,
-			new MemberWithdrawalDeletionInvalidator(deletionRepository));
+			new MemberWithdrawalDeletionInvalidator(deletionRepository), new KeyringPeerDataRetirement(jdbc));
 		jdbc.update("insert into users(provider,provider_user_id,status,created_at) "
 			+ "values ('GOOGLE','departing','ACTIVE',?),('GOOGLE','remaining','ACTIVE',?)",
 			Timestamp.from(NOW), Timestamp.from(NOW));

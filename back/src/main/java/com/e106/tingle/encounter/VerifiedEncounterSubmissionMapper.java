@@ -53,6 +53,18 @@ public final class VerifiedEncounterSubmissionMapper {
 			|| !Objects.equals(claims.proofHash(), proofHash(submission))) {
 			throw unresolved();
 		}
+		boolean ter2 = "tingle-encounter-v2".equals(submission.evidence().protocolVersion());
+		if (ter2 != (claims.expiresAt() != null)) {
+			throw unresolved();
+		}
+		if (claims.expiresAt() != null && (!ter2
+			|| claims.ownershipEpoch() == null || claims.ownershipEpoch() < 0 || claims.peerOwnerGeneration() == null
+			|| claims.peerOwnershipEpoch() == null || claims.peerOwnershipEpoch() < 0
+			|| claims.opportunitySeconds() == null || claims.opportunitySeconds() <= 0
+			|| claims.opportunitySeconds() > 365L * 86400
+			|| !claims.occurredAt().plusSeconds(claims.opportunitySeconds()).equals(claims.expiresAt()))) {
+			throw unresolved();
+		}
 		ParticipantInput participant = new ParticipantInput(userId, deviceId, submission.submissionId(),
 			submission.eventId(), receipts.canonicalHash(submission), claims.settingsSnapshotId(),
 			claims.settingsVersion(), claims.ownerGeneration(), claims.inputHash(), claims.proofHash());
@@ -69,7 +81,7 @@ public final class VerifiedEncounterSubmissionMapper {
 
 	private static String proofHash(Submission submission) {
 		try {
-			byte[] raw = Base64.getDecoder().decode(submission.evidence().payload());
+			byte[] raw = evidenceBytes(submission);
 			if (raw.length == 0) {
 				throw unresolved();
 			}
@@ -79,6 +91,11 @@ public final class VerifiedEncounterSubmissionMapper {
 		} catch (NoSuchAlgorithmException exception) {
 			throw new IllegalStateException("SHA-256 is required", exception);
 		}
+	}
+
+	static byte[] evidenceBytes(Submission submission) {
+		return ("tingle-encounter-v2".equals(submission.evidence().protocolVersion())
+			? Base64.getUrlDecoder() : Base64.getDecoder()).decode(submission.evidence().payload());
 	}
 
 	private static BusinessException unresolved() {

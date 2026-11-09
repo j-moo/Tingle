@@ -20,6 +20,8 @@ import com.e106.tingle.global.error.BusinessException;
 import com.e106.tingle.global.error.ErrorCode;
 import com.e106.tingle.keyring.dto.SyncAckRequest;
 import com.e106.tingle.keyring.dto.SyncRunView;
+import com.e106.tingle.keyring.peer.PeerSettingsIssuer;
+import com.e106.tingle.keyring.proof.PeerSettingsCodec;
 import com.e106.tingle.keyring.proof.ServerSettingsTranscript;
 import com.e106.tingle.keyring.proof.StoredAckProofVerifier;
 import com.e106.tingle.preference.PreferenceUserSettingRepository;
@@ -47,6 +49,7 @@ public class KeyringSyncService {
 	private final Clock clock;
 	private final com.e106.tingle.keyring.reset.KeyringResetGuard resetGuard;
 	private final ObjectProvider<DevSettingsIssuer> devSettings;
+	private final ObjectProvider<PeerSettingsIssuer> peerSettings;
 	private final KeyringCanonicalSnapshotService profileSnapshots;
 	private final SettingsChangeCoordinator settingsChanges;
 	@Value("${app.keyring.dev-settings.profile-device-serials:}")
@@ -67,6 +70,17 @@ public class KeyringSyncService {
 	@Transactional
 	public Created create(long userId, UUID familyId, long deviceId, UUID requestKey, String deviceNonce,
 		boolean profileRequested) {
+		return create(userId, familyId, deviceId, requestKey, deviceNonce, profileRequested ? PROFILE_FORMAT : null);
+	}
+
+	@Transactional
+	public Created create(long userId, UUID familyId, long deviceId, UUID requestKey, String deviceNonce,
+		String payloadFormat) {
+		boolean profileRequested = PROFILE_FORMAT.equals(payloadFormat);
+		boolean peerRequested = PeerSettingsCodec.FORMAT.equals(payloadFormat);
+		if (payloadFormat != null && !profileRequested && !peerRequested) {
+			throw new BusinessException(ErrorCode.INVALID_REQUEST);
+		}
 		Keyring device = access(userId, familyId, deviceId, OnboardingStatus.SYNC_PENDING);
 		requireCredential(device);
 		DevSettingsIssuer issuer = devSettings.getIfAvailable();
@@ -78,11 +92,15 @@ public class KeyringSyncService {
 		} else if (deviceNonce != null) {
 			throw new BusinessException(ErrorCode.POLICY_UNRESOLVED);
 		}
+		if (peerRequested) {
+			return createPeer(userId, familyId, requestKey, deviceNonce, device, issuer);
+		}
 		KeyringSyncRun replay = runs.findRequest(deviceId, device.getOwnerGeneration(), requestKey,
 			"[\"" + requestKey + "\"]").orElse(null);
 		if (replay != null) {
 			requireSession(userId, familyId);
-			if (profileRequested != PROFILE_FORMAT.equals(replay.getPayloadFormat())) {
+			if (profileRequested != PROFILE_FORMAT.equals(replay.getPayloadFormat())
+				|| PeerSettingsCodec.FORMAT.equals(replay.getPayloadFormat())) {
 				throw new BusinessException(ErrorCode.IDEMPOTENCY_CONFLICT);
 			}
 			requireCurrentProfileRun(replay, device);
@@ -102,7 +120,8 @@ public class KeyringSyncService {
 			if (!payload.format().equals(existing.getPayloadFormat())
 				|| !Arrays.equals(payload.bytes(), existing.getPayload())) {
 				if (issuer == null || (!PROFILE_FORMAT.equals(payload.format())
-					&& !PROFILE_FORMAT.equals(existing.getPayloadFormat()))) {
+					&& !PROFILE_FORMAT.equals(existing.getPayloadFormat())
+					&& !PeerSettingsCodec.FORMAT.equals(existing.getPayloadFormat()))) {
 					throw new BusinessException(ErrorCode.IDEMPOTENCY_CONFLICT);
 				}
 				// 설정 행은 이미 잠겨 있다. 같은 버전의 기존 발급을 바꾸지 않는다.
@@ -125,6 +144,57 @@ public class KeyringSyncService {
 		return new Created(issuedView(run, device, requestKey, deviceNonce, issuer), true);
 	}
 
+	private Created createPeer(long userId, UUID familyId, UUID requestKey, String deviceNonce, Keyring device,
+		DevSettingsIssuer signer) {
+		PeerSettingsIssuer issuer = requirePeerIssuer();
+		if (signer == null) {
+			throw new BusinessException(ErrorCode.POLICY_UNRESOLVED);
+		}
+		DevSettingsIssuer.requireDeviceNonce(deviceNonce);
+		issuer.requireSupported(device);
+		KeyringSyncRun replay = runs.findRequest(device.getId(), device.getOwnerGeneration(), requestKey,
+			"[\"" + requestKey + "\"]").orElse(null);
+		if (replay != null) {
+			if (!PeerSettingsCodec.FORMAT.equals(replay.getPayloadFormat())) {
+				throw new BusinessException(ErrorCode.IDEMPOTENCY_CONFLICT);
+			}
+			requireCurrentProfileRun(replay, device);
+			return new Created(issuedView(replay, device, requestKey, deviceNonce, signer), false);
+		}
+		byte[] profile = profileSnapshots.generateStoragePayload(userId);
+		long current = version(userId);
+		KeyringSyncRun existing = runs.findByKeyringIdAndOwnerGenerationAndSettingsVersion(device.getId(),
+			device.getOwnerGeneration(), current).orElse(null);
+		if (existing != null) {
+			if (issuer.reusable(existing, device, profile, clock.instant())) {
+				existing.addRequestKeyAlias(requestKey);
+				return new Created(issuedView(existing, device, requestKey, deviceNonce, signer), false);
+			}
+			settingsChanges.advanceAndCapture(userId);
+			current = version(userId);
+		}
+		UUID runId = UUID.randomUUID();
+		byte[] randomNonce = new byte[32];
+		random.nextBytes(randomNonce);
+		String nonce = Base64.getUrlEncoder().withoutPadding().encodeToString(randomNonce);
+		Instant issued = clock.instant();
+		byte[] payload = issuer.issue(device, runId, nonce, current, profile, issued);
+		requireSession(userId, familyId);
+		KeyringSyncRun run = new KeyringSyncRun(runId, device.getId(), userId, device.getOwnerGeneration(),
+			device.getCredentialKeyId(), current, payload, nonce, requestKey, issued, PeerSettingsCodec.FORMAT);
+		run.bindOwnershipEpoch(device.getOwnershipEpoch());
+		runs.saveAndFlush(run);
+		return new Created(issuedView(run, device, requestKey, deviceNonce, signer), true);
+	}
+
+	private PeerSettingsIssuer requirePeerIssuer() {
+		PeerSettingsIssuer issuer = peerSettings.getIfAvailable();
+		if (issuer == null) {
+			throw new BusinessException(ErrorCode.POLICY_UNRESOLVED);
+		}
+		return issuer;
+	}
+
 	private KeyringPayload preparePayload(long userId, Keyring device, DevSettingsIssuer issuer,
 		boolean profileRequested) {
 		if (issuer == null) {
@@ -143,6 +213,14 @@ public class KeyringSyncService {
 	}
 
 	private void requireCurrentProfileRun(KeyringSyncRun run, Keyring device) {
+		if (PeerSettingsCodec.FORMAT.equals(run.getPayloadFormat())) {
+			if (version(run.getOwnerUserId()) != run.getSettingsVersion()
+				|| !requirePeerIssuer().reusable(run, device,
+					profileSnapshots.generateStoragePayload(run.getOwnerUserId()), clock.instant())) {
+				throw new BusinessException(ErrorCode.SYNC_VERSION_STALE);
+			}
+			return;
+		}
 		if (!PROFILE_FORMAT.equals(run.getPayloadFormat())) {
 			return;
 		}
@@ -174,7 +252,8 @@ public class KeyringSyncService {
 		}
 		if (proof == null) {
 			if (!DevSettingsIssuer.FORMAT.equals(run.getPayloadFormat())
-				&& !PROFILE_FORMAT.equals(run.getPayloadFormat())) {
+				&& !PROFILE_FORMAT.equals(run.getPayloadFormat())
+				&& !PeerSettingsCodec.FORMAT.equals(run.getPayloadFormat())) {
 				throw new BusinessException(ErrorCode.POLICY_UNRESOLVED);
 			}
 			proof = issuer.sign(run, device.getSerialNumber(), deviceNonce, clock.instant());
@@ -225,9 +304,10 @@ public class KeyringSyncService {
 			throw new BusinessException(ErrorCode.SYNC_VERSION_STALE);
 		}
 		run.acknowledge(requestKey, proofHash, now);
-		// 개발 설정과 TPS1 저장은 성향 적용·신뢰 시각 준비를 입증하지 않는다.
+		// STORED only proves persistence, including TSV3; applied/timeReady/matchingReady need separate evidence.
 		if (!DevSettingsIssuer.FORMAT.equals(run.getPayloadFormat())
-			&& !PROFILE_FORMAT.equals(run.getPayloadFormat())) {
+			&& !PROFILE_FORMAT.equals(run.getPayloadFormat())
+			&& !PeerSettingsCodec.FORMAT.equals(run.getPayloadFormat())) {
 			device.acknowledgeSettings(current, now);
 			onboarding.recordProgress(userId);
 		}

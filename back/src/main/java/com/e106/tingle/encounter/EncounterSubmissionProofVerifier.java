@@ -16,6 +16,16 @@ public interface EncounterSubmissionProofVerifier {
 
 	record Claims(long userId, long deviceId, long peerUserId, long peerDeviceId, UUID submissionId,
 		UUID eventId, Instant occurredAt, String policyVersion, String matchingRuleVersion,
-		UUID settingsSnapshotId, UUID ownerGeneration, long settingsVersion, String inputHash, String proofHash) {
+		UUID settingsSnapshotId, UUID ownerGeneration, long settingsVersion, String inputHash, String proofHash,
+		Long ownershipEpoch, UUID peerOwnerGeneration, Long peerOwnershipEpoch, Instant expiresAt,
+		Long opportunitySeconds) {
+		/** Legacy producers have no signed ownership interval or opportunity fields. */
+		public Claims(long userId, long deviceId, long peerUserId, long peerDeviceId, UUID submissionId,
+			UUID eventId, Instant occurredAt, String policyVersion, String matchingRuleVersion,
+			UUID settingsSnapshotId, UUID ownerGeneration, long settingsVersion, String inputHash, String proofHash) {
+			this(userId, deviceId, peerUserId, peerDeviceId, submissionId, eventId, occurredAt, policyVersion,
+				matchingRuleVersion, settingsSnapshotId, ownerGeneration, settingsVersion, inputHash, proofHash,
+				null, null, null, null, null);
+		}
 	}
 }

@@ -9,6 +9,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.e106.tingle.encounter.privacy.KeyringPeerDataRetirement;
 import com.e106.tingle.global.error.BusinessException;
 import com.e106.tingle.global.error.ErrorCode;
 import com.e106.tingle.settings.snapshot.SettingsChangeCoordinator;
@@ -22,6 +23,7 @@ public class MemberWithdrawalCleanup {
 	private final JdbcTemplate jdbc;
 	private final SettingsChangeCoordinator changes;
 	private final MemberWithdrawalDeletionInvalidator deletionApprovals;
+	private final KeyringPeerDataRetirement peerData;
 
 	/** Include retained chats and block-only peers; the caller locks these users in ascending order. */
 	public List<Long> relatedMemberIds(long userId) {
@@ -31,6 +33,14 @@ public class MemberWithdrawalCleanup {
 			+ "union select p.user_id from chat_participant p where p.chat_id in "
 			+ "(select chat_id from chat_participant where user_id=?)) order by u.id", Long.class,
 			userId, userId, userId, userId, userId, userId);
+		if (exists("keyring_peer_encounter")) {
+			List<Long> peers = jdbc.queryForList("select u.id from users u where u.id in "
+				+ "(select owner_user_id from keyring_peer_encounter where (owner_user_id=? or peer_user_id=?) "
+				+ "and not retired union select peer_user_id from keyring_peer_encounter "
+				+ "where (owner_user_id=? or peer_user_id=?) and not retired)", Long.class,
+				userId, userId, userId, userId);
+			members = java.util.stream.Stream.concat(members.stream(), peers.stream()).distinct().sorted().toList();
+		}
 		if (!exists("user_block")) {
 			return members;
 		}
@@ -45,6 +55,7 @@ public class MemberWithdrawalCleanup {
 	@Transactional(propagation = Propagation.MANDATORY)
 	public void cleanupUnderLocks(long userId, Instant completedAt) {
 		List<Long> others = relatedMemberIds(userId).stream().filter(id -> id != userId).toList();
+		peerData.retireForWithdrawal(userId, completedAt);
 		List<Long> matchings = jdbc.queryForList("select m.id from matching m where m.user_low_id=? "
 			+ "or m.user_high_id=? or exists (select 1 from chat c join chat_participant p on p.chat_id=c.id "
 			+ "where c.matching_id=m.id and p.user_id=?) order by m.id for update", Long.class,
