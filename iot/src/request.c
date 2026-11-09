@@ -80,6 +80,7 @@ void kr_request(struct kr_core *core, char *frame, struct kr_status status,
 {
 	core->stop_peer = false;
 	core->peer_after_stored.verified_time = 0;
+	core->peer_after_stored.settings_apply_attempt = 0;
 	struct kr_json json;
 	const char *error = "INVALID_MESSAGE";
 	char request[224] = "null";
@@ -214,6 +215,17 @@ void kr_request(struct kr_core *core, char *frame, struct kr_status status,
 			request, candidate.sync_run, candidate.version, candidate.hash,
 			equal(kr_json_string(&json, "proofProtocolVersion"), KR_PROOF_VERSION_2) ? KR_PROOF_VERSION_2 : KR_PROOF_VERSION,
 			core->identity.key_id, signature);
+		return;
+	}
+	if (equal(type, "GET_SETTINGS_APPLIED_PROOF")) {
+		error = kr_settings_applied_proof(core, kr_json_string(&json, "syncRunId"), signature);
+		if (error) { goto fail; }
+		snprintf(response, KR_RESPONSE_MAX,
+			"{\"protocolVersion\":1,\"type\":\"SETTINGS_APPLIED_PROOF\",\"requestId\":%s,"
+			"\"syncRunId\":\"%s\",\"settingsVersion\":%" PRId64 ",\"payloadHash\":\"%s\","
+			"\"proof\":{\"protocolVersion\":\"%s\",\"keyId\":\"%s\",\"signature\":\"%s\"}}\n",
+			request, core->current.sync_run, core->current.version, core->current.hash,
+			KR_SETTINGS_APPLIED_PROOF_VERSION, core->identity.key_id, signature);
 		return;
 	}
 	error = "UNSUPPORTED_TYPE";

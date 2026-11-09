@@ -16,6 +16,7 @@ struct kr_service_progress kr_service_step(struct kr_peer_plan *plan, bool *upda
 	if (*update) {
 		progress.radio_error = io->apply(io->ctx, plan);
 		if (!progress.radio_error) { progress.radio_error = io->refresh_phone(io->ctx); }
+		if (io->apply_result) { io->apply_result(io->ctx, plan, progress.radio_error); }
 		if (!progress.radio_error) { *update = false; progress.applied = true; }
 	}
 	/* A reset arriving during an ordinary update must wait until the next

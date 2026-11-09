@@ -576,7 +576,7 @@ bool kr_product_dispatch(struct kr_product *p, const struct kr_json *j, const ch
 		snprintf(response, KR_RESPONSE_MAX,
 			"{\"protocolVersion\":1,\"type\":\"DEVICE_INFO\",\"requestId\":%s,\"deviceSerial\":\"%s\",\"keyId\":\"%s\","
 			"\"publicKeySpkiBase64url\":\"%s\",\"firmwareVersion\":\"%s\",\"supportedProtocolVersions\":[1],"
-			"\"supportedFunctions\":[\"GET_DEVICE_INFO\",\"GET_STATUS\",\"GET_REGISTRATION_PROOF\",\"GET_SYNC_CHALLENGE\",\"SYNC_SETTINGS\","
+			"\"supportedFunctions\":[\"GET_DEVICE_INFO\",\"GET_STATUS\",\"GET_REGISTRATION_PROOF\",\"GET_SYNC_CHALLENGE\",\"SYNC_SETTINGS\",\"GET_SETTINGS_APPLIED_PROOF\","
 			"\"GET_OWNER_CHALLENGE\",\"AUTHORIZE_OWNER\",\"GET_RECORD\",\"READ_RECORD_CHUNK\",\"ACK_RECORD\",\"RELEASE_RECORD\","
 			"\"STOP_FEEDBACK\",\"RESTORE_ACCOUNT_LOCK\",\"GET_RESET_CHALLENGE\",\"RESET_DEVICE\",\"GET_RESET_RESULT\"],"
 			"\"supportedPayloadFormats\":[\"%s\",\"%s\",\"%s\",\"%s\"],\"ownershipEpoch\":%" PRId64 ","

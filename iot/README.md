@@ -110,7 +110,8 @@ Get-Content ./iot/build/firmware-manifest.json
 
 ## 현재 개발 빌드 범위
 
-- 기본 버전은 `0.7.2-owner-flow`다. 팀 서버 검증키는 `config/dev-settings-public-key.hex`, 키 ID는 `dev-ed25519-799e2999c648fda3`다. 서버 비밀키는 보드에 넣지 않는다.
+- 기본 버전은 `0.7.3-applied-proof`다. 팀 서버 검증키는 `config/dev-settings-public-key.hex`, 키 ID는 `dev-ed25519-799e2999c648fda3`다. 서버 비밀키는 보드에 넣지 않는다.
+- TSV3 적용 확인은 [GET_SETTINGS_APPLIED_PROOF](app-flow-v2-handoff.md#tsv3-설정-적용-증명--073-applied-proof)로 조회한다.
 - 실제 앱의 NUS JSON 기기 정보 조회·등록 challenge 서명·설정 검증/영구 저장·서명된 `STORED` 응답 경로를 포함한다.
 - 기존1바이트 ON/OFF 외에 최신 develop `411fce89`는 FE264·BE257의196B 성향 저장 공급/서명·보호 중계를 포함한다. 펌웨어의 전체 TSV3 성향/개인 조건 설정도 지원하며 해당 grant/기록 연동은 아래 인계대로 추가 연결해야 한다. 정상 저장 후 `LAB ENABLE` 없이 무선을 제어하고 저장 완료와 전체 매칭 준비를 구분한다.
 - `0.3.1`에는 `tingle-profile-storage-v1` 성향·최소 프로필 저장 경로를 추가했다. AI r2 파생값·네 값 상태, 나이/성별/희망 조건/사진 여부/흡연/음주/종교/알림 옵션을 196B로 받아 기존 서명·영구 저장·STORED 경로를 사용한다. 추가 암호화 특성 `6e400004...`에서 먼저 Read probe(`01`)를 성공시킨 후 같은 연결로 전송한다. 이름·생년월일·사진 원문·원본 설문을 넣지 않는다. 후속 FE264·BE257이 이 저장 형식을 지원하며, 실제 앱/서버 배포·보드 종단 및 전체 TSV3 매칭 연동은 별도로 확인한다.

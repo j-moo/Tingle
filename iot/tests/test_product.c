@@ -1,6 +1,7 @@
 #include "product.h"
 #include "matching.h"
 #include "battery.h"
+#include "service.h"
 #include "monocypher.h"
 #include "monocypher-ed25519.h"
 #include <assert.h>
@@ -60,6 +61,9 @@ static const char *authorize_settings(void *ctx, const struct kr_settings *s, co
 	kr_issue_settings_nonce(&nonce, b->sync_nonce, b->ms);
 	const char *failure = kr_verify_dev_settings(&b->core.identity, s, a, &nonce, b->ms, server_id, server, &plan->verified_time);
 	if (failure) { return failure; }
+	struct kr_policy policy;
+	if (!kr_policy_decode(s->payload, s->payload_size, &policy)) { return "INVALID_SETTINGS"; }
+	if (!(policy.profile[195] & 1u) || !policy.complete || !policy.enabled) { return NULL; }
 	random_bytes(b, seed, 32);
 	if (!kr_peer_material_make(&plan->peer, &b->core.identity, s, a, seed)) { return "INVALID_PEER_GRANT"; }
 	plan->length = 16; return NULL;
@@ -365,21 +369,118 @@ static void test_candidate_and_completion(FILE *scratch)
 	size_t bytes = kr_packet(2, control, sizeof(control), packet); assert(kr_receive(&completion, packet, bytes, 1, (uint64_t)epoch) == KR_INVALID);
 	puts("queue-flow: current presence recheck, other candidate progress and stale completion rejection passed");
 }
-static void test_same_payload_resume(FILE *scratch)
+static void store_settings(struct test_board *b, const struct kr_settings *settings)
 {
-	boot(0, 1, scratch); struct test_board *b = &boards[0]; struct kr_settings before = b->core.current;
 	memset(b->sync_nonce, 87, 32); char device_nonce[44]; kr_base64_encode(b->sync_nonce, 32, device_nonce);
 	char message[768], signature[87], stored[87]; int n = snprintf(message, sizeof(message),
 		"TINGLE-KEYRING-SERVER-SETTINGS\n%s\n%s\n%s\n%s\n%" PRId64 "\n%s\n%s\n%" PRId64 "\n%s\n%s\n%s\n%s\n%" PRId64 "\n1\n",
-		KR_SETTINGS_PROOF_VERSION_2, server_id, b->core.identity.serial, b->core.identity.key_id, before.device_id,
-		before.owner_generation, before.sync_run, before.version, before.format, before.hash, before.nonce, device_nonce, epoch);
+		KR_SETTINGS_PROOF_VERSION_2, server_id, b->core.identity.serial, b->core.identity.key_id, settings->device_id,
+		settings->owner_generation, settings->sync_run, settings->version, settings->format, settings->hash, settings->nonce, device_nonce, epoch);
 	sign(message, (size_t)n, signature);
 	struct kr_settings_auth auth = {.version2 = true, .ownership_epoch = 1, .protocol_version = KR_SETTINGS_PROOF_VERSION_2,
 		.server_key_id = server_id, .signature = signature, .device_nonce = device_nonce, .server_time = "2026-11-02T00:05:00Z"};
-	assert(!kr_store(&b->core, &before, &auth, stored)); assert(!memcmp(&b->core.current, &before, sizeof(before)));
+	assert(!kr_store(&b->core, settings, &auth, stored));
+	assert(!memcmp(&b->core.current, settings, sizeof(*settings)) && !memcmp(&b->persisted, settings, sizeof(*settings)));
+}
+static void test_same_payload_resume(FILE *scratch)
+{
+	boot(0, 1, scratch); struct test_board *b = &boards[0]; struct kr_settings before = b->core.current;
+	store_settings(b, &before);
 	struct kr_peer_plan plan; assert(kr_peer_after_response(&b->core, true, &plan));
 	assert(memcmp(plan.peer.public_key, b->radio.own.public_key, 32));
 	puts("resume-flow: fresh nonce/outer signature can resume identical stored payload with a fresh ephemeral key");
+}
+static const char applied_request[] = "{\"type\":\"GET_SETTINGS_APPLIED_PROOF\",\"syncRunId\":\"22222222-2222-4222-8222-222222222222\"}";
+static const char applied_off_request[] = "{\"type\":\"GET_SETTINGS_APPLIED_PROOF\",\"syncRunId\":\"33333333-3333-4333-8333-333333333333\"}";
+static bool apply_reset_pending(void *ctx) { (void)ctx; return false; }
+static int apply_settings(void *ctx, const struct kr_peer_plan *plan)
+{
+	struct test_board *b = ctx;
+	assert(kr_settings_apply_current(&b->core, plan));
+	assert(kr_product_apply(&b->app, &b->radio, plan->verified_time));
+	if (b->fail_raw) { return -EIO; }
+	kr_peer_stop(&b->radio); b->engine.ready = false;
+	if (plan->peer.valid) {
+		assert(!kr_peer_start(&b->radio, &plan->peer, server, &b->engine));
+		kr_product_bind_peer(&b->app, &b->radio);
+	}
+	return 0;
+}
+static int apply_refresh(void *ctx) { return ((struct test_board *)ctx)->fail_counter ? -EIO : 0; }
+static void apply_finished(void *ctx, const struct kr_peer_plan *plan, int error)
+{ kr_settings_apply_finished(&((struct test_board *)ctx)->core, plan, !error); }
+
+static void test_applied_proof(FILE *vectors, FILE *scratch)
+{
+	boot(0, 1, scratch);
+	struct test_board *b = &boards[0];
+	struct kr_settings settings = b->persisted;
+	struct kr_peer_plan stale, plan;
+	store_settings(b, &settings);
+	assert(kr_peer_after_response(&b->core, true, &stale));
+	store_settings(b, &settings);
+	assert(kr_peer_after_response(&b->core, true, &plan));
+	kr_settings_apply_finished(&b->core, &stale, true);
+	request(b, applied_request, "\"code\":\"SETTINGS_APPLY_PENDING\"");
+	request(b, applied_off_request, "\"code\":\"SETTINGS_RUN_MISMATCH\"");
+
+	const struct kr_service_io io = {.ctx = b, .reset_pending = apply_reset_pending,
+		.apply = apply_settings, .refresh_phone = apply_refresh, .apply_result = apply_finished};
+	bool update = true;
+	b->fail_raw = true;
+	assert(kr_service_step(&plan, &update, &io).radio_error == -EIO && update);
+	request(b, applied_request, "\"code\":\"SETTINGS_APPLY_FAILED\"");
+	b->fail_raw = false;
+	b->fail_counter = true;
+	assert(kr_service_step(&plan, &update, &io).radio_error == -EIO && update);
+	request(b, applied_request, "\"code\":\"SETTINGS_APPLY_FAILED\"");
+	b->fail_counter = false;
+	assert(kr_service_step(&plan, &update, &io).applied && !update);
+	request(b, applied_request, "\"type\":\"SETTINGS_APPLIED_PROOF\"");
+	vector(vectors, "appliedResponse", response, strlen(response));
+	char first[KR_RESPONSE_MAX]; strcpy(first, response);
+	++b->core.connection_epoch;
+	request(b, applied_request, first);
+	b->core.profile_transport_protected = false;
+	request(b, applied_request, "\"code\":\"SECURE_TRANSPORT_REQUIRED\"");
+
+	/* Boot restores durable settings and the device key, but no apply result. */
+	b->core = (struct kr_core){.identity = b->core.identity, .current = b->persisted, .reset = b->core.reset,
+		.platform = b->core.platform, .profile_transport_protected = true};
+	kr_peer_stop(&b->radio); b->engine.ready = false;
+	request(b, applied_request, "\"code\":\"SETTINGS_RUN_MISMATCH\"");
+	store_settings(b, &settings);
+	assert(!kr_peer_after_response(&b->core, false, &plan));
+	request(b, applied_request, "\"code\":\"SETTINGS_APPLY_FAILED\"");
+	store_settings(b, &settings);
+	assert(kr_peer_after_response(&b->core, true, &plan));
+	update = true;
+	assert(kr_service_step(&plan, &update, &io).applied);
+	request(b, applied_request, first);
+
+	/* A newer signed TSV3 run applies the OFF policy and stops radio work. */
+	++settings.version;
+	strcpy(settings.sync_run, "33333333-3333-4333-8333-333333333333");
+	settings.payload[199] &= ~1u;
+	uint8_t *grant = settings.payload + 200;
+	kr_put32(grant + 17, (uint32_t)settings.version);
+	memset(grant + 45, 0x33, 16); grant[51] = 0x43; grant[53] = 0x83;
+	kr_hash(settings.payload + 4, 196, grant + 133);
+	uint8_t message[sizeof("TINGLE-PEER-GRANT-V3\n") - 1 + 197] = "TINGLE-PEER-GRANT-V3\n";
+	memcpy(message + sizeof(message) - 197, grant, 197);
+	crypto_ed25519_sign(grant + 197, server_secret, message, sizeof(message));
+	uint8_t digest[32]; kr_hash(settings.payload, settings.payload_size, digest); kr_hex(digest, 32, settings.hash);
+	store_settings(b, &settings);
+	assert(kr_peer_after_response(&b->core, true, &plan) && !plan.length && !plan.peer.valid);
+	update = true;
+	assert(kr_service_step(&plan, &update, &io).applied && !kr_product_ready(&b->app));
+	request(b, applied_off_request, "\"type\":\"SETTINGS_APPLIED_PROOF\"");
+	char expected[64]; snprintf(expected, sizeof(expected), "\"settingsVersion\":%" PRId64 ",", settings.version);
+	assert(strstr(response, expected) && strstr(response, settings.hash));
+	request(b, applied_request, "\"code\":\"SETTINGS_RUN_MISMATCH\"");
+	++b->core.reset.ownership_epoch;
+	request(b, applied_off_request, "\"code\":\"SETTINGS_RUN_MISMATCH\"");
+	puts("applied-proof: pending, failures, retry/reconnect, reboot, OFF and stale run/owner checks passed");
 }
 static enum kr_decision fail_calculation(void *ctx, const struct kr_profile *a, const struct kr_profile *b)
 { (void)ctx; (void)a; (void)b; return KR_CALC_ERROR; }
@@ -431,7 +532,8 @@ int main(int argc, char **argv)
 	crypto_ed25519_key_pair(server_secret, server, seed); kr_hex(server, 8, server_id + 12); vector(f, "serverPublic", server, 32);
 	boot(0, 1, f); boot(1, 2, f); boot(2, 1, f);
 	struct test_board *b = &boards[0];
-	request(b, "{\"type\":\"GET_DEVICE_INFO\"}", "tingle-keyring-settings-v3"); assert(strlen(response) < KR_RESPONSE_MAX - 1);
+	request(b, "{\"type\":\"GET_DEVICE_INFO\"}", "tingle-keyring-settings-v3");
+	assert(strstr(response, "\"GET_SETTINGS_APPLIED_PROOF\"") && strlen(response) < KR_RESPONSE_MAX - 1);
 	request(b, "{\"type\":\"GET_RECORD\",\"afterSequence\":0}", "OWNER_SESSION_REQUIRED");
 	request(b, "{\"type\":\"GET_STATUS\"}", "\"storageTotalBytes\":null");
 	owner(b, f); request(b, "{\"type\":\"GET_STATUS\"}", "\"storageTotalBytes\":262144"); assert(strstr(response, "VOLTAGE_ESTIMATE"));
@@ -631,6 +733,7 @@ int main(int argc, char **argv)
 	unsigned confirmed = 0; for (unsigned i = 0; i < 4; ++i) {
 		assert(kr_count(&boards[i].engine, KR_CONFIRMED) <= 1 && !boards[i].engine.storage_error);
 		confirmed += kr_count(&boards[i].engine, KR_CONFIRMED);
-	} assert(confirmed >= 2); test_owner_transition(scratch); test_candidate_and_completion(scratch); test_same_payload_resume(scratch); test_failed_input_change(scratch); assert(!fclose(scratch));
+	} assert(confirmed >= 2); test_owner_transition(scratch); test_candidate_and_completion(scratch); test_same_payload_resume(scratch); test_failed_input_change(scratch);
+	test_applied_proof(f, scratch); assert(!fclose(scratch));
 	assert(!fclose(f)); puts("product: account dedup + durable suppression, persistent cursor/sequence, signed dynamic duration, legacy migration, battery truth and full flow passed"); return 0;
 }

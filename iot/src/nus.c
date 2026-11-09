@@ -353,12 +353,25 @@ void kr_nus_attach_application(struct kr_engine *engine)
 	engine->io.same_peer = application_same_peer; engine->io.candidate_ready = application_candidate;
 	engine->io.error_key = application_error_key;
 }
-bool kr_nus_apply_application(const struct kr_peer_plan *plan, struct kr_peer_runtime *peers)
+int kr_nus_apply_application(const struct kr_peer_plan *plan, struct kr_peer_runtime *peers)
 {
 	k_mutex_lock(&core_lock, K_FOREVER); kr_runtime_owner_lock();
-	bool valid = plan->generation == kr_runtime_generation();
-	if (valid) { (void)kr_product_apply(&application, peers, plan->verified_time); }
-	kr_runtime_owner_unlock(); k_mutex_unlock(&core_lock); return valid;
+	int result = -EAGAIN;
+	if (plan->generation == kr_runtime_generation() &&
+		(!plan->settings_apply_attempt || kr_settings_apply_current(&core, plan))) {
+		bool applied = kr_product_apply(&application, peers, plan->verified_time);
+		result = plan->settings_apply_attempt && !applied ? -EINVAL : 0;
+	}
+	kr_runtime_owner_unlock(); k_mutex_unlock(&core_lock); return result;
+}
+void kr_nus_application_result(const struct kr_peer_plan *plan, int error)
+{
+	if (!plan->settings_apply_attempt) { return; }
+	k_mutex_lock(&core_lock, K_FOREVER); kr_runtime_owner_lock();
+	if (plan->generation == kr_runtime_generation()) {
+		kr_settings_apply_finished(&core, plan, !error);
+	}
+	kr_runtime_owner_unlock(); k_mutex_unlock(&core_lock);
 }
 void kr_nus_bind_application(struct kr_peer_runtime *peers) { kr_product_bind_peer(&application, peers); }
 void kr_nus_clear_application(void) { kr_product_forget_owner(&application); }
