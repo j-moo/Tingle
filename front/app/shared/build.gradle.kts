@@ -38,6 +38,7 @@ kotlin {
             implementation(libs.compose.ui)
             implementation(libs.compose.resources)
             implementation(libs.ktor.client.core)
+            implementation(libs.okio)
             implementation(libs.ktor.client.content.negotiation)
             implementation(libs.ktor.serialization.json)
             implementation(libs.ktor.client.logging)

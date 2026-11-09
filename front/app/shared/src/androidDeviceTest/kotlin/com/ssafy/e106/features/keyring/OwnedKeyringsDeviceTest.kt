@@ -22,7 +22,10 @@ import org.junit.Test
 
 /** 테스트 APK 전용. 실제 계정이나 BLE 기기를 생성하지 않고 화면의 재조회 수명만 검증한다. */
 class OwnedKeyringsTestActivity : ComponentActivity() {
-    companion object { val reads = AtomicInteger() }
+    companion object {
+        val reads = AtomicInteger()
+        val recordEntries = AtomicInteger()
+    }
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val model = ViewModelProvider(this, object : ViewModelProvider.Factory {
@@ -36,7 +39,8 @@ class OwnedKeyringsTestActivity : ComponentActivity() {
                 }, TestSession(OnboardingStatus.READY)) as T
         })[OwnedKeyringsViewModel::class.java]
         setContent { AppTheme {
-            ConnectedOwnedKeyringsRoute(Session.SignedIn(1, OnboardingStatus.READY, false), {}, model, onReset = {}, recoveryLinks = {})
+            ConnectedOwnedKeyringsRoute(Session.SignedIn(1, OnboardingStatus.READY, false), {}, model, onReset = {},
+                recoveryLinks = {}, onConnectForRecords = { recordEntries.incrementAndGet() })
         } }
     }
 }
@@ -56,6 +60,18 @@ class OwnedKeyringsDeviceTest {
             scenario.moveToState(Lifecycle.State.RESUMED); compose.waitForIdle()
             assertEquals(3, OwnedKeyringsTestActivity.reads.get())
             compose.onNodeWithText("내 키링 1").assertExists()
+        }
+    }
+
+    /** 목록에서 수동으로 진입할 수 있고, 목록을 보기만 할 때는 연결 화면을 자동으로 열지 않는다. */
+    @Test fun ownedListOpensRecordConnectionOnlyOnTap() {
+        OwnedKeyringsTestActivity.recordEntries.set(0)
+        ActivityScenario.launch<OwnedKeyringsTestActivity>(Intent(InstrumentationRegistry.getInstrumentation().context,
+            OwnedKeyringsTestActivity::class.java)).use {
+            compose.onNodeWithText("내 키링 1").assertExists()
+            assertEquals(0, OwnedKeyringsTestActivity.recordEntries.get())
+            compose.onNodeWithText("만남 기록 전송을 위해 키링 연결").performClick()
+            assertEquals(1, OwnedKeyringsTestActivity.recordEntries.get())
         }
     }
 }

@@ -58,7 +58,7 @@ import org.koin.compose.viewmodel.koinViewModel
  */
 @Composable fun ConnectedBleProbeRoute(onBack: () -> Unit, model: BleProbeViewModel = koinViewModel(),
     registration: KeyringRegistrationViewModel? = null, sync: KeyringSyncViewModel? = null,
-    managedConnection: Boolean = false, autoScan: Boolean = false) {
+    managedConnection: Boolean = false, autoScan: Boolean = false, allowEncounterTransfer: Boolean = false) {
     val permission = rememberBlePermission()
     val state by model.state.collectAsStateWithLifecycle()
     val registrationState = registration?.state?.collectAsStateWithLifecycle()?.value
@@ -108,7 +108,53 @@ import org.koin.compose.viewmodel.koinViewModel
         // 저장된 등록 요청 복구 · 미전송 동기화도 연결 전에 보여야 해서 단계와 상관없이 아래에 둔다.
         if (!pickExisting) registration?.let { KeyringRegistrationPanel(it, model, state, syncBusy) }
         sync?.let { KeyringSyncPanel(it, model, state, registrationBusy, ownedModel!!, managedConnection = managedConnection, pickExisting = pickExisting) }
+        // 소유 확인은 화면에 보인 이름이 아니라 서버가 확인한 동기화 기록으로 수행한다.
+        val info = state.info
+        if (allowEncounterTransfer && sync != null && state.connected && info != null) {
+            // 목록의 서버 버전과 현재 보드가 보내온 버전은 다를 수 있다.
+            Text(stringResource(Res.string.keyring_encounter_connected_firmware, info.firmware),
+                style = MaterialTheme.typography.bodySmall, color = AppColors.TextSecondary)
+            when {
+                !info.supportsStatus || !info.supportedFunctions.containsAll(listOf(
+                    "GET_OWNER_CHALLENGE", "AUTHORIZE_OWNER", "GET_RECORD", "READ_RECORD_CHUNK", "ACK_RECORD",
+                )) -> Body(Res.string.keyring_encounter_unsupported)
+                info.ownerState != "BOUND" -> Body(Res.string.keyring_encounter_unbound)
+                else -> KeyringEncounterTransfer(info.serial, model, enabled = !registering && !state.busy)
+            }
+        }
     }
+}
+
+/** 기존 소유 키링의 기록 화면에는 새 키링을 등록하는 패널을 붙이지 않는다. */
+@Composable internal fun ConnectedKeyringEncounterRoute(onBack: () -> Unit) {
+    ConnectedBleProbeRoute(onBack, sync = koinViewModel<KeyringSyncViewModel>(),
+        managedConnection = true, autoScan = true, allowEncounterTransfer = true)
+}
+
+/** 이 화면을 떠나면 전송만 중단하고, 응답을 기다리는 접수증은 보호 저장소에 남긴다. */
+@Composable private fun KeyringEncounterTransfer(serial: String, ble: BleProbeViewModel, enabled: Boolean,
+    model: KeyringEncounterViewModel = koinViewModel()) {
+    val transfer by model.state.collectAsStateWithLifecycle()
+    LifecycleEventEffect(Lifecycle.Event.ON_STOP) { model.cancel() }
+    DisposableEffect(serial, model) { onDispose { model.cancel() } }
+    KeyringEncounterTransferContent(transfer, enabled, onSend = { model.send(serial, ble) })
+}
+
+/** 전송 결과만 그린다. 서버 접수증이 없는 상태에서는 키링 정리 완료를 표시하지 않는다. */
+@Composable internal fun KeyringEncounterTransferContent(transfer: EncounterTransferState, enabled: Boolean, onSend: () -> Unit) {
+    AppButton(stringResource(Res.string.keyring_encounter_send), Modifier.fillMaxWidth(), AppButtonVariant.Secondary,
+        enabled = enabled && transfer != EncounterTransferState.Sending, onClick = onSend)
+    val message = when (transfer) {
+        EncounterTransferState.Idle -> null
+        EncounterTransferState.Sending -> Res.string.keyring_encounter_sending
+        EncounterTransferState.Empty -> Res.string.keyring_encounter_empty
+        EncounterTransferState.LegacyOnly -> Res.string.keyring_encounter_legacy_only
+        EncounterTransferState.ConfirmedStored, EncounterTransferState.Stored -> Res.string.keyring_encounter_stored
+        EncounterTransferState.ReviewStored -> Res.string.keyring_encounter_review_stored
+        EncounterTransferState.NoReceipt -> Res.string.keyring_encounter_no_receipt
+        EncounterTransferState.Failed -> Res.string.keyring_encounter_failed
+    }
+    message?.let { Body(it) }
 }
 
 /** 화면 단계: ① 찾기 전(Idle) · 찾는 중 · 못 찾음 · 블루투스 꺼짐 등(Unavailable) → ② 키링 고르기 → 연결 중 → ③ 연결됨

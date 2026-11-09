@@ -13,13 +13,22 @@ internal object BleProbeProtocol {
         return (buildJsonObject { put("protocolVersion", 1); put("type", type); put("requestId", id) }.toString() + "\n").encodeToByteArray()
     }
 
-    fun response(bytes: ByteArray, id: String, type: String): JsonObject {
+    fun response(bytes: ByteArray, id: String, type: String, alternateType: String? = null): JsonObject {
         val value = try { Json.parseToJsonElement(bytes.decodeToString(throwOnInvalidSequence = true)).jsonObject }
         catch (_: Exception) { throw BleException(BleFailure.InvalidFrame) }
         if (value["protocolVersion"] != JsonPrimitive(1) || value["requestId"] != JsonPrimitive(id))
             throw BleException(BleFailure.InvalidFrame)
-        if (value["type"] == JsonPrimitive("ERROR")) throw BleCommandException(value.string("code")?.take(80) ?: "UNKNOWN")
-        if (value["type"] != JsonPrimitive(type)) throw BleException(BleFailure.InvalidFrame)
+        if (value["type"] == JsonPrimitive("ERROR")) {
+            val code = value.string("code")?.take(80) ?: "UNKNOWN"
+            // 구형 증명 누락만 건너뛸 수 있다. 그 외 오류의 위치로 기록을 건너뛰지 않는다.
+            val sequence = number(value, "sequence")?.takeIf {
+                code == "LEGACY_EVIDENCE_UNAVAILABLE" && it in 1..UInt.MAX_VALUE.toLong()
+            }
+            throw BleCommandException(code, sequence)
+        }
+        // 기록 조회는 같은 요청에 RECORD 또는 RECORD_END를 반환한다. 그 외 호출의 단일 타입 검사는 유지한다.
+        if (value["type"] != JsonPrimitive(type) && (alternateType == null || value["type"] != JsonPrimitive(alternateType)))
+            throw BleException(BleFailure.InvalidFrame)
         return value
     }
 
@@ -86,7 +95,7 @@ internal object BleProbeProtocol {
     private fun JsonObject.string(key: String) = (get(key) as? JsonPrimitive)?.takeIf { it.isString }?.content
 }
 
-class BleCommandException(val code: String) : Exception("BLE command failed")
+class BleCommandException(val code: String, val legacySequence: Long? = null) : Exception("BLE command failed")
 data class BleDeviceInfo(val serial: String, val firmware: String, val supportsStatus: Boolean, val supportsRegistration: Boolean = false,
     val ownershipEpoch: Long? = null, val ownerState: String? = null,
     val supportedProofProtocolVersions: List<String> = listOf("tingle-device-proof-v1"),

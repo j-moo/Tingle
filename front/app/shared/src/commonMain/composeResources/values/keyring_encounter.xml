@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="keyring_encounter_send">만남 기록 한 건 보내기</string>
+    <string name="keyring_encounter_connect">만남 기록 전송을 위해 키링 연결</string>
+    <string name="keyring_encounter_connected_firmware">연결된 키링 펌웨어 %1$s</string>
+    <string name="keyring_encounter_unsupported">연결된 키링이 만남 기록 전송을 지원하지 않아요.</string>
+    <string name="keyring_encounter_unbound">키링에 소유 정보가 아직 반영되지 않았어요. 설정 동기화 후 다시 확인해 주세요.</string>
+    <string name="keyring_encounter_sending">키링의 만남 기록을 확인하고 있어요.</string>
+    <string name="keyring_encounter_empty">보낼 만남 기록이 없어요.</string>
+    <string name="keyring_encounter_legacy_only">서명 증거가 없는 이전 기록이 키링에 남아 있어요. 지금 보낼 수 있는 기록은 없어요.</string>
+    <string name="keyring_encounter_stored">서버 접수와 키링의 정리를 확인했어요.</string>
+    <string name="keyring_encounter_review_stored">검토용 기록을 접수했고 키링의 정리를 확인했어요.</string>
+    <string name="keyring_encounter_no_receipt">서명된 접수증을 아직 받지 못했어요. 키링 기록 정리는 보류했어요.</string>
+    <string name="keyring_encounter_failed">기록 전송 결과를 확인하지 못했어요. 키링 연결과 설정 동기화를 확인한 뒤 다시 시도해 주세요.</string>
+</resources>
