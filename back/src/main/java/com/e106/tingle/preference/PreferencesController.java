@@ -14,6 +14,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import com.e106.tingle.preference.PreferencesService.VersionedPreferences;
 import com.e106.tingle.preference.dto.PreferencesResponse;
+import com.e106.tingle.user.OnboardingService;
 import com.e106.tingle.user.OnboardingStatus;
 import com.e106.tingle.user.RequiresOnboarding;
 
@@ -29,6 +30,7 @@ import tools.jackson.databind.JsonNode;
 public class PreferencesController {
 
 	private final PreferencesService service;
+	private final OnboardingService onboarding;
 
 	@GetMapping
 	@RequiresOnboarding(OnboardingStatus.AGREEMENT_REQUIRED)
@@ -44,7 +46,10 @@ public class PreferencesController {
 		@RequestBody JsonNode body, @RequestHeader(value = "If-Match", required = false) String ifMatch) {
 		long authenticatedUserId = Long.parseLong(jwt.getSubject());
 		PreferencesRules.requireOwner(authenticatedUserId, userId);
-		return response(service.save(authenticatedUserId, userId, PreferencesRules.parse(body), ifMatch));
+		VersionedPreferences saved = service.save(authenticatedUserId, userId, PreferencesRules.parse(body), ifMatch);
+		// 희망 조건이 마지막 가입 단계일 수 있다(키링 없이 가입). 완료 시각은 처음 READY 때 한 번만 기록된다.
+		onboarding.recordProgress(authenticatedUserId);
+		return response(saved);
 	}
 
 	private static ResponseEntity<PreferencesResponse> response(VersionedPreferences result) {

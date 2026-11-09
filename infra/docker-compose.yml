@@ -77,6 +77,8 @@ services:
     environment: &back-env
       SPRING_PROFILES_ACTIVE: prod
       SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/tingle
+      # 환경별 가입 키링 요구값은 Jenkins tingle-app-env에서 관리한다.
+      TINGLE_SIGNUP_KEYRING_REQUIRED: "${TINGLE_PROD_SIGNUP_KEYRING_REQUIRED:-true}"
       SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER:?}
       SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:?}
       JWT_SECRET: ${JWT_SECRET:?}
@@ -120,6 +122,7 @@ services:
       <<: *back-env
       SPRING_PROFILES_ACTIVE: dev
       SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/tingle_dev
+      TINGLE_SIGNUP_KEYRING_REQUIRED: "${TINGLE_DEV_SIGNUP_KEYRING_REQUIRED:-true}"
       TERMS_CONTENT_URL: https://${DOMAIN:?}/dev/terms/ # 개발은 develop 에 머지된 web-dev 페이지
       PRIVACY_CONTENT_URL: https://${DOMAIN:?}/dev/privacy/
       AI_RISK_CONTENT_URL: https://${DOMAIN:?}/dev/ai-risk/

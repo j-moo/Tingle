@@ -64,6 +64,9 @@ management:
       show-details: never
 
 app:
+  # 신규 가입 키링 요구(서버 전체). false·off·no·0 이면 키링 없이 가입 완료를 허용한다. 그 밖에 불리언이 아닌 값이면 기동 실패.
+  signup:
+    keyring-required: ${TINGLE_SIGNUP_KEYRING_REQUIRED:true}
   withdrawal:
     enabled: ${WITHDRAWAL_ENABLED:false}
     identity-secret: ${WITHDRAWAL_IDENTITY_SECRET:}
