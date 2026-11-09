@@ -1,5 +1,7 @@
 package com.ssafy.e106.features.auth.ui
 
+import kotlin.time.Instant
+
 // UI 전용 타입. SDK·토큰은 화면에 전달하지 않는다.
 enum class LoginProvider { Google, Kakao, Naver }
 
@@ -12,4 +14,5 @@ data class SocialLoginState(
     val completed: Boolean = false,
     // 이 기기에서 마지막으로 로그인에 성공한 제공자("최근 로그인" 표시). 계정과 무관한 기기 기록
     val lastProvider: LoginProvider? = null,
+    val rejoinAvailableAt: Instant? = null,
 )

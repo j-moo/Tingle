@@ -9,6 +9,7 @@ import androidx.lifecycle.viewModelScope
 import com.ssafy.e106.core.auth.AuthRepository
 import com.ssafy.e106.core.auth.LoginResult
 import com.ssafy.e106.core.auth.Provider
+import com.ssafy.e106.core.network.AppError
 import com.ssafy.e106.core.network.catchingNonCancel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -38,7 +39,7 @@ class SocialLoginViewModel(private val auth: AuthRepository, private val deviceP
     fun login(provider: LoginProvider) {
         val current = state.value
         if (current.busyProvider != null || current.completed || provider !in current.availableProviders) return
-        mutableState.value = current.copy(busyProvider = provider, errorMessage = null)
+        mutableState.value = current.copy(busyProvider = provider, errorMessage = null, rejoinAvailableAt = null)
         viewModelScope.launch(start = CoroutineStart.UNDISPATCHED) {
             try {
                 when (val result = auth.login(provider.provider())) {
@@ -48,7 +49,8 @@ class SocialLoginViewModel(private val auth: AuthRepository, private val deviceP
                     }
                     LoginResult.Cancelled -> Unit
                     is LoginResult.Failed -> mutableState.update {
-                        it.copy(errorMessage = result.error.message, errorId = it.errorId + 1)
+                        it.copy(errorMessage = result.error.message, errorId = it.errorId + 1,
+                            rejoinAvailableAt = (result.error as? AppError.Server)?.rejoinAvailableAt)
                     }
                 }
             } finally {
@@ -59,7 +61,7 @@ class SocialLoginViewModel(private val auth: AuthRepository, private val deviceP
     }
 
     fun dismissError(id: Long) {
-        mutableState.update { if (it.errorId == id) it.copy(errorMessage = null) else it }
+        mutableState.update { if (it.errorId == id) it.copy(errorMessage = null, rejoinAvailableAt = null) else it }
     }
 
     /** Activity 소유 ViewModel은 회전 때 유지된다. 재로그인 화면에 돌아오면 이전 성공만 해제한다. */

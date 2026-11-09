@@ -4,11 +4,18 @@ import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.*
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import androidx.test.core.app.ActivityScenario
 import androidx.test.platform.app.InstrumentationRegistry
+import com.ssafy.e106.core.auth.AuthRepository
+import com.ssafy.e106.core.auth.LoginResult
+import com.ssafy.e106.core.auth.Provider
+import com.ssafy.e106.core.network.AppError
 import com.ssafy.e106.core.ui.theme.AppTheme
 import com.ssafy.e106.features.auth.ui.*
 import com.ssafy.e106.features.chat.ui.*
@@ -19,6 +26,7 @@ import com.ssafy.e106.features.settings.ui.*
 import org.junit.Assert.*
 import org.junit.Rule
 import org.junit.Test
+import kotlin.time.Instant
 
 /** 실제 화면에 상태만 전달하는 테스트 전용 호스트. SDK/API/실제 신고·차단은 호출하지 않는다. */
 class RecoveryUiTestActivity : ComponentActivity() {
@@ -42,6 +50,21 @@ class RecoveryUiTestActivity : ComponentActivity() {
                         actions += it
                         login = login.copy(busyProvider = it, errorMessage = null)
                     })
+                    "rejoin" -> {
+                        // 실제 로그인 Route에 합성 409만 주입해 서버 없이 안내를 확인한다.
+                        val model = remember {
+                            SocialLoginViewModel(object : AuthRepository {
+                                override fun available(provider: Provider) = provider == Provider.KAKAO
+                                override suspend fun login(provider: Provider) = LoginResult.Failed(
+                                    AppError.Server(409, "REJOIN_RESTRICTED", "탈퇴 후 72시간이 지나면 다시 가입할 수 있어요.",
+                                        Instant.parse("2026-11-12T03:03:55Z")),
+                                )
+                                override suspend fun logout() = Unit
+                            })
+                        }
+                        val snackbar = remember { SnackbarHostState() }
+                        Scaffold(snackbarHost = { SnackbarHost(snackbar) }) { SocialLoginRoute(snackbar, model) }
+                    }
                     "chatList" -> ChatListScreen(chatList, {}, {
                         actions += it
                         chatList = ChatListState()
@@ -140,6 +163,13 @@ class RecoveryUiDeviceTest {
                 // 취소/실패 후 busy 해제 상태에서는 다시 시도할 수 있어야 한다.
                 it.login = it.login.copy(busyProvider = null)
             }
+            compose.onNodeWithText("카카오 로그인").assertIsEnabled()
+        }
+    }
+    @Test fun restrictedRejoinShowsTheServerTimeOnTheLoginRoute() {
+        launch("rejoin").use {
+            tap("카카오 로그인")
+            compose.onNodeWithText("2026-11-12 03:03:55 (UTC)", substring = true).assertIsDisplayed()
             compose.onNodeWithText("카카오 로그인").assertIsEnabled()
         }
     }
