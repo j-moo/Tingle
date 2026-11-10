@@ -2,7 +2,11 @@ package com.e106.tingle.global.trace;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.BDDMockito.given;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -17,11 +21,15 @@ import java.util.concurrent.TimeUnit;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.slf4j.MDC;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.system.CapturedOutput;
+import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.context.annotation.Import;
+import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.ConnectionCallback;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskScheduler;
 import org.springframework.test.context.ActiveProfiles;
@@ -29,11 +37,15 @@ import org.springframework.test.context.ActiveProfiles;
 import com.e106.tingle.IntegrationTestSupport;
 import com.e106.tingle.TestProtectedController;
 import com.e106.tingle.TestcontainersConfiguration;
+import com.e106.tingle.auth.SocialProvider;
+import com.e106.tingle.global.error.BusinessException;
+import com.e106.tingle.global.error.ErrorCode;
 
 @SpringBootTest
 @AutoConfigureMockMvc
 @ActiveProfiles({"test", "erd"})
 @Import({TestcontainersConfiguration.class, TestProtectedController.class})
+@ExtendWith(OutputCaptureExtension.class)
 class RequestTraceIntegrationTest extends IntegrationTestSupport {
 
 	@Autowired
@@ -45,6 +57,37 @@ class RequestTraceIntegrationTest extends IntegrationTestSupport {
 		String requestId = UUID.randomUUID().toString();
 		mockMvc.perform(get("/api/v1/test/protected").header("X-Request-Id", requestId))
 			.andExpect(status().isUnauthorized()).andExpect(header().string("X-Request-Id", requestId));
+	}
+
+	@Test
+	@DisplayName("401 로그에는 요청 번호·경로·오류 코드만 남고, 보낸 토큰은 남지 않는다")
+	void unauthorizedLogHasRequestIdButNoToken(CapturedOutput output) throws Exception {
+		String requestId = UUID.randomUUID().toString();
+		String token = "synthetic-access-token-" + UUID.randomUUID();
+		mockMvc.perform(get("/api/v1/test/protected").header("X-Request-Id", requestId)
+				.header("Authorization", "Bearer " + token))
+			.andExpect(status().isUnauthorized()).andExpect(header().string("X-Request-Id", requestId));
+
+		assertThat(output.getAll().lines()).anyMatch(line -> line.contains("[" + requestId + "] ")
+			&& line.contains("event=request_failed status=401 code=ACCESS_TOKEN_INVALID method=GET "
+				+ "path=/api/v1/test/protected memberId=-"));
+		assertThat(output.getAll()).doesNotContain(token);
+	}
+
+	@Test
+	@DisplayName("로그인 실패 로그에는 요청 번호와 오류 코드가 남고, 소셜 토큰은 남지 않는다")
+	void loginFailureLogHasRequestIdButNoSocialToken(CapturedOutput output) throws Exception {
+		String requestId = UUID.randomUUID().toString();
+		String socialToken = "synthetic-social-token-" + UUID.randomUUID();
+		given(socialVerifier.verify(eq(SocialProvider.KAKAO), any()))
+			.willThrow(new BusinessException(ErrorCode.INVALID_SOCIAL_TOKEN));
+		mockMvc.perform(post("/api/auth/kakao").header("X-Request-Id", requestId)
+				.contentType(MediaType.APPLICATION_JSON).content("{\"token\":\"" + socialToken + "\"}"))
+			.andExpect(status().isUnauthorized()).andExpect(header().string("X-Request-Id", requestId));
+
+		assertThat(output.getAll().lines()).anyMatch(line -> line.contains("[" + requestId + "] ")
+			&& line.contains("code=INVALID_SOCIAL_TOKEN method=POST path=/api/auth/kakao"));
+		assertThat(output.getAll()).doesNotContain(socialToken);
 	}
 
 	@Test

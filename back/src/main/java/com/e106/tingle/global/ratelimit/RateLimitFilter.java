@@ -19,6 +19,7 @@ import org.springframework.web.filter.OncePerRequestFilter;
 import org.springframework.web.util.UrlPathHelper;
 
 import com.e106.tingle.global.error.ErrorCode;
+import com.e106.tingle.global.error.ErrorLog;
 import com.e106.tingle.global.error.ErrorResponse;
 import com.e106.tingle.global.i18n.Messages;
 
@@ -89,6 +90,8 @@ public class RateLimitFilter extends OncePerRequestFilter {
 		if (key != null && overLimit(key, limit)) {
 			long now = clock.instant().toEpochMilli();
 			long retryAfterSeconds = (WINDOW_MILLIS - now % WINDOW_MILLIS + 999) / 1000;
+			// 다른 오류 응답과 같이 요청 번호로 찾을 수 있게 한 줄 남긴다(ErrorLog, 4xx 라 info)
+			ErrorLog.write(request, ErrorCode.RATE_LIMITED.getStatus(), ErrorCode.RATE_LIMITED, null);
 			response.setStatus(ErrorCode.RATE_LIMITED.getStatus().value());
 			response.setHeader(HttpHeaders.RETRY_AFTER, Long.toString(retryAfterSeconds));
 			response.setContentType(MediaType.APPLICATION_JSON_VALUE);

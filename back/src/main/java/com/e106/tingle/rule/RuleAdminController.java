@@ -19,6 +19,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.e106.tingle.global.error.ErrorLog;
 import com.e106.tingle.rule.RuleAdminService.InvalidDocumentException;
 import com.e106.tingle.rule.dto.ActivationInput;
 import com.e106.tingle.rule.dto.ApprovalResponse;
@@ -30,6 +31,7 @@ import com.e106.tingle.rule.dto.ReleaseResponse;
 import com.e106.tingle.rule.dto.RuleArtifactResponse;
 import com.e106.tingle.rule.dto.ValidationResponse;
 
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 
@@ -104,7 +106,9 @@ public class RuleAdminController {
 
 	// 형식 오류는 공통 오류 본문에 맞지 않는 칸 위치(fields)를 더해 돌려준다(통합 명세 Error.fields).
 	@ExceptionHandler(InvalidDocumentException.class)
-	public ResponseEntity<InvalidDocumentBody> invalidDocument(InvalidDocumentException exception) {
+	public ResponseEntity<InvalidDocumentBody> invalidDocument(InvalidDocumentException exception,
+		HttpServletRequest request) {
+		ErrorLog.write(request, exception.getErrorCode().getStatus(), exception.getErrorCode(), exception);
 		return ResponseEntity.status(exception.getErrorCode().getStatus()).contentType(MediaType.APPLICATION_JSON)
 			.body(new InvalidDocumentBody(exception.getErrorCode().name(), exception.getErrorCode().getMessage(),
 				exception.getFields()));
