@@ -130,11 +130,12 @@ fun OnboardingScreen(
         when {
             state.submitted -> Text(stringResource(Res.string.onboarding_saved))
             agreements -> {
-                // 전체동의 · 구분선 · 필수 항목(오른쪽 내용 보기) · 다음. 프로필 사진 · 자기소개 동의도 여기서 필수로 받고, 종교 동의만 프로필에서 따로 받는다
+                // 전체동의 · 구분선 · 필수 항목(오른쪽 내용 보기) · 다음. 프로필 사진 · 자기소개 동의도 여기서 필수로, 종교는 맨 아래 선택으로 받는다
                 if (state.allowUnpublishedAgreements && state.requiredAgreements.any { !it.canReview }) {
                     Text(developmentNotice ?: stringResource(Res.string.onboarding_development_agreements), style = MaterialTheme.typography.bodySmall)
                 }
-                val checkable = state.requiredAgreements.filter { state.canCheck(it) }
+                // 전체동의는 선택 항목(종교)까지 함께 체크한다
+                val checkable = (state.requiredAgreements + state.optionalAgreements).filter { state.canCheck(it) }
                 if (state.requiredAgreements.isNotEmpty()) {
                     AgreementRow(stringResource(Res.string.onboarding_agree_all), strong = true,
                         checked = checkable.isNotEmpty() && checkable.all { it.type in state.checked },
@@ -149,6 +150,11 @@ fun OnboardingScreen(
                     if (!item.canReview && !state.allowUnpublishedAgreements) {
                         Text(stringResource(Res.string.onboarding_terms_missing), style = MaterialTheme.typography.bodySmall, color = AppColors.TextSecondary)
                     }
+                }
+                state.optionalAgreements.forEach { item ->
+                    AgreementRow(stringResource(Res.string.onboarding_optional, item.signupTitle), item.type in state.checked,
+                        enabled = !state.busy && state.canCheck(item), onToggle = { onCheck(item.type, it) },
+                        onRead = item.reviewUrl?.let { { reading = item } })
                 }
                 if (!state.busy && state.requiredAgreements.isEmpty()) Text(stringResource(Res.string.onboarding_terms_empty))
                 AppButton(stringResource(Res.string.onboarding_agree), enabled = state.canSubmit, loading = state.busy,
