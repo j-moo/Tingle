@@ -12,13 +12,8 @@ data class HomeState(
     val savingMatching: Boolean = false,
     val matchingSaveFailed: Boolean = false,
     val keyring: HomeKeyringState = HomeKeyringState.Unknown,
-    val proposalCount: Int? = null,
-    val chatCount: Int? = null,
-    val batteryPercent: Int? = null,
-    val firmware: String? = null,
-    val lastSyncLabel: String? = null,
-    val pendingUploadCount: Int? = null,
-    val waitingPeerCount: Int? = null,
+    /** 서버에 등록된 내 키링(펌웨어). 이름 · 시리얼은 서버가 주지 않아 "내 키링 n"으로만 보인다 */
+    val keyrings: List<com.ssafy.e106.features.keyring.data.OwnedKeyring> = emptyList(),
 )
 
-enum class HomeAction { Refresh, Proposals, Chats, Profile, Keyring, Preferences }
+enum class HomeAction { Refresh, Proposals, Chats, Profile, Keyring }

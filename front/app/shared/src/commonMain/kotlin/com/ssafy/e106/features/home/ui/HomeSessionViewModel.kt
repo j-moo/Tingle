@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.ssafy.e106.core.auth.*
 import com.ssafy.e106.core.network.*
 import com.ssafy.e106.features.account.ui.*
+import com.ssafy.e106.features.keyring.data.KeyringSettingsChanges
 import com.ssafy.e106.features.keyring.data.OwnedKeyringRepository
 import com.ssafy.e106.features.onboarding.data.OnboardingRepository
 import com.ssafy.e106.features.profile.data.ProfileRepository
@@ -17,10 +18,14 @@ data class HomeSessionState(val session: Session.SignedIn? = null, val home: Hom
     val account: AccountMenuState = AccountMenuState(), val guide: HelpGuideState? = null,
     val error: AppError? = null, val busy: Boolean = false)
 
-/** 홈에서는 조회만 조합한다. 변경은 기존 설정/프로필 화면의 검증·버전 충돌 흐름으로 보낸다. */
+/** 홈은 조회를 조합하고, 새 매칭 켜기 · 끄기만 직접 저장한다(그 밖의 변경은 설정/프로필 화면의 검증·버전 충돌 흐름). */
 class HomeSessionViewModel(private val profiles: ProfileRepository, private val settings: MatchingSettingsRepository,
     private val agreements: OnboardingRepository, private val sessions: SessionStore, private val auth: AuthRepository,
-    private val ownedKeyrings: OwnedKeyringRepository) : ViewModel() {
+    private val ownedKeyrings: OwnedKeyringRepository, private val changes: KeyringSettingsChanges = KeyringSettingsChanges()) : ViewModel() {
+    // 마지막으로 받은 매칭 설정(값 + ETag). 켜기 · 끄기 저장은 이 버전에 맞춰서만 보낸다
+    private var matching: SettingsDocument? = null
+    // 진행 중인 켜기 · 끄기 저장. 화면 이동(leave)과 상관없이 끝까지 가고, 홈 재조회는 이게 끝난 뒤에 한다
+    private var saving: Job? = null
     private val mutable = MutableStateFlow(HomeSessionState())
     val state = mutable.asStateFlow()
     private var generation = 0L
@@ -43,8 +48,10 @@ class HomeSessionViewModel(private val profiles: ProfileRepository, private val 
     }
     fun home() = read { user, stamp ->
         mutable.update { it.copy(home = HomeState()) }
+        matching = null
+        saving?.join()   // 저장 중에 홈을 다시 열었으면 저장이 끝난 뒤의 값을 받는다
         when (val result = settings.get(user, SettingsKind.MATCHING)) {
-            is ApiResult.Ok -> if (valid(stamp)) mutable.update { it.copy(home = HomeState(HomeLoadState.Ready,
+            is ApiResult.Ok -> if (valid(stamp)) mutable.update { matching = result.value; it.copy(home = HomeState(HomeLoadState.Ready,
                 matchingEnabled = (result.value.values as? ConflictValues.Matching)?.enabled,
                 keyring = HomeKeyringState.Checking)) }
             is ApiResult.Fail -> {
@@ -54,12 +61,45 @@ class HomeSessionViewModel(private val profiles: ProfileRepository, private val 
         }
         if (!valid(stamp)) return@read
         // 서버 목록으로는 등록 여부만 확인한다. 연결·매칭 준비 상태는 기기에서 직접 확인한다.
-        val keyring = when (val result = ownedKeyrings.list()) {
-            is ApiResult.Ok -> if (result.value.isEmpty()) HomeKeyringState.Missing else HomeKeyringState.Registered
+        val list = ownedKeyrings.list()
+        val keyring = when (list) {
+            is ApiResult.Ok -> if (list.value.isEmpty()) HomeKeyringState.Missing else HomeKeyringState.Registered
             is ApiResult.Fail -> HomeKeyringState.Unknown
         }
         // 계정 전환이나 화면 이탈 뒤 도착한 응답은 현재 화면에 반영하지 않는다.
-        if (valid(stamp)) mutable.update { it.copy(home = it.home.copy(keyring = keyring)) }
+        if (valid(stamp)) mutable.update { it.copy(home = it.home.copy(keyring = keyring, keyrings = (list as? ApiResult.Ok)?.value.orEmpty())) }
+    }
+    /**
+     * 홈 큰 원: 새 매칭 켜기 · 끄기를 바로 저장한다. 사진 조건은 받은 값 그대로 두고 켜짐만 바꾼다.
+     * - 서버 저장이 확정되거나(응답) 응답을 잃은 뒤 다시 받아 보니 설정이 바뀌어 있으면, 화면을 떠났어도 같은 계정인 한 키링 동기화에 알린다.
+     *   안 알리면 이미 연결 · 동기화를 마친 키링이 예전 설정으로 계속 동작한다.
+     * - 다른 곳에서 먼저 바꿨으면(412 등) 덮어쓰지 않고 실패로 알린 뒤 서버의 최신 값을 보여 준다.
+     * - 화면 반영만 generation 으로 거른다. 저장 중에 홈을 다시 열면 [home] 이 저장이 끝날 때까지 기다렸다 조회한다(이전 값 고정 방지).
+     */
+    fun setMatching(enabled: Boolean) {
+        val user = mutable.value.session ?: return
+        val doc = matching ?: return
+        val values = doc.values as? ConflictValues.Matching ?: return
+        val etag = doc.etag?.takeIf(::validSettingsEtag) ?: return
+        if (mutable.value.busy || mutable.value.home.savingMatching || values.enabled == enabled) return
+        val stamp = generation
+        val target = values.copy(enabled = enabled)
+        fun sameAccount() = (sessions.state.value as? Session.SignedIn)?.userId == user.userId
+        mutable.update { it.copy(home = it.home.copy(savingMatching = true, matchingSaveFailed = false)) }
+        saving = viewModelScope.launch {
+            val result = settings.save(user.userId, SettingsKind.MATCHING, target, etag)
+            val saved = (result as? ApiResult.Ok)?.value?.takeIf { it.values == target && validSettingsEtag(it.etag) }
+            // 실패 · 응답 유실이면 서버의 지금 값을 다시 받는다. 우리 저장이 실제로 됐는지, 다른 곳에서 바뀌었는지 여기서만 알 수 있다
+            val latest = if (saved == null && sameAccount()) (settings.get(user.userId, SettingsKind.MATCHING) as? ApiResult.Ok)?.value else null
+            val now = saved ?: latest?.takeIf { it.values == target && validSettingsEtag(it.etag) }
+            val changed = now != null || (latest != null && (latest.values != doc.values || latest.settingsVersion != doc.settingsVersion))
+            if (changed && sameAccount()) changes.saved(user.userId)
+            if (!valid(stamp)) return@launch
+            val shown = now ?: latest
+            if (shown != null) matching = shown
+            mutable.update { it.copy(home = it.home.copy(savingMatching = false, matchingSaveFailed = now == null,
+                matchingEnabled = (shown?.values as? ConflictValues.Matching)?.enabled ?: it.home.matchingEnabled)) }
+        }
     }
     fun account() = read { user, stamp ->
         mutable.update { it.copy(account = AccountMenuState()) }

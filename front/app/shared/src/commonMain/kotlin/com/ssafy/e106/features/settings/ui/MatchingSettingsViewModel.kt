@@ -46,12 +46,14 @@ class MatchingSettingsViewModel(
     private val mutable = MutableStateFlow(ConnectedSettingsState())
     val state = mutable.asStateFlow()
     private var work: Job? = null
+    // 진행 중인 저장. 조회용 work 와 따로 두어 뒤로 가기 · 재진입 · 백그라운드로 취소되지 않는다(계정이 바뀔 때만 취소)
+    private var saving: Job? = null
     private var generation = 0
 
     init {
         viewModelScope.launch(start = CoroutineStart.UNDISPATCHED) {
             sessions.state.collect { owner ->
-                work?.cancel(); generation++
+                work?.cancel(); saving?.cancel(); generation++
                 mutable.value = ConnectedSettingsState(owner = owner as? Session.SignedIn)
             }
         }
@@ -77,7 +79,9 @@ class MatchingSettingsViewModel(
         load()
     }
     fun leave() {
-        work?.cancel(); generation++
+        // 조회만 멈춘다. 저장은 따로 끝까지 가고(취소하면 서버 반영 여부를 모르고 키링 알림이 빠진다), 늦게 온 응답은 generation 검사로 화면에 반영하지 않는다
+        work?.cancel()
+        generation++
         mutable.value = ConnectedSettingsState(owner = mutable.value.owner, kind = mutable.value.kind)
     }
     fun background() {
@@ -99,6 +103,7 @@ class MatchingSettingsViewModel(
     }
 
     fun load() = launch { id, stamp ->
+        saving?.join()   // 저장 중에 다시 열었으면 저장이 끝난 뒤의 값을 받는다(이전 값을 편집 시작점으로 삼지 않게)
         val before = mutable.value
         val keep = before.conflict?.intended ?: before.intended?.takeIf { it != before.document?.values && before.document != null }
         if (keep != null) mutable.update { it.copy(conflict = SettingsConflictState(id, keep, ConflictStage.Loading)) }
@@ -117,22 +122,33 @@ class MatchingSettingsViewModel(
 
     fun save() {
         val s = mutable.value
-        if (!s.canSave) return
+        if (!s.canSave || saving?.isActive == true) return   // 앞선 저장이 끝나기 전엔 다시 보내지 않는다
         saveValues(s.intended!!, s.document!!.etag!!)
     }
-    private fun saveValues(values: ConflictValues, etag: String) = launch { id, stamp ->
-        mutable.update { it.copy(saving = true, saved = false,
+    private fun saveValues(values: ConflictValues, etag: String) {
+        val s = mutable.value; val owner = s.owner ?: return
+        if (s.busy || saving?.isActive == true || owner != sessions.state.value || !access.allowed(owner)) return
+        val stamp = generation; val kind = s.kind
+        mutable.update { it.copy(busy = true, error = null, saving = true, saved = false,
             conflict = it.conflict?.copy(stage = ConflictStage.Saving)) }
-        when (val result = repository.save(id, mutable.value.kind, values, etag)) {
+        saving = viewModelScope.launch {
+            try { save(owner.userId, stamp, kind, values, etag) }
+            catch (e: CancellationException) { throw e }
+            catch (e: Exception) { if (valid(stamp)) failed(AppError.Unknown(e), true) }
+            finally { if (valid(stamp)) mutable.update { it.copy(busy = false, saving = false) } }
+        }
+    }
+    private suspend fun save(id: Long, stamp: Int, kind: SettingsKind, values: ConflictValues, etag: String) {
+        val result = repository.save(id, kind, values, etag)
+        // 성공 본문과 ETag가 유효할 때만 서버 저장 완료다. 기기 동기화 완료는 만들지 않는다.
+        val confirmed = (result as? ApiResult.Ok)?.value?.takeIf { it.values == values && validSettingsEtag(it.etag) }
+        // 희망 나이/매칭 옵션 모두 서버 저장이 확정된 뒤 알린다. 화면을 떠났어도(뒤로 가기) 같은 계정이면 알리고,
+        // 실패·로그아웃 · 다른 계정으로 바뀐 뒤의 응답은 전송하지 않는다. 화면 반영만 아래 valid(stamp) 로 거른다
+        if (confirmed != null && (sessions.state.value as? Session.SignedIn)?.userId == id) changes.saved(id)
+        when (result) {
             is ApiResult.Ok -> if (valid(stamp)) {
-                // 성공 본문과 ETag가 유효할 때만 서버 저장 완료다. 기기 동기화 완료는 만들지 않는다.
-                if (result.value.values != values || !validSettingsEtag(result.value.etag))
-                    failed(AppError.Unknown(IllegalStateException("settings response mismatch")), true)
-                else {
-                    applyDocument(result.value); mutable.update { it.copy(saved = true) }
-                    // 희망 나이/매칭 옵션 모두 서버 저장이 확정된 뒤 알린다. 실패·늦은 타 계정 응답은 전송하지 않는다.
-                    changes.saved(id)
-                }
+                if (confirmed == null) failed(AppError.Unknown(IllegalStateException("settings response mismatch")), true)
+                else { applyDocument(confirmed); mutable.update { it.copy(saved = true) } }
             }
             is ApiResult.Fail -> if (valid(stamp)) failed(result.error, true)
         }
