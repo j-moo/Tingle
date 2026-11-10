@@ -1074,7 +1074,17 @@
           "json_shape": null
         }
       ],
-      "indexes": []
+      "indexes": [
+        {
+          "columns": [
+            "owner_user_id"
+          ],
+          "primary_key": false,
+          "unique": false,
+          "name": "ix_keyring_owner",
+          "meaning": "회원별 등록 키링 조회(요청마다 도는 가입 단계 확인·설정 버전 조회)용"
+        }
+      ]
     },
     "chat_message": {
       "name": "chat_message",
