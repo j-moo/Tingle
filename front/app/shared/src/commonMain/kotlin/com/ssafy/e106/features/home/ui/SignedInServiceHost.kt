@@ -119,14 +119,13 @@ internal enum class ServicePage { Home, Proposals, Menu, Chats, Safety, Report, 
         }
         Box(Modifier.weight(1f)) {
             when (page) {
-                ServicePage.Home -> HomeScreen(state.home, { go(ServicePage.Settings) }, onAction = { action -> when (action) {
+                ServicePage.Home -> HomeScreen(state.home, model::setMatching, onAction = { action -> when (action) {
                     HomeAction.Refresh -> model.home()
                     HomeAction.Proposals -> proposals()
                     HomeAction.Profile -> go(ServicePage.Menu)
-                    HomeAction.Preferences -> go(ServicePage.Settings)
                     HomeAction.Chats -> chats()
                     HomeAction.Keyring -> { keyringFromMenu = false; go(ServicePage.Keyrings) }
-                } }, onOpenMatchingSettings = { go(ServicePage.Settings) })
+                } })
                 ServicePage.Proposals -> ConnectedProposalRoute(session, { go(ServicePage.Home) }, { go(ServicePage.Menu) },
                     { chats() }, { chats(it) }, initialProposalId = proposalId)
                 ServicePage.Chats -> ConnectedChatRoute(session, roomId, { go(ServicePage.Home) }, { proposals() }, { go(ServicePage.Menu) },
