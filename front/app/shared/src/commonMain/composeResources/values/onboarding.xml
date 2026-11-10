@@ -2,8 +2,8 @@
     <string name="onboarding_title">가입 준비</string>
     <string name="onboarding_agreements_title">이용약관 동의</string>
     <string name="onboarding_required">%1$s (필수)</string>
+    <string name="onboarding_optional">%1$s (선택)</string>
     <string name="onboarding_agree_all">이용약관 전체동의</string>
-    <string name="onboarding_optional">[선택] %1$s</string>
     <string name="onboarding_read_terms">내용 보기</string>
     <string name="agreement_document_close">닫기</string>
     <string name="agreement_sheet_close">닫고 로그아웃</string>

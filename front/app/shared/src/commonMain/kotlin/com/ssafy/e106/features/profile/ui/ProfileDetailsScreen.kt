@@ -180,18 +180,20 @@ internal fun ProfileIntroductionBlock(
     }
 }
 
-/** 종교 칸. 민감정보라 가입 중에도 여기서 따로 동의받는다 */
+/** 종교 칸. [onConsentChange] 가 null 이면 동의 칸을 그리지 않는다(가입 중: 약관 시트에서 따로 받음) */
 @Composable
 internal fun ProfileReligionBlock(
-    state: ProfileDetailsState, onReligionChange: (ProfileReligion) -> Unit, onConsentChange: (Boolean) -> Unit,
+    state: ProfileDetailsState, onReligionChange: (ProfileReligion) -> Unit, onConsentChange: ((Boolean) -> Unit)?,
     consentInfo: @Composable (OptionalConsentType) -> Unit = {}, canChangeConsent: (OptionalConsentType) -> Boolean = { true },
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(AppSpacing.Small)) {
         DetailTitle(Res.string.profile_religion_title)
         DetailHelp(Res.string.profile_religion_private_help)
-        AppCheckbox(state.religionConsent, onCheckedChange = { if (state.editable) onConsentChange(it) },
-            label = stringResource(Res.string.profile_religion_consent), enabled = state.editable && canChangeConsent(OptionalConsentType.PROFILE_RELIGION))
-        consentInfo(OptionalConsentType.PROFILE_RELIGION)
+        if (onConsentChange != null) {
+            AppCheckbox(state.religionConsent, onCheckedChange = { if (state.editable) onConsentChange(it) },
+                label = stringResource(Res.string.profile_religion_consent), enabled = state.editable && canChangeConsent(OptionalConsentType.PROFILE_RELIGION))
+            consentInfo(OptionalConsentType.PROFILE_RELIGION)
+        }
         Column(Modifier.selectableGroup(), verticalArrangement = Arrangement.spacedBy(AppSpacing.Small)) {
             ProfileReligion.entries.forEach { option ->
                 val selected = state.religion == option
