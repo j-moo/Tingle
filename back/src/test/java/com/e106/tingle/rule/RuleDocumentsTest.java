@@ -17,6 +17,44 @@ class RuleDocumentsTest {
 	private static final JsonMapper MAPPER = JsonMapper.builder().build();
 
 	@Test
+	@DisplayName("키링 매칭 규칙·제품 정책은 정해진 칸만 받고, 정의 버전과 문서 버전이 같아야 한다")
+	void keyringDocuments() {
+		String matching = "{\"ruleVersion\":\"r2-c-20261106\",\"firmwareRuleId\":268439809,"
+			+ "\"hardFilters\":[\"Q90\",\"age\"],\"traitBands\":{\"low\":[0,0,30,60],\"high\":[0,40,70,100],"
+			+ "\"tolerancePerStep\":10},\"priorityDomainWeight\":2,\"minDirectionScore\":50,\"minCoverage\":0.7,"
+			+ "\"combine\":\"harmonic\"}";
+		assertThat(RuleDocuments.problems(RuleKind.MATCHING, "r2-c-20261106", MAPPER.readTree(matching))).isEmpty();
+		assertThat(RuleDocuments.problems(RuleKind.MATCHING, "other", MAPPER.readTree(matching)))
+			.containsExactly("document.ruleVersion");
+		assertThat(RuleDocuments.problems(RuleKind.MATCHING, "r2-c-20261106", MAPPER.readTree(
+			matching.replace("0.7", "1.5").replace("\"harmonic\"", "\"mean\"").replace("}", ",\"extra\":1}"))))
+			.contains("document.minCoverage", "document.combine", "document.traitBands.extra");
+
+		String policy = "{\"policyVersion\":\"tingle-policy-v2\",\"firmwarePolicyId\":1380991793,"
+			+ "\"opportunitySeconds\":604800,\"counterpartWaitSeconds\":604800,\"proposalResponseSeconds\":86400,"
+			+ "\"leaseSeconds\":86400,\"presenceGapSeconds\":60,\"declineCooldownDays\":30}";
+		assertThat(RuleDocuments.problems(RuleKind.PRODUCT_POLICY, "tingle-policy-v2", MAPPER.readTree(policy)))
+			.isEmpty();
+		assertThat(RuleDocuments.problems(RuleKind.PRODUCT_POLICY, "tingle-policy-v2",
+			MAPPER.readTree(policy.replace("\"leaseSeconds\":86400", "\"leaseSeconds\":0")
+				.replace("1380991793", "4294967296"))))
+			.containsExactlyInAnyOrder("document.leaseSeconds", "document.firmwarePolicyId");
+		// 서버가 받는 펌웨어 ID와 다르거나, 구간이 뒤집히거나, 버전에 공백이 있거나, 기한이 1년을 넘으면 거절한다.
+		assertThat(RuleDocuments.problems(RuleKind.MATCHING, "r2 c", MAPPER.readTree(matching
+			.replace("r2-c-20261106", "r2 c").replace("268439809", "1").replace("[0,40,70,100]", "[0,40,20,100]"))))
+			.containsExactlyInAnyOrder("document.ruleVersion", "document.firmwareRuleId", "document.traitBands");
+		assertThat(RuleDocuments.problems(RuleKind.PRODUCT_POLICY, "tingle-policy-v2",
+			MAPPER.readTree(policy.replace("\"opportunitySeconds\":604800", "\"opportunitySeconds\":31536001"))))
+			.containsExactly("document.opportunitySeconds");
+		// long 범위를 넘는 값(2^64 + 실제 ID)은 잘려서 통과하거나 500이 나지 않고 형식 오류로 남는다.
+		assertThat(RuleDocuments.problems(RuleKind.MATCHING, "r2-c-20261106",
+			MAPPER.readTree(matching.replace("268439809", "18446744073709820225"))))
+			.containsExactly("document.firmwareRuleId");
+		assertThat(RuleDocuments.isRegistered(RuleKind.MATCHING, "matching-1")).isTrue();
+		assertThat(RuleDocuments.isRegistered(RuleKind.SCORING, "matching-1")).isFalse();
+	}
+
+	@Test
 	@DisplayName("최소 2개를 골라야 하는 문항은 앱이 보기 하나([값])를 보낼 수 없어 거절한다")
 	void minItemsTwoRejected() {
 		assertThat(RuleDocuments.fixtures(definition("\"a\",\"b\",\"c\"", 2, 3)).failures())

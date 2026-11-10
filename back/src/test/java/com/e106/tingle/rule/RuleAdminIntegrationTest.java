@@ -295,7 +295,49 @@ class RuleAdminIntegrationTest extends IntegrationTestSupport {
 		assertThat(validation.get("status").asString()).as(validation.toString()).isEqualTo("PASSED");
 	}
 
+	@Test
+	@DisplayName("키링 매칭 규칙·제품 정책만 묶은 조합은 검증·게시되고 만남 승격이 그 조합을 찾지만, 설문 회차 전환에는 못 쓴다")
+	void keyringRuleRelease() throws Exception {
+		JsonNode author = operator();
+		JsonNode reviewer = operator();
+		String matching = createKeyringArtifact(author, "MATCHING", "r2-c-20261106", "matching-1", Map.of(
+			"ruleVersion", "r2-c-20261106", "firmwareRuleId", 268439809L,
+			"hardFilters", List.of("Q90", "Q91", "Q93", "Q95", "age"),
+			"traitBands", Map.of("low", List.of(0, 0, 30, 60), "high", List.of(0, 40, 70, 100), "tolerancePerStep", 10),
+			"priorityDomainWeight", 2, "minDirectionScore", 50, "minCoverage", 0.7, "combine", "harmonic"));
+		String policy = createKeyringArtifact(author, "PRODUCT_POLICY", "tingle-policy-v2", "product-policy-1",
+			Map.of("policyVersion", "tingle-policy-v2", "firmwarePolicyId", 1380991793L,
+				"opportunitySeconds", 604800, "counterpartWaitSeconds", 604800, "proposalResponseSeconds", 86400,
+				"leaseSeconds", 86400, "presenceGapSeconds", 60, "declineCooldownDays", 30));
+		// 매칭 규칙 하나만으로는 조합을 만들 수 없다.
+		perform(post(RELEASES), author, toJson(Map.of("name", "조합", "artifactIds", List.of(matching),
+			"engineVersion", RuleDocuments.ENGINE_VERSION, "changeReason", "새 조합")))
+			.andExpect(status().isBadRequest());
+
+		String releaseId = createRelease(author, matching, policy).get("releaseId").asString();
+		JsonNode validation = validate(author, releaseId);
+		assertThat(validation.get("status").asString()).as(validation.toString()).isEqualTo("PASSED");
+		approve(reviewer, releaseId, validation).andExpect(status().isCreated());
+		publish(author, releaseId, validation).andExpect(status().isOk());
+		switchChannel(author, releaseId, null).andExpect(status().isBadRequest());
+
+		var resolver = new com.e106.tingle.encounter.peer.Ter2BusinessReleaseResolver(jdbc, jsonMapper);
+		org.springframework.test.util.ReflectionTestUtils.setField(resolver, "approved", true);
+		org.springframework.test.util.ReflectionTestUtils.setField(resolver, "configuredRelease", releaseId);
+		org.springframework.test.util.ReflectionTestUtils.setField(resolver, "configuredHash",
+			validation.get("candidateHash").asString());
+		assertThat(resolver.resolve("tingle-policy-v2", "r2-c-20261106", java.time.Instant.now()))
+			.hasToString(releaseId);
+	}
+
 	// ---------- 도우미 ----------
+
+	private String createKeyringArtifact(JsonNode op, String kind, String version, String schema,
+		Map<String, Object> document) throws Exception {
+		return json(perform(post(ARTIFACTS), op, toJson(Map.of("kind", kind, "version", version,
+			"schemaVersion", schema, "document", document, "changeReason", "키링 규칙"))).andExpect(status().isCreated()))
+			.get("artifactId").asString();
+	}
 
 	private JsonNode operator() throws Exception {
 		JsonNode tokens = login("kakao", newSocialId());

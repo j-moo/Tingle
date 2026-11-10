@@ -12,6 +12,7 @@ import java.util.UUID;
 
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.dao.DataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 
@@ -105,7 +106,8 @@ public class Ter2BusinessReleaseResolver {
 				throw unresolved();
 			}
 			return id;
-		} catch (BusinessException exception) {
+		} catch (BusinessException | DataAccessException exception) {
+			// 일시 DB 오류는 정책 없음(422 → 워커 BLOCKED)으로 바꾸지 않고 그대로 넘겨 재시도되게 한다.
 			throw exception;
 		} catch (RuntimeException exception) {
 			throw unresolved();

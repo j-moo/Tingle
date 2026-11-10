@@ -21,8 +21,22 @@ import com.e106.tingle.global.error.ErrorCode;
 /** Local cryptographic decoder. Historical ownership, approved release and bilateral intake are separate checks. */
 public final class Ter2ProofVerifier {
 
-	private static final long POLICY = 0x52504331L;
-	private static final long RULE = 0x10001101L;
+	/**
+	 * 서버가 받는 키링 제품 정책·매칭 규칙 ID(펌웨어 KR_MATCH_POLICY·KR_MATCH_RULE). 규칙 문서 검증도 이 값과 대조한다.
+	 *
+	 * <p>[매칭 규칙·제품 정책 버전을 올릴 때 함께 바꿀 곳] 한 곳만 바꾸면 업로드가 거절되거나 제안이 안 생긴다.
+	 * <ol>
+	 * <li>펌웨어: iot/include/matching.h 의 KR_MATCH_POLICY·KR_MATCH_RULE(숫자 ID),
+	 *     iot/src/product.c 의 "tingle-policy-v2"·"r2-c-20261106"(기록에 담는 이름)</li>
+	 * <li>앱: front/app/shared/.../keyring/data/KeyringEncounterProtocol.kt 의 버전 검사</li>
+	 * <li>서버: 여기 POLICY·RULE, Ter2ReceiptService.labels 의 버전 이름</li>
+	 * <li>서버 설정(/srv/tingle/.env): KEYRING_PEER_POLICY_VERSION·KEYRING_PEER_RULE_VERSION(숫자 ID, 10진수)</li>
+	 * <li>규칙 문서: 새 버전 이름으로 MATCHING·PRODUCT_POLICY 를 /api/admin/v1 에 등록 → 검증 → 승인(다른 운영자) → 게시,
+	 *     그 조합 ID·해시를 KEYRING_PEER_BUSINESS_RULE_RELEASE_ID·_RELEASE_HASH 에 넣기. 게시 시각 이전 만남은 제안이 안 된다.</li>
+	 * </ol>
+	 */
+	public static final long POLICY = 0x52504331L;
+	public static final long RULE = 0x10001101L;
 	private static final int EVIDENCE_BYTES = 795;
 	private static final int MAX_WIRE_BYTES = 52 + 230 + 400;
 	private static final byte[] SPKI = HexFormat.of().parseHex("302a300506032b6570032100");

@@ -9,6 +9,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.TreeMap;
 
+import com.e106.tingle.encounter.proof.Ter2ProofVerifier;
 import com.e106.tingle.global.error.BusinessException;
 import com.e106.tingle.survey.SurveyAnswer;
 import com.e106.tingle.survey.SurveyAnswerValidator;
@@ -26,6 +27,8 @@ import tools.jackson.databind.node.ObjectNode;
  * 정의는 데이터일 뿐 서버가 실행하지 않는다. 응답 규칙(responseSchema)도 SurveyAnswerValidator 가 아는 규칙만 허용한다
  * (임의 코드·SQL·파일·주소를 넣을 자리가 없다).
  * 지금 서버가 실제로 쓰는 형식은 설문(QUESTIONNAIRE)과 설문 이관 규칙(MIGRATION) 둘이다. 문항 수·척도·보기 수는 정의 파일에서 읽는다.
+ * 매칭 규칙(MATCHING)·제품 정책(PRODUCT_POLICY)은 키링 펌웨어(iot/src/matching.c)가 실제로 쓰는 값을 기록한다.
+ * 매칭 판정은 키링이 하고 서버는 이 값으로 다시 계산하지 않는다. 어느 규칙 버전이었는지 추적하는 근거다.
  */
 final class RuleDocuments {
 
@@ -40,7 +43,18 @@ final class RuleDocuments {
 
 	private static final Map<RuleKind, String> SCHEMAS = Map.of(
 		RuleKind.QUESTIONNAIRE, "questionnaire-1",
-		RuleKind.MIGRATION, "migration-1");
+		RuleKind.MIGRATION, "migration-1",
+		RuleKind.MATCHING, "matching-1",
+		RuleKind.PRODUCT_POLICY, "product-policy-1");
+	private static final Set<String> MATCHING_KEYS = Set.of("ruleVersion", "firmwareRuleId", "hardFilters",
+		"traitBands", "priorityDomainWeight", "minDirectionScore", "minCoverage", "combine");
+	private static final Set<String> TRAIT_BAND_KEYS = Set.of("low", "high", "tolerancePerStep");
+	private static final Set<String> POLICY_SECONDS = Set.of("opportunitySeconds", "counterpartWaitSeconds",
+		"proposalResponseSeconds", "leaseSeconds", "presenceGapSeconds");
+	private static final Set<String> POLICY_KEYS = Set.of("policyVersion", "firmwarePolicyId", "opportunitySeconds",
+		"counterpartWaitSeconds", "proposalResponseSeconds", "leaseSeconds", "presenceGapSeconds",
+		"declineCooldownDays");
+	private static final long MAX_POLICY_SECONDS = 365L * 86400;
 	private static final Set<String> QUESTIONNAIRE_KEYS = Set.of(
 		"surveyVersion", "wordingVersion", "questionCount", "questions", "sourceCommit");
 	private static final Set<String> QUESTION_KEYS = Set.of("questionId", "ordinal", "part", "text",
@@ -64,6 +78,10 @@ final class RuleDocuments {
 			questionnaire(version, document, problems);
 		} else if (kind == RuleKind.MIGRATION) {
 			migration(document, problems);
+		} else if (kind == RuleKind.MATCHING) {
+			matching(version, document, problems);
+		} else if (kind == RuleKind.PRODUCT_POLICY) {
+			productPolicy(version, document, problems);
 		} else {
 			problems.add("kind");
 		}
@@ -350,6 +368,81 @@ final class RuleDocuments {
 				&& ids.valueStream().allMatch(id -> text(id, MAX_QUESTION_ID) && seen.add(id.asString())),
 				"document." + key, problems);
 		}
+	}
+
+	// 키링 매칭 규칙: 정의 버전은 키링 기록의 matchingRuleVersion, firmwareRuleId 는 펌웨어 KR_MATCH_RULE 과 같은 값이다.
+	private static void matching(String version, JsonNode root, List<String> problems) {
+		if (!root.isObject()) {
+			problems.add("document");
+			return;
+		}
+		unknownKeys(root, MATCHING_KEYS, "document", problems);
+		JsonNode ruleVersion = root.get("ruleVersion");
+		require(keyringVersion(ruleVersion, MAX_SHORT) && ruleVersion.asString().equals(version),
+			"document.ruleVersion", problems);
+		require(equalsLong(root.get("firmwareRuleId"), Ter2ProofVerifier.RULE), "document.firmwareRuleId", problems);
+		JsonNode filters = root.get("hardFilters");
+		Set<String> seen = new HashSet<>();
+		require(filters != null && filters.isArray()
+			&& filters.valueStream().allMatch(filter -> text(filter, MAX_SHORT) && seen.add(filter.asString())),
+			"document.hardFilters", problems);
+		JsonNode bands = root.get("traitBands");
+		if (bands == null || !bands.isObject()) {
+			problems.add("document.traitBands");
+		} else {
+			unknownKeys(bands, TRAIT_BAND_KEYS, "document.traitBands", problems);
+			require(scores(bands.get("low")) && scores(bands.get("high"))
+				&& bands.get("low").size() == bands.get("high").size()
+				&& java.util.stream.IntStream.range(0, bands.get("low").size())
+					.allMatch(i -> bands.get("low").get(i).asInt() <= bands.get("high").get(i).asInt()),
+				"document.traitBands", problems);
+			require(between(bands.get("tolerancePerStep"), 0, 100, true), "document.traitBands.tolerancePerStep",
+				problems);
+		}
+		require(between(root.get("priorityDomainWeight"), 1, 100, true), "document.priorityDomainWeight", problems);
+		require(between(root.get("minDirectionScore"), 0, 100, false), "document.minDirectionScore", problems);
+		require(between(root.get("minCoverage"), 0, 1, false), "document.minCoverage", problems);
+		require(root.get("combine") != null && "harmonic".equals(root.get("combine").asString(null)),
+			"document.combine", problems);
+	}
+
+	// 제품 정책: 정의 버전은 키링 기록의 policyVersion, firmwarePolicyId 는 펌웨어 KR_MATCH_POLICY 와 같은 값이다.
+	private static void productPolicy(String version, JsonNode root, List<String> problems) {
+		if (!root.isObject()) {
+			problems.add("document");
+			return;
+		}
+		unknownKeys(root, POLICY_KEYS, "document", problems);
+		JsonNode policyVersion = root.get("policyVersion");
+		require(keyringVersion(policyVersion, MAX_SURVEY_VERSION) && policyVersion.asString().equals(version),
+			"document.policyVersion", problems);
+		require(equalsLong(root.get("firmwarePolicyId"), Ter2ProofVerifier.POLICY), "document.firmwarePolicyId",
+			problems);
+		// 키링 설정 형식(PeerSettingsCodec·Ter2ProofVerifier)이 받는 기한 상한과 같다.
+		for (String key : POLICY_SECONDS) {
+			require(between(root.get(key), 1, MAX_POLICY_SECONDS, true), "document." + key, problems);
+		}
+		require(between(root.get("declineCooldownDays"), 1, 3650, true), "document.declineCooldownDays", problems);
+	}
+
+	// long 범위를 넘는 정수는 잘리거나 예외(500)가 나지 않게 먼저 거른다.
+	private static boolean equalsLong(JsonNode node, long expected) {
+		return node != null && node.isIntegralNumber() && node.canConvertToLong() && node.longValue() == expected;
+	}
+
+	// 키링 기록·워커가 받는 버전 문자(영숫자·.·_·-)만 허용한다. 다른 문자는 게시돼도 쓸 수 없다.
+	private static boolean keyringVersion(JsonNode node, int maxLength) {
+		return text(node, maxLength) && node.asString().matches("[A-Za-z0-9._-]+");
+	}
+
+	private static boolean scores(JsonNode node) {
+		return node != null && node.isArray() && !node.isEmpty()
+			&& node.valueStream().allMatch(value -> between(value, 0, 100, true));
+	}
+
+	private static boolean between(JsonNode node, double low, double high, boolean integral) {
+		return node != null && (integral ? node.isIntegralNumber() : node.isNumber())
+			&& Double.isFinite(node.doubleValue()) && node.doubleValue() >= low && node.doubleValue() <= high;
 	}
 
 	private static void unknownKeys(JsonNode node, Set<String> allowed, String path, List<String> problems) {
