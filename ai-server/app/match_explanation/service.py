@@ -8,6 +8,7 @@ from .dto import (
     ResolvedContext,
 )
 from .fallback import rule_fallback
+from .grounding import validate_grounding
 from .prompts import PROMPT_VERSION
 from .validation import parse_output, select_evidence, validate_verdict
 
@@ -25,8 +26,7 @@ class MatchExplanationService:
 
     authorize는 서버의 현재 권한 재검사이며 시작/의미 검증 전/반환 직전에 수행한다.
     누락/실패 시 모델·fallback을 반환하지 않는다. 모델/검토자는 별도 호출로
-    동작하고 둘 다 성공해야 GENERATED다. 의미 검토도 모델에 의존하므로 최종
-    사람 평가와 정보 사용 정책 승인을 대체하지 않는다(-145).
+    동작하고, 공개 근거 문장 검증과 모델 검토를 모두 통과해야 GENERATED다.
     """
 
     def __init__(
@@ -79,6 +79,7 @@ class MatchExplanationService:
                     if not self._authorized(context):
                         return ExplanationResult(None, reason="AUTHORIZATION_FAILED")
                     output = parse_output(raw, request)
+                    validate_grounding(output, request)
                     verdict = await self.verifier.verify(request, output)
                     validate_verdict(verdict, output)
                 text, used_ids = output.text, output.evidenceIds

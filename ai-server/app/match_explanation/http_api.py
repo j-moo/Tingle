@@ -5,6 +5,7 @@
 """
 
 import asyncio
+import json
 import re
 from collections.abc import Callable
 from typing import Annotated
@@ -19,6 +20,7 @@ from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 from .dto import DisclosureScope, Explanation, ResolvedContext
 from .releases import ReleaseError, ReleaseRegistry
 from .service import MatchExplanationService
+from .validation import unique_json_object
 
 TOPICS = frozenset({"contact", "planning", "activity", "experience"})
 UUID_PATTERN = r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"
@@ -183,13 +185,26 @@ def _check_authorization_header(request: Request) -> None:
         raise BoundaryError(401, "ACCESS_TOKEN_INVALID")
 
 
+class ExplanationRequest(Request):
+    async def json(self) -> object:
+        # DTO 검증 전에 중복 키가 덮어써지면 서로 다른 버전이나 공개 범위를 구분할 수 없다.
+        raw = await self.body()
+        try:
+            return json.loads(raw, object_pairs_hook=unique_json_object)
+        except json.JSONDecodeError:
+            raise
+        except (ValueError, RecursionError):
+            # FastAPI의 기존 요청 검증 오류 경로로 보내고 원문은 담지 않는다.
+            raise json.JSONDecodeError("Invalid explanation JSON", "", 0) from None
+
+
 class ExplanationRoute(APIRoute):
     def get_route_handler(self):
         original = super().get_route_handler()
 
         async def handle(request: Request):
             try:
-                response = await original(request)
+                response = await original(ExplanationRequest(request.scope, request.receive))
             except RequestValidationError:
                 response = _error_response(400, "INVALID_REQUEST")
             response.headers["Cache-Control"] = "no-store"

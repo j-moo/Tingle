@@ -157,7 +157,7 @@ def select_evidence(
     return tuple(display), model, empty_reason
 
 
-def _unique_object(pairs: list[tuple[str, object]]) -> dict:
+def unique_json_object(pairs: list[tuple[str, object]]) -> dict[str, object]:
     result = {}
     for key, value in pairs:
         if key in result:
@@ -169,7 +169,7 @@ def _unique_object(pairs: list[tuple[str, object]]) -> dict:
 def parse_output(raw: str, request: ModelInput) -> ModelOutput:
     if not isinstance(raw, str) or len(raw) > 8_000:
         raise ValueError("INVALID_OUTPUT")
-    output = ModelOutput.model_validate(json.loads(raw, object_pairs_hook=_unique_object))
+    output = ModelOutput.model_validate(json.loads(raw, object_pairs_hook=unique_json_object))
     ids = output.evidenceIds
     evidence = {item.id: item for item in request.evidence}
     if len(ids) != len(set(ids)) or not set(ids) <= evidence.keys():
@@ -189,7 +189,7 @@ def parse_output(raw: str, request: ModelInput) -> ModelOutput:
 def validate_verdict(raw: str, output: ModelOutput) -> None:
     if not isinstance(raw, str) or len(raw) > 8_000:
         raise ValueError("INVALID_OUTPUT")
-    verdict = SemanticVerdict.model_validate(json.loads(raw, object_pairs_hook=_unique_object))
+    verdict = SemanticVerdict.model_validate(json.loads(raw, object_pairs_hook=unique_json_object))
     if not (verdict.supported and verdict.directionCorrect and verdict.privacySafe):
         raise ValueError("INVALID_OUTPUT")
     if len(verdict.evidenceIds) != len(set(verdict.evidenceIds)):
