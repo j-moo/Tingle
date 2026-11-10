@@ -1,13 +1,18 @@
 package com.ssafy.e106.features.survey.ui
 
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
+import androidx.compose.foundation.layout.*
+import androidx.compose.material3.*
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import org.jetbrains.compose.resources.StringResource
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.semantics.*
 import com.ssafy.e106.core.ui.components.*
 import com.ssafy.e106.core.ui.theme.AppColors
+import com.ssafy.e106.core.ui.theme.AppSpacing
 import com.ssafy.e106.resources.*
 import org.jetbrains.compose.resources.stringResource
 
@@ -51,24 +56,30 @@ fun SurveyFlowScreen(
         SurveyFlowStage.CalculationFailed -> Res.string.survey_retry_calculation
         SurveyFlowStage.Complete -> Res.string.survey_continue
     }
-    SurveyFrame(modifier, footer = {
-        AppButton(stringResource(button), modifier = Modifier.fillMaxWidth(),
-            loading = busy, loadingText = stringResource(button), onClick = onPrimary)
-    }) {
-        Text(stringResource(title), style = MaterialTheme.typography.headlineMedium,
-            modifier = Modifier.semantics { heading(); liveRegion = LiveRegionMode.Polite })
-        Text(stringResource(description), style = MaterialTheme.typography.bodyLarge, color = AppColors.TextSecondary)
-        if (state.stage == SurveyFlowStage.Resume) {
-            Text(stringResource(Res.string.survey_saved_count, state.savedCount, state.total),
-                style = MaterialTheme.typography.titleMedium, color = AppColors.OnSelection)
-            AppButton(stringResource(Res.string.survey_resume_no), variant = AppButtonVariant.Secondary,
-                onClick = onResumeLater, modifier = Modifier.fillMaxWidth())
+    SurveyFrame(modifier, onBack = onResumeLater, centered = true, footer = {
+        Column(verticalArrangement = Arrangement.spacedBy(AppSpacing.Small)) {
+            AppButton(stringResource(button), modifier = Modifier.fillMaxWidth(),
+                loading = busy, loadingText = stringResource(button), onClick = onPrimary)
+            // 시안 01: 나가기는 왼쪽 위 < 하나(나중에 할게요 버튼 없음). 질문지 버전 · 이전 회차는 아래 흰 버튼(회색 테두리)으로
+            onCheckVersion?.let { Minor(Res.string.survey_change_version, it) }
+            onPreviousSession?.let { Minor(Res.string.survey_change_previous, it) }
         }
-        onCheckVersion?.let { AppButton(stringResource(Res.string.survey_change_version), variant = AppButtonVariant.Secondary, onClick = it) }
-        onPreviousSession?.let { AppButton(stringResource(Res.string.survey_change_previous), variant = AppButtonVariant.Secondary, onClick = it) }
+    }) {
+        Text(stringResource(title), style = MaterialTheme.typography.headlineMedium, textAlign = TextAlign.Center,
+            modifier = Modifier.semantics { heading(); liveRegion = LiveRegionMode.Polite })
+        Text(stringResource(description), style = MaterialTheme.typography.bodyLarge, color = AppColors.TextSecondary, textAlign = TextAlign.Center)
+        if (state.stage == SurveyFlowStage.Resume && state.total > 0) {
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(stringResource(Res.string.survey_saved_count, state.savedCount, state.total) + " · " +
+                    stringResource(Res.string.survey_remaining, (state.total - state.savedCount).coerceAtLeast(0)),
+                    style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
+                LinearProgressIndicator({ state.savedCount.toFloat() / state.total }, Modifier.fillMaxWidth().height(6.dp),
+                    color = AppColors.SelectionBorder, trackColor = AppColors.BorderSubtle, drawStopIndicator = {})
+            }
+        }
         if (state.hasPreviousResult && state.stage != SurveyFlowStage.Complete) {
             Text(stringResource(Res.string.survey_previous_result), style = MaterialTheme.typography.bodyMedium,
-                color = AppColors.TextSecondary)
+                color = AppColors.TextSecondary, textAlign = TextAlign.Center)
         }
     }
 }
