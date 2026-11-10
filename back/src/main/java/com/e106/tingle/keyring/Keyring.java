@@ -14,6 +14,7 @@ import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.Index;
 import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
 import lombok.AccessLevel;
@@ -21,8 +22,10 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 
 @Entity
+// 가입 단계 확인(요청마다)·설정 버전 조회가 회원별 등록 키링을 찾는다.
 @Table(name = "keyring", uniqueConstraints = @UniqueConstraint(
-	name = "uq_keyring_serial_number", columnNames = "serial_number"))
+	name = "uq_keyring_serial_number", columnNames = "serial_number"),
+	indexes = @Index(name = "ix_keyring_owner", columnList = "owner_user_id"))
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class Keyring {
