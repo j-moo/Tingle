@@ -369,6 +369,7 @@ public class Ter2ReceiptService {
 			|| !Objects.equals(submission.eventId(), proof.eventId())
 			|| !Objects.equals(submission.occurredAt(), proof.occurredAt())
 			|| !Objects.equals(submission.settingsSnapshotId(), proof.own().syncRunId())
+			// 버전 이름을 바꿀 때 같이 바꿀 곳 목록: Ter2ProofVerifier.POLICY 주석
 			|| !"tingle-policy-v2".equals(submission.policyVersion())
 			|| !"r2-c-20261106".equals(submission.matchingRuleVersion())
 			|| !peer.equals(submission.peerCredential())) {

@@ -54,6 +54,7 @@ import com.e106.tingle.global.error.ErrorCode;
 import com.e106.tingle.keyring.DevSettingsIssuer;
 import com.e106.tingle.keyring.ownership.PeerOwnershipService;
 import com.e106.tingle.keyring.proof.ServerSettingsSigner;
+import com.e106.tingle.proposal.MatchProposal;
 import com.e106.tingle.settings.snapshot.SettingsSnapshotJson;
 
 import tools.jackson.databind.json.JsonMapper;
@@ -220,6 +221,83 @@ class Ter2BusinessPromotionTest {
 			Timestamp.from(metAt.plusSeconds(1)));
 		assertThat(worker.run(matching())).isEqualTo(EncounterEvaluationWorker.State.BLOCKED);
 		assertThat(evaluations).hasValue(1);
+	}
+
+	@Test
+	void keyringVerdictQualifiesBothConfirmedOriginalsAndRejectsRetiredOnes() {
+		promotion.promote(1, 100, submission(raw));
+		long matching = matching();
+		EncounterEvaluationWorker.Work work = work(matching);
+		KeyringVerdictEvaluator evaluator = verdict();
+		var result = evaluator.evaluate(work.input(), work.inputHash());
+		assertThat(result.outcome()).isEqualTo(EncounterEvaluationGateway.Outcome.QUALIFIED);
+		assertThat(result.evaluation()).containsEntry("source", "KEYRING_VERDICT")
+			.containsEntry("matchingVersion", "r2-c-20261106")
+			.containsEntry("productPolicyVersion", "tingle-policy-v2");
+		assertThat(result.historicalEvidence().manifest()).containsEntry("releaseId", releaseId.toString())
+			.containsEntry("surveyVersion", "NOT_USED");
+
+		// 저장된 판정·근거는 다시 만든 키링 판정과 같을 때만 믿는다.
+		jdbc.update("update matching set evaluation=cast(? as jsonb) where id=?",
+			mapper.writeValueAsString(result.evaluation()), matching);
+		MatchProposal stored = mock(MatchProposal.class);
+		when(stored.getId()).thenReturn(matching);
+		when(stored.getUserLow()).thenReturn(1L);
+		when(stored.getEvaluation()).thenReturn(new java.util.HashMap<>(result.evaluation()));
+		jdbc.update("update matching_participant set request_state=jsonb_set(request_state,'{"
+			+ EncounterEvaluationWorker.WORKFLOW_KEY + "}',to_jsonb(cast(? as text))) "
+			+ "where matching_id=? and user_id=1",
+			mapper.writeValueAsString(new EncounterEvaluationWorker.Work(work.generationId(), UUID.randomUUID(),
+				work.inputHash(), EncounterEvaluationWorker.State.SUCCEEDED, 1, null, null, work.input())), matching);
+		assertThat(evaluator.verify(stored, result.historicalEvidence())).isTrue();
+		// 설정이 다음 조합으로 바뀌어도 이미 고정한 당시 근거는 그대로 유효하다.
+		ReflectionTestUtils.setField(releases, "configuredRelease", UUID.randomUUID().toString());
+		assertThat(evaluator.verify(stored, result.historicalEvidence())).isTrue();
+		when(stored.getEvaluation()).thenReturn(java.util.Map.of("source", "KEYRING_VERDICT", "eligible", false));
+		assertThat(evaluator.verify(stored, result.historicalEvidence())).isFalse();
+
+		// 한쪽 원본이 철회되면 키링 판정도 더는 성립하지 않는다.
+		jdbc.update("update keyring_peer_encounter set retired=true where owner_user_id=2");
+		assertThatThrownBy(() -> evaluator.evaluate(work.input(), work.inputHash()))
+			.isInstanceOf(BusinessException.class).extracting("errorCode").isEqualTo(ErrorCode.POLICY_UNRESOLVED);
+	}
+
+	@Test
+	void keyringVerdictRequiresTheConfiguredApprovedRelease() {
+		promotion.promote(1, 100, submission(raw));
+		EncounterEvaluationWorker.Work work = work(matching());
+		// 접수(승격) 이후 설정이 다른 조합으로 바뀌어도 처리 중인 만남은 고정된 조합으로 평가된다.
+		ReflectionTestUtils.setField(releases, "configuredHash", "0".repeat(64));
+		assertThatThrownBy(() -> verdict().requireApprovedRelease(work.input(), null, null))
+			.isInstanceOf(BusinessException.class).extracting("errorCode").isEqualTo(ErrorCode.POLICY_UNRESOLVED);
+		assertThat(verdict().evaluate(work.input(), work.inputHash()).outcome())
+			.isEqualTo(EncounterEvaluationGateway.Outcome.QUALIFIED);
+		// 고정된 조합이 게시 상태가 아니면 평가하지 않는다.
+		jdbc.update("update rule_release set published_at=null where id=?", releaseId);
+		assertThatThrownBy(() -> verdict().evaluate(work.input(), work.inputHash()))
+			.isInstanceOf(BusinessException.class).extracting("errorCode").isEqualTo(ErrorCode.POLICY_UNRESOLVED);
+		assertThatThrownBy(() -> verdict().evaluate(work.input(), "f".repeat(64)))
+			.isInstanceOf(BusinessException.class).extracting("errorCode").isEqualTo(ErrorCode.IDEMPOTENCY_CONFLICT);
+	}
+
+	@Test
+	void transientDatabaseErrorIsRetriedNotTreatedAsMissingPolicy() {
+		JdbcTemplate broken = mock(JdbcTemplate.class);
+		when(broken.query(org.mockito.ArgumentMatchers.anyString(),
+			org.mockito.ArgumentMatchers.<org.springframework.jdbc.core.RowMapper<Object>>any(),
+			org.mockito.ArgumentMatchers.<Object>any()))
+			.thenThrow(new org.springframework.dao.QueryTimeoutException("timeout"));
+		var resolver = new Ter2BusinessReleaseResolver(broken, mapper);
+		ReflectionTestUtils.setField(resolver, "approved", true);
+		ReflectionTestUtils.setField(resolver, "configuredRelease", releaseId.toString());
+		ReflectionTestUtils.setField(resolver, "configuredHash", "a".repeat(64));
+		assertThatThrownBy(() -> resolver.resolve("tingle-policy-v2", "r2-c-20261106", metAt))
+			.isInstanceOf(org.springframework.dao.QueryTimeoutException.class);
+	}
+
+	private KeyringVerdictEvaluator verdict() {
+		return new KeyringVerdictEvaluator(jdbc, mapper, new EncounterReceipts(jdbc, mapper),
+			new StoredEncounterInputLookup(jdbc, snapshots), releases);
 	}
 
 	@Test

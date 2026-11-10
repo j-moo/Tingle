@@ -58,6 +58,7 @@ public class RuleAdminService {
 	// ponytail: 전체 게시를 줄 세운다. 게시는 드문 운영 작업이라 충분하다.
 	private static final long PUBLISH_LOCK = 0x52554c45L;
 	private static final int MAX_DETAIL_ITEMS = 20;
+	private static final Set<RuleKind> KEYRING_RELEASE_KINDS = Set.of(RuleKind.MATCHING, RuleKind.PRODUCT_POLICY);
 
 	private final RuleArtifactRepository artifacts;
 	private final RuleReleaseRepository releases;
@@ -138,7 +139,9 @@ public class RuleAdminService {
 			throw notFound();
 		}
 		Set<RuleKind> kinds = members.stream().map(RuleArtifact::getKind).collect(Collectors.toSet());
-		if (kinds.size() != members.size() || !kinds.contains(RuleKind.QUESTIONNAIRE)) {
+		// 설문 조합이거나, 설문 없이 키링 매칭 규칙·제품 정책만 묶은 조합(만남 기록을 제안으로 잇는 근거)만 만든다.
+		if (kinds.size() != members.size()
+			|| !(kinds.contains(RuleKind.QUESTIONNAIRE) || kinds.equals(KEYRING_RELEASE_KINDS))) {
 			throw new BusinessException(ErrorCode.INVALID_REQUEST);
 		}
 		RuleRelease release = releases.save(new RuleRelease(input.name(), input.engineVersion(),
@@ -246,8 +249,9 @@ public class RuleAdminService {
 			if (!release.isPublished()) {
 				throw new BusinessException(ErrorCode.RELEASE_NOT_PUBLISHED);
 			}
+			// 설문이 없는 키링 규칙 조합은 새 설문 회차의 기본 조합이 될 수 없다.
 			surveyVersion = members(release).stream().filter(a -> a.getKind() == RuleKind.QUESTIONNAIRE)
-				.findFirst().orElseThrow().getVersion();
+				.findFirst().orElseThrow(() -> new BusinessException(ErrorCode.INVALID_REQUEST)).getVersion();
 		}
 		Instant now = now();
 		channels.ensure(RuleChannel.CURRENT, now);
@@ -284,7 +288,12 @@ public class RuleAdminService {
 			// 형식이 맞지 않으면 아래 검사는 정의를 읽을 수 없으므로 하지 않는다(그래도 실패로 남는다).
 			return checks;
 		}
-		RuleArtifact questionnaire = ofKind(members, RuleKind.QUESTIONNAIRE).orElseThrow();
+		Optional<RuleArtifact> found = ofKind(members, RuleKind.QUESTIONNAIRE);
+		if (found.isEmpty()) {
+			// 키링 규칙 조합: 형식 검사만 한다(서버가 실행하지 않는 기록용 값).
+			return checks;
+		}
+		RuleArtifact questionnaire = found.get();
 		SurveyDefinition survey = SurveyDefinition.of(parse(questionnaire), questionnaire.getContentHash());
 		String version = survey.surveyVersion();
 

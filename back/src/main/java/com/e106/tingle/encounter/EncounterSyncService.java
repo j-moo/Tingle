@@ -79,13 +79,18 @@ public class EncounterSyncService {
 							promotion.promote(userId, request.deviceId(), submission);
 							state = "BUSINESS_ENQUEUED";
 						} catch (BusinessException exception) {
-							// The deletion receipt is already committed; business readiness cannot undo it.
+							// 일시 오류(5xx)·DB·트랜잭션 오류는 접수증으로 바꾸지 않는다. 접수증을 받으면 앱이 원본을 지워 승격을 다시 할 수 없다.
+							// 요청 전체가 실패해야 앱이 원본을 지우지 않고 다시 보내고, 같은 제출은 기존 접수증을 복구한 뒤 승격을 다시 시도한다.
+							if (exception.getErrorCode().getStatus().is5xxServerError()) {
+								throw exception;
+							}
+							// 정책 미준비 등: 원본 접수증은 이미 커밋됐고 업무 준비 여부가 그것을 되돌리지 않는다.
 							state = "BUSINESS_POLICY_PENDING";
 							error = exception.getErrorCode().name();
 						}
 					}
 					return new Receipt(accepted.submissionId(), accepted.eventId(), "STORED", accepted.receiptId(),
-						true, state, accepted.expiresAt(), "SERVICE_UNAVAILABLE".equals(error), error,
+						true, state, accepted.expiresAt(), false, error,
 						mapper.convertValue(accepted.proof(), ServerReceipt.class));
 				} catch (BusinessException exception) {
 					if (exception.getErrorCode() != ErrorCode.POLICY_UNRESOLVED) {
