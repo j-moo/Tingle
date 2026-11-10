@@ -36,6 +36,7 @@ import org.springframework.security.oauth2.server.resource.web.DefaultBearerToke
 import org.springframework.security.web.SecurityFilterChain;
 
 import com.e106.tingle.global.error.ErrorCode;
+import com.e106.tingle.global.error.ErrorLog;
 import com.e106.tingle.global.error.ErrorResponse;
 import com.nimbusds.jose.jwk.source.ImmutableSecret;
 
@@ -72,10 +73,10 @@ public class SecurityConfig {
 				.jwt(Customizer.withDefaults())
 				.bearerTokenResolver(bearerTokenResolver())
 				.authenticationEntryPoint((request, response, exception) ->
-					writeError(response, jsonMapper, errorOf(exception))))
+					writeError(request, response, jsonMapper, errorOf(exception))))
 			.exceptionHandling(exceptions -> exceptions
 				.authenticationEntryPoint((request, response, exception) ->
-					writeError(response, jsonMapper, ErrorCode.AUTH_REQUIRED)));
+					writeError(request, response, jsonMapper, ErrorCode.AUTH_REQUIRED)));
 		return http.build();
 	}
 
@@ -189,8 +190,10 @@ public class SecurityConfig {
 		};
 	}
 
-	private static void writeError(HttpServletResponse response, JsonMapper jsonMapper, ErrorCode errorCode)
-		throws java.io.IOException {
+	// 401 은 컨트롤러까지 오지 않으므로 여기서 로그를 남긴다. 토큰 값은 남기지 않는다.
+	private static void writeError(HttpServletRequest request, HttpServletResponse response, JsonMapper jsonMapper,
+		ErrorCode errorCode) throws java.io.IOException {
+		ErrorLog.write(request, errorCode.getStatus(), errorCode, null);
 		response.setStatus(errorCode.getStatus().value());
 		response.setContentType(MediaType.APPLICATION_JSON_VALUE);
 		response.setCharacterEncoding(StandardCharsets.UTF_8.name());

@@ -4,6 +4,7 @@ import java.util.UUID;
 
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Profile;
+import org.springframework.dao.DataAccessException;
 import org.springframework.dao.DataAccessResourceFailureException;
 import org.springframework.dao.TransientDataAccessException;
 import org.springframework.http.CacheControl;
@@ -23,6 +24,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import com.e106.tingle.global.error.BusinessException;
 import com.e106.tingle.global.error.ErrorCode;
+import com.e106.tingle.global.error.ErrorLog;
 import com.e106.tingle.global.error.ErrorResponse;
 import com.e106.tingle.global.i18n.Messages;
 import com.e106.tingle.phonemode.PhoneEncounterService.Encounter;
@@ -35,6 +37,7 @@ import com.e106.tingle.phonemode.dto.PhoneModeRequests.Submit;
 import com.e106.tingle.user.OnboardingStatus;
 import com.e106.tingle.user.RequiresOnboarding;
 
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 
@@ -86,8 +89,9 @@ public class PhoneModeController {
 	}
 
 	@ExceptionHandler({TransientDataAccessException.class, DataAccessResourceFailureException.class})
-	public ResponseEntity<ErrorResponse> temporaryFailure() {
+	public ResponseEntity<ErrorResponse> temporaryFailure(DataAccessException exception, HttpServletRequest request) {
 		ErrorCode error = ErrorCode.SERVICE_UNAVAILABLE;
+		ErrorLog.write(request, HttpStatus.SERVICE_UNAVAILABLE, error, exception);
 		return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
 			.body(new ErrorResponse(error.name(), Messages.get("error." + error.name())));
 	}
