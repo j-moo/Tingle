@@ -9,6 +9,11 @@ from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
+from starlette.background import BackgroundTask
+from starlette.requests import ClientDisconnect
+from starlette.responses import JSONResponse, Response
+
+from app.risk_detection.execution import CapacityExceeded, ClientDisconnected, Deadline, ExecutionBoundary
 
 
 _RAW_URL = re.compile(r"https?://|www\.", re.IGNORECASE | re.ASCII)
@@ -108,6 +113,12 @@ class Verdict(StrictModel):
         return value
 
 
+class AsyncRiskEngine(Protocol):
+    async def count_tokens(self, messages: list[dict], manifest: dict, *, deadline: Deadline) -> int: ...
+
+    async def analyze(self, messages: list[dict], manifest: dict, *, deadline: Deadline) -> dict: ...
+
+
 class RiskEngine(Protocol):
     def count_tokens(self, messages: list[dict], manifest: dict) -> int: ...
 
@@ -174,72 +185,102 @@ def _error(status: int, code: str):
     return HTTPException(status, detail={"code": code, "message": "Risk analysis is unavailable."})
 
 
+class _DisconnectedResponse(Response):
+    async def __call__(self, scope, receive, send):
+        # The ASGI server already reported http.disconnect; nothing can be sent.
+        return
+
+
 def create_router(authenticate: Callable, catalog: ReleaseCatalog | None = None,
-                  engine: RiskEngine | None = None) -> APIRouter:
+                  engine: RiskEngine | AsyncRiskEngine | None = None) -> APIRouter:
     router = APIRouter()
     releases = catalog or ReleaseCatalog()
+    execution = ExecutionBoundary(getattr(engine, "execution_limits", None))
+    start_shadow = getattr(engine, "start_shadow", None)
 
     @router.post("/internal/ai/risk-detections", tags=["internal"])
     async def analyze(request: Request):
+        deadline = Deadline.start(execution.limits.request_seconds)
         authenticate(request)
         # No runtime switch can turn on a fake model or an external provider.
         if engine is None:
             raise _error(422, "POLICY_UNRESOLVED")
-        raw = bytearray()
-        async for chunk in request.stream():
-            raw.extend(chunk)
-            if len(raw) > 65536:
-                raise _error(400, "INVALID_REQUEST")
+        async def read_body():
+            raw = bytearray()
+            async for chunk in request.stream():
+                raw.extend(chunk)
+                if len(raw) > 65536:
+                    raise _error(400, "INVALID_REQUEST")
+            return bytes(raw)
+
+        try:
+            raw = await execution.run(read_body(), deadline=deadline)
+        except ClientDisconnect:
+            return _DisconnectedResponse()
+        except (TimeoutError, CapacityExceeded):
+            raise _error(503, "SERVICE_UNAVAILABLE") from None
         try:
             payload = Payload.model_validate(_json(bytes(raw)))
         except (ValueError, TypeError, ValidationError, RecursionError):
             raise _error(400, "INVALID_REQUEST") from None
-        try:
-            if not releases.supports(payload.manifest):
-                raise _error(422, "POLICY_UNRESOLVED")
-            messages = [message.model_dump() for message in payload.contextBundle]
-            manifest = payload.manifest.model_dump()
-            previous, fresh_seen = 0, False
-            for message in messages:
-                if message["sequence"] <= previous or (fresh_seen and not message["fresh"]):
-                    raise ValueError("Invalid order")
-                previous = message["sequence"]
-                fresh_seen |= message["fresh"]
-                if not message["text"].strip():
-                    raise ValueError("Empty message")
-            if not fresh_seen or sum(len(message["text"]) for message in messages) > 4000:
-                raise ValueError("Invalid batch")
+        async def process():
             try:
-                tokens = engine.count_tokens(messages, manifest)
+                if not await execution.executor.run(releases.supports, payload.manifest, deadline=deadline):
+                    raise _error(422, "POLICY_UNRESOLVED")
+                messages = [message.model_dump() for message in payload.contextBundle]
+                manifest = payload.manifest.model_dump()
+                previous, fresh_seen = 0, False
+                for message in messages:
+                    if message["sequence"] <= previous or (fresh_seen and not message["fresh"]):
+                        raise ValueError("Invalid order")
+                    previous = message["sequence"]
+                    fresh_seen |= message["fresh"]
+                    if not message["text"].strip():
+                        raise ValueError("Empty message")
+                if not fresh_seen or sum(len(message["text"]) for message in messages) > 4000:
+                    raise ValueError("Invalid batch")
+                try:
+                    tokens = await execution.invoke(engine.count_tokens, messages, manifest, deadline=deadline)
+                except Exception:
+                    raise _error(503, "SERVICE_UNAVAILABLE") from None
+                if type(tokens) is not int or not 0 <= tokens <= 3000:
+                    raise ValueError("Invalid token count")
+            except (ValueError, TypeError, ValidationError):
+                raise _error(400, "INVALID_REQUEST") from None
+            try:
+                result = Verdict.model_validate(await execution.invoke(engine.analyze, messages, manifest, deadline=deadline))
+                fresh_sequences = {m["sequence"] for m in messages if m["fresh"]}
+                if (result.kind == "RISK") != bool(result.findings):
+                    raise ValueError("Invalid verdict")
+                unique = set()
+                for finding in result.findings:
+                    key = tuple(finding.model_dump().values())
+                    valid = ((finding.category in {"HARASSMENT", "THREAT"}
+                              and finding.noticeType == "HARASSMENT" and finding.audience == "BOTH")
+                             or (finding.category == "FRAUD" and finding.noticeType == "MONEY_REQUEST"
+                                 and finding.audience == "RECIPIENT")
+                             or (finding.category == "OTHER" and finding.noticeType in {"PERSONAL_INFO", "OFF_PLATFORM"}
+                                 and finding.audience == "RECIPIENT"))
+                    if not valid or finding.sequence not in fresh_sequences or key in unique:
+                        raise ValueError("Invalid finding")
+                    unique.add(key)
             except Exception:
                 raise _error(503, "SERVICE_UNAVAILABLE") from None
-            if type(tokens) is not int or not 0 <= tokens <= 3000:
-                raise ValueError("Invalid token count")
-        except (ValueError, TypeError, ValidationError):
-            raise _error(400, "INVALID_REQUEST") from None
+            # Keep this outside the broad engine-error handler so changed provenance
+            # is a 422 policy rejection, not a successful or generic failed verdict.
+            if not await execution.executor.run(releases.supports, payload.manifest, deadline=deadline):
+                raise _error(422, "POLICY_UNRESOLVED")
+            body = {"attemptId": payload.attemptId, "manifest": manifest, "verdict": result.model_dump()}
+            if start_shadow is None:
+                return body
+            return JSONResponse(body, background=BackgroundTask(
+                start_shadow, messages, manifest, result.kind, deadline=deadline))
+
         try:
-            result = Verdict.model_validate(engine.analyze(messages, manifest))
-            fresh_sequences = {m["sequence"] for m in messages if m["fresh"]}
-            if (result.kind == "RISK") != bool(result.findings):
-                raise ValueError("Invalid verdict")
-            unique = set()
-            for finding in result.findings:
-                key = tuple(finding.model_dump().values())
-                valid = ((finding.category in {"HARASSMENT", "THREAT"}
-                          and finding.noticeType == "HARASSMENT" and finding.audience == "BOTH")
-                         or (finding.category == "FRAUD" and finding.noticeType == "MONEY_REQUEST"
-                             and finding.audience == "RECIPIENT")
-                         or (finding.category == "OTHER" and finding.noticeType in {"PERSONAL_INFO", "OFF_PLATFORM"}
-                             and finding.audience == "RECIPIENT"))
-                if not valid or finding.sequence not in fresh_sequences or key in unique:
-                    raise ValueError("Invalid finding")
-                unique.add(key)
-        except Exception:
+            return await execution.until_disconnect(process(), request, deadline=deadline)
+        except ClientDisconnected:
+            return _DisconnectedResponse()
+        except (TimeoutError, CapacityExceeded):
             raise _error(503, "SERVICE_UNAVAILABLE") from None
-        # Keep this outside the broad engine-error handler so changed provenance
-        # is a 422 policy rejection, not a successful or generic failed verdict.
-        if not releases.supports(payload.manifest):
-            raise _error(422, "POLICY_UNRESOLVED")
-        return {"attemptId": payload.attemptId, "manifest": manifest, "verdict": result.model_dump()}
 
     return router
