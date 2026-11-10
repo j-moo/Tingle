@@ -3,6 +3,7 @@ package com.e106.tingle.user;
 import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.List;
+import java.util.UUID;
 
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
@@ -145,6 +146,9 @@ public class MemberWithdrawalCleanup {
 		if (exists("keyring_reset_run")) {
 			jdbc.update("delete from keyring_reset_run where owner_user_id=?", userId);
 		}
+		if (exists("phone_mode_device")) {
+			deletePhoneModeData(userId);
+		}
 		jdbc.update("delete from personality where survey_id in (select id from survey where user_id=?)", userId);
 		jdbc.update("delete from survey_answer where survey_id in (select id from survey where user_id=?)", userId);
 		for (String table : List.of("survey", "profile", "matching_preference", "settings_snapshot",
@@ -154,6 +158,24 @@ public class MemberWithdrawalCleanup {
 		jdbc.update("update push_installation set user_id=null,login_family_id=null,binding_id=null,linked_at=null,"
 			+ "updated_at=? where user_id=?", Timestamp.from(now), userId);
 		jdbc.update("delete from users where id=?", userId);
+	}
+
+	// 개발 전용 휴대폰 만남(phone-mode-262.sql). 회원 FK가 없어 직접 지운다.
+	// 탈퇴자가 제출했거나 상대로 지목된 만남은 상대의 제출·증표까지 통째로 지운다.
+	private void deletePhoneModeData(long userId) {
+		List<UUID> encounters = jdbc.queryForList("select distinct encounter_id from phone_mode_submission "
+			+ "where user_id=? or peer_user_id=?", UUID.class, userId, userId);
+		for (UUID encounter : encounters) {
+			jdbc.update("delete from phone_mode_evaluation_input where encounter_id=?", encounter);
+			jdbc.update("delete from phone_mode_evaluation where encounter_id=?", encounter);
+			jdbc.update("delete from phone_mode_submission where encounter_id=?", encounter);
+			jdbc.update("delete from phone_mode_token where encounter_id=?", encounter);
+			jdbc.update("delete from phone_mode_encounter where id=?", encounter);
+		}
+		jdbc.update("delete from phone_mode_token where device_id in "
+			+ "(select id from phone_mode_device where user_id=?)", userId);
+		jdbc.update("delete from phone_mode_device where user_id=?", userId);
+		jdbc.update("delete from phone_mode_request where user_id=?", userId);
 	}
 
 	private boolean exists(String table) {
