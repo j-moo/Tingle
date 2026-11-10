@@ -1,27 +1,43 @@
 package com.ssafy.e106.features.preferences.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.semantics.*
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.ssafy.e106.core.ui.components.*
 import com.ssafy.e106.core.ui.theme.*
 import com.ssafy.e106.resources.*
+import org.jetbrains.compose.resources.painterResource
 import org.jetbrains.compose.resources.stringResource
 import kotlin.math.roundToInt
 import com.ssafy.e106.features.settings.ui.*
 
-/** 상태를 표시하고 편집 이벤트만 전달한다. 저장·API·화면 이동은 호출부의 책임이다. */
+/**
+ * 희망 나이(시안 03 위쪽 탭). 맨 위 "상관없어요 | 범위 정하기" 탭, 그 아래 범위(큰 숫자 · 막대 · 최소/최대 칸)는 늘 보이고
+ * 범위가 아니면 회색으로 잠근다. 최대를 막대 끝(60세+)까지 밀거나 최대 칸을 비우면 제한 없음. 범위 오류면 큰 숫자 대신 두 칸을 빨갛게.
+ * 상태를 표시하고 편집 이벤트만 전달한다. 저장·API·화면 이동은 호출부의 책임이다.
+ */
 @Composable
 fun AgePreferenceScreen(
     state: AgePreferenceState,
@@ -35,108 +51,114 @@ fun AgePreferenceScreen(
 ) {
     state.conflict?.let { SettingsConflictScreen(it, onConflictAction); return }
     val editable = !state.saving
-    // 가로+키보드에서는 저장 버튼도 스크롤에 포함한다. 서버 저장 여부·버튼 활성 조건은 바꾸지 않는다.
-    val submit: @Composable () -> Unit = {
-        Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-            AppButton(submitLabel ?: stringResource(if (state.saveFailed) Res.string.age_preference_retry else Res.string.age_preference_continue),
-                modifier = Modifier.widthIn(max = 640.dp).fillMaxWidth()
-                    .padding(horizontal = screenGutter(), vertical = AppSpacing.Large),
-                enabled = state.canContinue && submitEnabled, loading = state.saving,
-                loadingText = stringResource(Res.string.age_preference_saving), onClick = onContinue)
-        }
-    }
     Surface(modifier.fillMaxSize(), color = AppColors.Background) {
-        BoxWithConstraints(Modifier.fillMaxSize().safeDrawingPadding().imePadding()) {
-            val compactHeight = maxHeight < 320.dp
-            Column(Modifier.fillMaxSize()) {
-                if (!compactHeight) AppTopBar(stringResource(Res.string.age_preference_title), onBack = onBack)
-                Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.TopCenter) {
-                    Column(Modifier.widthIn(max = 640.dp).fillMaxWidth()
-                        .verticalScroll(rememberScrollState()).padding(screenPaddingValues()),
-                        verticalArrangement = Arrangement.spacedBy(AppSpacing.Large)) {
-                        // 같은 입력 컴포지션을 유지한다. 키보드가 나타나도 입력값·포커스를 새로 만들지 않는다.
-                        if (compactHeight) AppTopBar(stringResource(Res.string.age_preference_title), onBack = onBack)
-                        Text(stringResource(Res.string.age_preference_heading),
-                            style = MaterialTheme.typography.headlineMedium, modifier = Modifier.semantics { heading() })
-                        Text(stringResource(Res.string.age_preference_intro),
-                            style = MaterialTheme.typography.bodyMedium, color = AppColors.TextSecondary)
-                        Column(Modifier.selectableGroup(), verticalArrangement = Arrangement.spacedBy(AppSpacing.Small)) {
-                            AgePreferenceMode.entries.forEach { mode ->
-                                AppRadio(state.mode == mode,
-                                    { onStateChange(state.copy(mode = mode, saveFailed = false)) },
-                                    stringResource(if (mode == AgePreferenceMode.Any) Res.string.age_preference_any else Res.string.age_preference_range),
-                                    Modifier.background(if (state.mode == mode) AppColors.SelectionContainer else AppColors.SurfaceMuted, AppShapes.Control),
-                                    enabled = editable)
-                            }
-                        }
-                        when (state.mode) {
-                            AgePreferenceMode.Range -> AgeRangeEditor(state, onStateChange)
-                            AgePreferenceMode.Any -> Text(stringResource(Res.string.age_preference_any_help),
-                                color = AppColors.OnSelection, style = MaterialTheme.typography.bodyLarge)
-                            null -> Text(stringResource(Res.string.age_preference_select_help),
-                                style = MaterialTheme.typography.bodySmall, color = AppColors.TextSecondary)
-                        }
-                        Text(stringResource(Res.string.age_preference_apply_help),
-                            style = MaterialTheme.typography.bodySmall, color = AppColors.TextSecondary)
-                        if (state.saveFailed) Text(stringResource(Res.string.age_preference_save_failed),
-                            style = MaterialTheme.typography.bodyMedium, color = AppColors.Error,
-                            modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite })
-                        if (compactHeight) submit()
-                    }
+        Column(Modifier.fillMaxSize().safeDrawingPadding().imePadding()) {
+            // 제목 없이 왼쪽 위 < 하나. 눌러도 회색 원(물결)이 생기지 않게 표시 없이 누르기만, 터치 영역 48dp
+            if (onBack != null) Box(Modifier.fillMaxWidth().heightIn(min = AppSizes.TopBarMinHeight).padding(horizontal = AppSpacing.Small),
+                contentAlignment = Alignment.CenterStart) {
+                Box(Modifier.size(48.dp).clickable(remember { MutableInteractionSource() }, indication = null, role = Role.Button, onClick = onBack),
+                    contentAlignment = Alignment.Center) {
+                    Icon(painterResource(Res.drawable.ic_arrow_back), stringResource(Res.string.button_previous), tint = AppColors.TextPrimary)
                 }
-                if (!compactHeight) submit()
+            }
+            Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.TopCenter) {
+                Column(Modifier.widthIn(max = 640.dp).fillMaxWidth().verticalScroll(rememberScrollState()).padding(screenPaddingValues()),
+                    verticalArrangement = Arrangement.spacedBy(AppSpacing.Large)) {
+                    Text(stringResource(Res.string.age_preference_heading),
+                        style = MaterialTheme.typography.headlineMedium, modifier = Modifier.semantics { heading() })
+                    ModeTabs(state.mode, editable) { onStateChange(state.selectMode(it)) }
+                    AgeRangeEditor(state, onStateChange, enabled = editable && state.mode == AgePreferenceMode.Range)
+                    if (state.mode == null) Text(stringResource(Res.string.age_preference_select_help),
+                        style = MaterialTheme.typography.bodySmall, color = AppColors.TextSecondary)
+                    if (state.saveFailed) Text(stringResource(Res.string.age_preference_save_failed),
+                        style = MaterialTheme.typography.bodyMedium, color = AppColors.Error,
+                        modifier = Modifier.fillMaxWidth().clip(AppShapes.Control).background(AppColors.Error.copy(alpha = 0.08f))
+                            .padding(AppSpacing.Medium).semantics { liveRegion = LiveRegionMode.Polite })
+                }
+            }
+            Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                AppButton(submitLabel ?: stringResource(if (state.saveFailed) Res.string.age_preference_retry else Res.string.age_preference_continue),
+                    modifier = Modifier.widthIn(max = 640.dp).fillMaxWidth().padding(horizontal = screenGutter(), vertical = AppSpacing.Large),
+                    enabled = state.canContinue && submitEnabled, loading = state.saving,
+                    loadingText = stringResource(Res.string.age_preference_saving), onClick = onContinue)
             }
         }
     }
 }
 
+/** "상관없어요 | 범위 정하기" 탭. 고른 쪽만 흰 바탕 */
 @Composable
-private fun AgeRangeEditor(state: AgePreferenceState, onStateChange: (AgePreferenceState) -> Unit) {
-    val editable = !state.saving
+private fun ModeTabs(mode: AgePreferenceMode?, enabled: Boolean, onSelect: (AgePreferenceMode) -> Unit) {
+    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(AppColors.SurfaceMuted).padding(3.dp).selectableGroup()) {
+        AgePreferenceMode.entries.forEach { m ->
+            val on = mode == m
+            Box(Modifier.weight(1f).heightIn(min = 44.dp)
+                .then(if (on) Modifier.shadow(1.dp, RoundedCornerShape(9.dp)).background(AppColors.Background, RoundedCornerShape(9.dp)) else Modifier)
+                .clip(RoundedCornerShape(9.dp))
+                .selectable(on, enabled = enabled, role = Role.Tab, onClick = { onSelect(m) }),
+                contentAlignment = Alignment.Center) {
+                Text(stringResource(if (m == AgePreferenceMode.Any) Res.string.age_preference_tab_any else Res.string.age_preference_tab_range),
+                    style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold,
+                    color = if (on) AppColors.TextPrimary else AppColors.TextSecondary)
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)   // 손잡이 · 줄 모양을 바꾸는 RangeSlider(thumb · track) 판이 실험 API
+@Composable
+private fun AgeRangeEditor(state: AgePreferenceState, onStateChange: (AgePreferenceState) -> Unit, enabled: Boolean) {
+    val low = (state.minimumValue ?: MIN_AGE).coerceIn(MIN_AGE, AGE_SLIDER_TOP)
+    val high = if (state.noUpperLimit) AGE_SLIDER_TOP else (state.maximumValue ?: AGE_SLIDER_TOP).coerceIn(low, AGE_SLIDER_TOP)
+    val invalid = enabled && (state.minimumInvalid || state.maximumInvalid || state.reversed)
+    // 큰 숫자는 막대가 아니라 입력값 그대로(숫자 칸에 60보다 큰 나이를 써도 그 나이로 보인다. 막대 손잡이만 끝에 붙음)
+    val top = state.maximumValue.takeIf { !state.noUpperLimit && state.maximumAge.isNotEmpty() }
+    val bottom = state.minimumValue ?: MIN_AGE
     val summary = when {
-        !state.validRange -> stringResource(Res.string.age_preference_input_help)
-        state.noUpperLimit -> stringResource(Res.string.age_preference_at_least, state.minimumValue!!)
-        state.minimumValue == state.maximumValue -> stringResource(Res.string.age_preference_exact, state.minimumValue!!)
-        else -> stringResource(Res.string.age_preference_selected, state.minimumValue!!, state.maximumValue!!)
+        top == null -> stringResource(Res.string.age_preference_at_least, bottom)
+        top == bottom -> stringResource(Res.string.age_preference_exact, bottom)
+        else -> stringResource(Res.string.age_preference_selected, bottom, top)
     }
-    Text(summary, style = MaterialTheme.typography.headlineSmall, color = AppColors.OnSelection,
-        modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite })
-    val end = state.sliderEnd.toFloat()
-    val low = (state.minimumValue ?: 19).toFloat().coerceIn(19f, end)
-    val high = (state.maximumValue ?: state.sliderEnd).toFloat().coerceIn(low, end)
-    val colors = SliderDefaults.colors(thumbColor = AppColors.SelectionBorder,
-        activeTrackColor = AppColors.SelectionBorder, inactiveTrackColor = AppColors.SelectionContainer)
-    if (state.noUpperLimit) {
-        Slider(value = low, onValueChange = { onStateChange(state.changeMinimum(it.roundToInt().toString())) },
-            valueRange = 19f..end, enabled = editable, colors = colors,
+    // 범위가 아니면(상관없어요 · 아직 안 고름) 전부 회색으로 잠근다. 고른 값은 그대로 남겨 다시 범위를 고르면 이어 쓴다
+    Column(Modifier.fillMaxWidth().alpha(if (enabled) 1f else 0.4f), verticalArrangement = Arrangement.spacedBy(AppSpacing.Medium)) {
+        if (!invalid) Text(summary, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold,
+            color = if (enabled) AppColors.OnSelection else AppColors.TextSecondary,
+            modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite })
+        // 시안 막대: 연한 초록 얇은 줄 + 고른 구간만 진한 초록, 손잡이는 초록 원 · 흰 테 · 초록 바깥 테. 손잡이 옆 틈 · 끝 점 없음
+        val colors = SliderDefaults.colors(activeTrackColor = AppColors.SelectionBorder, inactiveTrackColor = AppColors.SelectionContainer,
+            disabledActiveTrackColor = AppColors.SelectionBorder, disabledInactiveTrackColor = AppColors.SelectionContainer)
+        RangeSlider(value = low.toFloat()..high.toFloat(),
+            onValueChange = { onStateChange(state.changeSlider(it.start.roundToInt(), it.endInclusive.roundToInt())) },
+            valueRange = MIN_AGE.toFloat()..AGE_SLIDER_TOP.toFloat(), enabled = enabled, colors = colors,
+            startThumb = { AgeThumb() }, endThumb = { AgeThumb() },
+            track = { SliderDefaults.Track(it, Modifier.height(4.dp), colors = colors, enabled = enabled,
+                drawStopIndicator = null, thumbTrackGapSize = 0.dp) },
             modifier = Modifier.fillMaxWidth().semantics { contentDescription = summary })
-    } else {
-        RangeSlider(value = low..high,
-            onValueChange = { onStateChange(state.changeRange(it.start.roundToInt(), it.endInclusive.roundToInt())) },
-            valueRange = 19f..end, enabled = editable, colors = colors,
-            modifier = Modifier.fillMaxWidth())
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            Text(stringResource(Res.string.age_preference_years, MIN_AGE), style = MaterialTheme.typography.bodySmall, color = AppColors.TextSecondary)
+            Text(stringResource(Res.string.age_preference_top, AGE_SLIDER_TOP), style = MaterialTheme.typography.bodySmall, color = AppColors.TextSecondary)
+        }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(AppSpacing.Medium)) {
+            AppTextField(state.minimumAge, { onStateChange(state.changeMinimum(it)) },
+                stringResource(Res.string.age_preference_minimum), modifier = Modifier.weight(1f),
+                placeholder = "$MIN_AGE", enabled = enabled, isError = invalid && (state.minimumInvalid || state.reversed),
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Next))
+            // 비우면 제한 없음(막대 끝 60세+ 와 같음)
+            AppTextField(if (state.noUpperLimit) "" else state.maximumAge, { onStateChange(state.changeMaximum(it)) },
+                stringResource(Res.string.age_preference_maximum), modifier = Modifier.weight(1f),
+                placeholder = stringResource(Res.string.age_preference_no_limit), enabled = enabled,
+                isError = invalid && (state.maximumInvalid || state.reversed),
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Done))
+        }
+        // 두 칸에 한 문구: 범위가 뒤집히면 둘 다 빨간 테두리
+        if (invalid) Text(stringResource(if (state.reversed) Res.string.age_preference_order_error else Res.string.age_preference_integer_error),
+            style = MaterialTheme.typography.bodySmall, color = AppColors.Error, modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite })
     }
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-        Text(stringResource(Res.string.age_preference_years, 19), style = MaterialTheme.typography.bodySmall)
-        Text(stringResource(Res.string.age_preference_years, state.sliderEnd), style = MaterialTheme.typography.bodySmall)
-    }
-    Text(stringResource(Res.string.age_preference_slider_help),
-        style = MaterialTheme.typography.bodySmall, color = AppColors.TextSecondary)
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(AppSpacing.Medium)) {
-        AppTextField(state.minimumAge, { onStateChange(state.changeMinimum(it)) },
-            stringResource(Res.string.age_preference_minimum), modifier = Modifier.weight(1f),
-            placeholder = "19", enabled = editable,
-            errorText = if (state.minimumInvalid) stringResource(Res.string.age_preference_integer_error) else null,
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Next))
-        if (!state.noUpperLimit) AppTextField(state.maximumAge, { onStateChange(state.changeMaximum(it)) },
-            stringResource(Res.string.age_preference_maximum), modifier = Modifier.weight(1f),
-            enabled = editable, errorText = when {
-                state.maximumInvalid -> stringResource(Res.string.age_preference_integer_error)
-                state.reversed -> stringResource(Res.string.age_preference_order_error)
-                else -> null
-            }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Done))
-    }
-    AppCheckbox(state.noUpperLimit,
-        { onStateChange(state.copy(noUpperLimit = it, saveFailed = false)) },
-        stringResource(Res.string.age_preference_no_upper), enabled = editable)
+}
+
+/** 막대 손잡이: 초록 원 · 흰 테 · 초록 바깥 테(시안) */
+@Composable
+private fun AgeThumb() {
+    Box(Modifier.size(24.dp).border(1.5.dp, AppColors.SelectionBorder, CircleShape).padding(4.dp)
+        .background(AppColors.SelectionBorder, CircleShape))
 }
