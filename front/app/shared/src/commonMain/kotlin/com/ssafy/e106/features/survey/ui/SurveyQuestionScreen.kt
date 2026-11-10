@@ -1,16 +1,20 @@
 package com.ssafy.e106.features.survey.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.key
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.*
@@ -18,6 +22,7 @@ import androidx.compose.ui.unit.dp
 import com.ssafy.e106.core.ui.components.*
 import com.ssafy.e106.core.ui.theme.*
 import com.ssafy.e106.resources.*
+import org.jetbrains.compose.resources.painterResource
 import org.jetbrains.compose.resources.stringResource
 
 /** Stateless question UI. Preview callbacks do not save answers or navigate. */
@@ -93,6 +98,8 @@ fun SurveyQuestionScreen(
 internal fun SurveyFrame(
     modifier: Modifier = Modifier,
     scrollKey: Any? = null,
+    onBack: (() -> Unit)? = null,
+    centered: Boolean = false,   // 문항 밖 화면(시안 01): 문구 · 요소를 화면 가운데에(가로 · 세로). 길어지면 위에서부터 스크롤
     footer: @Composable () -> Unit,
     content: @Composable ColumnScope.() -> Unit,
 ) {
@@ -100,11 +107,20 @@ internal fun SurveyFrame(
     val scroll = key(scrollKey) { rememberScrollState() }
     Surface(modifier.fillMaxSize(), color = AppColors.Background) {
         Column(Modifier.fillMaxSize().safeDrawingPadding()) {
-            AppTopBar(stringResource(Res.string.survey_title))
-            Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.TopCenter) {
+            // 문항 밖 화면(시안 01)은 제목 없이 왼쪽 위 < 하나로 나간다. 문항 화면은 지금처럼 제목만
+            if (onBack != null) Box(Modifier.fillMaxWidth().heightIn(min = AppSizes.TopBarMinHeight).padding(horizontal = AppSpacing.Small),
+                contentAlignment = Alignment.CenterStart) {
+                // 눌러도 회색 원(물결 · 배경)이 생기지 않게 표시 없이 누르기만. 터치 영역은 48dp
+                Box(Modifier.size(48.dp).clickable(remember { MutableInteractionSource() }, indication = null, role = Role.Button, onClick = onBack),
+                    contentAlignment = Alignment.Center) {
+                    Icon(painterResource(Res.drawable.ic_arrow_back), stringResource(Res.string.survey_api_back), tint = AppColors.TextPrimary)
+                }
+            } else AppTopBar(stringResource(Res.string.survey_title))
+            BoxWithConstraints(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.TopCenter) {
                 Column(Modifier.widthIn(max = 640.dp).fillMaxWidth()
-                    .verticalScroll(scroll).padding(screenPaddingValues()),
-                    verticalArrangement = Arrangement.spacedBy(AppSpacing.Large), content = content)
+                    .verticalScroll(scroll).then(if (centered) Modifier.heightIn(min = maxHeight) else Modifier).padding(screenPaddingValues()),
+                    verticalArrangement = if (centered) Arrangement.spacedBy(AppSpacing.Large, Alignment.CenterVertically) else Arrangement.spacedBy(AppSpacing.Large),
+                    horizontalAlignment = if (centered) Alignment.CenterHorizontally else Alignment.Start, content = content)
             }
             Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
                 Column(Modifier.widthIn(max = 640.dp).fillMaxWidth()
