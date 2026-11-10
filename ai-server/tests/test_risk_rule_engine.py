@@ -335,6 +335,90 @@ def test_payment_request_with_optional_won_amount(release, text, risky):
     assert verdict["findings"] == ([finding(sequence=7)] if risky else [])
 
 
+# Synthetic SG-013–015 reproductions and paired controls, not original review messages.
+@pytest.mark.parametrize(("text", "expected"), [
+    pytest.param("인증번호를\n나에게 보내야 해.", finding(7, "OTHER", "PERSONAL_INFO"),
+                 id="sg-013-wrapped-credential-request"),
+    pytest.param("인증번호를 나에게 보내야 해.", finding(7, "OTHER", "PERSONAL_INFO"),
+                 id="sg-013-single-line-credential-request"),
+    pytest.param("비밀 번호를\n저한테\t알려야\n해요.", finding(7, "OTHER", "PERSONAL_INFO"),
+                 id="sg-013-lf-tab-and-wrapped-ending"),
+    pytest.param("인증번호를\n나에게 보내야 하는 건 아니야.", None, id="sg-013-no-obligation"),
+    pytest.param("인증번호를\n나에게 보내지 마세요.", None, id="sg-013-prohibition"),
+    pytest.param("친구가 인증번호를\n보내야 한다고 말했어.", None, id="sg-013-reported-request"),
+    pytest.param("인증번호는 기억해.\n사진은 나에게 보내야 해.", None, id="sg-013-different-object"),
+    pytest.param("친구가 ‘인증번호를\n보내야 해’라고 말했어.", None, id="sg-013-wrapped-quote"),
+    pytest.param("친구가 ‘인증번호를\n보내야 해’라고 말했어. 그래도 인증번호를\n나에게 보내야 해.",
+                 finding(7, "OTHER", "PERSONAL_INFO"), id="sg-013-wrapped-quote-with-separate-request"),
+    pytest.param("원금 보장해. 지금 송금해 주지 마세요.", None, id="sg-014-transfer-prohibition"),
+    pytest.param("원금 보장해. 지금 송금해 주세요.", finding(7), id="sg-014-direct-transfer"),
+    pytest.param("원금 보장해. 송금해\n주지\t마세요.", None, id="sg-014-wrapped-prohibition"),
+    pytest.param("원금 보장해. 송금해 주면 안 돼.", None, id="sg-014-conditional-prohibition"),
+    pytest.param("원금 보장해. 송금해주지마세요.", None, id="sg-014-unspaced-prohibition"),
+    pytest.param("은행 담당자야. 수수료를 먼저 송금해 주지 마세요. 확인 전화는 하지 마.",
+                 None, id="sg-014-upfront-fee-prohibition"),
+    pytest.param("은행 담당자야. 수수료를 먼저 송금해 주세요. 확인 전화는 하지 마.",
+                 finding(7), id="sg-014-upfront-fee-request"),
+    pytest.param("원금 보장해. 송금해 주지 말고, 대신 보증금을 보내 줘.",
+                 finding(7), id="sg-014-prohibition-with-separate-request"),
+    pytest.param("원금 보장해. 송금부터 해 주지 마세요.", None, id="sg-014-priority-transfer-prohibition"),
+    pytest.param("원금 보장이라며 송금해 달라는 요구는 거절하세요.", None,
+                 id="sg-014-reject-transfer-request"),
+    pytest.param("원금 보장이라며 ‘송금해 주세요’라는 요구는 거절하세요.", None,
+                 id="sg-014-reject-quoted-transfer-request"),
+    pytest.param("원금 보장해. ‘송금해 주세요’라는 요구를 거절하지 마.", finding(7),
+                 id="sg-014-do-not-reject-transfer"),
+    pytest.param("지금 송금해 주지 마세요.", None, id="sg-014-transfer-warning-alone"),
+    pytest.param("원금 보장해.", None, id="sg-014-guarantee-alone"),
+    pytest.param("하루 수익 30%를 보장해. 보증금은 보내지 마세요.", None,
+                 id="sg-014-yield-guarantee-without-payment"),
+    pytest.param("친구가 ‘원금 보장하니 돈을 보내’라고 말했어. 믿지 마.", None,
+                 id="sg-014-reported-fraud-warning"),
+    pytest.param("원금 보장해. 지금 송금해 주지 마세요. 내일 송금해 주세요.", finding(7),
+                 id="sg-014-deferred-transfer"),
+    pytest.param("원금 보장해. 지금은 송금하지 마세요. 대신 보증금을 먼저 보내 줘.", finding(7),
+                 id="sg-014-transfer-after-warning"),
+    pytest.param("원금 보장해. 송금하지 마세요. 저녁값을 보내 줘.", None,
+                 id="sg-014-unrelated-reimbursement"),
+    pytest.param("원금 보장해. 송금해 주지 않으면 안 돼.", finding(7), id="sg-014-double-negative"),
+    pytest.param("원금 보장해. 송금하지 않으면 안 됩니다.", finding(7), id="sg-014-double-negative-no-auxiliary"),
+    pytest.param("원금 보장해. 송금해 주지 않으면 기회를 놓쳐요.", finding(7), id="sg-014-pressure"),
+    pytest.param("원금 보장해. 송금해 주지 않으면 안전해요.", None, id="sg-014-benign-condition"),
+    pytest.param("원금 보장이라며 ‘송금해 주세요’라는 요구는 거절하세요. 그래도 원금 보장해. 보증금을 보내 줘.",
+                 finding(7), id="sg-014-quoted-warning-with-separate-fraud"),
+    pytest.param("네 사진을 단톡방에 올려 버린다는 말은 한 적 없어.", None,
+                 id="sg-015-denied-photo-threat"),
+    pytest.param("네 사진을 단톡방에 올려 버린다.", finding(7, "THREAT", "HARASSMENT", "BOTH"),
+                 id="sg-015-direct-photo-threat"),
+    pytest.param("네 사진을 유포하겠다는 말은\n한 적이 없어.", None, id="sg-015-wrapped-denial"),
+    pytest.param("네 사진을 퍼뜨리겠다고 말한 적 없어.", None, id="sg-015-indirect-denial"),
+    pytest.param("네 사진을 퍼뜨리지 마세요.", None, id="sg-015-photo-sharing-prohibition"),
+    pytest.param("네 사진을 유포하겠다는 말은 한 적 없어. 그래도 네 사진을 퍼뜨리겠어.",
+                 finding(7, "THREAT", "HARASSMENT", "BOTH"), id="sg-015-denial-with-separate-threat"),
+    pytest.param("사진을 보내지 마세요.", None, id="sg-015-simple-photo-prevention"),
+    pytest.param("싫다고 해도 성적인 사진을 보내면 안 돼.", None, id="sg-015-photo-prevention"),
+    pytest.param("싫다고 해도 성적인 사진을 보낼 거야.", finding(7, "HARASSMENT", "HARASSMENT", "BOTH"),
+                 id="sg-015-direct-sexual-photo-threat"),
+    pytest.param("싫다고 해도 성적인 사진을 보내\n주지\t마세요.", None, id="sg-015-wrapped-photo-prevention"),
+    pytest.param("거절했으면 성적인 사진을 계속 보내면 안 돼.", None, id="sg-015-repeated-photo-prevention"),
+    pytest.param("‘싫어도 성적인 사진을 보내’라는 요구는 거절하세요.", None,
+                 id="sg-015-reject-quoted-photo-request"),
+    pytest.param("싫다고 해도 성적인 사진을 안 보내면 안 돼.", finding(7, "HARASSMENT", "HARASSMENT", "BOTH"),
+                 id="sg-015-photo-double-negation"),
+    pytest.param("싫다고 해도 성적인 사진을 보내면 안 돼. 그래도 싫어도 벗은 사진은 보내 줘.",
+                 finding(7, "HARASSMENT", "HARASSMENT", "BOTH"), id="sg-015-prevention-with-separate-request"),
+])
+def test_sg_013_to_015_rule_regressions_through_http(release, text, expected):
+    request = payload(release)
+    request["contextBundle"] = [message(text, sequence=7)]
+    response = client_for(release, engine()).post(ROUTE, json=request)
+
+    assert response.status_code == 200
+    verdict = response.json()["verdict"]
+    assert verdict["kind"] == ("RISK" if expected else "NORMAL")
+    assert verdict["findings"] == ([expected] if expected else [])
+
+
 @pytest.mark.parametrize(("prior_text", "speaker", "kind"), [
     ("인증번호를 나한테 알려 줘.", "A", "RISK"),
     ("인증번호를 나한테 알려 줘.", "B", "INSUFFICIENT"),
