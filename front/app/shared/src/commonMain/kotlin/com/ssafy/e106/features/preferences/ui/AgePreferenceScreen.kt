@@ -7,9 +7,6 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.selection.selectable
-import androidx.compose.foundation.selection.selectableGroup
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
@@ -19,7 +16,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.semantics.*
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -86,24 +82,11 @@ fun AgePreferenceScreen(
     }
 }
 
-/** "상관없어요 | 범위 정하기" 탭. 고른 쪽만 흰 바탕 */
+/** "상관없어요 | 범위 정하기" 탭 */
 @Composable
-private fun ModeTabs(mode: AgePreferenceMode?, enabled: Boolean, onSelect: (AgePreferenceMode) -> Unit) {
-    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(AppColors.SurfaceMuted).padding(3.dp).selectableGroup()) {
-        AgePreferenceMode.entries.forEach { m ->
-            val on = mode == m
-            Box(Modifier.weight(1f).heightIn(min = 44.dp)
-                .then(if (on) Modifier.shadow(1.dp, RoundedCornerShape(9.dp)).background(AppColors.Background, RoundedCornerShape(9.dp)) else Modifier)
-                .clip(RoundedCornerShape(9.dp))
-                .selectable(on, enabled = enabled, role = Role.Tab, onClick = { onSelect(m) }),
-                contentAlignment = Alignment.Center) {
-                Text(stringResource(if (m == AgePreferenceMode.Any) Res.string.age_preference_tab_any else Res.string.age_preference_tab_range),
-                    style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold,
-                    color = if (on) AppColors.TextPrimary else AppColors.TextSecondary)
-            }
-        }
-    }
-}
+private fun ModeTabs(mode: AgePreferenceMode?, enabled: Boolean, onSelect: (AgePreferenceMode) -> Unit) =
+    AppSegmentedTabs(AgePreferenceMode.entries.map { stringResource(if (it == AgePreferenceMode.Any) Res.string.age_preference_tab_any else Res.string.age_preference_tab_range) },
+        mode?.ordinal, { onSelect(AgePreferenceMode.entries[it]) }, enabled = enabled)
 
 @OptIn(ExperimentalMaterial3Api::class)   // 손잡이 · 줄 모양을 바꾸는 RangeSlider(thumb · track) 판이 실험 API
 @Composable

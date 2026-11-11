@@ -133,7 +133,7 @@ class AdditionalResponsiveDeviceTest(private val screen: String, private val wid
                 "agreements" -> listOf("이용약관 전체동의", "다음")
                 "lifestyle" -> listOf("주 4회 이상", "다음")
                 "details" -> listOf("공개하지 않음", "다음")
-                "age" -> listOf("최대 나이는 제한하지 않을게요", "저장하고 계속하기")
+                "age" -> listOf("범위 정하기", "저장하고 계속하기")
                 "proposal" -> listOf("수락하기", "거절하기")
                 "report" -> listOf("증거 메시지 선택")
                 "matching" -> listOf("키링 관리")

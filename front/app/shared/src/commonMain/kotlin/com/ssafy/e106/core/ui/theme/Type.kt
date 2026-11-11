@@ -6,6 +6,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.LineBreak
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.sp
 import com.ssafy.e106.resources.Res
@@ -19,6 +20,8 @@ import org.jetbrains.compose.resources.Font
  * Material3 Typography 15슬롯 전부에 글꼴을 입힌다. 5슬롯만 바꾸면 NavigationBar 라벨·AlertDialog 제목 등이 Roboto 로 섞이고,
  * TextStyle 을 새로 만들면 M3 의 lineHeightStyle(Center · Trim.None)을 잃어 한글이 줄 안에서 위로 쏠린다. 그래서 기본 슬롯을 copy 한다.
  * 크기·줄 높이를 따로 정한 슬롯은 Figma 07 의 5단(제목 22/30 · 본문 16/26 · 설명 14/22 · 버튼 14/20 · 도움말 12/18)이다.
+ * 줄바꿈은 글자 단위가 아니라 어절 단위(Phrase)로: "수락한 뒤에는 취소할 수 없어|요"처럼 낱말이 쪼개지지 않게. 문단은 줄 길이를 고르게(Paragraph).
+ * ponytail: 어절 단위는 Android 13(API 33)+ 에서만 동작, 그 아래는 기존처럼 글자 단위. WordBreak 는 Android 전용 API 라 플랫폼별로 둔다(iOS 는 Paragraph 만)
  */
 @Composable
 fun appTypography(): Typography {
@@ -30,7 +33,8 @@ fun appTypography(): Typography {
     return remember(font) {
         val base = Typography()
         fun TextStyle.app(size: TextUnit = fontSize, line: TextUnit = lineHeight, weight: FontWeight? = fontWeight) =
-            copy(fontFamily = font, fontSize = size, lineHeight = line, fontWeight = weight)
+            copy(fontFamily = font, fontSize = size, lineHeight = line, fontWeight = weight,
+                lineBreak = AppLineBreak)
         base.copy(
             displayLarge = base.displayLarge.app(), displayMedium = base.displayMedium.app(), displaySmall = base.displaySmall.app(),
             headlineLarge = base.headlineLarge.app(), headlineMedium = base.headlineMedium.app(), headlineSmall = base.headlineSmall.app(),
@@ -40,3 +44,6 @@ fun appTypography(): Typography {
         )
     }
 }
+
+/** 줄바꿈 방식. Android 는 어절(Phrase) 단위, iOS 는 문단 단위만(WordBreak 가 Android 전용) */
+internal expect val AppLineBreak: LineBreak
