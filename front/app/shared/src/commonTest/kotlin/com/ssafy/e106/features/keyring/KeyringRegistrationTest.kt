@@ -254,6 +254,7 @@ class KeyringRegistrationTest {
         val rejected = server.sent.single()
         // 명시적 귀속 거절은 성공 미확인과 다르다. 사용자가 재시작하기 전까지 기록은 보존한다.
         assertTrue(m.state.value.canRestart); assertNotNull(m.state.value.pending)
+        assertEquals(RegistrationIssue.DeviceBound, m.state.value.issue)
         assertNull(m.state.value.confirmed)
         m.restart(); runCurrent()
         assertNull(m.state.value.pending); assertEquals(PrefRead.Found(null), KeyringRegistrationStore(prefs).read(1))

@@ -19,13 +19,14 @@ class OwnedKeyringsApiTest {
             assertEquals(HttpMethod.Get, request.method)
             assertEquals("/dev/api/keyrings", request.url.encodedPath)
             assertEquals("no-store", request.headers[HttpHeaders.CacheControl])
-            respond("""{"items":[{"deviceId":7,"status":"READY","firmwareVersion":"1.0"}]}""",
+            respond("""{"items":[{"deviceId":7,"status":"READY","firmwareVersion":"1.0","deviceSerial":"XIAO-MixedCase","extra":true}]}""",
                 HttpStatusCode.OK, headersOf(HttpHeaders.ContentType, "application/json"))
         })
         try {
             val item = assertIs<ApiResult.Ok<List<OwnedKeyring>>>(HttpOwnedKeyringRepository(client).list()).value.single()
             assertEquals(7L, item.deviceId)
             assertEquals("READY", item.status)
+            assertEquals("XIAO-MixedCase", item.deviceSerial)
         } finally { client.close() }
     }
 

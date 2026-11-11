@@ -72,7 +72,12 @@ import org.koin.compose.viewmodel.koinViewModel
     fun scan() { if (model.scan()) searched = true }               // 실제로 탐색을 시작했을 때만 "찾았다"로 친다
     // 서비스 호스트가 있으면 내부 화면 이동은 연결 종료가 아니다. 단독 연결 화면은 기존 종료 정책을 유지한다.
     // 연결을 놓으면 찾은 결과도 사라지므로 "찾아봤음"도 지운다(돌아왔을 때 "찾지 못했어요"로 보이지 않게)
-    fun release() { registration?.pause(); if (!managedConnection) { sync?.detach(); model.leave(); searched = false } }
+    fun release() {
+        // 등록 화면에서 아직 서버 확인을 받지 않은 연결을 다른 화면으로 넘기지 않는다.
+        val unconfirmedRegistration = registration != null && registration.state.value.confirmed == null
+        registration?.pause()
+        if (!managedConnection || unconfirmedRegistration) { sync?.detach(); model.leave(); searched = false }
+    }
     // 호스트가 초기화 복구/권한 상태를 보고 일시 중지한 경우 내부 화면 진입으로 다시 켜지 않는다.
     LifecycleEventEffect(Lifecycle.Event.ON_START) {
         registration?.restore(); if (!managedConnection) sync?.resume()
@@ -101,7 +106,8 @@ import org.koin.compose.viewmodel.koinViewModel
     val listLoading = pickExisting && ownedState?.owner != null && (ownedState.loading || (ownedState.items == null && ownedState.error == null))
     BleProbeScreen(permission.availability, state, searched = searched, registrationMode = registration != null, pickExisting = pickExisting,
         syncBusy = syncBusy, registering = registering || listLoading, onBack = { release(); onBack() },
-        onScan = ::scan, onStopScan = { model.stopScan(); searched = false }, onConnect = model::connect,
+        onScan = ::scan, onStopScan = { model.stopScan(); searched = false },
+        onConnect = { id -> model.connect(id, registrationMode = registration != null) },
         // 사용자가 그만둔 건 "못 찾음"이 아니다 — 찾기 전 화면으로
         onDisconnect = { model.leave(); searched = false }) {
         // 동기화 중 다른 명령을 막고 등록 결과와 설정 상태를 같은 화면에 표시한다.
@@ -204,7 +210,13 @@ private fun step(availability: BleAvailability, state: BleProbeState, searched: 
                 .padding(screenPaddingValues()), verticalArrangement = Arrangement.spacedBy(AppSpacing.Medium)) {
                 // 오류 안내와 등록 · 동기화 패널. ③ 연결됨에서는 위 묶음과 함께 화면 가운데에, 나머지 단계에선 아래에 둔다
                 val below = @Composable {
-                    state.error?.let { Banner(stringResource(Res.string.ble_failed, it.name)) }
+                    state.error?.let {
+                        Banner(when (it) {
+                            BleFailure.NotOwned -> stringResource(Res.string.ble_not_owned)
+                            BleFailure.OwnershipUnverified -> stringResource(Res.string.ble_ownership_unverified)
+                            else -> stringResource(Res.string.ble_failed, it.name)
+                        })
+                    }
                     state.commandError?.let { Banner(stringResource(Res.string.ble_command_failed, it)) }
                     extra()
                 }

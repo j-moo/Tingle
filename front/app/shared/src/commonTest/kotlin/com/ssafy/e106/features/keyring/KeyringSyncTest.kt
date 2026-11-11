@@ -74,7 +74,7 @@ private class SyncServer : KeyringSyncRepository, OwnedKeyringRepository {
     override suspend fun applied(deviceId: Long, runId: String, key: String, body: KeyringSyncAck): ApiResult<Unit> {
         applications += key to body; return appliedAction()
     }
-    override suspend fun list() = ApiResult.Ok(listOf(OwnedKeyring(run.deviceId, "REGISTERED", "test")))
+    override suspend fun list() = ApiResult.Ok(listOf(OwnedKeyring(run.deviceId, "REGISTERED", "test", "XIAO-test")))
 }
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -505,13 +505,15 @@ class KeyringSyncTest {
         val m = model(server, KeyringSyncStore(prefs)); runCurrent()
         assertTrue(m.state.value.recoveryFailed); assertTrue(server.creates.isEmpty())
     }
-    @Test fun failedExistingChoiceKeepsFailureEvenWhenAnotherRunWasQueued() = runTest(dispatcher) {
-        val server = SyncServer(); val m = model(server, KeyringSyncStore(SyncPrefs()))
-        m.attach("XIAO-test") { error("No send") }; runCurrent()
-        m.useExisting(999, "XIAO-test")                       // 내 목록에 없는 키링 → 실패
+    @Test fun wrongBoardForOwnedDeviceIdKeepsFailureEvenWhenAnotherRunWasQueued() = runTest(dispatcher) {
+        val server = SyncServer(); val store = KeyringSyncStore(SyncPrefs()); val m = model(server, store)
+        m.attach("XIAO-other") { error("No send") }; runCurrent()
+        // 내 계정의 deviceId라도 연결된 실물의 serial이 다르면 대상을 저장하지 않는다.
+        m.useExisting(syncRun.deviceId, "XIAO-other")
         m.retryRecovery()                                       // 실패 처리 중에 들어온 다시 돌기 요청
         runCurrent()
         assertTrue(m.state.value.recoveryFailed); assertFalse(m.state.value.busy)
+        assertTrue(store.read(1).isEmpty()); assertTrue(server.creates.isEmpty())
     }
     @Test fun multiDeviceTargetsSurviveUpdatesAndPayloadIsNotPersisted() = runTest {
         val prefs = SyncPrefs(); val store = KeyringSyncStore(prefs)

@@ -164,7 +164,8 @@ class KeyringSyncViewModel(private val api: KeyringSyncRepository, private val s
             var ok = false
             try {
                 val items = unwrap(owned.list(), owner, stamp)
-                check(items.any { it.deviceId == deviceId })
+                // 목록 순서나 사용자가 고른 번호만으로 다른 실물에 대한 동기화 대상을 저장하지 않는다.
+                check(items.any { it.deviceId == deviceId && it.deviceSerial == serial })
                 store.selectTarget(owner, deviceId, serial); ensure(owner, stamp)
                 attempted.remove(deviceId)
                 ok = true

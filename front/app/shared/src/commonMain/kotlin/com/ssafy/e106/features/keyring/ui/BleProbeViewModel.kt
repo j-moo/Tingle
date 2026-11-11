@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.ssafy.e106.core.auth.*
 import com.ssafy.e106.core.ble.*
+import com.ssafy.e106.core.network.ApiResult
 import com.ssafy.e106.features.keyring.data.*
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
@@ -20,7 +21,11 @@ data class BleProbeState(val candidates: List<BleCandidate> = emptyList(), val s
  * 첫 연동 진단: 발견/Notify 구독/기기 정보/상태를 분리한다. 서버 계정 귀속은 변경하지 않는다.
  * 서비스 화면 사이 이동은 연결을 유지한다. 실제 앱 중지(회전 포함)에는 닫으며 백그라운드 재연결은 하지 않는다.
  */
-class BleProbeViewModel(private val ble: KeyringBle, private val sessions: SessionStore) : ViewModel() {
+class BleProbeViewModel(
+    private val ble: KeyringBle,
+    private val sessions: SessionStore,
+    private val owned: OwnedKeyringRepository,
+) : ViewModel() {
     private val mutable = MutableStateFlow(BleProbeState())
     val state = mutable.asStateFlow()
     private var generation = 0L
@@ -63,8 +68,9 @@ class BleProbeViewModel(private val ble: KeyringBle, private val sessions: Sessi
         else if (mutable.value.scanning) { work?.cancel(); mutable.value = mutable.value.copy(scanning = false) }
     }
 
-    fun connect(id: String) {
-        if (mutable.value.busy || connection != null || mutable.value.candidates.none { it.id == id } || sessions.state.value !is Session.SignedIn) return
+    fun connect(id: String, registrationMode: Boolean = false) {
+        if (mutable.value.busy || connection != null || mutable.value.candidates.none { it.id == id }) return
+        val owner = (sessions.state.value as? Session.SignedIn)?.userId ?: return
         val previous = work
         previous?.cancel()
         val stamp = ++generation
@@ -78,9 +84,11 @@ class BleProbeViewModel(private val ble: KeyringBle, private val sessions: Sessi
                 if (stamp != generation) { channel.close(); return@launch }
                 connection = channel
                 val info = readInfo(channel)
+                verifyOwnership(info, owner, registrationMode)
                 if (stamp != generation) return@launch
+                if (channel.state.value == BleLinkState.Closed) throw BleException(BleFailure.Disconnected)
                 mutable.value = mutable.value.copy(connected = true, info = info)
-                watch(channel, stamp, info.serial)
+                watch(channel, stamp, info.serial, registrationMode)
             } catch (cancelled: CancellationException) { throw cancelled }
             catch (failure: Exception) { if (stamp == generation) { connection?.close(); connection = null; showFailure(failure) } }
             finally { if (stamp == generation) mutable.value = mutable.value.copy(busy = false) }
@@ -88,13 +96,14 @@ class BleProbeViewModel(private val ble: KeyringBle, private val sessions: Sessi
     }
 
     /** 재부팅으로 링크가 끊긴 경우에만 이전 선택 기기를 제한적으로 다시 찾는다. 이름이 같은 다른 보드는 선택하지 않는다. */
-    private fun watch(channel: BleConnection, stamp: Long, serial: String) {
+    private fun watch(channel: BleConnection, stamp: Long, serial: String, registrationMode: Boolean) {
         watcher = viewModelScope.launch {
             channel.state.first { it == BleLinkState.Closed }
             if (stamp != generation || channel !== connection) return@launch
             connection = null
             mutable.update { it.copy(connected = false, busy = false, info = null, status = null, error = BleFailure.Disconnected) }
             if (!foreground) return@launch
+            val owner = (sessions.state.value as? Session.SignedIn)?.userId ?: return@launch
             val previous = work
             reconnect = viewModelScope.launch {
                 try {
@@ -123,20 +132,53 @@ class BleProbeViewModel(private val ble: KeyringBle, private val sessions: Sessi
                             if (info.serial != serial) {
                                 next.close(); showFailure(BleException(BleFailure.InvalidFrame)); return@launch
                             }
+                            verifyOwnership(info, owner, registrationMode)
+                            if (stamp != generation || !foreground) { next.close(); return@launch }
+                            if (next.state.value == BleLinkState.Closed) throw BleException(BleFailure.Disconnected)
                             // 새 연결의 세대를 올려 이전 작업의 실패 정리와 finally가 새 작업 상태를 건드리지 않게 한다.
                             val nextStamp = ++generation
                             connection = next
                             mutable.update { it.copy(connected = true, busy = false, info = info, error = null, commandError = null) }
-                            watch(next, nextStamp, serial)
+                            watch(next, nextStamp, serial, registrationMode)
                             return@launch
                         } catch (cancelled: CancellationException) { next?.close(); throw cancelled }
-                        catch (failure: Exception) { next?.close(); if (stamp == generation) showFailure(failure) }
+                        catch (failure: Exception) {
+                            next?.close()
+                            if (stamp == generation) showFailure(failure)
+                            // 소유가 확인되지 않은 보드에는 같은 연결을 자동으로 반복하지 않는다.
+                            if ((failure as? BleException)?.reason in setOf(BleFailure.NotOwned, BleFailure.OwnershipUnverified)) return@launch
+                        }
                     }
                 } catch (cancelled: CancellationException) { throw cancelled }
                 catch (failure: Exception) { if (stamp == generation) showFailure(failure) }
                 finally { if (stamp == generation) mutable.update { it.copy(scanning = false, busy = false) } }
             }
         }
+    }
+
+    private suspend fun verifyOwnership(info: BleDeviceInfo, owner: Long, registrationMode: Boolean) {
+        val session = sessions.state.value as? Session.SignedIn
+            ?: throw BleException(BleFailure.OwnershipUnverified)
+        if (session.userId != owner) throw BleException(BleFailure.OwnershipUnverified)
+        // 가입의 등록 화면에서만 목록 밖 기기의 등록 절차를 허용한다.
+        // 일반 연결은 펌웨어가 미귀속 상태를 보고해도 서버 목록을 다시 확인한다.
+        if (registrationMode && session.status == OnboardingStatus.KEYRING_REQUIRED) return
+
+        // BLE 연결은 기기 정보를 읽는 데만 쓴다. 계정이 소유한 실물임을 확인해야 연결 완료를 공개한다.
+        val response = owned.list()
+        if ((sessions.state.value as? Session.SignedIn)?.userId != owner) {
+            throw BleException(BleFailure.OwnershipUnverified)
+        }
+        val items = (response as? ApiResult.Ok)?.value ?: throw BleException(BleFailure.OwnershipUnverified)
+        if (items.count { it.deviceSerial == info.serial } == 1) return
+
+        // 서버가 식별자를 아직 보내지 않는 환경에서 소유하지 않았다고 잘못 안내하지 않는다.
+        val reason = if (items.any { it.deviceSerial.isNullOrBlank() } || items.any { it.deviceSerial == info.serial }) {
+            BleFailure.OwnershipUnverified
+        } else {
+            BleFailure.NotOwned
+        }
+        throw BleException(reason)
     }
 
     @OptIn(ExperimentalUuidApi::class)

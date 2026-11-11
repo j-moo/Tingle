@@ -33,7 +33,7 @@ class KeyringResetTestActivity : ComponentActivity() {
         val factory = object : ViewModelProvider.Factory {
             @Suppress("UNCHECKED_CAST") override fun <T : ViewModel> create(clazz: Class<T>): T = when (clazz) {
                 KeyringResetViewModel::class.java -> KeyringResetViewModel(f.model(), f.server, f.session, f.store)
-                else -> BleProbeViewModel(AndroidKeyringBle(applicationContext), f.session)
+                else -> BleProbeViewModel(AndroidKeyringBle(applicationContext), f.session, f.server)
             } as T
         }
         val model = ViewModelProvider(this, factory)[KeyringResetViewModel::class.java]
