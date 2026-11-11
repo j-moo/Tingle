@@ -109,7 +109,7 @@ class BleProbeDeviceTest {
                 }
             }
             compose.onNodeWithText("서명된 접수증을 아직 받지 못했어요.", substring = true).assertDoesNotExist()
-            compose.onNodeWithText("만남 기록 한 건 보내기").performClick()
+            compose.onNodeWithText("만남 기록 다시 확인").performClick()
             compose.onNodeWithText("서명된 접수증을 아직 받지 못했어요.", substring = true).assertExists()
             compose.onNodeWithText("서버 접수와 키링의 정리를 확인했어요.").assertDoesNotExist()
         }

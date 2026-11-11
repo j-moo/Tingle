@@ -15,7 +15,8 @@ data class BleProbeState(val candidates: List<BleCandidate> = emptyList(), val s
     val busy: Boolean = false, val connected: Boolean = false, val info: BleDeviceInfo? = null,
     val status: BleDeviceStatus? = null, val error: BleFailure? = null, val commandError: String? = null,
     /** 사용자가 고른(연결한) 후보. 연결 화면이 목록에서 이 카드를 선택 표시한다 */
-    val selectedId: String? = null)
+    val selectedId: String? = null,
+    val connectionGeneration: Long? = null)
 
 /**
  * 첫 연동 진단: 발견/Notify 구독/기기 정보/상태를 분리한다. 서버 계정 귀속은 변경하지 않는다.
@@ -87,7 +88,7 @@ class BleProbeViewModel(
                 verifyOwnership(info, owner, registrationMode)
                 if (stamp != generation) return@launch
                 if (channel.state.value == BleLinkState.Closed) throw BleException(BleFailure.Disconnected)
-                mutable.value = mutable.value.copy(connected = true, info = info)
+                mutable.value = mutable.value.copy(connected = true, info = info, connectionGeneration = stamp)
                 watch(channel, stamp, info.serial, registrationMode)
             } catch (cancelled: CancellationException) { throw cancelled }
             catch (failure: Exception) { if (stamp == generation) { connection?.close(); connection = null; showFailure(failure) } }
@@ -138,7 +139,8 @@ class BleProbeViewModel(
                             // 새 연결의 세대를 올려 이전 작업의 실패 정리와 finally가 새 작업 상태를 건드리지 않게 한다.
                             val nextStamp = ++generation
                             connection = next
-                            mutable.update { it.copy(connected = true, busy = false, info = info, error = null, commandError = null) }
+                            mutable.update { it.copy(connected = true, busy = false, info = info, error = null, commandError = null,
+                                connectionGeneration = nextStamp) }
                             watch(next, nextStamp, serial, registrationMode)
                             return@launch
                         } catch (cancelled: CancellationException) { next?.close(); throw cancelled }
@@ -257,6 +259,7 @@ class BleProbeViewModel(
     /** 등록 시 보관한 기기의 연결로 설정을 보낸다. 실패한 부분 프레임은 다음 요청에 재사용하지 않는다. */
     @OptIn(ExperimentalUuidApi::class)
     suspend fun syncChallenge(expectedSerial: String): String {
+        awaitAvailable(expectedSerial)
         val channel = connection ?: throw BleException(BleFailure.Disconnected)
         check(!mutable.value.busy && mutable.value.info?.serial == expectedSerial)
         val stamp = generation
@@ -304,6 +307,7 @@ class BleProbeViewModel(
     /** 서버가 이번 보드 challenge에 서명한 설정만 전송한다. 서명은 앱이 생성하지 않는다. */
     @OptIn(ExperimentalUuidApi::class)
     suspend fun syncSettings(run: KeyringSyncRun, expectedSerial: String): KeyringStoredResult {
+        awaitAvailable(expectedSerial)
         val channel = connection ?: throw BleException(BleFailure.Disconnected)
         check(!mutable.value.busy && mutable.value.info?.serial == expectedSerial)
         val stamp = generation
@@ -344,6 +348,7 @@ class BleProbeViewModel(
     /** 재연결 시에도 동일 보드와 소유 세대를 대조하고 보호 특성으로만 적용 증명을 읽는다. */
     @OptIn(ExperimentalUuidApi::class)
     suspend fun readSettingsApplied(identity: SyncIdentity, serial: String): KeyringSyncAck {
+        awaitAvailable(serial)
         val channel = connection ?: throw BleException(BleFailure.Disconnected)
         check(!mutable.value.busy && mutable.value.info?.serial == serial)
         val stamp = generation
@@ -401,6 +406,7 @@ class BleProbeViewModel(
         authorizer: KeyringOwnerAuthorizer,
         action: suspend (exchange: suspend (ByteArray) -> ByteArray) -> T,
     ): T {
+        awaitAvailable(serial)
         val channel = connection ?: throw BleException(BleFailure.Disconnected)
         val owner = (sessions.state.value as? Session.SignedIn)?.userId ?: error("No active session")
         check(!mutable.value.busy && mutable.value.info?.serial == serial)
@@ -442,6 +448,19 @@ class BleProbeViewModel(
         } finally {
             active = false
             if (stamp == generation && channel === connection) mutable.update { it.copy(busy = false) }
+        }
+    }
+
+    /** 설정과 기록은 같은 BLE 링크를 쓴다. 대기 중 연결이 바뀌면 새 링크에 이전 명령을 보내지 않는다. */
+    private suspend fun awaitAvailable(serial: String) {
+        val stamp = state.value.connectionGeneration
+        while (true) {
+            state.first { !it.busy || !it.connected || it.connectionGeneration != stamp }
+            val current = state.value
+            if (!current.connected || current.connectionGeneration != stamp || current.info?.serial != serial) {
+                throw BleException(BleFailure.Disconnected)
+            }
+            if (!current.busy) return
         }
     }
 

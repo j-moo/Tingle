@@ -105,6 +105,10 @@ data class BleDeviceInfo(val serial: String, val firmware: String, val supportsS
     /** 지원 선언은 암호화 성공/신원 증명이 아니다. 실제 전송 전 동일 연결의 보호 Read가 추가로 필요하다. */
     val supportsProtectedProfileStorage get() = profileStorage.supportsProtectedStorage &&
         supportedFunctions.containsAll(listOf("GET_SYNC_CHALLENGE", "SYNC_SETTINGS"))
+    // 자동 전송과 수동 화면 모두 같은 기록 명령 지원 기준을 사용한다.
+    internal val supportsEncounterTransfer get() = supportsStatus && supportedFunctions.containsAll(listOf(
+        "GET_OWNER_CHALLENGE", "AUTHORIZE_OWNER", "GET_RECORD", "READ_RECORD_CHUNK", "ACK_RECORD",
+    ))
     // 버전 이름만으로 삭제 명령 지원을 추측하지 않는다. 세 명령과 순번을 모두 확인해야 복구에 진입한다.
     internal val supportsReset get() = resetContractVersion == KeyringResetProtocol.VERSION &&
         ownershipEpoch != null && ownershipEpoch >= 0 && ownerState in setOf("BOUND", "UNOWNED", "RESETTING") &&

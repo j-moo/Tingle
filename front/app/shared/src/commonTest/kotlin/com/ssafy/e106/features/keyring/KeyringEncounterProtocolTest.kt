@@ -78,7 +78,7 @@ class KeyringEncounterProtocolTest {
     /** 구형 항목의 위치만 건너뛰며 원본 읽기와 ACK를 시도하지 않는다. */
     @Test fun legacyRecordIsRetainedWhileNextRecordIsFound() = runTest {
         val commands = mutableListOf<String>()
-        val scan = KeyringEncounterProtocol.findSendable { bytes ->
+        val scan = KeyringEncounterProtocol.scanSendable { bytes ->
             val request = Json.parseToJsonElement(bytes.decodeToString()).jsonObject
             val type = request.getValue("type").jsonPrimitive.content
             commands += type
@@ -104,28 +104,28 @@ class KeyringEncounterProtocolTest {
                 else -> error("Unexpected command")
             }
         }
-        assertEquals(KeyringEncounterProtocol.Scan(header, 1), scan)
+        assertEquals(KeyringEncounterProtocol.Scan(listOf(header), 1), scan)
         assertEquals(listOf("GET_STATUS", "GET_RECORD", "GET_RECORD", "GET_RECORD"), commands)
     }
 
-    @Test fun confirmedRecordTakesPriorityOverEarlierReviews() = runTest {
+    @Test fun confirmedRecordTakesPriorityAndEarlierReviewsStillRemainInTheBatch() = runTest {
         val confirmed = header.copy(sequence = 5, kind = "CONFIRMED", peerCredential = base64.encode(ByteArray(357)))
         val (scan, cursors) = scanRecords(listOf(header, header.copy(sequence = 4), confirmed, header.copy(sequence = 6)))
 
-        assertEquals(confirmed, scan.header)
-        assertEquals(listOf(0L, 3L, 4L), cursors)
+        assertEquals(listOf(confirmed, header, header.copy(sequence = 4), header.copy(sequence = 6)), scan.headers)
+        assertEquals(listOf(0L, 3L, 4L, 5L, 6L), cursors)
     }
 
-    @Test fun earliestReviewRemainsSendableWhenNoConfirmedRecordExists() = runTest {
+    @Test fun reviewsRemainInSequenceWhenNoConfirmedRecordExists() = runTest {
         val (scan, cursors) = scanRecords(listOf(header, header.copy(sequence = 4)))
 
-        assertEquals(header, scan.header)
+        assertEquals(listOf(header, header.copy(sequence = 4)), scan.headers)
         assertEquals(listOf(0L, 3L, 4L), cursors)
     }
 
     private suspend fun scanRecords(records: List<KeyringEncounterHeader>): Pair<KeyringEncounterProtocol.Scan, List<Long>> {
         val cursors = mutableListOf<Long>()
-        val scan = KeyringEncounterProtocol.findSendable { bytes ->
+        val scan = KeyringEncounterProtocol.scanSendable { bytes ->
             val request = Json.parseToJsonElement(bytes.decodeToString()).jsonObject
             when (request.getValue("type").jsonPrimitive.content) {
                 "GET_STATUS" -> response(request, "STATUS") {
@@ -153,7 +153,7 @@ class KeyringEncounterProtocolTest {
     /** epoch가 바뀌면 옛 위치를 버린다. 현재 epoch에 구형 기록만 있으면 빈 키링과 구분한다. */
     @Test fun cursorEpochMismatchRestartsOnceAndReportsLegacyOnly() = runTest {
         var statusReads = 0
-        val scan = KeyringEncounterProtocol.findSendable { bytes ->
+        val scan = KeyringEncounterProtocol.scanSendable { bytes ->
             val request = Json.parseToJsonElement(bytes.decodeToString()).jsonObject
             if (request["type"] == JsonPrimitive("GET_STATUS")) {
                 statusReads++
@@ -176,17 +176,16 @@ class KeyringEncounterProtocolTest {
             }
         }
         assertEquals(2, statusReads)
-        assertEquals(KeyringEncounterProtocol.Scan(null, 1), scan)
+        assertEquals(KeyringEncounterProtocol.Scan(emptyList(), 1), scan)
     }
 
     @Test fun onlyMatchingProofMayAcknowledgeAndJournalSurvivesRecreation() = runTest {
         val result = KeyringEncounterResponse.Receipt(header.submissionId, header.eventId, "STORED", proof.receiptId, retryable = false)
-        assertNull(KeyringEncounterProtocol.proofFor(header, KeyringEncounterResponse(listOf(result))))
+        assertNull(KeyringEncounterProtocol.proofFor(header, result))
         assertFailsWith<IllegalArgumentException> {
-            KeyringEncounterProtocol.proofFor(header, KeyringEncounterResponse(listOf(result.copy(serverProof = proof.copy(ownershipEpoch = 3)))))
+            KeyringEncounterProtocol.proofFor(header, result.copy(serverProof = proof.copy(ownershipEpoch = 3)))
         }
-        val received = requireNotNull(KeyringEncounterProtocol.proofFor(header,
-            KeyringEncounterResponse(listOf(result.copy(serverProof = proof)))))
+        val received = requireNotNull(KeyringEncounterProtocol.proofFor(header, result.copy(serverProof = proof)))
         val store = object : ProtectedRecordStore {
             val values = mutableMapOf<String, String>()
             override suspend fun read(key: String) = values[key]?.let { ProtectedRead.Found(it) } ?: ProtectedRead.Missing

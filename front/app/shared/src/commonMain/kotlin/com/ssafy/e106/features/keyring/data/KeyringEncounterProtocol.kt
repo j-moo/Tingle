@@ -66,10 +66,10 @@ internal object KeyringEncounterProtocol {
     private val hashPattern = Regex("[0-9a-f]{64}")
     private val cursorPattern = Regex("[0-9a-f]{32}")
 
-    data class Scan(val header: KeyringEncounterHeader?, val legacyCount: Int)
+    data class Scan(val headers: List<KeyringEncounterHeader>, val legacyCount: Int)
 
-    /** READ 세션 안에서 현재 epoch를 확인한다. 구형 기록은 위치만 넘기고 키링에 보존한다. */
-    suspend fun findSendable(exchange: suspend (ByteArray) -> ByteArray): Scan {
+    /** READ 세션에서 끝까지 순번을 읽는다. 본문은 전송 직전에 읽어 한 번에 한 건만 메모리에 둔다. */
+    suspend fun scanSendable(exchange: suspend (ByteArray) -> ByteArray): Scan {
         try {
             return scan(exchange)
         } catch (failure: BleCommandException) {
@@ -87,7 +87,7 @@ internal object KeyringEncounterProtocol {
         val cursor = requireNotNull(status.cursorEpoch)
         var after = 0L
         var legacyCount = 0
-        var firstReview: KeyringEncounterHeader? = null
+        val headers = mutableListOf<KeyringEncounterHeader>()
         for (scanned in 0..MAX_RECORDS) {
             val record = try {
                 next(exchange, after, cursor)
@@ -98,13 +98,11 @@ internal object KeyringEncounterProtocol {
                 after = position
                 continue
             }
-            if (record == null) return Scan(firstReview, legacyCount)
+            if (record == null) return Scan(headers.sortedBy { it.kind != "CONFIRMED" }, legacyCount)
             check(scanned < MAX_RECORDS) { "Encounter record limit exceeded" }
-            if (record.kind == "CONFIRMED") return Scan(record, legacyCount)
 
-            // 접수가 보류된 REVIEW가 뒤의 확정 기록 전송을 막지 않도록 헤더만 넘긴다.
-            // 확정 기록이 없다면 가장 앞의 REVIEW를 기존 전송 흐름에 넘긴다.
-            if (firstReview == null) firstReview = record
+            // 나중에 접수되지 않은 원본도 이번 순회에서는 다시 선택하지 않는다.
+            headers += record
             after = record.sequence
         }
         error("Encounter cursor did not advance")
@@ -157,9 +155,12 @@ internal object KeyringEncounterProtocol {
         return KeyringEncounterUpload(header.deviceId, listOf(submission))
     }
 
+    /** 다른 기록의 응답을 처리 결과나 삭제 증명으로 사용하지 않도록 먼저 식별자를 대조한다. */
+    fun resultFor(header: KeyringEncounterHeader, response: KeyringEncounterResponse): KeyringEncounterResponse.Receipt =
+        response.results.single().also { require(it.submissionId == header.submissionId && it.eventId == header.eventId) }
+
     /** 서버가 내구 접수한 같은 원본에만 삭제 허가를 사용한다. HTTP 성공과 boolean은 조건에 사용하지 않는다. */
-    fun proofFor(header: KeyringEncounterHeader, response: KeyringEncounterResponse): KeyringEncounterProof? {
-        val result = response.results.single()
+    fun proofFor(header: KeyringEncounterHeader, result: KeyringEncounterResponse.Receipt): KeyringEncounterProof? {
         require(result.submissionId == header.submissionId && result.eventId == header.eventId)
         val proof = result.serverProof ?: return null
         require(result.receiptStatus == "STORED" && result.receiptId == proof.receiptId &&

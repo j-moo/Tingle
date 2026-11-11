@@ -5,13 +5,22 @@ import com.ssafy.e106.core.auth.*
 import com.ssafy.e106.core.ble.*
 import com.ssafy.e106.core.network.ApiResult
 import com.ssafy.e106.core.network.AppError
+import com.ssafy.e106.core.network.ApiJson
+import com.ssafy.e106.core.network.createHttpClient
+import com.ssafy.e106.core.storage.ProtectedRead
+import com.ssafy.e106.core.storage.ProtectedRecordStore
 import com.ssafy.e106.features.keyring.ui.*
 import com.ssafy.e106.features.keyring.data.*
 import com.ssafy.e106.features.onboarding.TestSession
+import io.ktor.client.engine.mock.*
+import io.ktor.http.*
+import io.ktor.http.content.TextContent
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.test.*
 import kotlinx.serialization.json.*
+import okio.ByteString.Companion.toByteString
+import kotlin.io.encoding.Base64
 import kotlin.test.*
 import kotlin.time.Duration.Companion.seconds
 import kotlin.time.TestTimeSource
@@ -115,6 +124,105 @@ class BleProbeViewModelTest {
         "tingle-owner-session-v2", "dev-ed25519-test", ownerIdentity.deviceId,
         request.ownerGeneration, request.ownershipEpoch, request.deviceNonce, request.permissions,
         "2026-11-06T03:00:00Z", 1793934060L, "A".repeat(86))
+
+    /** 접수증 없는 첫 기록이 뒤의 정상 기록을 막거나 ACK되면 안 된다. */
+    @Test fun automaticTransferSkipsHeldRecordAndAcknowledgesTheNextRecord() = runTest(dispatcher) {
+        val port = ownerPort()
+        val session = TestSession(OnboardingStatus.READY)
+        val ble = model(port, session)
+        val sync = KeyringSyncStore(ResetPrefs())
+        sync.rememberTarget(1, ownerIdentity.deviceId, port.serial)
+        sync.save(1, sync.read(1).single().copy(identity = ownerIdentity, complete = true))
+        val authorizer = KeyringOwnerAuthorizer(object : KeyringOwnerSessionRepository {
+            override suspend fun create(deviceId: Long, key: String, body: KeyringOwnerGrantRequest) = ApiResult.Ok(ownerGrant(body))
+            override suspend fun get(deviceId: Long, key: String): ApiResult<KeyringOwnerGrant> = error("Unexpected lookup")
+        })
+        val data = "TER2".encodeToByteArray() + ByteArray(1161)
+        val base64 = Base64.UrlSafe.withPadding(Base64.PaddingOption.ABSENT)
+        val epoch = "a".repeat(32)
+        fun header(seq: Long) = KeyringEncounterHeader(
+            epoch, seq, "REVIEW", "11111111-1111-4111-8111-11111111111$seq",
+            "22222222-2222-4222-8222-22222222222$seq", ownerIdentity.deviceId, ownerIdentity.ownerGeneration, 2,
+            1793934000, 1793937600, "tingle-policy-v2", "r2-c-20261106", "44444444-4444-4444-8444-444444444444",
+            "", "tingle-encounter-v2", data.size, data.copyOf().apply { this[lastIndex] = seq.toByte() }.toByteString().sha256().hex(),
+        )
+        val first = header(1)
+        val second = header(2)
+        val records = mutableListOf(first, second)
+        val cleaned = mutableListOf<String>()
+        val originalReply = requireNotNull(port.commandReply)
+        port.commandReply = { request ->
+            when (request.getValue("type").jsonPrimitive.content) {
+                "GET_STATUS" -> buildJsonObject {
+                    put("type", "STATUS"); put("requestId", request.getValue("requestId"))
+                    put("protocolVersion", 1); put("ownerAuthorized", true); put("recordCursorEpoch", epoch)
+                }
+                "GET_RECORD" -> buildJsonObject {
+                    val next = records.firstOrNull { it.sequence > request.getValue("afterSequence").jsonPrimitive.long }
+                    put("type", if (next == null) "RECORD_END" else "RECORD")
+                    put("requestId", request.getValue("requestId")); put("protocolVersion", 1); put("recordCursorEpoch", epoch)
+                    next?.let { ApiJson.encodeToJsonElement(KeyringEncounterHeader.serializer(), it).jsonObject.forEach { (k, v) -> put(k, v) } }
+                }
+                "READ_RECORD_CHUNK" -> buildJsonObject {
+                    val seq = request.getValue("sequence").jsonPrimitive.long
+                    val offset = request.getValue("offset").jsonPrimitive.int
+                    val length = request.getValue("length").jsonPrimitive.int
+                    val original = data.copyOf().apply { this[lastIndex] = seq.toByte() }
+                    put("type", "RECORD_CHUNK"); put("requestId", request.getValue("requestId")); put("protocolVersion", 1)
+                    put("sequence", seq); put("offset", offset); put("totalBytes", original.size)
+                    put("envelopeHash", request.getValue("envelopeHash")); put("data", base64.encode(original.copyOfRange(offset, offset + length)))
+                }
+                "ACK_RECORD" -> buildJsonObject {
+                    val id = request.getValue("submissionId").jsonPrimitive.content
+                    cleaned += id
+                    records.removeAll { it.submissionId == id }
+                    put("type", "RECORD_ACK"); put("requestId", request.getValue("requestId")); put("protocolVersion", 1)
+                    put("result", "REMOVED_OR_ALREADY_REMOVED")
+                }
+                else -> originalReply(request)
+            }
+        }
+        val uploaded = mutableListOf<String>()
+        val client = createHttpClient("https://test/dev/api/", httpLog = false, engine = MockEngine { request ->
+            val sent = ApiJson.decodeFromString(KeyringEncounterUpload.serializer(), (request.body as TextContent).text).submissions.single()
+            uploaded += sent.submissionId
+            val proof = if (sent.submissionId == second.submissionId) KeyringEncounterProof(
+                "tingle-record-receipt-v2", "server-key", second.deviceId, second.ownerGeneration, 2, second.eventId,
+                second.submissionId, second.envelopeHash, "55555555-5555-4555-8555-555555555555", 1793934001,
+                "STORED", "DELETE_ORIGINAL", "A".repeat(86),
+            ) else null
+            val receipt = KeyringEncounterResponse.Receipt(sent.submissionId, sent.eventId,
+                if (proof == null) "NOT_STORED" else "STORED", proof?.receiptId,
+                errorCode = if (proof == null) "POLICY_UNRESOLVED" else null, retryable = false, serverProof = proof)
+            respond(ApiJson.encodeToString(KeyringEncounterResponse.serializer(), KeyringEncounterResponse(listOf(receipt))),
+                HttpStatusCode.OK, headersOf(HttpHeaders.ContentType, "application/json"))
+        })
+        val journal = KeyringEncounterJournal(object : ProtectedRecordStore {
+            private val values = mutableMapOf<String, String>()
+            override suspend fun read(key: String) = values[key]?.let { ProtectedRead.Found(it) } ?: ProtectedRead.Missing
+            override suspend fun write(key: String, value: String) { values[key] = value }
+            override suspend fun remove(key: String, expectedValue: String) = values.remove(key) == expectedValue
+        })
+        try {
+            val vm = KeyringEncounterViewModel(session, sync, authorizer, KeyringEncounterRepository(client), journal)
+            store.put("encounters", vm)
+            ble.scan(); runCurrent(); ble.connect(port.currentId); runCurrent()
+            val target = KeyringEncounterViewModel.Target(1, port.serial, requireNotNull(ble.state.value.connectionGeneration))
+            vm.update(target, true, null, ble)
+            assertEquals(EncounterTransferState.Idle, vm.state.value)
+            vm.update(target, false, null, ble)
+            assertEquals(EncounterTransferState.PolicyWaiting, vm.state.first { it != EncounterTransferState.Sending })
+            assertEquals(listOf(first.submissionId, second.submissionId), uploaded)
+            assertEquals(listOf(second.submissionId), cleaned)
+            assertEquals(listOf(first), records)
+            // 같은 연결에 설정 완료가 도착해도 이미 영수증 없이 거절된 항목은 자동 반복하지 않는다.
+            vm.update(target, false, ownerIdentity.syncRunId, ble)
+            assertEquals(EncounterTransferState.PolicyWaiting, vm.state.first { it != EncounterTransferState.Sending })
+            assertEquals(listOf(first.submissionId, second.submissionId), uploaded)
+            assertEquals(2, port.commands.count { it == "PROTECTED_GET_STATUS" })
+            assertNull(journal.read(1, ownerIdentity.deviceId))
+        } finally { client.close() }
+    }
 
     /** 이전 허가가 늦게 도착해도 자동 복구한 연결과 그 연결의 새 작업을 유지한다. */
     @Test fun lateOwnerGrantCannotClearReconnectedBoardOrBusyState() = runTest(dispatcher) {
