@@ -19,6 +19,49 @@ class ChatTextTest {
 	}
 
 	@ParameterizedTest
+	@ValueSource(strings = {"https://x.y/ 너를 죽일 거야", "x.com/　너를 죽일 거야",
+		"www.example.com 너를 죽일 거야", "192.0.2.1/a 너를 죽일 거야", "https://x.com/''너를 죽일 거야"})
+	void unicodeSpacesEndTheAddressSoTheTextAfterItIsKept(String text) {
+		assertThat(ChatText.mask(text)).startsWith("[웹 주소 차단]").endsWith("너를 죽일 거야");
+	}
+
+	@ParameterizedTest
+	@ValueSource(strings = {"https://example.com/r?k=synthetic'opaque-demo", "www.example.com/a'b?c='d'",
+		"https://example.com/r?k=synthetic''opaque-demo", "https://example.com/r?k=a'''b",
+		"example.com/r?k=a'b", "192.0.2.1/r?k=a'b", "https://evil.com'a", "www.evil.com'a/path", "https://naver.com's",
+		"https://a@evil.com/path", "https://evil.com\\path", "https://evil.com!x", "https://[2001:db8::1]'a",
+		"999.1.1.1/https://evil.com", "999.1.1.1/www.evil.com"})
+	void anApostropheOrAnOddHostCharacterDoesNotLeaveTheAddressUnmasked(String text) {
+		assertThat(ChatText.mask(text)).isIn("[웹 주소 차단]", "[웹 주소 차단]'");
+	}
+
+	@Test
+	void anAddressHiddenBehindAnInvalidHostIsStillMasked() {
+		assertThat(ChatText.mask("999.1.1.1/evil.com")).isEqualTo("999.1.1.1/[웹 주소 차단]");
+		assertThat(ChatText.mask("1.2.3.999?u=naver.com")).isEqualTo("1.2.3.999?u=[웹 주소 차단]");
+		assertThat(ChatText.mask("버전 1.2.3.999/4.5")).isEqualTo("버전 1.2.3.999/4.5");
+	}
+
+	@Test
+	void longAddressesDoNotExhaustTheRegexStack() {
+		assertThat(ChatText.mask("https://x.y/" + "́".repeat(12000))).isEqualTo("[웹 주소 차단]");
+		assertThat(ChatText.mask("https://x.y/" + "'a".repeat(20000))).isEqualTo("[웹 주소 차단]");
+	}
+
+	@ParameterizedTest
+	@ValueSource(strings = {"https://x.y/\"너를 죽일 거야\"", "x.com/'너를 죽일 거야'", "https://x.y/“너를 죽일 거야”",
+		"www.example.com「너를 죽일 거야」", "https://x.y/„너를 죽일 거야“", "https://x.y/〝너를 죽일 거야〞"})
+	void quotesEndTheAddressSoTheQuotedTextIsKept(String text) {
+		assertThat(ChatText.mask(text)).startsWith("[웹 주소 차단]").contains("너를 죽일 거야");
+	}
+
+	@ParameterizedTest
+	@ValueSource(strings = {"www.“naver”.com", "https://「naver」.com", "https://\"naver\".com"})
+	void anAddressPrefixFollowedByAQuoteIsStillMasked(String text) {
+		assertThat(ChatText.mask(text)).startsWith("[웹 주소 차단]").doesNotContain("www.", "https://");
+	}
+
+	@ParameterizedTest
 	@ValueSource(strings = {"네이버에서 검색해", "버전 1.2", "10.21에 만나", "hello@example.com",
 		"카톡 아이디는 tingle123", "example 닷 com"})
 	void preservesExcludedOrdinaryText(String text) {

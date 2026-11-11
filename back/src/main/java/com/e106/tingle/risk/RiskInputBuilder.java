@@ -25,7 +25,10 @@ public class RiskInputBuilder {
 	private static final Pattern EMAIL = Pattern.compile("[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}");
 	private static final Pattern PHONE = Pattern.compile("(?<![0-9])(?:\\+82[- .]?)?0?1[016789][- .]?[0-9]{3,4}"
 		+ "[- .]?[0-9]{4}(?![0-9])");
-	private static final Pattern REMAINING_URL = Pattern.compile("(?i)https?://[^\\s<>]+|www\\.[^\\s<>]+");
+	// AI 서버는 주소 뒤가 비어 있어도(`www. `, `https://`) 입력을 거절하므로 접두어만 남아도 가린다.
+	// 주소는 저장 때(ChatText.URL_TEXT)와 같이 유니코드 공백·따옴표에서도 끝난다. 아니면 뒤 본문(위협 문구)까지 가려진다.
+	private static final Pattern REMAINING_URL = Pattern.compile(
+		"(?i)https?://" + ChatText.URL_TEXT + "|www\\." + ChatText.URL_TEXT);
 
 	private final RiskAnalysisGateway gateway;
 
@@ -44,16 +47,30 @@ public class RiskInputBuilder {
 				throw invalid();
 			}
 			previous = message.sequence();
-			Message masked = mask(message);
+			Message masked;
+			try {
+				masked = mask(message);
+			} catch (BusinessException invalidBody) {
+				// 저장된 본문이 분석 입력 규칙에 맞지 않으면(공백만·제어 문자) 그 순번만 빼고 나머지 분석은 이어간다.
+				if (!message.fresh()) {
+					continue;
+				}
+				if (fresh.isEmpty()) {
+					throw new UnanalyzableMessage(message.sequence());
+				}
+				break;
+			}
 			(message.fresh() ? fresh : context).add(masked);
 		}
 		if (fresh.isEmpty()) {
 			throw invalid();
 		}
+		// 혼자서 글자·토큰 한도를 넘는 문맥(이미 건너뛴 메시지)은 아래 줄이기가 그 앞 대화까지 지우기 전에 미리 뺀다.
+		context.removeIf(message -> !fits(List.of(message), manifest));
 		List<Message> selected = new ArrayList<>(context.subList(Math.max(0, context.size() - 9), context.size()));
 		selected.add(fresh.getFirst());
 		if (!trimContextToFit(selected, manifest)) {
-			throw invalid();
+			throw new UnanalyzableMessage(fresh.getFirst().sequence());
 		}
 		for (Message next : fresh.subList(1, fresh.size())) {
 			List<Message> candidate = new ArrayList<>(selected);
@@ -77,8 +94,8 @@ public class RiskInputBuilder {
 	}
 
 	private boolean fits(List<Message> messages, Manifest manifest) {
-		if (messages.size() > MAX_MESSAGES || messages.stream()
-			.mapToLong(message -> message.text().codePointCount(0, message.text().length())).sum() > MAX_CHARACTERS) {
+		if (messages.size() > MAX_MESSAGES
+			|| messages.stream().mapToLong(RiskInputBuilder::length).sum() > MAX_CHARACTERS) {
 			return false;
 		}
 		int tokens;
@@ -93,6 +110,10 @@ public class RiskInputBuilder {
 			throw new BusinessException(ErrorCode.SERVICE_UNAVAILABLE);
 		}
 		return tokens <= MAX_TOKENS;
+	}
+
+	private static long length(Message message) {
+		return message.text().codePointCount(0, message.text().length());
 	}
 
 	private Message mask(Message message) {
@@ -114,5 +135,20 @@ public class RiskInputBuilder {
 
 	private BusinessException invalid() {
 		return new BusinessException(ErrorCode.INVALID_REQUEST);
+	}
+
+	/** 첫 신규 메시지 하나만으로도 글자·토큰 한도를 넘는다. 다시 시도해도 결과가 같다. */
+	public static final class UnanalyzableMessage extends BusinessException {
+
+		private final long sequence;
+
+		UnanalyzableMessage(long sequence) {
+			super(ErrorCode.INVALID_REQUEST);
+			this.sequence = sequence;
+		}
+
+		public long sequence() {
+			return sequence;
+		}
 	}
 }

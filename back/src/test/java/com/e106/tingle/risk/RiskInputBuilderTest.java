@@ -7,6 +7,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import java.util.function.ToIntFunction;
+import java.util.regex.Pattern;
 import java.util.stream.IntStream;
 
 import org.junit.jupiter.api.Test;
@@ -38,12 +39,83 @@ class RiskInputBuilderTest {
 	}
 
 	@Test
+	void masksBareUrlPrefixesThatTheAiServerRejects() {
+		// AI 서버 http_api.py의 _RAW_URL과 같은 기준이다.
+		Pattern aiRawUrl = Pattern.compile("(?i)https?://|www\\.");
+		for (String text : List.of("www. 지금 돈 보내", "https:// 링크", "끝에 www.", "HTTP://", "awww.x")) {
+			Message masked = builder(value -> 1).build(List.of(message(1, text, true)), MANIFEST).messages().getFirst();
+			assertThat(aiRawUrl.matcher(masked.text()).find()).as(text).isFalse();
+			assertThat(masked.urlMasked()).as(text).isTrue();
+		}
+	}
+
+	@Test
+	void anApostropheInsideTheUrlQueryIsMaskedWithIt() {
+		for (String text : List.of("https://example.com/r?k=synthetic'opaque-demo",
+			"https://example.com/r?k=synthetic''opaque-demo")) {
+			Message masked = builder(value -> 1).build(List.of(message(1, text, true)), MANIFEST).messages().getFirst();
+			assertThat(masked.text()).as(text).isEqualTo("[웹 주소 차단]");
+		}
+	}
+
+	@Test
+	void unicodeSpacesAndQuotesEndTheMaskedUrlSoTheThreatAfterItIsKept() {
+		for (String text : List.of("www.　너를 죽일 거야", "www. 너를 죽일 거야", "https://x.y 너를 죽일 거야",
+			"https://x.y/" + " " + "너를 죽일 거야", "www.\"너를 죽일 거야\"",
+			"https://“너를 죽일 거야”", "https://x.y/'너를 죽일 거야'")) {
+			Message masked = builder(value -> 1).build(List.of(message(1, text, true)), MANIFEST).messages().getFirst();
+			assertThat(masked.text()).as(text).contains("너를 죽일 거야").doesNotContain("www.", "https://");
+		}
+	}
+
+	@Test
+	void storedBodyBreakingTheInputRulesIsSkippedAloneAndItsNeighboursAreKept() {
+		// 1 정상 → 2 탭만 → 3 정상: 첫 회차는 1만, 2가 첫 신규가 되면 2만 건너뛰기, 문맥으로 오면 2만 빠진다.
+		List<Message> first = List.of(message(1, "위협 1", true), message(2, "\t", true), message(3, "위협 3", true));
+		assertThat(builder(value -> 1).build(first, MANIFEST).messages()).extracting(Message::sequence)
+			.containsExactly(1L);
+		assertThatThrownBy(() -> builder(value -> 1).build(List.of(message(1, "위협 1", false),
+			message(2, "\t", true), message(3, "위협 3", true)), MANIFEST))
+			.isInstanceOfSatisfying(RiskInputBuilder.UnanalyzableMessage.class,
+				skipped -> assertThat(skipped.sequence()).isEqualTo(2));
+		Input next = builder(value -> 1).build(List.of(message(1, "위협 1", false), message(2, "\t", false),
+			message(3, "위협 3", true)), MANIFEST);
+		assertThat(next.messages()).extracting(Message::sequence).containsExactly(1L, 3L);
+	}
+
+	@Test
 	void includesTheLargestConsecutiveFreshPrefixAndNeverSkipsAnOversizedFreshMessage() {
 		List<Message> messages = List.of(message(1, "old context", false), message(2, "first", true),
 			message(3, "x".repeat(4001), true), message(4, "later", true));
 		Input input = builder(value -> 1).build(messages, MANIFEST);
 		assertThat(input.messages().stream().filter(Message::fresh).map(Message::sequence)).containsExactly(2L);
 		assertThat(input.messages()).extracting(Message::sequence).doesNotContain(3L, 4L);
+	}
+
+	@Test
+	void anOversizedContextMessageIsDroppedAloneWithoutErasingEarlierContext() {
+		// 9번은 앞서 건너뛴 한도 초과 메시지. 줄이기가 오래된 것부터 지우면 1~8번까지 다 사라지던 문제.
+		List<Message> messages = new ArrayList<>();
+		IntStream.rangeClosed(1, 8).forEach(i -> messages.add(message(i, "context " + i, false)));
+		messages.add(message(9, "x".repeat(4001), false));
+		messages.add(message(10, "fresh", true));
+		Input input = builder(value -> 1).build(messages, MANIFEST);
+		assertThat(input.messages()).extracting(Message::sequence)
+			.containsExactly(1L, 2L, 3L, 4L, 5L, 6L, 7L, 8L, 10L);
+	}
+
+	@Test
+	void contextMessageOverTheTokenLimitAloneIsAlsoDroppedAlone() {
+		// 글자 수는 한도 안이지만 토큰만 3,000을 넘어 건너뛴 메시지도 같은 방식으로 혼자만 빠져야 한다.
+		List<Message> messages = new ArrayList<>();
+		IntStream.rangeClosed(1, 8).forEach(i -> messages.add(message(i, "context " + i, false)));
+		messages.add(message(9, "heavy", false));
+		messages.add(message(10, "fresh", true));
+		ToIntFunction<Input> tokens = value -> value.messages().stream()
+			.anyMatch(message -> "heavy".equals(message.text())) ? 3001 : value.messages().size();
+		Input input = builder(tokens).build(messages, MANIFEST);
+		assertThat(input.messages()).extracting(Message::sequence)
+			.containsExactly(1L, 2L, 3L, 4L, 5L, 6L, 7L, 8L, 10L);
 	}
 
 	@Test
