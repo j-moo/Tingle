@@ -1,5 +1,6 @@
 """Authenticated risk transport with explicit file provenance and no provider client."""
 
+from dataclasses import dataclass, field
 import hashlib
 import json
 from pathlib import Path
@@ -113,10 +114,17 @@ class Verdict(StrictModel):
         return value
 
 
+@dataclass(frozen=True)
+class RuleFallbackResult:
+    """Internal origin marker: a rule verdict is not a primary Shadow sample."""
+
+    verdict: dict = field(repr=False)
+
+
 class AsyncRiskEngine(Protocol):
     async def count_tokens(self, messages: list[dict], manifest: dict, *, deadline: Deadline) -> int: ...
 
-    async def analyze(self, messages: list[dict], manifest: dict, *, deadline: Deadline) -> dict: ...
+    async def analyze(self, messages: list[dict], manifest: dict, *, deadline: Deadline) -> dict | RuleFallbackResult: ...
 
 
 class RiskEngine(Protocol):
@@ -248,7 +256,11 @@ def create_router(authenticate: Callable, catalog: ReleaseCatalog | None = None,
             except (ValueError, TypeError, ValidationError):
                 raise _error(400, "INVALID_REQUEST") from None
             try:
-                result = Verdict.model_validate(await execution.invoke(engine.analyze, messages, manifest, deadline=deadline))
+                outcome = await execution.invoke(engine.analyze, messages, manifest, deadline=deadline)
+                used_fallback = isinstance(outcome, RuleFallbackResult)
+                result = Verdict.model_validate(outcome.verdict if used_fallback else outcome)
+                if used_fallback and result.kind != "RISK":
+                    raise ValueError("Invalid fallback verdict")
                 fresh_sequences = {m["sequence"] for m in messages if m["fresh"]}
                 if (result.kind == "RISK") != bool(result.findings):
                     raise ValueError("Invalid verdict")
@@ -271,7 +283,7 @@ def create_router(authenticate: Callable, catalog: ReleaseCatalog | None = None,
             if not await execution.executor.run(releases.supports, payload.manifest, deadline=deadline):
                 raise _error(422, "POLICY_UNRESOLVED")
             body = {"attemptId": payload.attemptId, "manifest": manifest, "verdict": result.model_dump()}
-            if start_shadow is None:
+            if start_shadow is None or used_fallback:
                 return body
             return JSONResponse(body, background=BackgroundTask(
                 start_shadow, messages, manifest, result.kind, deadline=deadline))

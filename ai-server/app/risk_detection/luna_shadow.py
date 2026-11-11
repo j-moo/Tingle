@@ -11,7 +11,8 @@ from dataclasses import dataclass, field, replace
 from typing import Protocol
 
 from app.risk_detection.execution import CapacityExceeded, Deadline, ExecutionBoundary, ExecutionLimits
-from app.risk_detection.http_api import Manifest
+from app.risk_detection.http_api import Manifest, RuleFallbackResult
+from app.risk_detection.local_engine import EngineUnavailableError
 from app.risk_detection.rule_engine import MODEL_VERSION, PROMPT_VERSION
 from app.risk_detection.validation import approved_messages, validated_verdict
 
@@ -24,6 +25,10 @@ class ModelReply:
 
 class AsyncModel(Protocol):
     async def complete(self, messages: list[dict], manifest: dict, *, deadline) -> ModelReply: ...
+
+
+class PrimaryUnavailable(Exception):
+    """A primary adapter could not produce a usable provider reply."""
 
 
 @dataclass(frozen=True)
@@ -57,6 +62,7 @@ class LunaShadowEngine:
         self.shadow = ExecutionBoundary(replace(self.execution_limits, workers=1))
         self.primary, self.review, self.rules, self.identity = primary, review, rules, identity
         self.records = deque(maxlen=128)
+        self._closing = False
 
     async def count_tokens(self, messages, manifest, *, deadline):
         return await self.boundary.executor.run(self.rules.count_tokens, deepcopy(messages),
@@ -72,10 +78,39 @@ class LunaShadowEngine:
 
     async def analyze(self, messages, manifest, *, deadline):
         source, release = deepcopy(messages), deepcopy(manifest)
-        first = await self.boundary.run(
-            self.primary.complete(deepcopy(source), deepcopy(release), deadline=deadline),
-            deadline=deadline, cap=self.execution_limits.primary_seconds)
-        return self._reply(first, source, release)
+        fallback_enabled = getattr(self.primary, "supports_rule_fallback", False) is True
+        try:
+            first = await self.boundary.run(
+                self.primary.complete(deepcopy(source), deepcopy(release), deadline=deadline),
+                deadline=deadline, cap=self.execution_limits.primary_seconds)
+        except (PrimaryUnavailable, TimeoutError):
+            if not fallback_enabled:
+                raise
+        else:
+            # Reject unapproved manifest/model identity before considering fallback.
+            result = self._reply(first, source, release)
+            if not fallback_enabled or result["kind"] != "FAILED":
+                return result
+        return await self._rule_fallback(source, release, deadline=deadline)
+
+    async def _rule_fallback(self, messages, manifest, *, deadline: Deadline) -> RuleFallbackResult:
+        if self._closing:
+            raise EngineUnavailableError("Risk engine closing")
+        # Leave time inside the original request deadline for the final release check.
+        rule_deadline = Deadline(deadline.expires_at - self.execution_limits.cleanup_seconds, deadline.clock)
+        try:
+            result = await self.boundary.executor.run(
+                self.rules.analyze, deepcopy(messages), deepcopy(manifest), deadline=rule_deadline)
+        except asyncio.CancelledError:
+            if asyncio.current_task().cancelling():
+                raise
+            raise EngineUnavailableError("Risk rule analysis cancelled") from None
+        result = validated_verdict(result, approved_messages(messages))
+        rule_deadline.check()
+        if (self._closing or result["kind"] != "RISK"
+                or (result["modelVersion"], result["promptVersion"]) != (MODEL_VERSION, PROMPT_VERSION)):
+            raise EngineUnavailableError("Risk fallback has no approved finding")
+        return RuleFallbackResult(result)
 
     async def start_shadow(self, messages, manifest, primary_kind, *, deadline: Deadline):
         # Called after the official response body is sent. Never await the comparison here.
@@ -130,5 +165,6 @@ class LunaShadowEngine:
         self.records.append(ShadowRecord(primary_kind, rule_status, rule_kind, review_status, review_kind))
 
     async def aclose(self):
+        self._closing = True
         remaining = await self.shadow.aclose()
         return remaining + await self.boundary.aclose()

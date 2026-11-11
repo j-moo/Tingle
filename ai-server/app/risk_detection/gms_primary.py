@@ -2,10 +2,10 @@
 
 import asyncio
 
-from app.match_explanation.gms import GmsClient, GmsError
+from app.match_explanation.gms import GmsClient, GmsConfigurationError, GmsError
 from app.risk_detection.execution import Deadline
 from app.risk_detection.http_api import Manifest, _json
-from app.risk_detection.luna_shadow import ModelIdentity, ModelReply
+from app.risk_detection.luna_shadow import ModelIdentity, ModelReply, PrimaryUnavailable
 from app.risk_detection.validation import approved_messages, validated_verdict
 
 
@@ -20,7 +20,13 @@ FRAUD/MONEY_REQUEST/RECIPIENT, HARASSMENT/HARASSMENT/BOTH, THREAT/HARASSMENT/BOT
 OTHER/PERSONAL_INFO/RECIPIENT, OTHER/OFF_PLATFORM/RECIPIENT."""
 
 
+class _ProviderFailure(GmsError, PrimaryUnavailable):
+    """A provider or output failure after local input validation."""
+
+
 class GmsPrimaryAdapter:
+    supports_rule_fallback = True
+
     def __init__(self, *, client: GmsClient, identity: ModelIdentity) -> None:
         self._client = client
         self._identity = identity
@@ -40,6 +46,11 @@ class GmsPrimaryAdapter:
                 text = await self._client.request_text(PRIMARY_PROMPT, payload)
         except TimeoutError:
             raise TimeoutError("GMS timeout") from None
+        except GmsConfigurationError:
+            # Keep permanent provider rejection out of the rule fallback path.
+            raise
+        except GmsError:
+            raise _ProviderFailure("GMS provider unavailable") from None
 
         try:
             candidate = _json(text.encode("utf-8"))
@@ -51,6 +62,6 @@ class GmsPrimaryAdapter:
                 "promptVersion": self._identity.prompt_version,
             }, approved)
         except (TypeError, ValueError, RecursionError):
-            raise GmsError("Invalid Safety Guard output") from None
+            raise _ProviderFailure("Invalid Safety Guard output") from None
         deadline.check()
         return ModelReply(manifest=release, verdict=result)

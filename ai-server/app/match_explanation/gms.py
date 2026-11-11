@@ -16,6 +16,10 @@ class GmsError(Exception):
     """비밀값이나 제공업체 응답을 포함하지 않는 내부 예외."""
 
 
+class GmsConfigurationError(GmsError):
+    """요청 설정이나 인증을 고쳐야 하는 오류."""
+
+
 class GmsClient:
     """기존 httpx2로 Responses API를 호출한다. 재시도/대체 모델은 사용하지 않는다.
 
@@ -64,7 +68,10 @@ class GmsClient:
                     "POST", ENDPOINT, json=body,
                     headers={"Authorization": f"Bearer {self._api_key}"},
                 ) as response:
-                    if response.status_code != 200:
+                    status = response.status_code
+                    if 300 <= status < 500 and status not in (408, 429):
+                        raise GmsConfigurationError("GMS authentication or configuration failed")
+                    if status != 200:
                         raise GmsError("GMS request failed")
                     data = bytearray()
                     async for chunk in response.aiter_bytes():
@@ -75,6 +82,8 @@ class GmsClient:
             return _response_text(envelope)
         except httpx.TimeoutException:
             raise TimeoutError("GMS timeout") from None
+        except (httpx.LocalProtocolError, UnicodeEncodeError):
+            raise GmsConfigurationError("Invalid GMS request configuration") from None
         except (httpx.HTTPError, ValueError, KeyError, TypeError, AttributeError, RecursionError):
             raise GmsError("Invalid GMS response") from None
 
