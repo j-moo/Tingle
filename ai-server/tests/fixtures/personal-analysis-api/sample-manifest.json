@@ -23,7 +23,7 @@
   },
   "files": {
     "succeeded.request.json": "fde0a769f2b8521c890cd23de3a1fad6d854f3cddbe5f1ded6adbc0bef165038",
-    "succeeded.response.proposal.json": "6df91f2fe13f744974fc05f74858140eb35466059078fd11f905d9fb9d581b2f",
+    "succeeded.response.proposal.json": "86d5dffd6321408a7ce5e88e5bc401dd9e9c91bf75fa2575bdf47233a86ff01d",
     "insufficient.request.json": "ed45b0c61b6014b855d40b8d7ea63d2c4960ec6153d255fe443056d5fb0df47c",
     "insufficient.response.proposal.json": "c4c006c80c179e9d4427db37caa064d7ca89a52b5e74415d01b66b185155280d"
   }

@@ -13,7 +13,7 @@ from app.personal_analysis.reference import LABELS
 
 from .adapter import (
     AnswerContext, PresentationPolicy, PresentationUnavailable, difference_evidence,
-    question_id,
+    format_expression_reading, question_id,
 )
 from .dto import Reading
 
@@ -60,4 +60,5 @@ def proposed_label_only_policy() -> PresentationPolicy:
     return PresentationPolicy(
         reading_template_ids=CANDIDATE_READING_TEMPLATE_IDS,
         difference_reading=proposed_label_only_difference,
+        reading_text_formatters={"PA-R-EXPRESSION-01": format_expression_reading},
     )

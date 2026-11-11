@@ -148,7 +148,7 @@ AI 응답은 아래 **11개 필드**다. BE 공개 envelope의 resultId/sessionI
 | typeStatus | ASSIGNED / BORDERLINE / TIED / INSUFFICIENT | 코어 값 그대로 |
 | primaryType | string 또는 null | TIED/INSUFFICIENT는 null |
 | tiedTypes | array<string> | 코어의 순서·빈 배열 그대로 |
-| readings | array<Reading>, 최대 3개 | text·priority·근거 순서·선정 순서 복사 |
+| readings | array<Reading>, 최대 3개 | priority·근거 순서·선정 순서 보존. text는 아래 Reading 필드 규칙을 따름 |
 | selfPreferenceDifferences | array<Reading>, 최대 2개 | 코어 fit 오름차순·동점 문항 번호순. 표시만 제안 renderer 사용 |
 | typeRecommendations | array<TypeReference>, 최대 3개 | type/score/모드/배열 순서 보존 |
 | missingQuestionIds | array<string> | 자기 Q001~Q060 중 unknown. SUCCEEDED에서도 보존 |
@@ -157,7 +157,7 @@ AI 응답은 아래 **11개 필드**다. BE 공개 envelope의 resultId/sessionI
 | --- | --- | --- |
 | key | nonempty string | 기존 reading key / 차이는 실제 자기·선호 ID 쌍의 제안 key |
 | templateId | nonempty string | 분기 고정 ID 후보. title 해시로 만들지 않음 |
-| text | nonempty string | readings는 원문 복사. 차이는 label/self/wish만 넣는 미승인 제안 |
+| text | nonempty string | readings는 기본적으로 기존 텍스트를 사용한다. 표시 정책에서 활성화된 `PA-R-EXPRESSION-01`의 정상(`SUCCEEDED`) 결과는 검증된 Q030/Q032 답변으로 `Reading.text`를 구성한다. 근거를 확인할 수 없으면 기존 텍스트를 사용한다. 차이는 label/self/wish만 넣는 미승인 제안 |
 | evidenceQuestionIds | array<string> | 실제 카탈로그 ID, 의미 있는 원래 순서 유지 |
 | priority | strict integer | readings 원래 값 / 차이 첫 행 2·둘째 행 1은 미승인 표시 순위 |
 

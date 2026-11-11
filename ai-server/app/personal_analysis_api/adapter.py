@@ -136,6 +136,39 @@ def reference_evidence(row: dict, answers: AnswerContext) -> list[str]:
     return list(dict.fromkeys(ids))
 
 
+def format_expression_reading(row: dict, answers: AnswerContext) -> str:
+    """Describe the two catalogue answers only when the core evidence agrees."""
+    fallback = row["text"]
+    approach, frequency = answers.get(30), answers.get(32)
+    if not core.numeric(approach) or not core.numeric(frequency):
+        return fallback
+    approach_text = {
+        4: "먼저 마음을 표현하는 편이라고",
+        5: "먼저 마음을 분명하게 표현한다고",
+    }.get(approach)
+    frequency_text = {
+        1: "거의 하지 않는다고",
+        2: "가끔 한다고",
+    }.get(frequency)
+    if approach_text is None or frequency_text is None:
+        return fallback
+
+    evidence = row.get("evidence")
+    if not isinstance(evidence, list) or len(evidence) != 2:
+        return fallback
+    for item, ordinal, value in zip(evidence, (30, 32), (approach, frequency), strict=True):
+        if (
+            not isinstance(item, dict) or item.get("id") != ordinal
+            or item.get("answer") != core.answer_label(ordinal, value)
+        ):
+            return fallback
+
+    return (
+        f"호감이 생기면 {approach_text} 답했어요. "
+        f"연인에게 좋아한다는 말은 {frequency_text} 답했어요."
+    )
+
+
 @dataclass(frozen=True)
 class PresentationPolicy:
     # Fixed IDs/wording and difference priorities still require approval.
@@ -143,9 +176,12 @@ class PresentationPolicy:
     difference_reading: Callable[[dict, int, AnswerContext], Reading] | None = None
     # Evidence semantics are confirmed, independently of wording approval.
     reference_evidence: Callable[[dict, AnswerContext], list[str]] | None = reference_evidence
+    # Optional wording for successful results, keyed by the existing branch ID.
+    reading_text_formatters: Mapping[str, Callable[[dict, AnswerContext], str]] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "reading_template_ids", MappingProxyType(dict(self.reading_template_ids)))
+        object.__setattr__(self, "reading_text_formatters", MappingProxyType(dict(self.reading_text_formatters)))
 
 
 def to_core_input(request: PersonalAnalysisRequest, binding: VersionBinding) -> PersonalAnalysisInput:
@@ -162,18 +198,26 @@ def to_be_response(
     result: PersonalAnalysisResult, binding: VersionBinding, policy: PresentationPolicy,
     answers: AnswerContext,
 ) -> PersonalAnalysisResponse:
-    """Copy values/order for both statuses; BE alone owns public filtering."""
+    """Preserve order, evidence, scores, and the response DTO schema.
+
+    An explicitly enabled presentation policy may format only the targeted
+    Reading.text for successful PA-R-EXPRESSION-01 results with verified
+    Q030/Q032 answers. BE alone owns public filtering.
+    """
     if (result.surveyVersion, result.calculationVersion) != (
         binding.survey_version, binding.calculation_version,
     ):
         raise PresentationUnavailable()
     readings = []
+    formatters = policy.reading_text_formatters if result.status == "SUCCEEDED" else {}
     for row in result.readings:
         template_id = policy.reading_template_ids.get((row["key"], row["title"]))
         if not template_id:
             raise PresentationUnavailable()
+        formatter = formatters.get(template_id)
         readings.append(Reading(
-            key=row["key"], templateId=template_id, text=row["text"], priority=row["priority"],
+            key=row["key"], templateId=template_id, priority=row["priority"],
+            text=formatter(row, answers) if formatter else row["text"],
             evidenceQuestionIds=[question_id(e["id"]) for e in row["evidence"]],
         ))
     if result.selfPreferenceDifferences and policy.difference_reading is None:
