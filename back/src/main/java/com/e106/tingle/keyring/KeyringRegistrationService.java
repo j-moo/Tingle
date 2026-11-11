@@ -131,7 +131,8 @@ public class KeyringRegistrationService {
 			|| challenge.getRegisteredStatus() == null || challenge.getRegisteredFirmwareVersion() == null) {
 			throw new BusinessException(ErrorCode.IDEMPOTENCY_CONFLICT);
 		}
-		return new KeyringView(challenge.getRegisteredKeyringId(), challenge.getRegisteredStatus(),
+		return new KeyringView(challenge.getRegisteredKeyringId(), device.getSerialNumber(),
+			challenge.getRegisteredStatus(),
 			challenge.getRegisteredFirmwareVersion());
 	}
 

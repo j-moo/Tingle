@@ -74,7 +74,9 @@ class KeyringStoragePersistenceTest {
 		assertThat(view.deviceId()).isEqualTo(id);
 		assertThat(view.firmwareVersion()).isEqualTo("test-firmware");
 		String body = JsonMapper.builder().build().writeValueAsString(view);
-		assertThat(body).doesNotContain(serial, "serial", "verification", "boundAt", "syncedAt", "ownerUserId");
+		// 내 기기 일련번호는 앱이 BLE 값과 대조하도록 준다. 자격 정보·소유자 번호는 여전히 주지 않는다.
+		assertThat(view.deviceSerial()).isEqualTo(serial);
+		assertThat(body).doesNotContain("verification", "credential", "boundAt", "syncedAt", "ownerUserId");
 	}
 
 	@Test

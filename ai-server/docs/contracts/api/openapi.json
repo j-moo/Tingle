@@ -1780,7 +1780,8 @@
                   "$ref": "#/components/schemas/Keyring"
                 },
                 "example": {
-                  "deviceId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+                  "deviceId": 17,
+                  "deviceSerial": "example",
                   "status": "REGISTERED",
                   "firmwareVersion": "example"
                 }
@@ -19519,6 +19520,12 @@
             "maximum": 9223372036854775807,
             "description": "현재 본인 소유 REGISTERED keyring.id 숫자 ID. 소유 인증 자격이 아님"
           },
+          "deviceSerial": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "description": "본인 키링의 일련번호(keyring.serial_number). 등록 때 앱이 BLE GET_DEVICE_INFO로 읽어 보낸 값 그대로이며 대소문자를 구분한다. 앱은 연결한 기기의 일련번호가 내 목록에 없으면 남의 키링으로 보고 연결을 끊는다. 소유 인증 자격이 아님"
+          },
           "status": {
             "type": "string",
             "enum": [
@@ -19538,12 +19545,14 @@
         },
         "required": [
           "deviceId",
+          "deviceSerial",
           "status",
           "firmwareVersion"
         ],
         "examples": [
           {
             "deviceId": 17,
+            "deviceSerial": "example",
             "status": "REGISTERED",
             "firmwareVersion": "example"
           }
@@ -19649,7 +19658,8 @@
           },
           "deviceSerial": {
             "type": "string",
-            "minLength": 1
+            "minLength": 1,
+            "maxLength": 64
           },
           "proof": {
             "$ref": "#/components/schemas/DeviceProof"
