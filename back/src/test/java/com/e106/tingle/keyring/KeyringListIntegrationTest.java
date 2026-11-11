@@ -3,14 +3,9 @@ package com.e106.tingle.keyring;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
-
-import java.util.HashMap;
-import java.util.Map;
-import java.util.UUID;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -19,7 +14,6 @@ import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.context.annotation.Import;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.test.context.ActiveProfiles;
-import org.springframework.test.web.servlet.ResultActions;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
@@ -60,8 +54,7 @@ class KeyringListIntegrationTest extends IntegrationTestSupport {
 		JsonNode result = jsonMapper.readTree(body).path("items");
 		assertThat(result.get(0).path("deviceId").asLong()).isEqualTo(first);
 		assertThat(result.get(1).path("deviceId").asLong()).isEqualTo(second);
-		assertThat(result.get(0).size()).isEqualTo(5);
-		assertThat(result.get(0).path("label").asString()).isEqualTo(serialPrefix(first));
+		assertThat(result.get(0).size()).isEqualTo(4);
 		// 앱이 BLE 로 읽은 일련번호와 대조할 수 있게 내 기기의 일련번호만 준다. 남의 기기·자격 정보는 주지 않는다.
 		String own = jdbc.queryForObject("select serial_number from keyring where id=?", String.class, first);
 		String foreignSerial = jdbc.queryForObject("select serial_number from keyring where id=?", String.class,
@@ -150,82 +143,6 @@ class KeyringListIntegrationTest extends IntegrationTestSupport {
 			return entityManager.find(Keyring.class, entity.getId()).getId();
 		});
 		assertThat(id).isPositive();
-	}
-
-	@Test
-	void ownerRenamesDeviceAndBlankRestoresSerialPrefix() throws Exception {
-		JsonNode owner = eligibleUser();
-		long id = device(userIdOf(owner), "REGISTERED");
-		rename(owner, id, "  내 키링  ").andExpect(status().isOk())
-			.andExpect(header().string("Cache-Control", "no-store"))
-			.andExpect(jsonPath("$.deviceId").value(id)).andExpect(jsonPath("$.label").value("내 키링"))
-			.andExpect(jsonPath("$.deviceSerial").value(serial(id)));
-		assertThat(items(owner).get(0).path("label").asString()).isEqualTo("내 키링");
-		assertThat(jdbc.queryForObject("select label from keyring where id=?", String.class, id))
-			.isEqualTo("내 키링");
-		// 코드 포인트 기준 10자는 받는다(이모지 포함).
-		rename(owner, id, "가나다라마바사아자😀").andExpect(status().isOk())
-			.andExpect(jsonPath("$.label").value("가나다라마바사아자😀"));
-		// 앞뒤 공백을 지운 뒤 10자를 센다.
-		rename(owner, id, " \u00A01234567890 ").andExpect(status().isOk())
-			.andExpect(jsonPath("$.label").value("1234567890"));
-		String[] blanks = {null, "", "   ", "\u00A0", "\u3164 \u3000", "\uFE0F", "\u034F\u2800", "\uDB40\uDD00"};
-		for (String blank : blanks) {
-			rename(owner, id, blank).andExpect(status().isOk())
-				.andExpect(jsonPath("$.label").value(serialPrefix(id)));
-			assertThat(jdbc.queryForObject("select label from keyring where id=?", String.class, id)).isNull();
-		}
-	}
-
-	@Test
-	void rejectsInvalidLabelsAndDevicesTheCallerDoesNotOwn() throws Exception {
-		JsonNode owner = eligibleUser();
-		JsonNode other = eligibleUser();
-		long id = device(userIdOf(owner), "REGISTERED");
-		for (String invalid : new String[] {"가나다라마바사아자차카", "a\nb", "tab\tx", "내 키링\n", "\t", "\u200B", "a\u202Eb"}) {
-			rename(owner, id, invalid).andExpect(status().isBadRequest())
-				.andExpect(jsonPath("$.code").value("INVALID_REQUEST"));
-		}
-		long foreign = device(userIdOf(other), "REGISTERED");
-		long unbound = device(userIdOf(owner), "UNBOUND");
-		for (long target : new long[] {foreign, unbound, Long.MAX_VALUE}) {
-			rename(owner, target, "남의 키링").andExpect(status().isNotFound())
-				.andExpect(jsonPath("$.code").value("RESOURCE_NOT_FOUND"));
-		}
-		assertThat(jdbc.queryForObject("select count(*) from keyring where label is not null and id in (?,?,?)",
-			Integer.class, id, foreign, unbound)).isZero();
-		mockMvc.perform(patch(PATH + "/" + id).contentType("application/json").content("{\"label\":\"x\"}"))
-			.andExpect(status().isUnauthorized());
-	}
-
-	@Test
-	void ownershipChangesClearTheLabel() {
-		long released = jdbc.queryForObject("insert into keyring(serial_number,firmware_version,owner_user_id,state,"
-			+ "owner_generation,label) values (?,'test',1,'REGISTERED',?,'old') returning id", Long.class,
-			newSocialId(), UUID.randomUUID());
-		long fresh = jdbc.queryForObject("insert into keyring(serial_number,firmware_version,state,label) "
-			+ "values (?,'test','UNBOUND','stale') returning id", Long.class, newSocialId());
-		new TransactionTemplate(transactionManager).executeWithoutResult(transaction -> {
-			Keyring reset = entityManager.find(Keyring.class, released);
-			reset.releaseAfterVerifiedReset(reset.getOwnerGeneration());
-			entityManager.find(Keyring.class, fresh).register(1, UUID.randomUUID());
-		});
-		assertThat(jdbc.queryForList("select label from keyring where id in (?,?)", String.class, released, fresh))
-			.containsOnlyNulls().hasSize(2);
-	}
-
-	private ResultActions rename(JsonNode owner, long id, String label) throws Exception {
-		Map<String, Object> body = new HashMap<>();
-		body.put("label", label);
-		return perform(patch(PATH + "/" + id), owner, jsonMapper.writeValueAsString(body));
-	}
-
-	private String serial(long id) {
-		return jdbc.queryForObject("select serial_number from keyring where id=?", String.class, id);
-	}
-
-	private String serialPrefix(long id) {
-		return jdbc.queryForObject("select left(serial_number,10) from keyring where id=?", String.class, id);
 	}
 
 	private long device(long owner, String state) {

@@ -48,7 +48,7 @@ public class UnderAgeWithdrawalService {
 		jdbc.update("update push_installation set user_id=null, login_family_id=null, binding_id=null, "
 			+ "linked_at=null, updated_at=? where user_id=?", Timestamp.from(clock.instant()), userId);
 		jdbc.update("update keyring set owner_user_id=null, state='UNBOUND', synced_settings_version=null, "
-			+ "synced_at=null, label=null where owner_user_id=?", userId);
+			+ "synced_at=null where owner_user_id=?", userId);
 		jdbc.update("delete from users where id=?", userId);
 	}
 }

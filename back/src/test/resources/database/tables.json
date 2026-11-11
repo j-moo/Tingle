@@ -1,7 +1,7 @@
 {
   "version": "1.9.0-keyring-ownership-epoch",
   "total_tables": 35,
-  "total_columns": 298,
+  "total_columns": 297,
   "physical_foreign_keys": false,
   "tables": {
     "personality": {
@@ -1065,18 +1065,6 @@
           "name": "ownership_epoch",
           "type": "bigint",
           "meaning": "서버가 기기 서명으로 확인한 소유 카운터. 기존 미확인 값은 NULL 유지하며 서명된 최초 epoch0 또는 검증된 초기화 완료로만 설정한다. 재등록 시 보존하고 임의 backfill하지 않는다.",
-          "nullable": true,
-          "pk": false,
-          "increment": false,
-          "unique": false,
-          "reference": null,
-          "default": null,
-          "json_shape": null
-        },
-        {
-          "name": "label",
-          "type": "varchar(10)",
-          "meaning": "주인이 붙인 별명(최대 10자). NULL이면 앱에 일련번호 앞 10자를 보여 준다. 본인 앱 화면에서만 쓰고 기기·상대·AI 서버로 보내지 않으며, 주인이 바뀌면(초기화·탈퇴 해제·새 등록) 비운다.",
           "nullable": true,
           "pk": false,
           "increment": false,

@@ -8,16 +8,6 @@
 
 등록67/100·동기화68/69의 최종 소유 증명/저장 ACK 규격은 별도 확정본이 없다는 사용자 확인을 반영한다. 현재 `DeviceProof`의 `protocolVersion/payload`만으로 실제 검증 규칙이 확정된 것은 아니다. 기기 키 발급·검증키 대응, 서명/MAC 알고리즘과 정확한 바이트/인코딩, 등록 nonce·회원·serial 결합, ACK의 소유세대/run/version/payloadHash 결합 및 단회 소비·당시 payload의 영속 위치가 필요하다. 현재 22표에는 이 정의가 없으며 새 API·칼럼이나 임의 증명을 추가하지 않았다.
 
-## 키링 별명 · 2026-11-12 S15P31E106-331
-
-한 계정에 키링이 여러 개일 수 있어 번호 대신 이름으로 구분한다. `keyring.label`(varchar(10), NULL 허용) 칸 하나로 저장하고 별도 표는 없다.
-
-- 목록(`GET /api/keyrings`)과 등록 응답의 각 키링에 `label`이 추가돼 필드는 deviceId/deviceSerial/status/firmwareVersion/label 다섯 개다. 별명이 없으면 일련번호 앞 10자를 준다.
-- `PATCH /api/keyrings/{deviceId}` `{"label": "내 키링"}`: 현재 주인이고 REGISTERED인 키링만 바꾼다. 앞뒤 공백(줄바꿈 없는 공백·한글 채움 문자 포함)을 지운 뒤 코드 포인트 10자 초과, 제어 문자, 서식 문자(폭 없는 공백·방향 제어)는 400 `INVALID_REQUEST`, 남의 키링·해제된 키링·없는 키링은 404 `RESOURCE_NOT_FOUND`. null·빈 문자열·공백만이면 별명을 지운다. 응답은 바뀐 키링 한 대이고 `Cache-Control: no-store`.
-- 주인이 바뀌면(검증된 초기화 해제, 미성년 탈퇴 해제, 새 등록) 별명을 비운다.
-- 본인 앱 화면에서만 쓰고 기기 설정(TSV3·TPS1)·상대방·AI 서버로 보내지 않는다. 로그의 `KeyringView` 문자열에서는 별명도 가린다(기본값이 일련번호 앞부분이라서).
-- 운영 DB는 `infra/db/prod-changes/2026-11-12-keyring-label-331.sql`을 새 버전 배포 전에 실행한다(운영은 ddl-auto validate).
-
 ## 2026-10-28 저장 이관 단위 · S15P31E106-175
 
 현재 목록의 `deviceId`는 `keyring.id`의 양수 int64 숫자다. DTO는 deviceId/deviceSerial/status/firmwareVersion 네 필드이며 검증 자격·owner·추정 등록 시각을 반환하지 않는다. `deviceSerial`(333)은 본인 키링의 일련번호로, 앱이 연결한 BLE 기기를 내 목록과 대조하는 데 쓴다. 남의 키링 일련번호는 반환하지 않는다. 조회는 현재 본인 소유 `REGISTERED` 행만 읽고 숫자 ID 오름차순으로 반환한다. 구매 안내도 같은 현재 소유/상태를 기준으로 한다.

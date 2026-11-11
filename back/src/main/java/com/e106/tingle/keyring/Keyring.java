@@ -52,9 +52,6 @@ public class Keyring {
 	private UUID ownerGeneration;
 	// Device-authenticated counter. Unknown legacy rows stay null until a signed epoch-zero challenge/proof.
 	private Long ownershipEpoch;
-	// 주인이 붙인 별명(최대 10자). 본인 앱 화면에서만 쓰고 기기·상대·AI 서버로 보내지 않는다. 주인이 바뀌면 비운다.
-	@Column(length = 10)
-	private String label;
 
 	public void confirmOwnershipEpoch(long epoch) {
 		if (epoch < 0 || (ownershipEpoch == null ? epoch != 0 : ownershipEpoch != epoch)) {
@@ -88,7 +85,6 @@ public class Keyring {
 		state = KeyringState.REGISTERED;
 		syncedSettingsVersion = null;
 		syncedAt = null;
-		label = null;
 	}
 
 	/** 검증된 기기 초기화 증명 뒤에만 해제한다. 영구 식별자·기기 인증키는 보존한다. */
@@ -102,7 +98,6 @@ public class Keyring {
 		state = KeyringState.UNBOUND;
 		syncedSettingsVersion = null;
 		syncedAt = null;
-		label = null;
 	}
 
 	/** 현재 소유 세대와 서명·최신 설정 버전을 확인한 서비스만 호출한다. */
