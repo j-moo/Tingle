@@ -16,16 +16,17 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.EnableAutoConfiguration;
+import org.springframework.boot.jdbc.autoconfigure.JdbcConnectionDetails;
 import org.springframework.boot.persistence.autoconfigure.EntityScan;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.data.jpa.repository.config.EnableJpaRepositories;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
-import org.testcontainers.postgresql.PostgreSQLContainer;
+
+import com.e106.tingle.SharedPostgres;
 
 @SpringBootTest(classes = PushStoragePersistenceTest.Config.class, properties = {
 	"spring.main.web-application-type=none", "spring.profiles.active=test",
@@ -44,9 +45,8 @@ class PushStoragePersistenceTest {
 	@EnableJpaRepositories(basePackageClasses = PushInstallationRepository.class)
 	static class Config {
 		@Bean
-		@ServiceConnection
-		PostgreSQLContainer postgresContainer() {
-			return new PostgreSQLContainer("postgres:17");
+		JdbcConnectionDetails postgresConnection() {
+			return SharedPostgres.newDatabase();
 		}
 	}
 

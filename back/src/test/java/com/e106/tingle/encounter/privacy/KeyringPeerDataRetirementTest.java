@@ -13,6 +13,7 @@ import java.util.UUID;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.boot.jdbc.autoconfigure.JdbcConnectionDetails;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DataSourceTransactionManager;
@@ -20,10 +21,8 @@ import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import org.springframework.jdbc.datasource.SingleConnectionDataSource;
 import org.springframework.jdbc.datasource.init.ResourceDatabasePopulator;
 import org.springframework.transaction.support.TransactionTemplate;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
-import org.testcontainers.postgresql.PostgreSQLContainer;
 
+import com.e106.tingle.SharedPostgres;
 import com.e106.tingle.global.error.BusinessException;
 import com.e106.tingle.global.error.ErrorCode;
 import com.e106.tingle.settings.snapshot.SettingsChangeCoordinator;
@@ -33,11 +32,9 @@ import com.e106.tingle.user.ProfilePhotoService;
 import com.e106.tingle.user.UnderAgeWithdrawalService;
 
 /** 기능 설정과 무관한 탈퇴 삭제 의무를 일회용 PostgreSQL에서 검증한다. */
-@Testcontainers
 class KeyringPeerDataRetirementTest {
 	private static final Instant NOW = Instant.parse("2026-11-06T08:00:00.123456Z");
-	@Container
-	private static final PostgreSQLContainer POSTGRES = new PostgreSQLContainer("postgres:17");
+	private static final JdbcConnectionDetails POSTGRES = SharedPostgres.newDatabase();
 	private SingleConnectionDataSource source;
 	private JdbcTemplate jdbc;
 	private TransactionTemplate transactions;

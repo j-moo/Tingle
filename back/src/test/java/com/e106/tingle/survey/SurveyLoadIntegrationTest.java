@@ -23,6 +23,7 @@ import java.util.concurrent.TimeUnit;
 
 import javax.sql.DataSource;
 
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.config.BeanPostProcessor;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -49,6 +50,8 @@ import tools.jackson.databind.JsonNode;
 @AutoConfigureMockMvc
 @ActiveProfiles({"test", "erd"})
 @Import({TestcontainersConfiguration.class, SurveyLoadIntegrationTest.QueryCounter.class})
+// 대량 데이터를 넣는 부하 테스트. MR 검사(test)에서는 빼고 loadTest 로 따로 돈다
+@Tag("load")
 class SurveyLoadIntegrationTest extends IntegrationTestSupport {
 
 	private static final int MEMBERS = 32;

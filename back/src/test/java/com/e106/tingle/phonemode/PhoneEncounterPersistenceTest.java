@@ -18,6 +18,7 @@ import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.boot.jdbc.autoconfigure.JdbcConnectionDetails;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DataSourceTransactionManager;
@@ -25,15 +26,12 @@ import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import org.springframework.jdbc.datasource.init.ResourceDatabasePopulator;
 import org.springframework.mock.env.MockEnvironment;
 import org.springframework.transaction.support.TransactionTemplate;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
-import org.testcontainers.postgresql.PostgreSQLContainer;
 
+import com.e106.tingle.SharedPostgres;
 import com.e106.tingle.auth.MemberAccessRepository;
 import com.e106.tingle.global.error.BusinessException;
 
 /** PostgreSQL 접수 및 권한 검증. 평가기와 제안 생성은 실행하지 않는다. */
-@Testcontainers
 class PhoneEncounterPersistenceTest {
 	private static final Instant NOW = Instant.parse("2026-11-06T01:00:00Z");
 	private static final String TOKEN_KEY = value(32, (byte)7);
@@ -41,8 +39,7 @@ class PhoneEncounterPersistenceTest {
 	private static final String RIGHT_NONCE = value(16, (byte)2);
 	private static final String SNAPSHOT_HASH = "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a";
 
-	@Container
-	private static final PostgreSQLContainer POSTGRES = new PostgreSQLContainer("postgres:17");
+	private static final JdbcConnectionDetails POSTGRES = SharedPostgres.newDatabase();
 
 	private static JdbcTemplate jdbc;
 	private static TransactionTemplate transaction;

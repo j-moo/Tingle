@@ -10,28 +10,26 @@ import java.util.UUID;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.springframework.boot.jdbc.autoconfigure.JdbcConnectionDetails;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import org.springframework.jdbc.datasource.init.ResourceDatabasePopulator;
 import org.springframework.mock.env.MockEnvironment;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
-import org.testcontainers.postgresql.PostgreSQLContainer;
+
+import com.e106.tingle.SharedPostgres;
 
 /**
  * 실제 canonical SQL과 가입 준비 조회의 회귀다. 준비 증거를 명시적으로 넣는 fixture이며,
  * 실제 분석·키링 ACK 전송이나 OnboardingService의 기존 가입자 접근 정책을 검증하는 테스트는 아니다.
  */
-@Testcontainers
 class MemberAccessReadinessPersistenceTest {
 
 	private static final Instant NOW = Instant.parse("2026-10-28T00:00:00Z");
 	private static final String VERSION = "2026-10-19";
 	private static final List<String> REQUIRED = List.of("TERMS", "PRIVACY", "AI_RISK_DETECTION", "ADULT");
 
-	@Container
-	private static final PostgreSQLContainer POSTGRES = new PostgreSQLContainer("postgres:17");
+	private static final JdbcConnectionDetails POSTGRES = SharedPostgres.newDatabase();
 
 	private static JdbcTemplate jdbc;
 	private static MemberAccessRepository members;

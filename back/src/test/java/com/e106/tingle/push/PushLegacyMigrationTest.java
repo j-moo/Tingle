@@ -16,14 +16,13 @@ import java.util.UUID;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.springframework.boot.jdbc.autoconfigure.JdbcConnectionDetails;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
-import org.testcontainers.postgresql.PostgreSQLContainer;
 
-@Testcontainers
+import com.e106.tingle.SharedPostgres;
+
 class PushLegacyMigrationTest {
 
 	// 0255529 canonical DDL의 해당 테이블. diagram import의 identity 없는 정의와 구분한다.
@@ -46,8 +45,7 @@ class PushLegacyMigrationTest {
 	private static final Instant NOW = Instant.parse("2026-10-28T00:00:00Z");
 	private static final String KEY = "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=";
 
-	@Container
-	private static final PostgreSQLContainer POSTGRES = new PostgreSQLContainer("postgres:17");
+	private static final JdbcConnectionDetails POSTGRES = SharedPostgres.newDatabase();
 
 	@Test
 	@DisplayName("과거 테이블 이름 변경은 ID·identity·설치 UUID·암호문 AAD·연결 세대·미확인 NULL을 보존한다")

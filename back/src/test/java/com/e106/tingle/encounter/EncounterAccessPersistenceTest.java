@@ -11,16 +11,15 @@ import java.util.UUID;
 
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
+import org.springframework.boot.jdbc.autoconfigure.JdbcConnectionDetails;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DataSourceTransactionManager;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import org.springframework.jdbc.datasource.init.ResourceDatabasePopulator;
 import org.springframework.transaction.support.TransactionTemplate;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
-import org.testcontainers.postgresql.PostgreSQLContainer;
 
+import com.e106.tingle.SharedPostgres;
 import com.e106.tingle.encounter.dto.EncounterSyncRequest;
 import com.e106.tingle.encounter.dto.EncounterSyncRequest.DeviceProof;
 import com.e106.tingle.encounter.dto.EncounterSyncRequest.Submission;
@@ -30,11 +29,9 @@ import com.e106.tingle.global.error.ErrorCode;
 import tools.jackson.databind.json.JsonMapper;
 
 /** 실제 canonical PostgreSQL에서 현재 접근 검사와 미확정 증명의 무저장을 검사한다. */
-@Testcontainers
 class EncounterAccessPersistenceTest {
 	private static final Instant NOW = Instant.parse("2026-10-29T00:00:00Z");
-	@Container
-	private static final PostgreSQLContainer POSTGRES = new PostgreSQLContainer("postgres:17");
+	private static final JdbcConnectionDetails POSTGRES = SharedPostgres.newDatabase();
 	private static JdbcTemplate jdbc;
 	private static EncounterAccessRepository access;
 	private static TransactionTemplate transactions;

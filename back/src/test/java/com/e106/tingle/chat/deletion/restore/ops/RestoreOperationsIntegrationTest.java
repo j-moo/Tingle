@@ -52,6 +52,7 @@ import tools.jackson.databind.json.JsonMapper;
 /** The command opens only this disposable DB; no Spring application or scheduled workers are started. */
 @Testcontainers
 class RestoreOperationsIntegrationTest {
+	// 복구 명령은 DB 이름(tingle_dev)까지 확인하므로 공용 컨테이너(SharedPostgres) 대신 전용 컨테이너를 쓴다
 	@Container
 	private static final PostgreSQLContainer POSTGRES = new PostgreSQLContainer("postgres:17")
 		.withDatabaseName("tingle_dev");
