@@ -145,7 +145,8 @@ def main_factory(tmp_path, monkeypatch, synthetic_private_keys, caplog, capsys, 
     hosts = []
     stack = ExitStack()
 
-    def make(*, environment="test", enabled=True, release=None, pin=None, keys=True):
+    def make(*, environment="test", enabled=True, release=None, pin=None, keys=True,
+             engine_factory=None, start=True):
         directory = tmp_path / f"main-{len(hosts)}"
         directory.mkdir(exist_ok=True)
         release = release if release is not None else synthetic_release(directory)
@@ -160,9 +161,13 @@ def main_factory(tmp_path, monkeypatch, synthetic_private_keys, caplog, capsys, 
         monkeypatch.setattr(config, "settings", Settings(_env_file=None, **values))
         sys.modules.pop("app.main", None)
         module = import_module("app.main")
-        assert module.app.state.service_auth.is_ready is keys
-        assert "post" in module.app.openapi()["paths"][ROUTE]
-        client = stack.enter_context(TestClient(module.app, raise_server_exceptions=False))
+        application = module.app if engine_factory is None else module.create_app(
+            config.settings, _risk_engine_factory=engine_factory)
+        assert application.state.service_auth.is_ready is keys
+        assert "post" in application.openapi()["paths"][ROUTE]
+        client = TestClient(application, raise_server_exceptions=False)
+        if start:
+            stack.enter_context(client)
         host = MainHarness(client, release, environment, synthetic_private_keys)
         hosts.append(host)
         return host

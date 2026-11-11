@@ -133,6 +133,15 @@ class RiskEngine(Protocol):
     def analyze(self, messages: list[dict], manifest: dict) -> dict: ...
 
 
+@dataclass(frozen=True)
+class RuntimeResources:
+    """One lifespan owns these resources; a request only borrows the snapshot."""
+
+    catalog: "ReleaseCatalog"
+    engine: RiskEngine | AsyncRiskEngine | None
+    execution: ExecutionBoundary
+
+
 def _pairs(pairs):
     result = {}
     for key, value in pairs:
@@ -200,16 +209,22 @@ class _DisconnectedResponse(Response):
 
 
 def create_router(authenticate: Callable, catalog: ReleaseCatalog | None = None,
-                  engine: RiskEngine | AsyncRiskEngine | None = None) -> APIRouter:
+                  engine: RiskEngine | AsyncRiskEngine | None = None, *,
+                  runtime: Callable[[], RuntimeResources] | None = None) -> APIRouter:
     router = APIRouter()
-    releases = catalog or ReleaseCatalog()
-    execution = ExecutionBoundary(getattr(engine, "execution_limits", None))
-    start_shadow = getattr(engine, "start_shadow", None)
+    # Preserve direct router callers; app.main supplies lifespan-owned resources.
+    standalone = None if runtime else RuntimeResources(
+        catalog or ReleaseCatalog(), engine, ExecutionBoundary(getattr(engine, "execution_limits", None)))
 
     @router.post("/internal/ai/risk-detections", tags=["internal"])
     async def analyze(request: Request):
-        deadline = Deadline.start(execution.limits.request_seconds)
+        entered = Deadline.start(0)
         authenticate(request)
+        resources = runtime() if runtime else standalone
+        releases, engine, execution = resources.catalog, resources.engine, resources.execution
+        # Authentication and runtime lookup must not reset the request's clock.
+        deadline = Deadline(entered.expires_at + execution.limits.request_seconds, entered.clock)
+        start_shadow = getattr(engine, "start_shadow", None)
         # No runtime switch can turn on a fake model or an external provider.
         if engine is None:
             raise _error(422, "POLICY_UNRESOLVED")
