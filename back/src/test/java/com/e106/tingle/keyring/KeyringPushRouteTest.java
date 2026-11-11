@@ -101,7 +101,7 @@ class KeyringPushRouteTest {
 	@DisplayName("새 키링 조회 경로는 JWT 주체와 가입 검사 및 no-store를 유지한다")
 	void keyringRoutesUseAuthenticatedOwner() throws Exception {
 		when(keyrings.getKeyrings(USER_ID)).thenReturn(new Keyrings(List.of(
-			new KeyringView(17, "SYN-17", KeyringStatus.REGISTERED, "synthetic-1"))));
+			new KeyringView(17, "SYN-17", KeyringStatus.REGISTERED, "synthetic-1", "SYN-17"))));
 		when(keyrings.getPurchaseInfo(USER_ID)).thenReturn(new PurchaseInfo(null, true));
 		mockMvc.perform(get("/api/keyrings").param("userId", "999").header("Authorization", "Bearer valid"))
 			.andExpect(status().isOk()).andExpect(header().string("Cache-Control", "no-store"))

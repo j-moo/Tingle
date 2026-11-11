@@ -219,6 +219,7 @@ CREATE TABLE "keyring" (
     "credential_revoked_at" timestamptz,
     "owner_generation" uuid,
     "ownership_epoch" bigint,
+    "label" varchar(10),
     CONSTRAINT "pk_keyring" PRIMARY KEY ("id"),
     CONSTRAINT "uq_keyring_serial_number" UNIQUE ("serial_number")
 );
@@ -235,6 +236,7 @@ COMMENT ON COLUMN "keyring"."credential_public_key" IS '사전 등록한 Ed25519
 COMMENT ON COLUMN "keyring"."credential_revoked_at" IS '이 검증 자격이 폐기된 실제 시각. NULL은 폐기 기록 없음이며 누락된 키의 유효성을 추정하지 않는다.';
 COMMENT ON COLUMN "keyring"."owner_generation" IS '현재 소유 등록 세대. 새로 검증한 등록에서만 발급하며 기존 소유자의 미상 세대를 임의 UUID로 채우지 않는다.';
 COMMENT ON COLUMN "keyring"."ownership_epoch" IS '기기 서명으로 확인한 소유 카운터. 기존 미확인 값은 NULL로 유지하며 임의 backfill하지 않고 재등록 시 보존한다.';
+COMMENT ON COLUMN "keyring"."label" IS '주인이 붙인 별명(최대 10자). NULL이면 앱에 일련번호 앞 10자를 보여 준다. 본인 앱 화면에서만 쓰고 기기·상대·AI 서버로 보내지 않으며, 주인이 바뀌면(초기화·탈퇴 해제·새 등록) 비운다.';
 CREATE INDEX "ix_keyring_owner" ON "keyring" ("owner_user_id");
 
 -- 채팅 메시지
