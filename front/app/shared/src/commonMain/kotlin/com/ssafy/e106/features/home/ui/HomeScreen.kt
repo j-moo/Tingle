@@ -24,6 +24,7 @@ import androidx.compose.ui.semantics.*
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.launch
 import com.ssafy.e106.core.ui.components.*
 import com.ssafy.e106.core.ui.theme.*
 import com.ssafy.e106.features.keyring.ui.OwnedKeyringLiveStatus
@@ -43,6 +44,7 @@ private val WarnInk = Color(0xFF7A4B00)
 @Composable
 fun HomeScreen(state: HomeState, onMatchingChange: (Boolean) -> Unit, onAction: (HomeAction) -> Unit,
     modifier: Modifier = Modifier, onOpenMatchingSettings: (() -> Unit)? = null,
+    onSaveKeyringAlias: (suspend (Long, String) -> Boolean)? = null,
     keyringStatus: @Composable () -> OwnedKeyringLiveStatus? = { null }) {
     Surface(modifier.fillMaxSize(), color = AppColors.Background) {
         Column(Modifier.fillMaxSize().safeDrawingPadding()) {
@@ -69,7 +71,7 @@ fun HomeScreen(state: HomeState, onMatchingChange: (Boolean) -> Unit, onAction: 
                             }
                             HomeLoadState.Ready -> {
                                 MatchingPower(state, onMatchingChange, onOpenMatchingSettings)
-                                KeyringSummary(state, keyringStatus)
+                                KeyringSummary(state, keyringStatus, onSaveKeyringAlias)
                             }
                         }
                     }
@@ -115,12 +117,14 @@ private fun MatchingPower(state: HomeState, onMatchingChange: (Boolean) -> Unit,
 }
 
 /**
- * 내 키링 한 장: 점 · "내 키링" · 펼침 화살표. 누르면 펼쳐져 등록된 키링(내 키링 n · 펌웨어)이 보인다(배터리 · 동기화 시각은 받을 API 가 없어 두지 않는다).
+ * 내 키링을 펼치면 이 휴대폰의 별명과 해당 기기에서 직접 읽은 배터리 상태가 보인다.
  * 손볼 일이 있으면 노란 바탕과 할 일 한 줄은 접혀 있어도 보인다. 키링 설정 화면은 오른쪽 위 "키링 설정"으로 간다
  */
 @Composable
-private fun KeyringSummary(state: HomeState, keyringStatus: @Composable () -> OwnedKeyringLiveStatus?) {
+private fun KeyringSummary(state: HomeState, keyringStatus: @Composable () -> OwnedKeyringLiveStatus?,
+    onSaveKeyringAlias: (suspend (Long, String) -> Boolean)?) {
     var open by rememberSaveable { mutableStateOf(false) }
+    var editing by rememberSaveable { mutableStateOf<Long?>(null) }
     val todo = keyringTodo(state.keyring)
     val ink = if (todo == null) AppColors.TextPrimary else WarnInk
     val sub = if (todo == null) AppColors.TextSecondary else WarnInk
@@ -148,16 +152,23 @@ private fun KeyringSummary(state: HomeState, keyringStatus: @Composable () -> Ow
                     state.keyrings.isNotEmpty() -> {
                         val status = if (open) keyringStatus() else null
                         state.keyrings.forEachIndexed { index, device ->
-                            // 구 서버 응답에는 별명이 없고, 연결 상태는 다른 기기의 행에 재사용하지 않는다.
-                            val label = device.label?.takeIf { it.isNotBlank() }
+                            // 번호는 표시용 순서지만 별명과 배터리 연결은 고정된 등록 기기 ID를 사용한다.
+                            val label = state.keyringAliases[device.deviceId]
                                 ?: stringResource(Res.string.sync_live_device, (index + 1).toString())
                             val battery = keyringBatteryText(status?.takeIf { it.deviceId == device.deviceId }?.metrics)
-                            Row(Modifier.fillMaxWidth().semantics(mergeDescendants = true) {},
+                            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.spacedBy(AppSpacing.Small)) {
-                                Text(label, Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium,
-                                    fontWeight = FontWeight.Bold, color = ink)
-                                Text(stringResource(Res.string.owned_keyrings_battery, battery),
-                                    style = MaterialTheme.typography.bodySmall, color = sub)
+                                Column(Modifier.weight(1f).semantics(mergeDescendants = true) {}) {
+                                    Text(label, style = MaterialTheme.typography.bodyMedium,
+                                        fontWeight = FontWeight.Bold, color = ink)
+                                    Text(stringResource(Res.string.owned_keyrings_battery, battery),
+                                        style = MaterialTheme.typography.bodySmall, color = sub)
+                                }
+                                if (onSaveKeyringAlias != null) TextButton(onClick = { editing = device.deviceId }) {
+                                    val action = stringResource(Res.string.home_keyring_alias_edit)
+                                    val description = stringResource(Res.string.home_keyring_alias_edit_for, label)
+                                    Text(action, Modifier.clearAndSetSemantics { contentDescription = description })
+                                }
                             }
                         }
                     }
@@ -168,6 +179,57 @@ private fun KeyringSummary(state: HomeState, keyringStatus: @Composable () -> Ow
             }
         }
     }
+    val target = editing
+    if (target != null && onSaveKeyringAlias != null && state.keyrings.any { it.deviceId == target }) {
+        key(target) {
+            KeyringAliasDialog(state.keyringAliases[target].orEmpty(),
+                save = { onSaveKeyringAlias(target, it) }, close = { editing = null })
+        }
+    }
+}
+
+/** 입력만 회전에 보존한다. 닫힌 화면에는 저장 결과를 전달하지 않는다. */
+@Composable
+private fun KeyringAliasDialog(initial: String, save: suspend (String) -> Boolean, close: () -> Unit) {
+    var draft by rememberSaveable { mutableStateOf(initial) }
+    var saving by remember { mutableStateOf(false) }
+    var failed by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+    fun submit(value: String) {
+        if (saving) return
+        saving = true
+        failed = false
+        scope.launch {
+            if (save(value)) close()
+            else { saving = false; failed = true }
+        }
+    }
+    AlertDialog(
+        onDismissRequest = { if (!saving) close() },
+        title = { Text(stringResource(Res.string.home_keyring_alias_title)) },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(AppSpacing.Small)) {
+                AppTextField(draft, { draft = it; failed = false }, stringResource(Res.string.home_keyring_alias_label),
+                    supportingText = stringResource(Res.string.home_keyring_alias_help),
+                    errorText = when {
+                        failed -> stringResource(Res.string.home_keyring_alias_failed)
+                        draft.trim().length > KEYRING_ALIAS_LIMIT -> stringResource(Res.string.home_keyring_alias_limit)
+                        else -> null
+                    }, enabled = !saving)
+                if (initial.isNotEmpty()) TextButton(onClick = { submit("") }, enabled = !saving) {
+                    Text(stringResource(Res.string.home_keyring_alias_remove))
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { submit(draft) }, enabled = !saving && draft.isNotBlank() && draft.trim().length <= KEYRING_ALIAS_LIMIT) {
+                Text(stringResource(if (saving) Res.string.home_keyring_alias_saving else Res.string.home_keyring_alias_save))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = close, enabled = !saving) { Text(stringResource(Res.string.home_keyring_alias_cancel)) }
+        },
+    )
 }
 
 /** 손볼 일이 있는 상태만 한 줄 안내(그 밖의 확인 중 · 등록됨 · 연결됨 · 연결 안 됨 · 미확인은 상태 글자 없이) */

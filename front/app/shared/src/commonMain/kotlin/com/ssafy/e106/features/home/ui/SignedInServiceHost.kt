@@ -129,7 +129,7 @@ internal enum class ServicePage { Home, Proposals, Menu, Chats, Safety, Report, 
                     HomeAction.Profile -> go(ServicePage.Menu)
                     HomeAction.Chats -> chats()
                     HomeAction.Keyring -> { keyringFromMenu = false; go(ServicePage.Keyrings) }
-                } }, keyringStatus = {
+                } }, onSaveKeyringAlias = model::saveKeyringAlias, keyringStatus = {
                     observeOwnedKeyringConnection(session, state.home.keyrings, koinViewModel<BleProbeViewModel>()).liveStatus
                 })
                 ServicePage.Proposals -> ConnectedProposalRoute(session, { go(ServicePage.Home) }, { go(ServicePage.Menu) },

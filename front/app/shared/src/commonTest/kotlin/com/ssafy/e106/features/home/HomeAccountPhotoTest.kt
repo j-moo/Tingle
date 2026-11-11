@@ -57,7 +57,7 @@ class HomeAccountPhotoTest {
             }
             val owned = object : OwnedKeyringRepository { override suspend fun list() = error("unexpected") }
             val photos = Photos()
-            val vm = HomeSessionViewModel(profiles, settings, HttpOnboardingRepository(client), session, auth, owned, photos = photos)
+            val vm = HomeSessionViewModel(profiles, settings, HttpOnboardingRepository(client), session, auth, owned, photos = photos, prefs = HomeTestPrefs())
                 .also { models.put("home", it) }
 
             // 사진 응답 전에 메뉴가 준비되고 busy 가 풀려 있어 로그아웃이 무시되지 않는다
