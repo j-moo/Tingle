@@ -6,5 +6,4 @@
     <string name="proposal_reason_no_retry">지금은 설명을 다시 생성할 수 없어요.</string>
     <string name="proposal_reason_busy">설명을 확인하고 있어요.</string>
     <string name="proposal_reason_unavailable">지금은 설명을 확인할 수 없어요.</string>
-    <string name="proposal_reason_rule">매칭 당시 확인된 근거를 바탕으로 한 설명이에요.</string>
 </resources>

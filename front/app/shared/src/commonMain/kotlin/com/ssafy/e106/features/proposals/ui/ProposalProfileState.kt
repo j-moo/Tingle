@@ -21,9 +21,7 @@ data class ProposalProfileState(
     val myDecision: MyProposalDecision = MyProposalDecision.NotResponded,
     // 서버의 최신 권한·기한 확인 후 호출부가 결정한다. 화면이 시간으로 추정하지 않는다.
     val canRespond: Boolean = false,
-    val deadlineLabel: String? = null,
     val reason: MatchReasonState = MatchReasonState(),
-    val reviewRequired: Boolean = false,
 )
 
 enum class ProposalProfileAction { Back, Reload, RetryPhoto, RetryReason, CheckReason, Accept, Reject }

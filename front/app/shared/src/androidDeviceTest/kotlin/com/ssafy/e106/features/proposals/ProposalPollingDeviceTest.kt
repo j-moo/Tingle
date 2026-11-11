@@ -40,8 +40,10 @@ internal class ProposalPollingServer : ProposalRepository {
     override suspend fun profile(id: Long) = ApiResult.Ok(PartnerProfile("자동 갱신 시험", 25, "FEMALE", null,
         "NON_SMOKER", "NEVER", null, false, "a".repeat(64)))
     override suspend fun photo(id: Long): ApiResult<ByteArray> = ApiResult.Fail(AppError.Offline)
+    // 수락 응답을 바꿔 끼울 수 있게(기본은 상대 응답 기다림)
+    @Volatile var onDecide: (() -> ProposalRecord)? = null
     override suspend fun decide(request: PendingDecision): ApiResult<ProposalRecord> {
-        record = record.copy(status = "WAITING_FOR_OTHER", myDecision = "ACCEPT")
+        record = onDecide?.invoke() ?: record.copy(status = "WAITING_FOR_OTHER", myDecision = "ACCEPT")
         return ApiResult.Ok(record)
     }
 }
@@ -88,6 +90,47 @@ class ProposalPollingDeviceTest {
     @Test fun listButtonLeavesDuringSlowAutomaticGet() = leaveDuringSlowGet(systemBack = false)
     @Test fun systemBackLeavesDuringSlowAutomaticGet() = leaveDuringSlowGet(systemBack = true)
 
+    // 내가 두 번째로 수락해 바로 서로 수락 · 방 있음: 보내기가 끝나면(쓰기 중엔 이동이 막힘) 결과 화면 없이 그 방으로
+    @Test fun acceptThatMatchesOpensChatAfterWrite() {
+        ProposalPollingTestActivity.server = ProposalPollingServer()
+        val server = ProposalPollingTestActivity.server
+        server.onDecide = { server.record.copy(status = "ACCEPTED", myDecision = "ACCEPT", chatAvailable = true, chatRoomId = 40) }
+        ActivityScenario.launch<ProposalPollingTestActivity>(Intent(InstrumentationRegistry.getInstrumentation().context,
+            ProposalPollingTestActivity::class.java)).use { scenario ->
+            fun ready() = compose.waitUntil(10_000) { var done = false; scenario.onActivity { done = !it.model.state.value.busy }; done }
+            compose.waitUntil(10_000) { var done = false; scenario.onActivity {
+                done = it.model.state.value.list.load == ProposalListLoad.Ready }; done }
+            scenario.onActivity { it.model.open(10) }; ready()
+            scenario.onActivity { it.model.ask(ProposalChoice.Accept); it.model.submit() }
+            compose.waitUntil(10_000) { compose.onAllNodesWithText("채팅방 40 진입 확인").fetchSemanticsNodes().isNotEmpty() }
+            compose.onNodeWithText("제안 응답 시간이\n지났어요").assertDoesNotExist()
+        }
+    }
+
+    // 자동 조회가 아니라 사용자가 연 프로필을 받는 중이어도(refreshingResult=false) 뒤로 가면 바로 목록. 쓰는 중에만 막는다
+    @Test fun systemBackLeavesDuringManualProfileLoad() {
+        ProposalPollingTestActivity.server = ProposalPollingServer()
+        val server = ProposalPollingTestActivity.server
+        val gate = CompletableDeferred<Unit>()
+        ActivityScenario.launch<ProposalPollingTestActivity>(Intent(InstrumentationRegistry.getInstrumentation().context,
+            ProposalPollingTestActivity::class.java)).use { scenario ->
+            try {
+                compose.waitUntil(10_000) { var done = false; scenario.onActivity {
+                    done = it.model.state.value.list.load == ProposalListLoad.Ready && !it.model.state.value.busy }; done }
+                server.onGet = { withContext(NonCancellable) { gate.await() }; ApiResult.Ok(server.record) }
+                scenario.onActivity { it.model.open(10) }
+                compose.waitUntil(2_000) { var loading = false; scenario.onActivity {
+                    loading = it.model.state.value.busy && !it.model.state.value.refreshingResult }; loading }
+                scenario.onActivity { it.onBackPressedDispatcher.onBackPressed() }
+                compose.waitUntil(2_000) { var listed = false; scenario.onActivity {
+                    listed = it.model.state.value.page == ProposalPageMode.List }; listed }
+                server.onGet = null
+                gate.complete(Unit); compose.waitForIdle()
+                scenario.onActivity { assertEquals(ProposalPageMode.List, it.model.state.value.page) }
+            } finally { gate.complete(Unit) }
+        }
+    }
+
     /** 응답을 풀기 전에 이동을 단언해, GET이 끝난 뒤 이동한 기존 검사와 구분한다. */
     private fun leaveDuringSlowGet(systemBack: Boolean) {
         ProposalPollingTestActivity.server = ProposalPollingServer()
@@ -108,19 +151,19 @@ class ProposalPollingDeviceTest {
                     loading = it.model.state.value.refreshingResult }; loading }
                 compose.onNodeWithText("수락했어요").assertExists()
                 if (systemBack) scenario.onActivity { it.onBackPressedDispatcher.onBackPressed() }
-                else compose.onNodeWithText("제안 목록으로").performClick()
+                else compose.onNodeWithContentDescription("제안 목록으로").performClick()   // 프로필 왼쪽 위 <
                 compose.waitUntil(2_000) { var listed = false; scenario.onActivity {
                     listed = it.model.state.value.page == ProposalPageMode.List && !it.model.state.value.busy }; listed }
                 compose.onNodeWithText("수락했어요").assertDoesNotExist()
                 gate.complete(Unit); compose.waitForIdle()
                 scenario.onActivity { assertEquals(ProposalPageMode.List, it.model.state.value.page) }
-                compose.onNodeWithText("제안 응답 시간이 지났어요").assertDoesNotExist()
+                compose.onNodeWithText("제안 응답 시간이\n지났어요").assertDoesNotExist()
             } finally { gate.complete(Unit) }
         }
     }
 
     // 서버 상태만 바꾸고 재조회 버튼은 누르지 않아, 실제 화면의 자동 전환을 검사한다.
-    @Test fun actualRouteExpiresAutomaticallyAndMatchedResultOpensServerRoom() {
+    @Test fun actualRouteExpiresAutomaticallyAndMatchOpensServerRoomDirectly() {
         ProposalPollingTestActivity.server = ProposalPollingServer()
         val server = ProposalPollingTestActivity.server
         ActivityScenario.launch<ProposalPollingTestActivity>(Intent(InstrumentationRegistry.getInstrumentation().context,
@@ -137,18 +180,15 @@ class ProposalPollingDeviceTest {
                 ready = it.model.state.value.list.load == ProposalListLoad.Ready }; ready }
             accept()
             server.record = server.record.copy(status = "EXPIRED")
-            compose.waitUntil(10_000) { compose.onAllNodesWithText("제안 응답 시간이 지났어요").fetchSemanticsNodes().isNotEmpty() }
+            compose.waitUntil(10_000) { compose.onAllNodesWithText("제안 응답 시간이\n지났어요").fetchSemanticsNodes().isNotEmpty() }
             compose.onNodeWithText("제안 목록으로").performClick()
             compose.onNodeWithText("아직 받은 제안이 없어요").assertExists()
 
             server.record = server.record.copy(status = "PENDING", myDecision = "NONE")
             scenario.onActivity { it.model.refresh() }; accept()
             server.record = server.record.copy(status = "ACCEPTED", chatAvailable = true, chatRoomId = 30)
-            compose.waitUntil(10_000) { var ready = false; scenario.onActivity {
-                ready = it.model.state.value.result?.stage == ProposalDecisionStage.MatchedReady }; ready }
-            // 실제 결과 화면의 이동 버튼이 서버에서 확인한 방 번호만 전달하는지 확인한다.
-            compose.onNodeWithText("대화 시작하기").performClick()
-            compose.onNodeWithText("채팅방 30 진입 확인").assertExists()
+            // 서로 수락 · 방 확인되면 결과 화면 없이 서버가 준 방 번호로 바로 채팅을 연다
+            compose.waitUntil(10_000) { compose.onAllNodesWithText("채팅방 30 진입 확인").fetchSemanticsNodes().isNotEmpty() }
             val before = server.reads.get()
             val exitedAt = System.nanoTime()
             compose.waitUntil(8_000) { System.nanoTime() - exitedAt >= 6_000_000_000L }

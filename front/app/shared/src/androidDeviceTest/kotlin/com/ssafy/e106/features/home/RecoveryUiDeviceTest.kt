@@ -30,7 +30,8 @@ import kotlin.time.Instant
 
 /** 실제 화면에 상태만 전달하는 테스트 전용 호스트. SDK/API/실제 신고·차단은 호출하지 않는다. */
 class RecoveryUiTestActivity : ComponentActivity() {
-    var proposal by mutableStateOf(ProposalListState(ProposalListLoad.Ready, page = ProposalPageState.More))
+    // 각 시험이 상태를 정한다(Ready + More 면 화면이 곧바로 다음 쪽을 요청하므로 기본은 로딩)
+    var proposal by mutableStateOf(ProposalListState())
     var chatList by mutableStateOf(ChatListState(ChatListLoad.Failed))
     var login by mutableStateOf(SocialLoginState(setOf(LoginProvider.Google, LoginProvider.Kakao)))
     var chat by mutableStateOf(ChatConversationState(ConversationLoad.Active, canRead = true, canSend = true,
@@ -112,25 +113,25 @@ class RecoveryUiDeviceTest {
         button.performClick()
     }
 
-    @Test fun emptyProposalPageCanContinueAndCannotRepeatLoading() {
+    @Test fun emptyProposalPageContinuesAutomatically() {
         launch("proposals").use { scenario ->
-            // 첫 페이지가 비어도 다음 커서가 있으면 전체 목록이 비었다고 단정하면 안 된다.
+            // 첫 페이지가 비어도 다음 커서가 있으면 전체 목록이 비었다고 단정하지 않고, 버튼 없이 다음 쪽을 한 번만 요청한다
+            scenario.onActivity { it.proposal = ProposalListState(ProposalListLoad.Ready, page = ProposalPageState.More) }
+            compose.waitForIdle()
             compose.onNodeWithText("아직 받은 제안이 없어요").assertDoesNotExist()
-            tap("제안 더 보기")
-            compose.onNodeWithText("추가 제안 확인 중…").assertIsNotEnabled()
             scenario.onActivity { assertEquals(listOf(ProposalListAction.LoadMore), it.actions) }
         }
     }
     @Test fun emptyProposalPageFailureOffersRetryAndFinalEmptyIsDistinct() {
         launch("proposals").use { scenario ->
-            scenario.onActivity { it.proposal = it.proposal.copy(page = ProposalPageState.Failed) }
+            scenario.onActivity { it.proposal = ProposalListState(ProposalListLoad.Ready, page = ProposalPageState.Failed) }
             tap("추가 제안 다시 불러오기")
             scenario.onActivity {
                 assertEquals(listOf(ProposalListAction.LoadMore), it.actions)
                 it.proposal = ProposalListState(ProposalListLoad.Ready)
             }
             compose.onNodeWithText("아직 받은 제안이 없어요").assertExists()
-            compose.onNodeWithText("제안 더 보기").assertDoesNotExist()
+            compose.onNodeWithText("추가 제안 다시 불러오기").assertDoesNotExist()
         }
     }
     @Test fun initialProposalFailureRetriesWithoutShowingEmptySuccess() {

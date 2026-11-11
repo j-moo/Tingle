@@ -26,6 +26,8 @@ fun ConnectedProposalRoute(session: Session.SignedIn, onHome: () -> Unit, onProf
     reasonModel: MatchReasonViewModel = koinViewModel(), initialProposalId: Long? = null) {
     val state by model.state.collectAsStateWithLifecycle()
     var openedPush by rememberSaveable(session.userId, initialProposalId) { mutableStateOf(false) }
+    // 목록 탭(응답 대기 | 기다리는 중): 프로필에 갔다 와도 그대로
+    var listTab by rememberSaveable(session.userId) { mutableIntStateOf(0) }
     // 미확인 기존 결정을 먼저 복구한다. 푸시의 ID만으로 수락하거나 프로필 내용을 만들어 내지 않는다.
     LaunchedEffect(session, initialProposalId, state.busy, state.list.load) {
         if(initialProposalId != null && initialProposalId > 0 && !openedPush && state.session == session &&
@@ -45,9 +47,14 @@ fun ConnectedProposalRoute(session: Session.SignedIn, onHome: () -> Unit, onProf
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { model.resume() }
     LifecycleEventEffect(Lifecycle.Event.ON_STOP) { model.pause() }
     if (state.session != session) return
-    // 자동 GET은 이동을 막는 사용자 작업이 아니다. 이탈 시 pause/refresh가 취소와 응답 무효화를 맡는다.
-    val navigationBlocked = state.busy && !state.refreshingResult
+    // 조회(자동 · 수동)는 이동을 막지 않는다. 이탈 시 pause/refresh 가 취소와 응답 무효화를 맡고, 수락 · 거절을 보내는 중에만 막는다
+    val navigationBlocked = state.writing
     fun leave(action: () -> Unit) { if (!navigationBlocked) { model.pause(); action() } }
+    // 서로 수락 · 채팅방 확인되면 결과 화면 없이 바로 채팅
+    LaunchedEffect(state.openChat, navigationBlocked) {
+        val room = state.openChat
+        if (room != null && !navigationBlocked) { model.chatOpened(); leave { onOpenChat(room) } }
+    }
     ProfileBackHandler(true) {
         if (!navigationBlocked) if (state.storageIssue || state.page == ProposalPageMode.List) leave(onHome) else model.refresh()
     }
@@ -69,7 +76,8 @@ fun ConnectedProposalRoute(session: Session.SignedIn, onHome: () -> Unit, onProf
             AppButton(stringResource(Res.string.proposals_recover_pending), enabled = !state.busy, onClick = model::recover)
         Box(Modifier.weight(1f)) {
             when (state.page) {
-                ProposalPageMode.List -> ProposalListScreen(state.list, model::open, onAction = { action ->
+                // 채팅으로 넘어가는 순간엔 비어 있는 목록을 그리지 않는다
+                ProposalPageMode.List -> if (state.openChat == null) ProposalListScreen(state.list, model::open, onAction = { action ->
                     when (action) {
                         ProposalListAction.Refresh -> model.refresh()
                         ProposalListAction.LoadMore -> model.more()
@@ -77,7 +85,7 @@ fun ConnectedProposalRoute(session: Session.SignedIn, onHome: () -> Unit, onProf
                         ProposalListAction.Profile -> leave(onProfile)
                         ProposalListAction.Chats -> leave(onChats)
                     }
-                })
+                }, tab = listTab, onTab = { listTab = it })
                 ProposalPageMode.Profile -> state.review?.let { review ->
                     // 코드값을 번역 리소스로 바꾸되, 수락은 원래 서버 버전/스냅샷으로 수행한다.
                     val translated = review.latest?.let { snapshot -> snapshot.copy(profile = snapshot.profile.copy(
@@ -85,9 +93,9 @@ fun ConnectedProposalRoute(session: Session.SignedIn, onHome: () -> Unit, onProf
                         profile = snapshot.profile.profile?.localized())) }
                     ProposalReviewScreen(review.copy(latest = translated, confirmation = review.confirmation?.let {
                         it.copy(snapshot = translated ?: it.snapshot)
-                    })) { action -> when (action) {
+                    }), canLeave = !navigationBlocked) { action -> when (action) {
                         ProposalReviewAction.Reload -> model.reloadProfile()
-                        ProposalReviewAction.Back -> if (!state.busy) model.refresh()
+                        ProposalReviewAction.Back -> if (!navigationBlocked) model.refresh()
                         ProposalReviewAction.CheckResult -> model.checkResult()
                         ProposalReviewAction.Dismiss -> model.dismiss()
                         is ProposalReviewAction.Ask -> model.ask(action.confirmation.choice, action.confirmation.snapshot.context)
@@ -105,11 +113,9 @@ fun ConnectedProposalRoute(session: Session.SignedIn, onHome: () -> Unit, onProf
                     ProposalDecisionScreen(if (state.busy && !state.refreshingResult) result.copy(stage = ProposalDecisionStage.Checking) else result, onAction = { action ->
                         when (action) {
                             ProposalDecisionAction.CheckResult -> if (!state.busy) model.checkResult()
-                            ProposalDecisionAction.ProposalList -> model.refresh()
-                            ProposalDecisionAction.ReviewProfile -> if (!state.busy) model.reloadProfile()
-                            ProposalDecisionAction.OpenChat -> if (!state.busy) state.chatRoomId?.let { leave { onOpenChat(it) } }
+                            ProposalDecisionAction.ProposalList -> if (!navigationBlocked) model.refresh()
                         }
-                    })
+                    }, canLeave = !navigationBlocked)
                 }
             }
         }

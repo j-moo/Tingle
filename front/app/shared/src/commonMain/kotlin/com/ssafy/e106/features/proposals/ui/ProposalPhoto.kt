@@ -1,14 +1,23 @@
 package com.ssafy.e106.features.proposals.ui
 
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.layout.ContentScale
-import com.ssafy.e106.core.ui.components.*
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
 import com.ssafy.e106.core.ui.theme.*
 import com.ssafy.e106.resources.*
 import org.jetbrains.compose.resources.stringResource
@@ -29,30 +38,27 @@ fun resolveProposalPhoto(status: ProposalPhotoState, expected: ProposalPhotoRequ
     else -> ProposalPhotoState.Ready
 }
 
+/**
+ * 동그란 상대 사진(목록 · 프로필). 사진이 준비되기 전(받는 중 · 없음 · 실패)엔 회색 원에 닉네임 첫 글자, 준비되면 사진.
+ * 프로필에서 실패했으면 눌러서 다시 받는다(onRetry).
+ */
 @Composable
-fun ProposalPhoto(status: ProposalPhotoState, expected: ProposalPhotoRequest?, image: ProposalPhotoImage?,
-    modifier: Modifier = Modifier, compact: Boolean = false, onRetry: (() -> Unit)? = null) {
+fun ProposalAvatar(status: ProposalPhotoState, expected: ProposalPhotoRequest?, image: ProposalPhotoImage?,
+    name: String?, size: Dp, modifier: Modifier = Modifier, onRetry: (() -> Unit)? = null) {
     val visible = resolveProposalPhoto(status, expected, image?.request, image != null)
-    Surface(modifier, shape = if (compact) AppShapes.Small else AppShapes.Card, color = AppColors.SurfaceMuted) {
-        if (visible == ProposalPhotoState.Ready && image != null) {
-            Image(image.bitmap, stringResource(Res.string.proposal_photo_description),
-                Modifier.fillMaxWidth().aspectRatio(1f), contentScale = ContentScale.Crop)
-        } else {
-            Column(Modifier.fillMaxWidth().padding(if (compact) AppSpacing.Small else AppSpacing.ExtraLarge),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(AppSpacing.Medium)) {
-                Text(stringResource(when (visible) {
-                    ProposalPhotoState.NotProvided, ProposalPhotoState.Removed -> if (compact) Res.string.proposal_list_no_photo else Res.string.proposal_profile_no_photo
-                    ProposalPhotoState.Loading -> if (compact) Res.string.proposal_list_photo_loading else Res.string.proposal_profile_photo_loading
-                    ProposalPhotoState.Unavailable -> Res.string.proposal_photo_unavailable
-                    ProposalPhotoState.Failed, ProposalPhotoState.Ready -> if (compact) Res.string.proposal_list_photo_failed else Res.string.proposal_profile_photo_failed
-                }), style = if (compact) MaterialTheme.typography.bodySmall else MaterialTheme.typography.bodyMedium,
-                    color = AppColors.TextSecondary)
-                if (visible == ProposalPhotoState.Loading && !compact) CircularProgressIndicator(color = AppColors.SelectionBorder)
-                if (visible == ProposalPhotoState.Failed && !compact && onRetry != null)
-                    AppButton(stringResource(Res.string.proposal_profile_retry_photo), variant = AppButtonVariant.Secondary,
-                        onClick = onRetry)
-            }
+    val retry = onRetry?.takeIf { visible == ProposalPhotoState.Failed }
+    val retryLabel = stringResource(Res.string.proposal_profile_retry_photo)
+    Box(modifier.size(size).clip(CircleShape).background(AppColors.SurfaceMuted)
+        .then(if (retry != null) Modifier.semantics { contentDescription = retryLabel }
+            .clickable(role = Role.Button, onClickLabel = retryLabel, onClick = retry) else Modifier),
+        contentAlignment = Alignment.Center) {
+        when {
+            visible == ProposalPhotoState.Ready && image != null -> Image(image.bitmap, stringResource(Res.string.proposal_photo_description),
+                Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+            // 다시 받을 수 있으면 ↻, 아니면 첫 글자(받는 중에도 같은 모양, 장식이라 읽지 않음)
+            else -> Text(if (retry != null) "↻" else name?.trim()?.firstOrNull()?.toString().orEmpty(),
+                style = if (size >= 64.dp) MaterialTheme.typography.headlineMedium else MaterialTheme.typography.titleMedium,
+                color = AppColors.TextSecondary, modifier = Modifier.clearAndSetSemantics {})
         }
     }
 }
