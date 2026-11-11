@@ -7,4 +7,14 @@
     <string name="owned_keyrings_empty">등록된 키링이 없어요.</string>
     <string name="owned_keyrings_reset">초기화</string>
     <string name="owned_keyrings_reset_for">%1$s 초기화</string>
+    <string name="owned_keyrings_status_disconnected">연결하면 상태를 확인할 수 있어요.</string>
+    <string name="owned_keyrings_status_loading">키링 상태를 확인하고 있어요.</string>
+    <string name="owned_keyrings_status_failed">키링 상태를 불러오지 못했어요.</string>
+    <string name="owned_keyrings_status_unknown">미확인</string>
+    <string name="owned_keyrings_status_refresh">키링 상태 새로고침</string>
+    <string name="owned_keyrings_battery">배터리 %1$s</string>
+    <string name="owned_keyrings_battery_percent">%1$s%</string>
+    <string name="owned_keyrings_battery_estimate">약 %1$s%</string>
+    <string name="owned_keyrings_records">미전송 기록 %1$s</string>
+    <string name="owned_keyrings_records_count">%1$s건</string>
 </resources>

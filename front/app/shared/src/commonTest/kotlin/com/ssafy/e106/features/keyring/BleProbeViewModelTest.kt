@@ -125,6 +125,44 @@ class BleProbeViewModelTest {
         request.ownerGeneration, request.ownershipEpoch, request.deviceNonce, request.permissions,
         "2026-11-06T03:00:00Z", 1793934060L, "A".repeat(86))
 
+    @Test fun ownedStatusUsesProtectedReadAndClearsOnAccountChange() = runTest(dispatcher) {
+        val port = ownerPort()
+        port.extraInfo = port.extraInfo + ("supportedFunctions" to JsonArray(listOf(
+            "GET_STATUS", "GET_OWNER_CHALLENGE", "AUTHORIZE_OWNER", "GET_RECORD", "READ_RECORD_CHUNK", "ACK_RECORD",
+        ).map(::JsonPrimitive)))
+        val reply = requireNotNull(port.commandReply)
+        port.commandReply = { request ->
+            if (request["type"] == JsonPrimitive("GET_STATUS")) buildJsonObject {
+                put("protocolVersion", 1); put("type", "STATUS"); put("requestId", request.getValue("requestId"))
+                put("ownerAuthorized", true); put("storageState", "AVAILABLE")
+                put("pendingRecordCount", 0); put("reviewRecordCount", 1); put("batteryPercent", 0)
+            } else reply(request)
+        }
+        val session = TestSession(OnboardingStatus.READY)
+        val vm = model(port, session)
+        val sync = KeyringSyncStore(ResetPrefs())
+        sync.rememberTarget(1, ownerIdentity.deviceId, port.serial)
+        sync.save(1, sync.read(1).single().copy(identity = ownerIdentity, complete = true))
+        val authorizer = KeyringOwnerAuthorizer(object : KeyringOwnerSessionRepository {
+            override suspend fun create(deviceId: Long, key: String, body: KeyringOwnerGrantRequest) = ApiResult.Ok(ownerGrant(body))
+            override suspend fun get(deviceId: Long, key: String): ApiResult<KeyringOwnerGrant> = error("Unexpected lookup")
+        })
+        vm.scan(); runCurrent(); vm.connect(port.currentId); runCurrent()
+        vm.readOwnedStatus(1, OwnedKeyring(4, "READY", "test", "other"), sync, authorizer)
+        assertNull(vm.state.value.ownedStatus)
+        vm.readOwnedStatus(1, OwnedKeyring(4, "READY", "test", port.serial), sync, authorizer)
+        assertTrue(vm.state.value.ownedStatus?.loading == true)
+        runCurrent()
+        val result = requireNotNull(vm.state.value.ownedStatus)
+        assertEquals(0L, result.metrics?.batteryPercent)
+        assertEquals(1L, result.metrics?.unsentCount)
+        assertTrue(port.commands.contains("PROTECTED_GET_STATUS"))
+        assertFalse(port.commands.contains("GET_STATUS"))
+        session.state.value = Session.SignedIn(2, OnboardingStatus.READY, false)
+        runCurrent()
+        assertNull(vm.state.value.ownedStatus)
+    }
+
     /** 접수증 없는 첫 기록이 뒤의 정상 기록을 막거나 ACK되면 안 된다. */
     @Test fun automaticTransferSkipsHeldRecordAndAcknowledgesTheNextRecord() = runTest(dispatcher) {
         val port = ownerPort()

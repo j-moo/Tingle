@@ -46,6 +46,17 @@ data class BleOwnerFlowStatus(
         (applied == false || timeReady == false || records?.unresolvedAccountLockCount?.let { it > 0 } == true)
 }
 
+/** 신형 응답의 확정 기록과 검토용 기록 모두 전송 대상이다. 후보나 일부 집계만으로 총량을 추정하지 않는다. */
+internal val BleDeviceStatus.unsentCount: Long?
+    get() {
+        val pending = pendingRecordCount ?: return null
+        if (ownerFlow.ownerAuthorized == null) return pending
+        val records = ownerFlow.records ?: return null
+        if (records.state !in setOf("AVAILABLE", "FULL")) return null
+        val review = records.reviewCount ?: return null
+        return if (pending <= Long.MAX_VALUE - review) pending + review else null
+    }
+
 /** 신형 필드가 없거나 타입/범위가 맞지 않으면 미확인으로 남긴다. 문자열 숫자·boolean을 자동 변환하지 않는다. */
 internal object BleOwnerFlowProtocol {
     fun flag(value: JsonObject, key: String): Boolean? =
