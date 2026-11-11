@@ -86,14 +86,26 @@ internal object KeyringEncounterProtocol {
         require(status.ownerAuthorized == true)
         val cursor = requireNotNull(status.cursorEpoch)
         var after = 0L
-        repeat(MAX_RECORDS + 1) { skipped ->
-            try {
-                return Scan(next(exchange, after, cursor), skipped)
+        var legacyCount = 0
+        var firstReview: KeyringEncounterHeader? = null
+        for (scanned in 0..MAX_RECORDS) {
+            val record = try {
+                next(exchange, after, cursor)
             } catch (failure: BleCommandException) {
                 val position = failure.legacySequence
-                if (position == null || position <= after || skipped == MAX_RECORDS) throw failure
+                if (position == null || position <= after || scanned == MAX_RECORDS) throw failure
+                legacyCount++
                 after = position
+                continue
             }
+            if (record == null) return Scan(firstReview, legacyCount)
+            check(scanned < MAX_RECORDS) { "Encounter record limit exceeded" }
+            if (record.kind == "CONFIRMED") return Scan(record, legacyCount)
+
+            // 접수가 보류된 REVIEW가 뒤의 확정 기록 전송을 막지 않도록 헤더만 넘긴다.
+            // 확정 기록이 없다면 가장 앞의 REVIEW를 기존 전송 흐름에 넘긴다.
+            if (firstReview == null) firstReview = record
+            after = record.sequence
         }
         error("Encounter cursor did not advance")
     }

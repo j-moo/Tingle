@@ -92,18 +92,62 @@ class KeyringEncounterProtocolTest {
                     if (request["afterSequence"] == JsonPrimitive(0)) response(request, "ERROR") {
                         put("code", "LEGACY_EVIDENCE_UNAVAILABLE")
                         put("sequence", 2)
-                    } else {
-                        assertEquals(JsonPrimitive(2), request["afterSequence"])
+                    } else if (request["afterSequence"] == JsonPrimitive(2)) {
                         response(request, "RECORD") {
                             ApiJson.encodeToJsonElement(KeyringEncounterHeader.serializer(), header).jsonObject.forEach { (k, v) -> put(k, v) }
                         }
+                    } else {
+                        assertEquals(JsonPrimitive(3), request["afterSequence"])
+                        response(request, "RECORD_END") { put("recordCursorEpoch", header.recordCursorEpoch) }
                     }
                 }
                 else -> error("Unexpected command")
             }
         }
         assertEquals(KeyringEncounterProtocol.Scan(header, 1), scan)
-        assertEquals(listOf("GET_STATUS", "GET_RECORD", "GET_RECORD"), commands)
+        assertEquals(listOf("GET_STATUS", "GET_RECORD", "GET_RECORD", "GET_RECORD"), commands)
+    }
+
+    @Test fun confirmedRecordTakesPriorityOverEarlierReviews() = runTest {
+        val confirmed = header.copy(sequence = 5, kind = "CONFIRMED", peerCredential = base64.encode(ByteArray(357)))
+        val (scan, cursors) = scanRecords(listOf(header, header.copy(sequence = 4), confirmed, header.copy(sequence = 6)))
+
+        assertEquals(confirmed, scan.header)
+        assertEquals(listOf(0L, 3L, 4L), cursors)
+    }
+
+    @Test fun earliestReviewRemainsSendableWhenNoConfirmedRecordExists() = runTest {
+        val (scan, cursors) = scanRecords(listOf(header, header.copy(sequence = 4)))
+
+        assertEquals(header, scan.header)
+        assertEquals(listOf(0L, 3L, 4L), cursors)
+    }
+
+    private suspend fun scanRecords(records: List<KeyringEncounterHeader>): Pair<KeyringEncounterProtocol.Scan, List<Long>> {
+        val cursors = mutableListOf<Long>()
+        val scan = KeyringEncounterProtocol.findSendable { bytes ->
+            val request = Json.parseToJsonElement(bytes.decodeToString()).jsonObject
+            when (request.getValue("type").jsonPrimitive.content) {
+                "GET_STATUS" -> response(request, "STATUS") {
+                    put("ownerAuthorized", true)
+                    put("recordCursorEpoch", header.recordCursorEpoch)
+                }
+                "GET_RECORD" -> {
+                    val after = request.getValue("afterSequence").jsonPrimitive.long
+                    cursors += after
+                    val record = records.firstOrNull { it.sequence > after }
+                    if (record == null) response(request, "RECORD_END") {
+                        put("recordCursorEpoch", header.recordCursorEpoch)
+                    } else response(request, "RECORD") {
+                        ApiJson.encodeToJsonElement(KeyringEncounterHeader.serializer(), record).jsonObject.forEach { (key, value) ->
+                            put(key, value)
+                        }
+                    }
+                }
+                else -> error("Unexpected command")
+            }
+        }
+        return scan to cursors
     }
 
     /** epoch가 바뀌면 옛 위치를 버린다. 현재 epoch에 구형 기록만 있으면 빈 키링과 구분한다. */
