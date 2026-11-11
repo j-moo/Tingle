@@ -10,12 +10,14 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.e106.tingle.auth.MemberAccessRepository;
+import com.e106.tingle.proposal.ProposalPushNotifier;
 
 import lombok.RequiredArgsConstructor;
 import tools.jackson.core.JacksonException;
@@ -31,6 +33,8 @@ public class EncounterProposalPublisher {
 	private final JsonMapper mapper;
 	private final Clock clock;
 	private final MemberAccessRepository members;
+	// 알림 빈이 없는 문맥(슬라이스 테스트 등)에서도 제안 전환은 그대로 동작한다
+	private final ObjectProvider<ProposalPushNotifier> pushes;
 
 	@Transactional(propagation = Propagation.MANDATORY)
 	public Optional<Instant> publish(long matchingId, UUID generationId, UUID attemptId, String inputHash) {
@@ -107,6 +111,8 @@ public class EncounterProposalPublisher {
 			if (saved != 1) {
 				throw new IllegalStateException("Published encounter marker was not stored");
 			}
+			// 처음 제안으로 바뀐 때만 알린다(같은 평가의 재처리 replay 는 위에서 이미 돌아갔다)
+			pushes.ifAvailable(push -> push.afterCommit(matchingId, pair.low(), pair.high(), now));
 			return Optional.of(now);
 		} catch (JacksonException | IllegalArgumentException | DateTimeException exception) {
 			return Optional.empty();

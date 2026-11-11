@@ -1,6 +1,7 @@
 package com.e106.tingle.encounter;
 
 import static org.assertj.core.api.Assertions.*;
+import static org.mockito.Mockito.verify;
 
 import java.sql.Timestamp;
 import java.time.Clock;
@@ -28,12 +29,14 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Import;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.transaction.IllegalTransactionStateException;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 
 import com.e106.tingle.auth.MemberAccessRepository;
+import com.e106.tingle.proposal.ProposalPushNotifier;
 
 import tools.jackson.databind.json.JsonMapper;
 
@@ -68,6 +71,8 @@ class EncounterProposalPublisherPersistenceTest {
 
 	@Autowired
 	private EncounterProposalPublisher publisher;
+	@MockitoBean
+	private ProposalPushNotifier pushes;
 	@Autowired
 	private JdbcTemplate jdbc;
 	@Autowired
@@ -119,6 +124,8 @@ class EncounterProposalPublisherPersistenceTest {
 			String.class, matching);
 		assertThat(publish()).contains(NOW);
 		assertThat(publish()).contains(NOW);
+		// 처음 전환 때만 알림을 건다. 같은 평가의 재처리(replay)는 다시 알리지 않는다
+		verify(pushes).afterCommit(matching, low, high, NOW);
 		assertThat(jdbc.queryForObject("select status::text from matching where id=?", String.class, matching))
 			.isEqualTo("PENDING");
 		assertThat(time("proposed_at")).isEqualTo(NOW);
