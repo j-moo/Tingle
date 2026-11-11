@@ -29,6 +29,7 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.support.StaticListableBeanFactory;
+import org.springframework.boot.jdbc.autoconfigure.JdbcConnectionDetails;
 import org.springframework.core.env.StandardEnvironment;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -36,10 +37,8 @@ import org.springframework.jdbc.datasource.DataSourceTransactionManager;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import org.springframework.jdbc.datasource.init.ResourceDatabasePopulator;
 import org.springframework.test.util.ReflectionTestUtils;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
-import org.testcontainers.postgresql.PostgreSQLContainer;
 
+import com.e106.tingle.SharedPostgres;
 import com.e106.tingle.auth.MemberAccessRepository;
 import com.e106.tingle.encounter.EncounterEvaluationGateway;
 import com.e106.tingle.encounter.EncounterEvaluationWorker;
@@ -60,11 +59,9 @@ import com.e106.tingle.settings.snapshot.SettingsSnapshotJson;
 import tools.jackson.databind.json.JsonMapper;
 
 /** Disposable DB and public C vectors. Approval/runtime fixtures are synthetic, never production approval. */
-@Testcontainers
 class Ter2BusinessPromotionTest {
 
-	@Container
-	private static final PostgreSQLContainer POSTGRES = new PostgreSQLContainer("postgres:17");
+	private static final JdbcConnectionDetails POSTGRES = SharedPostgres.newDatabase();
 	private static JdbcTemplate jdbc;
 	private static DriverManagerDataSource dataSource;
 	private final JsonMapper mapper = JsonMapper.builder().build();

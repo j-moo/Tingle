@@ -62,7 +62,11 @@ pipeline {
             gitlabCommitStatus(name: 'back') {
               // build = 컴파일 + checkstyle(네이버 규칙) + 테스트. 테스트 DB 는 Testcontainers 가 서버 docker 로 띄운다.
               // ufw 가 컨테이너 → 호스트 포트를 막으므로 호스트 네트워크로 돌리고 Testcontainers 가 localhost 로 붙게 한다.
-              inDocker('eclipse-temurin:21-jdk', 'back', '-v tingle-ci-gradle-back:/root/.gradle --network host -e TESTCONTAINERS_HOST_OVERRIDE=localhost', 'sh gradlew build --no-daemon')
+              // 대량 데이터 부하 테스트(@Tag("load"))는 MR마다 돌리지 않고, develop·master 머지 중 back 이 바뀐 때만 함께 돌린다.
+              script {
+                def tasks = env.gitlabActionType == 'PUSH' && DEPLOY[env.gitlabSourceBranch] ? 'build loadTest' : 'build'
+                inDocker('eclipse-temurin:21-jdk', 'back', '-v tingle-ci-gradle-back:/root/.gradle --network host -e TESTCONTAINERS_HOST_OVERRIDE=localhost', "sh gradlew ${tasks} --no-daemon")
+              }
             }
           }
         }

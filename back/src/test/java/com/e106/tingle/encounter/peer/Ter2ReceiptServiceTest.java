@@ -29,17 +29,15 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.support.StaticListableBeanFactory;
+import org.springframework.boot.jdbc.autoconfigure.JdbcConnectionDetails;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DataSourceTransactionManager;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import org.springframework.jdbc.datasource.init.ResourceDatabasePopulator;
 import org.springframework.test.util.ReflectionTestUtils;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
-import org.testcontainers.postgresql.PostgreSQLContainer;
-import org.testcontainers.utility.DockerImageName;
 
+import com.e106.tingle.SharedPostgres;
 import com.e106.tingle.encounter.dto.EncounterSyncRequest.DeviceProof;
 import com.e106.tingle.encounter.dto.EncounterSyncRequest.Submission;
 import com.e106.tingle.encounter.proof.Ter2ProofVerifier;
@@ -55,11 +53,9 @@ import com.e106.tingle.settings.snapshot.SettingsSnapshotJson;
 import tools.jackson.databind.json.JsonMapper;
 
 /** Isolated disposable PostgreSQL and public synthetic firmware keys; no real accounts, keys or shared DB. */
-@Testcontainers
 class Ter2ReceiptServiceTest {
 
-	@Container
-	private static final PostgreSQLContainer POSTGRES = new PostgreSQLContainer(DockerImageName.parse("postgres:17"));
+	private static final JdbcConnectionDetails POSTGRES = SharedPostgres.newDatabase();
 	private static JdbcTemplate jdbc;
 	private static DriverManagerDataSource dataSource;
 	private final JsonMapper mapper = JsonMapper.builder().build();

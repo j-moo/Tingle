@@ -9,6 +9,7 @@ import java.util.UUID;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.boot.jdbc.autoconfigure.JdbcConnectionDetails;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -16,22 +17,17 @@ import org.springframework.jdbc.datasource.DataSourceTransactionManager;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import org.springframework.jdbc.datasource.init.ResourceDatabasePopulator;
 import org.springframework.transaction.support.TransactionTemplate;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
-import org.testcontainers.postgresql.PostgreSQLContainer;
-import org.testcontainers.utility.DockerImageName;
 
+import com.e106.tingle.SharedPostgres;
 import com.e106.tingle.encounter.ReligionEvidenceRetirement;
 
 import tools.jackson.databind.json.JsonMapper;
 
 /** Disposable PostgreSQL only. Disabling intake must not disable withdrawal of previously stored copies. */
-@Testcontainers
 class PeerEvidenceRetirementTest {
 
 	private static final Instant TIME = Instant.parse("2026-11-06T00:00:00Z");
-	@Container
-	private static final PostgreSQLContainer POSTGRES = new PostgreSQLContainer(DockerImageName.parse("postgres:17"));
+	private static final JdbcConnectionDetails POSTGRES = SharedPostgres.newDatabase();
 	private static DriverManagerDataSource dataSource;
 	private static JdbcTemplate jdbc;
 

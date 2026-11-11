@@ -16,16 +16,15 @@ import java.util.UUID;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.boot.jdbc.autoconfigure.JdbcConnectionDetails;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DataSourceTransactionManager;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import org.springframework.jdbc.datasource.init.ResourceDatabasePopulator;
 import org.springframework.transaction.support.TransactionTemplate;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
-import org.testcontainers.postgresql.PostgreSQLContainer;
 
+import com.e106.tingle.SharedPostgres;
 import com.e106.tingle.chat.deletion.ChatDeletionReferenceSource;
 import com.e106.tingle.chat.deletion.ChatDeletionReferenceSource.Context;
 import com.e106.tingle.chat.deletion.ChatDeletionReferenceSource.Inventory;
@@ -43,11 +42,9 @@ import com.e106.tingle.settings.snapshot.SettingsChangeCoordinator;
 import tools.jackson.databind.json.JsonMapper;
 
 /** Disposable PostgreSQL checks real cleanup SQL without shared data or external services. */
-@Testcontainers
 class MemberWithdrawalCleanupIntegrationTest {
 	private static final Instant NOW = Instant.parse("2026-11-06T04:00:00Z");
-	@Container
-	private static final PostgreSQLContainer POSTGRES = new PostgreSQLContainer("postgres:17");
+	private static final JdbcConnectionDetails POSTGRES = SharedPostgres.newDatabase();
 	private JdbcTemplate jdbc;
 	private TransactionTemplate transaction;
 	private SettingsChangeCoordinator changes;

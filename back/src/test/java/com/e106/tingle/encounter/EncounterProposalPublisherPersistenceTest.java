@@ -23,8 +23,8 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.EnableAutoConfiguration;
+import org.springframework.boot.jdbc.autoconfigure.JdbcConnectionDetails;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Import;
@@ -33,8 +33,8 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.transaction.IllegalTransactionStateException;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
-import org.testcontainers.postgresql.PostgreSQLContainer;
 
+import com.e106.tingle.SharedPostgres;
 import com.e106.tingle.auth.MemberAccessRepository;
 import com.e106.tingle.proposal.ProposalPushNotifier;
 
@@ -58,9 +58,8 @@ class EncounterProposalPublisherPersistenceTest {
 	@Import({EncounterProposalPublisher.class, MemberAccessRepository.class})
 	static class Config {
 		@Bean
-		@ServiceConnection
-		PostgreSQLContainer postgresContainer() {
-			return new PostgreSQLContainer("postgres:17");
+		JdbcConnectionDetails postgresConnection() {
+			return SharedPostgres.newDatabase();
 		}
 
 		@Bean
