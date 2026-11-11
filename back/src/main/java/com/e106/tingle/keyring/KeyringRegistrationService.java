@@ -131,10 +131,9 @@ public class KeyringRegistrationService {
 			|| challenge.getRegisteredStatus() == null || challenge.getRegisteredFirmwareVersion() == null) {
 			throw new BusinessException(ErrorCode.IDEMPOTENCY_CONFLICT);
 		}
-		// 처음 등록 응답과 같게: 등록 직후 별명은 비어 있어 일련번호 앞 10자를 이름으로 준다.
 		return new KeyringView(challenge.getRegisteredKeyringId(), device.getSerialNumber(),
-			challenge.getRegisteredStatus(), challenge.getRegisteredFirmwareVersion(),
-			KeyringView.displayLabel(null, device.getSerialNumber()));
+			challenge.getRegisteredStatus(),
+			challenge.getRegisteredFirmwareVersion());
 	}
 
 	private void requireSession(long userId, UUID familyId, Instant now) {

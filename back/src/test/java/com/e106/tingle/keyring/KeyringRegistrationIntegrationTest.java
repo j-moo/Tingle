@@ -58,15 +58,12 @@ class KeyringRegistrationIntegrationTest extends IntegrationTestSupport {
 		JsonNode challenge = issue(user);
 		UUID requestKey = UUID.randomUUID();
 		JsonNode response = register(user, requestKey, request(challenge, device));
-		assertThat(response.size()).isEqualTo(5);
+		assertThat(response.size()).isEqualTo(4);
 		assertThat(response.path("deviceSerial").asString()).isEqualTo(jdbc.queryForObject(
 			"select serial_number from keyring where id=?", String.class, device.id()));
 		assertThat(response.path("deviceId").asLong()).isEqualTo(device.id());
 		assertThat(response.path("status").asString()).isEqualTo("SYNC_PENDING");
 		assertThat(response.path("firmwareVersion").asString()).isEqualTo("test-fw");
-		// 등록 직후 별명은 비어 있어 일련번호 앞 10자를 이름으로 보여 준다.
-		assertThat(response.path("label").asString()).isEqualTo(jdbc.queryForObject(
-			"select left(serial_number,10) from keyring where id=?", String.class, device.id()));
 		assertThat(owner(device)).isEqualTo(userIdOf(user));
 		assertThat(generation(device)).isNotNull();
 		assertThat(consumed(challenge)).isTrue();

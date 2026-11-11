@@ -1783,8 +1783,7 @@
                   "deviceId": 17,
                   "deviceSerial": "example",
                   "status": "REGISTERED",
-                  "firmwareVersion": "example",
-                  "label": "example"
+                  "firmwareVersion": "example"
                 }
               }
             }
@@ -18375,233 +18374,6 @@
           }
         ]
       }
-    },
-    "/api/keyrings/{deviceId}": {
-      "patch": {
-        "operationId": "updateKeyringLabel",
-        "summary": "키링 별명 변경",
-        "description": "내 키링의 별명을 바꾼다.\n\n### 처리 규칙\n\n- 현재 주인이고 등록 상태(REGISTERED)인 키링만 바꾼다. 남의 키링·해제된 키링·없는 키링은 404 RESOURCE_NOT_FOUND.\n- 앞뒤 공백을 지우고 코드 포인트 기준 10자를 넘거나 제어 문자가 있으면 400 INVALID_REQUEST.\n- null·빈 문자열·공백만이면 별명을 지우고 일련번호 앞 10자를 보여 준다.\n- 응답은 바뀐 키링 한 대(목록 항목과 같은 모양).\n- 별명은 본인 앱 화면에서만 쓰고 기기·상대·AI 서버로 보내지 않는다.",
-        "tags": [
-          "KEY"
-        ],
-        "x-functional-ids": [
-          "KEY-01"
-        ],
-        "x-auth-role": "user",
-        "parameters": [
-          {
-            "$ref": "#/components/parameters/AcceptLanguage"
-          },
-          {
-            "name": "deviceId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "format": "int64",
-              "minimum": 1
-            },
-            "description": "내 키링 목록의 deviceId"
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "정상 응답",
-            "headers": {
-              "X-Request-Id": {
-                "schema": {
-                  "type": "string",
-                  "format": "uuid"
-                }
-              },
-              "Cache-Control": {
-                "schema": {
-                  "type": "string"
-                },
-                "description": "민감 응답 no-store"
-              }
-            },
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Keyring"
-                },
-                "example": {
-                  "deviceId": 17,
-                  "deviceSerial": "XIAO-7ce081e55efaee51",
-                  "status": "READY",
-                  "firmwareVersion": "0.7.2",
-                  "label": "내 키링"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "INVALID_REQUEST",
-            "headers": {
-              "X-Request-Id": {
-                "schema": {
-                  "type": "string",
-                  "format": "uuid"
-                }
-              },
-              "Cache-Control": {
-                "schema": {
-                  "type": "string"
-                },
-                "description": "민감 응답 no-store"
-              }
-            },
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                },
-                "example": {
-                  "code": "INVALID_REQUEST",
-                  "message": "INVALID_REQUEST",
-                  "requestId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
-                  "retryable": false,
-                  "fields": [
-                    "revision"
-                  ]
-                }
-              }
-            },
-            "x-error-codes": [
-              "INVALID_REQUEST"
-            ]
-          },
-          "401": {
-            "description": "AUTH_REQUIRED / ACCESS_TOKEN_EXPIRED / ACCESS_TOKEN_INVALID / SESSION_REVOKED. ACCESS_TOKEN_EXPIRED만 토큰 갱신 1회, 위조·폐기 시 재로그인.",
-            "headers": {
-              "X-Request-Id": {
-                "schema": {
-                  "type": "string",
-                  "format": "uuid"
-                }
-              },
-              "Cache-Control": {
-                "schema": {
-                  "type": "string"
-                },
-                "description": "민감 응답 no-store"
-              }
-            },
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                },
-                "example": {
-                  "code": "AUTH_REQUIRED",
-                  "message": "로그인이 필요합니다.",
-                  "requestId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
-                  "retryable": false,
-                  "fields": [
-                    "revision"
-                  ]
-                }
-              }
-            },
-            "x-error-codes": [
-              "AUTH_REQUIRED",
-              "ACCESS_TOKEN_EXPIRED",
-              "ACCESS_TOKEN_INVALID",
-              "SESSION_REVOKED"
-            ]
-          },
-          "403": {
-            "description": "ONBOARDING_REQUIRED",
-            "headers": {
-              "X-Request-Id": {
-                "schema": {
-                  "type": "string",
-                  "format": "uuid"
-                }
-              },
-              "Cache-Control": {
-                "schema": {
-                  "type": "string"
-                },
-                "description": "민감 응답 no-store"
-              }
-            },
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                },
-                "example": {
-                  "code": "ONBOARDING_REQUIRED",
-                  "message": "가입 단계를 완료해 주세요.",
-                  "requestId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
-                  "retryable": false,
-                  "fields": [
-                    "revision"
-                  ]
-                }
-              }
-            },
-            "x-error-codes": [
-              "ONBOARDING_REQUIRED"
-            ]
-          },
-          "404": {
-            "description": "RESOURCE_NOT_FOUND",
-            "headers": {
-              "X-Request-Id": {
-                "schema": {
-                  "type": "string",
-                  "format": "uuid"
-                }
-              },
-              "Cache-Control": {
-                "schema": {
-                  "type": "string"
-                },
-                "description": "민감 응답 no-store"
-              }
-            },
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                },
-                "example": {
-                  "code": "RESOURCE_NOT_FOUND",
-                  "message": "RESOURCE_NOT_FOUND",
-                  "requestId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
-                  "retryable": false
-                }
-              }
-            },
-            "x-error-codes": [
-              "RESOURCE_NOT_FOUND"
-            ]
-          }
-        },
-        "x-contract-status": "IMPLEMENTED",
-        "x-storage-design": "erd22-canonical-176",
-        "x-confirmation-required": [],
-        "x-implementation-ref": "keyring-read.md",
-        "x-implementation-stage": "PATH_ALIGNED_STORAGE_REVIEW_REQUIRED",
-        "x-erd21-storage-followup": "S15P31E106-176 / S15P31E106-178: owner/ACK/read DTO and push login-generation storage need agreement.",
-        "x-verification-note": "2026-10-28 !92 source35166ea: 새22표176컬럼36논리관계에서 이4API와 기존로그아웃 연결해제의 로컬저장/HTTP·전체clean build422개·Checkstyle/패키징 통과. 신규70 통합전이며 교차승인/병합은 별도. 등록67/100·sync68/69의 최종기기증명/ACK와 nonce/run/당시payload/소유세대 영속정의, 과거자료 실제이관·Notion일치·실기기/FCM/공유DB/배포는 미완료. 임의증명·새API/칼럼 추가없음.",
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/UpdateKeyringLabel"
-              },
-              "example": {
-                "label": "내 키링"
-              }
-            }
-          }
-        }
-      }
     }
   },
   "components": {
@@ -19769,28 +19541,20 @@
             "minLength": 1,
             "maxLength": 100,
             "description": "기기 펌웨어 버전"
-          },
-          "label": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 10,
-            "description": "주인이 붙인 키링 별명(코드 포인트 기준 최대 10자). 별명이 없으면 일련번호 앞 10자를 준다. 본인 앱 화면 표시용이며 기기·상대·AI 서버로 보내지 않는다. 주인이 바뀌면(초기화·해제·새 등록) 별명은 지워진다."
           }
         },
         "required": [
           "deviceId",
           "deviceSerial",
           "status",
-          "firmwareVersion",
-          "label"
+          "firmwareVersion"
         ],
         "examples": [
           {
             "deviceId": 17,
             "deviceSerial": "example",
             "status": "REGISTERED",
-            "firmwareVersion": "example",
-            "label": "example"
+            "firmwareVersion": "example"
           }
         ]
       },
@@ -24692,24 +24456,6 @@
           "releaseId",
           "surveyVersion",
           "updatedAt"
-        ]
-      },
-      "UpdateKeyringLabel": {
-        "type": "object",
-        "additionalProperties": false,
-        "properties": {
-          "label": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "description": "새 별명. 서버가 앞뒤 공백(줄바꿈 없는 공백·한글 채움 문자 포함)을 지운 뒤 코드 포인트 기준 10자 이하여야 한다(그래서 원문 길이 제한은 두지 않는다). 제어 문자·서식 문자(폭 없는 공백, 방향 제어 등)는 400. null·빈 문자열·공백만이면 별명을 지우고 일련번호 앞 10자로 보인다. label 필드를 빼고 {}를 보내도 null과 같이 별명을 지운다. 혼자서는 보이지 않는 문자(결합 부호·변형 선택자·점자 빈칸 등)만 남아도 공백만 보낸 것으로 본다."
-          }
-        },
-        "examples": [
-          {
-            "label": "내 키링"
-          }
         ]
       }
     },
