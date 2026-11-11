@@ -66,7 +66,10 @@ fun ChatPartnerScreen(state: ChatPartnerState, onAction: (ChatPartnerAction) -> 
         else -> Res.string.chat_partner_failed to Res.string.chat_partner_failed_help
     }
     StatusCard(stringResource(title), stringResource(help))
-    if (load == ChatPartnerLoad.Loading) CircularProgressIndicator(color = AppColors.SelectionBorder)
+    // 로딩 원은 가로 가운데
+    if (load == ChatPartnerLoad.Loading) Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+        CircularProgressIndicator(color = AppColors.SelectionBorder)
+    }
     else {
         val next = when (load) {
             ChatPartnerLoad.Closed, ChatPartnerLoad.Unavailable -> ChatPartnerAction.ChatList

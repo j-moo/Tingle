@@ -1,6 +1,8 @@
 package com.ssafy.e106.features.chat.ui
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -81,13 +83,17 @@ import kotlinx.coroutines.delay
     }
     if (conversation.owner != session || conversation.id != room) return
     if (page == "menu" && conversation.ui.readable) {
-        Column(Modifier.fillMaxSize().safeDrawingPadding().padding(AppSpacing.Large), verticalArrangement = Arrangement.spacedBy(AppSpacing.Medium)) {
+        // 가로 화면 · 큰 글자에서도 아래 버튼까지 닿게 스크롤
+        Column(Modifier.fillMaxSize().safeDrawingPadding().verticalScroll(rememberScrollState()).padding(AppSpacing.Large), verticalArrangement = Arrangement.spacedBy(AppSpacing.Medium)) {
             AppTopBar(stringResource(Res.string.chat_connected_menu), onBack = { back() })
             for ((operation, label) in listOf("REPORT" to Res.string.chat_connected_report,
                 "BLOCK" to Res.string.chat_connected_block, "LEAVE" to Res.string.chat_connected_leave)) {
                 AppButton(stringResource(label), Modifier.fillMaxWidth(), enabled = !conversation.sending,
                     onClick = { roomModel.pause(); onSafety(room!!, operation) })
             }
+            // 대화 맨 위 안내는 이전 메시지를 다 받아야 보이므로 메뉴에서도 열 수 있게 한다
+            AppButton(stringResource(Res.string.chat_conversation_ai_notice), Modifier.fillMaxWidth(), variant = AppButtonVariant.Secondary,
+                onClick = { roomModel.pause(); onConsent() })
         }; return
     }
     Column(Modifier.fillMaxSize()) {

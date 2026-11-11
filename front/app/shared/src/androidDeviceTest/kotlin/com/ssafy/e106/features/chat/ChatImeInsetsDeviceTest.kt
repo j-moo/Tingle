@@ -81,7 +81,7 @@ class ChatImeInsetsDeviceTest {
                 }
                 android.util.Log.i("ChatImeGeometry", measurement)
                 assertTrue("입력창은 키보드 바로 위에 있어야 함: $measurement", valid)
-                compose.onNodeWithText("전송").assertIsDisplayed().assertIsEnabled()
+                compose.onNodeWithContentDescription("전송").assertIsDisplayed().assertIsEnabled()
                 Espresso.closeSoftKeyboard()
                 compose.waitUntil(10_000) {
                     var visible = true

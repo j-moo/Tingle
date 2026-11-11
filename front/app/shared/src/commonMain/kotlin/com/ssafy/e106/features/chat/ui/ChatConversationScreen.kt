@@ -1,6 +1,12 @@
 package com.ssafy.e106.features.chat.ui
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
@@ -11,11 +17,21 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import com.ssafy.e106.core.ui.components.*
 import com.ssafy.e106.core.ui.theme.*
 import com.ssafy.e106.resources.*
+import org.jetbrains.compose.resources.painterResource
 import org.jetbrains.compose.resources.stringResource
 import kotlinx.coroutines.flow.distinctUntilChanged
 
@@ -46,13 +62,7 @@ fun ChatConversationScreen(
             // 입력 컴포지션 위치는 유지하고 높이만 조정해 초안과 포커스를 보존한다.
             val compactInput = maxHeight < 240.dp
             Column(Modifier.fillMaxSize()) {
-                if (!compactInput || !state.readable) AppTopBar(
-                    title = if (state.readable) state.nickname?.takeIf { it.isNotBlank() }
-                        ?: stringResource(Res.string.chat_conversation_title) else stringResource(Res.string.chat_conversation_title),
-                    onBack = { onAction(ConversationAction.Back) },
-                    actionText = if (state.readable) stringResource(Res.string.chat_conversation_menu) else null,
-                    onAction = { if (state.readable) onAction(ConversationAction.OpenMenu) },
-                )
+                if (!compactInput || !state.readable) ConversationTopBar(state, onAction)
                 if (!state.readable) {
                     LazyColumn(Modifier.weight(1f).fillMaxWidth(), contentPadding = screenPaddingValues(),
                         verticalArrangement = Arrangement.spacedBy(AppSpacing.Large)) {
@@ -92,34 +102,28 @@ fun ChatConversationScreen(
                         val supportHeight = minOf(240.dp, maxHeight * 0.5f)
                         Column(Modifier.fillMaxSize()) {
                             Column(Modifier.heightIn(max = noticeHeight).fillMaxWidth().verticalScroll(rememberScrollState())) {
-                                TextButton(onClick = { onAction(ConversationAction.OpenPartner) },
-                                    modifier = Modifier.align(Alignment.End).padding(horizontal = AppSpacing.Large)) {
-                                    Text(stringResource(Res.string.chat_partner_open))
-                                }
                                 ConversationNotice(state, onAction)
                             }
                             Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.TopCenter) {
-                                LazyColumn(Modifier.widthIn(max = 640.dp).fillMaxWidth(), state = listState, reverseLayout = true,
-                                    contentPadding = screenPaddingValues(), verticalArrangement = Arrangement.spacedBy(AppSpacing.Medium)) {
-                                    if (state.messages.isEmpty()) item(key = "empty") {
-                                        StatusCard(stringResource(if (state.nextCursor.isNullOrBlank()) Res.string.chat_conversation_empty else Res.string.chat_history_empty),
-                                            stringResource(if (state.nextCursor.isNullOrBlank()) Res.string.chat_conversation_empty_help else Res.string.chat_history_empty_help))
+                                val messages = remember(state.messages) { state.messages.distinctBy { it.id } }
+                                // 그날의 첫 메시지 id → (월, 일). 더 받을 이전 메시지가 남아 있으면 가장 오래된 메시지 위엔 두지 않는다
+                                val days = remember(messages, state.nextCursor) { dayStarts(messages.map { it.id to it.timeLabel }, state.nextCursor.isNullOrBlank()) }
+                                // 첫 대화: 가운데에 상대 첫 글자 · 안내
+                                if (messages.isEmpty() && state.nextCursor.isNullOrBlank()) FirstConversation(state, onAction)
+                                else LazyColumn(Modifier.widthIn(max = 640.dp).fillMaxWidth(), state = listState, reverseLayout = true,
+                                    contentPadding = screenPaddingValues(), verticalArrangement = Arrangement.spacedBy(AppSpacing.Small)) {
+                                    if (messages.isEmpty()) item(key = "empty") {
+                                        StatusCard(stringResource(Res.string.chat_history_empty), stringResource(Res.string.chat_history_empty_help))
                                     }
-                                    items(state.messages.distinctBy { it.id }.asReversed(), key = { "message-${it.id}" }) { message ->
-                                        Row(Modifier.fillMaxWidth(), horizontalArrangement = if (message.mine) Arrangement.End else Arrangement.Start) {
-                                            val who = stringResource(if (message.mine) Res.string.chat_conversation_me else Res.string.chat_conversation_other)
-                                            val time = message.timeLabel?.takeIf { it.isNotBlank() }
-                                                ?: stringResource(Res.string.chat_conversation_time_unknown)
-                                            Column(horizontalAlignment = if (message.mine) Alignment.End else Alignment.Start) {
-                                                MessageBubble(message.text,
-                                                    if (message.mine && message.delivery != MessageDelivery.Sent) who
-                                                    else stringResource(Res.string.chat_conversation_message_meta, who, time))
-                                                if (message.mine) MessageDeliveryStatus(message,
-                                                    enabled = state.inputEnabled,
-                                                    onRecovery = { action -> if (state.inputEnabled) onMessageRecovery(message.id, action) })
-                                            }
+                                    // 아래(최신)부터 그린다. 날짜가 바뀌는 자리(그날의 첫 메시지 위)에 날짜 구분
+                                    messages.asReversed().forEach { message ->
+                                        item(key = "message-${message.id}") {
+                                            MessageRow(message, state.inputEnabled) { action -> if (state.inputEnabled) onMessageRecovery(message.id, action) }
                                         }
+                                        days[message.id]?.let { (month, day) -> item(key = "day-${message.id}") { DayDivider(month, day) } }
                                     }
+                                    // 대화 맨 위(더 받을 이전 메시지가 없을 때): 종료 안내 · AI 분석 안내
+                                    if (state.nextCursor.isNullOrBlank()) item(key = "head") { ConversationHead(onAction) }
                                     if (!state.nextCursor.isNullOrBlank()) item(key = "older-messages") {
                                         if (state.historyLoad == HistoryLoad.Failed) Text(stringResource(Res.string.chat_history_failed),
                                             style = MaterialTheme.typography.bodySmall, color = AppColors.Error)
@@ -147,28 +151,122 @@ fun ChatConversationScreen(
     }
 }
 
+/** 위쪽: ‹ · 이름(누르면 상대 정보)과 종료 시각 · ⋯(차단 · 신고 메뉴). 읽을 수 없는 상태에선 ‹ 와 제목만 */
 @Composable
-private fun ConversationNotice(state: ChatConversationState, onAction: (ConversationAction) -> Unit) {
-    Column(Modifier.fillMaxWidth().padding(horizontal = AppSpacing.Large, vertical = AppSpacing.Small),
-        verticalArrangement = Arrangement.spacedBy(AppSpacing.ExtraSmall)) {
-        // 수신 연결 상태와 메시지 전송 결과는 별개다. 종료된 연결은 명시적인 다시 연결을 제공한다.
-        state.realtime?.let { status ->
-            Text(stringResource(when (status) {
-                ChatRealtimeStatus.Connecting -> Res.string.chat_realtime_connecting
-                ChatRealtimeStatus.Connected -> Res.string.chat_realtime_connected
-                ChatRealtimeStatus.Reconnecting -> Res.string.chat_realtime_reconnecting
-                ChatRealtimeStatus.Stopped -> Res.string.chat_realtime_stopped
-            }), style = MaterialTheme.typography.bodySmall, color = AppColors.TextSecondary)
-            if (status == ChatRealtimeStatus.Stopped) TextButton(onClick = { onAction(ConversationAction.Reload) }) {
-                Text(stringResource(Res.string.chat_realtime_retry))
+private fun ConversationTopBar(state: ChatConversationState, onAction: (ConversationAction) -> Unit) {
+    val back = stringResource(Res.string.button_previous)
+    val menu = stringResource(Res.string.chat_conversation_menu)
+    val partner = stringResource(Res.string.chat_partner_open)
+    Row(Modifier.fillMaxWidth().heightIn(min = AppSizes.TopBarMinHeight).padding(horizontal = AppSpacing.Small),
+        verticalAlignment = Alignment.CenterVertically) {
+        // 눌러도 회색 원이 생기지 않게 표시 없이, 터치 영역은 48dp
+        Box(Modifier.size(48.dp).clickable(remember { MutableInteractionSource() }, indication = null, role = Role.Button,
+            onClick = { onAction(ConversationAction.Back) }), contentAlignment = Alignment.Center) {
+            Icon(painterResource(Res.drawable.ic_arrow_back), back, tint = AppColors.TextPrimary)
+        }
+        // 제목(heading)은 포커스를 받는 이 영역에 둔다
+        Column(Modifier.weight(1f).heightIn(min = 48.dp).clip(AppShapes.Small).semantics(mergeDescendants = true) { heading() }
+            .then(if (state.readable) Modifier.clickable(role = Role.Button, onClickLabel = partner) { onAction(ConversationAction.OpenPartner) } else Modifier)
+            .padding(horizontal = AppSpacing.Small), verticalArrangement = Arrangement.Center) {
+            Text(if (state.readable) state.nickname?.takeIf { it.isNotBlank() } ?: stringResource(Res.string.chat_conversation_title)
+                else stringResource(Res.string.chat_conversation_title),
+                style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            if (state.readable) closesText(state.closesAtLabel)?.let {
+                Text(it, style = MaterialTheme.typography.bodySmall, color = AppColors.TextSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
         }
-        Text(state.closesAtLabel?.takeIf { it.isNotBlank() }?.let { stringResource(Res.string.chat_conversation_closes, it) }
-            ?: stringResource(Res.string.chat_conversation_closes_unknown),
-            style = MaterialTheme.typography.bodySmall, color = AppColors.TextSecondary)
-        Text(stringResource(Res.string.chat_conversation_notice), style = MaterialTheme.typography.bodySmall, color = AppColors.TextSecondary)
+        if (state.readable) Box(Modifier.size(48.dp).clip(CircleShape).semantics { contentDescription = menu }
+            .clickable(role = Role.Button) { onAction(ConversationAction.OpenMenu) }, contentAlignment = Alignment.Center) {
+            Text("⋯", style = MaterialTheme.typography.titleLarge, color = AppColors.TextSecondary, modifier = Modifier.clearAndSetSemantics {})
+        }
+    }
+}
+
+/** "11월 18일 오후 3:00 종료". 서버 시각을 못 읽으면 받은 글자 그대로, 없으면 표시하지 않는다 */
+@Composable
+private fun closesText(label: String?): String? {
+    val raw = label?.takeIf { it.isNotBlank() } ?: return null
+    val t = chatTimeParts(raw) ?: return stringResource(Res.string.chat_conversation_closes, raw)
+    return stringResource(Res.string.chat_conversation_closes, stringResource(Res.string.chat_date_time, t.month, t.day, clock(t)))
+}
+
+@Composable
+private fun clock(t: ChatTimeParts) = stringResource(if (t.afternoon) Res.string.chat_time_pm else Res.string.chat_time_am,
+    t.hour12, t.minute.toString().padStart(2, '0'))
+
+/** 말풍선 한 줄: 내 것은 오른쪽 검정, 상대는 왼쪽 회색. 시각은 아래 작은 글씨, 내 메시지는 전송 상태 */
+@Composable
+private fun MessageRow(message: ConversationMessage, enabled: Boolean, onRecovery: (MessageRecoveryAction) -> Unit) {
+    val who = stringResource(if (message.mine) Res.string.chat_conversation_me else Res.string.chat_conversation_other)
+    val sent = message.delivery == MessageDelivery.Sent
+    val side = if (message.mine) Alignment.End else Alignment.Start
+    Column(Modifier.fillMaxWidth(), horizontalAlignment = side, verticalArrangement = Arrangement.spacedBy(AppSpacing.ExtraSmall)) {
+        // 화면 리더는 "나/상대 · 본문 · 시각"을 한 번에 읽는다
+        Column(Modifier.semantics(mergeDescendants = true) { contentDescription = who }, horizontalAlignment = side,
+            verticalArrangement = Arrangement.spacedBy(AppSpacing.ExtraSmall)) {
+            Surface(Modifier.widthIn(max = 286.dp), shape = RoundedCornerShape(16.dp),
+                color = if (message.mine) AppColors.TextPrimary.copy(alpha = if (sent) 1f else 0.6f) else AppColors.SurfaceMuted) {
+                Text(message.text, Modifier.padding(horizontal = AppSpacing.Large, vertical = AppSpacing.Medium),
+                    style = MaterialTheme.typography.bodyMedium, color = if (message.mine) AppColors.Background else AppColors.TextPrimary)
+            }
+            if (sent) Text(chatTimeParts(message.timeLabel)?.let { clock(it) } ?: message.timeLabel?.takeIf { it.isNotBlank() }
+                ?: stringResource(Res.string.chat_conversation_time_unknown),
+                style = MaterialTheme.typography.labelSmall, color = AppColors.TextSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+        if (message.mine) MessageDeliveryStatus(message, enabled = enabled, onRecovery = onRecovery)
+    }
+}
+
+@Composable
+private fun DayDivider(month: Int, day: Int) {
+    Box(Modifier.fillMaxWidth().padding(vertical = AppSpacing.Small), contentAlignment = Alignment.Center) {
+        Surface(shape = CircleShape, color = AppColors.SurfaceMuted) {
+            Text(stringResource(Res.string.chat_date, month, day), Modifier.padding(horizontal = AppSpacing.Medium, vertical = AppSpacing.ExtraSmall),
+                style = MaterialTheme.typography.labelSmall, color = AppColors.TextSecondary)
+        }
+    }
+}
+
+/** 대화 맨 위 안내: 종료되면 다시 볼 수 없음 · AI 분석 안내 */
+@Composable
+private fun ConversationHead(onAction: (ConversationAction) -> Unit) {
+    Column(Modifier.fillMaxWidth().padding(bottom = AppSpacing.Small), horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(stringResource(Res.string.chat_conversation_notice), style = MaterialTheme.typography.bodySmall,
+            color = AppColors.TextSecondary, textAlign = TextAlign.Center)
         TextButton(onClick = { onAction(ConversationAction.OpenAiNotice) }) {
-            Text(stringResource(Res.string.chat_conversation_ai_notice), style = MaterialTheme.typography.labelMedium)
+            Text(stringResource(Res.string.chat_conversation_ai_notice), style = MaterialTheme.typography.labelMedium, color = AppColors.TextSecondary)
+        }
+    }
+}
+
+/** 첫 대화: 가운데 상대 첫 글자 원 · "○○님과 연결됐어요" · 종료 안내 */
+@Composable
+private fun FirstConversation(state: ChatConversationState, onAction: (ConversationAction) -> Unit) {
+    val name = state.nickname?.takeIf { it.isNotBlank() }
+    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(screenPaddingValues()),
+        horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(AppSpacing.Medium, Alignment.CenterVertically)) {
+        Box(Modifier.size(AppSizes.Avatar).clip(CircleShape).background(AppColors.SurfaceMuted), contentAlignment = Alignment.Center) {
+            Text(name.initial(), style = MaterialTheme.typography.headlineMedium,
+                color = AppColors.TextSecondary, modifier = Modifier.clearAndSetSemantics {})
+        }
+        Text(if (name != null) stringResource(Res.string.chat_conversation_connected, name) else stringResource(Res.string.chat_conversation_empty),
+            style = MaterialTheme.typography.titleMedium, textAlign = TextAlign.Center)
+        Text(stringResource(Res.string.chat_conversation_empty_help), style = MaterialTheme.typography.bodyMedium,
+            color = AppColors.TextSecondary, textAlign = TextAlign.Center)
+        ConversationHead(onAction)
+    }
+}
+
+/** 수신 연결에 문제가 있을 때만 한 줄(연결 중 · 연결됨은 표시하지 않는다). 멈췄으면 다시 연결 */
+@Composable
+private fun ConversationNotice(state: ChatConversationState, onAction: (ConversationAction) -> Unit) {
+    val status = state.realtime?.takeIf { it == ChatRealtimeStatus.Reconnecting || it == ChatRealtimeStatus.Stopped } ?: return
+    Column(Modifier.fillMaxWidth().background(AppColors.SurfaceMuted).padding(horizontal = AppSpacing.Large, vertical = AppSpacing.Small),
+        horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(stringResource(if (status == ChatRealtimeStatus.Reconnecting) Res.string.chat_realtime_reconnecting else Res.string.chat_realtime_stopped),
+            style = MaterialTheme.typography.bodySmall, color = AppColors.TextSecondary, textAlign = TextAlign.Center)
+        if (status == ChatRealtimeStatus.Stopped) TextButton(onClick = { onAction(ConversationAction.Reload) }) {
+            Text(stringResource(Res.string.chat_realtime_retry))
         }
     }
 }
@@ -185,24 +283,43 @@ private fun ConversationComposer(state: ChatConversationState, onDraftChange: (S
             style = MaterialTheme.typography.bodySmall, color = AppColors.TextSecondary)
         // 입력/전송을 같은 행에서 측정해 IME가 높이를 줄여도 버튼이 입력창 아래에서 잘리지 않게 한다.
         // 키보드 개폐 전후에 같은 Row를 유지하므로 입력창을 다른 부모로 옮기며 포커스를 잃지 않는다.
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(AppSpacing.Medium)) {
+        val inputLabel = stringResource(Res.string.chat_conversation_input)
+        val sendLabel = stringResource(Res.string.chat_conversation_send)
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Bottom,
+            horizontalArrangement = Arrangement.spacedBy(AppSpacing.Small)) {
             // 여러 줄 입력은 이 기능의 UI이며 기존 한 줄 AppTextField 계약을 변경하지 않는다.
-            OutlinedTextField(value = state.draft, onValueChange = { if (state.inputEnabled) onDraftChange(it) },
-                // 짧은 창에서는 입력 내부를 스크롤한다. 줄바꿈/본문 자체를 제거하거나 전송 규칙을 바꾸지 않는다.
-                enabled = state.inputEnabled, modifier = Modifier.weight(1f), minLines = 1, maxLines = if (compactInput) 1 else 3,
-                label = { Text(stringResource(Res.string.chat_conversation_input)) },
-                placeholder = { Text(stringResource(Res.string.chat_conversation_placeholder)) },
-                shape = AppShapes.Control, isError = inputError != null, textStyle = MaterialTheme.typography.bodyLarge,
+            // 짧은 창에서는 입력 내부를 스크롤한다. 줄바꿈/본문 자체를 제거하거나 전송 규칙을 바꾸지 않는다.
+            BasicTextField(value = state.draft, onValueChange = { if (state.inputEnabled) onDraftChange(it) },
+                enabled = state.inputEnabled, modifier = Modifier.weight(1f).semantics { contentDescription = inputLabel },
+                minLines = 1, maxLines = if (compactInput) 1 else 3,
+                textStyle = MaterialTheme.typography.bodyLarge.copy(color = AppColors.TextPrimary),
+                cursorBrush = SolidColor(AppColors.TextPrimary),
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Default),
-                colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = AppColors.TextPrimary,
-                    unfocusedBorderColor = AppColors.BorderControl, errorBorderColor = AppColors.Error,
-                    disabledContainerColor = AppColors.SurfaceMuted))
-            AppButton(stringResource(Res.string.chat_conversation_send),
-                enabled = state.submitEnabled, loading = state.submitting,
-                loadingText = stringResource(Res.string.chat_conversation_sending),
-                onClick = { if (state.submitEnabled) onAction(ConversationAction.Send) })
+                decorationBox = { field ->
+                    Box(Modifier.fillMaxWidth().heightIn(min = 48.dp).clip(RoundedCornerShape(22.dp))
+                        .background(if (inputError != null) AppColors.Error.copy(alpha = 0.08f) else AppColors.SurfaceMuted)
+                        .padding(horizontal = AppSpacing.Large, vertical = AppSpacing.Medium), contentAlignment = Alignment.CenterStart) {
+                        if (state.draft.isEmpty()) Text(stringResource(Res.string.chat_conversation_placeholder),
+                            style = MaterialTheme.typography.bodyLarge, color = AppColors.TextSecondary)
+                        field()
+                    }
+                })
+            // 동그란 보내기(→). 화면 리더엔 "전송"
+            // 터치 영역은 48dp, 보이는 원은 44dp
+            Box(Modifier.size(48.dp).clip(CircleShape)
+                .semantics { contentDescription = sendLabel }
+                .clickable(enabled = state.submitEnabled, role = Role.Button) { if (state.submitEnabled) onAction(ConversationAction.Send) },
+                contentAlignment = Alignment.Center) {
+                Box(Modifier.size(44.dp).clip(CircleShape)
+                    .background(if (state.submitEnabled || state.submitting) AppColors.TextPrimary else AppColors.BorderSubtle),
+                    contentAlignment = Alignment.Center) {
+                    if (state.submitting) CircularProgressIndicator(Modifier.size(18.dp), color = AppColors.Background, strokeWidth = 2.dp)
+                    else Text("→", style = MaterialTheme.typography.titleMedium, color = AppColors.Background, modifier = Modifier.clearAndSetSemantics {})
+                }
+            }
         }
+        // 글자 수는 한도에 가까워지거나 넘었을 때만
+        if (validation.graphemes >= 900 || inputError != null)
         Text(stringResource(Res.string.chat_conversation_count, validation.graphemes),
             style = MaterialTheme.typography.bodySmall,
             color = if (inputError != null) AppColors.Error else AppColors.TextSecondary)

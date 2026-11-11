@@ -84,7 +84,7 @@ class ChatPollingDeviceTest {
     @Test fun menuOpenedInSameEventAsTypingKeepsUnsavedDraft() {
         launch().use { scenario ->
             compose.waitUntil(10_000) { var ready = false; scenario.onActivity { ready = it.room.state.value.ui.inputEnabled }; ready }
-            val openMenu = compose.onNodeWithText("더보기").fetchSemanticsNode().config[SemanticsActions.OnClick].action!!
+            val openMenu = compose.onNodeWithContentDescription("더보기").fetchSemanticsNode().config[SemanticsActions.OnClick].action!!
             // 같은 메인 이벤트에서 입력과 실제 메뉴 버튼 동작을 실행해 200ms 저장 전에 전환한다.
             scenario.onActivity { it.room.draft("아직 저장 전인 초안"); assertTrue(openMenu()) }
             compose.onNodeWithText("신고하기").assertExists()
@@ -93,10 +93,21 @@ class ChatPollingDeviceTest {
             scenario.onActivity { assertEquals("아직 저장 전인 초안", it.room.state.value.ui.draft) }
         }
     }
+    // 이전 메시지가 남은 방에서도 AI 분석 안내에 닿도록 메뉴에 둔 항목
+    @Test fun menuOpensAiNotice() {
+        launch().use { scenario ->
+            compose.waitUntil(10_000) { var ready = false; scenario.onActivity { ready = it.room.state.value.ui.readable }; ready }
+            compose.onNodeWithContentDescription("더보기").performClick()
+            compose.onNodeWithText("AI 대화 분석 안내").performClick()
+            compose.onNodeWithText("동의 화면 테스트 도착").assertExists()
+            assertEquals(1, ChatPollingTestActivity.consentCalls.get())
+        }
+    }
     @Test fun actualProfileRouteKeepsItsScopeAcrossTwoPollingTicks() {
         launch().use { scenario ->
             compose.waitUntil(10_000) { var ready = false; scenario.onActivity { ready = it.room.state.value.ui.readable }; ready }
-            compose.onNodeWithText("상대 프로필 보기").performClick()
+            compose.onNode(SemanticsMatcher("상대 프로필 보기") {
+                it.config.contains(SemanticsActions.OnClick) && it.config[SemanticsActions.OnClick].label == "상대 프로필 보기" }).performClick()
             compose.waitUntil(10_000) { var ready = false; scenario.onActivity { ready = it.partner.state.value.visible }; ready }
             lateinit var before: ChatPartnerState
             scenario.onActivity { before = it.partner.state.value }
