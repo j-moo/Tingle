@@ -48,7 +48,7 @@ class ChatScreenDeviceTest {
         ActivityScenario.launch<ChatScreenTestActivity>(Intent(context,ChatScreenTestActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)).use { scenario ->
             compose.waitForIdle()
             scenario.onActivity { assertTrue(it.displayed.isNotEmpty()); assertFalse(it.displayed.contains(1)); assertTrue(it.displayed.contains(40)) }
-            compose.onNodeWithText("더보기").performClick()
+            compose.onNodeWithContentDescription("더보기").performClick()
             compose.onNodeWithText("확인하고 계속").performClick()
             scenario.onActivity { assertEquals(0,it.writes) }
             compose.onNodeWithText("차단하기").performClick()

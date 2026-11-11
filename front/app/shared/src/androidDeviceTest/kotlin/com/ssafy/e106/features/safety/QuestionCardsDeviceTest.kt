@@ -80,7 +80,7 @@ class QuestionCardsDeviceTest {
             open(); pick()
             compose.onNodeWithText("작성 중인 내용을 바꿀까요?").assertDoesNotExist()
             compose.onNode(hasSetTextAction()).assertTextContains(first)
-            compose.onNodeWithText("전송", useUnmergedTree = true).assertIsDisplayed()
+            compose.onNodeWithContentDescription("전송", useUnmergedTree = true).assertIsDisplayed()
             scenario.onActivity {
                 assertEquals(first, it.roomModel.state.value.ui.draft)
                 assertEquals(0, it.api.requests); assertEquals(queries, it.api.queries)
@@ -125,7 +125,7 @@ class QuestionCardsDeviceTest {
                 }
                 open()
                 compose.onNode(hasSetTextAction()).performTextReplacement("추천 없이도 대화해요")
-                compose.onNodeWithText("전송", useUnmergedTree = true).assertIsEnabled()
+                compose.onNodeWithContentDescription("전송", useUnmergedTree = true).assertIsEnabled()
                 compose.onNodeWithText("추천 질문 접기").performScrollTo().performClick()
             }
             scenario.onActivity { assertEquals(0, it.api.requests); assertTrue(it.chats.writes.isEmpty()) }

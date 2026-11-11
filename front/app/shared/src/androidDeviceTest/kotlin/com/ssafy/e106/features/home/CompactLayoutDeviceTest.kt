@@ -90,7 +90,7 @@ class CompactLayoutDeviceTest {
     @Test fun chatInputAndSendRemainReachableAtLargeFont() {
         launch("chat").use {
             fullyVisible(compose.onNode(hasSetTextAction()))
-            fullyVisible(compose.onNodeWithText("전송"))
+            fullyVisible(compose.onNodeWithContentDescription("전송"))
         }
     }
     @Test fun profileFieldsCanScrollAtLargeFont() {
@@ -143,7 +143,7 @@ class WideLayoutDeviceTest {
             }
             else -> {
                 compose.onNode(hasSetTextAction()).assertIsDisplayed()
-                compose.onNodeWithText("전송").assertIsDisplayed().assertIsEnabled()
+                compose.onNodeWithContentDescription("전송").assertIsDisplayed().assertIsEnabled()
             }
         }
     }

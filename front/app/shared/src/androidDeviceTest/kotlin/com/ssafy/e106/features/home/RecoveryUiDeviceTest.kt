@@ -8,6 +8,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.*
+import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import androidx.test.core.app.ActivityScenario
@@ -146,9 +147,34 @@ class RecoveryUiDeviceTest {
     }
     @Test fun chatListFailureRetriesWithoutEmptySuccess() {
         launch("chatList").use { scenario ->
-            tap("대화 목록 다시 불러오기")
-            scenario.onActivity { assertEquals(listOf(ChatListAction.Refresh), it.actions) }
+            // 다시 불러오기 버튼은 없다. 실패 화면에서 아래로 당기면 새로고침
             compose.onNodeWithText("대화 목록 다시 불러오기").assertDoesNotExist()
+            compose.onNodeWithText("대화 목록을 불러오지 못했어요").performTouchInput { swipeDown(startY = centerY, endY = centerY + 240 * density) }
+            compose.waitForIdle()
+            scenario.onActivity { assertEquals(listOf(ChatListAction.Refresh), it.actions) }
+            // 다시 받는 동안 빈 목록(성공)으로 보이지 않는다
+            compose.onNodeWithText("대화 목록을 불러오고 있어요").assertExists()
+            compose.onNodeWithText("진행 중인 대화가 없어요").assertDoesNotExist()
+        }
+    }
+    // 더 보기 버튼 없이: 끝이 보이면 다음 쪽을 한 번 요청하고, 새로고침 중엔 요청하지 않는다
+    @Test fun chatListLoadsNextPageAutomatically() {
+        val room = ChatListItem(1, "하늘", ChatRoomAccess.Allowed)
+        launch("chatList").use { scenario ->
+            scenario.onActivity { it.chatList = ChatListState(ChatListLoad.Ready, listOf(room), ChatListPage.More, refreshing = true) }
+            compose.waitForIdle()
+            scenario.onActivity { assertTrue(it.actions.isEmpty()); it.chatList = ChatListState(ChatListLoad.Ready, listOf(room), ChatListPage.More) }
+            compose.waitForIdle()
+            scenario.onActivity { assertEquals(listOf(ChatListAction.LoadMore), it.actions) }
+        }
+    }
+    // 당기기를 못 하는 사용자는 제목의 "새로고침" 접근성 동작으로 다시 받는다
+    @Test fun chatListRefreshIsAvailableAsAccessibilityAction() {
+        launch("chatList").use { scenario ->
+            val action = compose.onNode(SemanticsMatcher.keyIsDefined(SemanticsActions.CustomActions)).fetchSemanticsNode()
+                .config[SemanticsActions.CustomActions].single { it.label == "새로고침" }
+            scenario.onActivity { assertTrue(action.action()) }
+            scenario.onActivity { assertEquals(listOf(ChatListAction.Refresh), it.actions) }
         }
     }
     @Test fun loginFailureCanRetryAndLocksBothProviders() {
