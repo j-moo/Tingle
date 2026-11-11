@@ -35,7 +35,7 @@ import org.koin.compose.koinInject
 import org.koin.compose.viewmodel.koinViewModel
 
 // Keyrings는 서버의 등록 목록을 확인하는 경로이며 BLE 등록/초기화 경로와 구분한다.
-internal enum class ServicePage { Home, Proposals, Menu, Chats, Safety, Report, AiConsent, Profile, Survey, Settings, Help, Keyrings, BleProbe, KeyringReset, Preparing }
+internal enum class ServicePage { Home, Proposals, Menu, Chats, Safety, Report, AiConsent, Profile, Survey, Settings, Help, HelpHub, Keyrings, BleProbe, KeyringReset, Preparing }
 
 /** 가입 중에는 가입 화면을 유지하되, 탈퇴 제한을 해소할 소유 키링 관리 경로만 허용한다. */
 @Composable fun SignedInServiceHost(session: Session.SignedIn, access: ProposalAccess = koinInject(),
@@ -109,10 +109,13 @@ internal enum class ServicePage { Home, Proposals, Menu, Chats, Safety, Report, 
         return
     }
     if (state.session != session) return
-    if (page in listOf(ServicePage.Home, ServicePage.Menu, ServicePage.Help, ServicePage.Preparing))
-        ProfileBackHandler(page != ServicePage.Home || !session.isReady) {
-            if (page == ServicePage.Home) { model.leave(); opened = false } else go(ServicePage.Home)
-        }
+    if (page in listOf(ServicePage.Home, ServicePage.Menu, ServicePage.Help, ServicePage.HelpHub, ServicePage.Preparing))
+        ProfileBackHandler(page != ServicePage.Home || !session.isReady) { when (page) {
+            ServicePage.Home -> { model.leave(); opened = false }
+            ServicePage.Help -> go(ServicePage.HelpHub)
+            ServicePage.HelpHub -> go(ServicePage.Menu)
+            else -> go(ServicePage.Home)
+        } }
     Column(Modifier.fillMaxSize()) {
         if (page in listOf(ServicePage.Home, ServicePage.Menu)) state.error?.let {
             Text(it.message, Modifier.padding(AppSpacing.Medium), color = MaterialTheme.colorScheme.error)
@@ -140,7 +143,8 @@ internal enum class ServicePage { Home, Proposals, Menu, Chats, Safety, Report, 
                     support = { id, readable, editable, draft, insert -> ConnectedChatExtras(id, readable, editable, insert, draft = draft) })
                 ServicePage.Safety -> roomId?.let { id -> ConnectedSafetyRoute(session, id, safetyOperation,
                     onBack = { chats(id) }, onClosed = { chats() }) }
-                ServicePage.Report -> roomId?.let { id -> ConnectedReportRoute(session, id, onBack = { chats(id) }) }
+                ServicePage.Report -> roomId?.let { id -> ConnectedReportRoute(session, id, onBack = { chats(id) },
+                    onBlock = { safetyOperation = SafetyOperation.Block; go(ServicePage.Safety) }) }
                 ServicePage.AiConsent -> ConnectedAiConsentRoute(session, onBack = {
                     if(consentFromChat) chats() else go(ServicePage.Menu)
                 })
@@ -180,18 +184,11 @@ internal enum class ServicePage { Home, Proposals, Menu, Chats, Safety, Report, 
                     AccountMenuAction.Logout -> logoutPrompt = true
                     // 확인 화면으로만 진입한다. 메뉴 터치가 준비/탈퇴 POST를 실행하지 않는다.
                     AccountMenuAction.Withdrawal -> withdrawal.open(session.userId)
-                    AccountMenuAction.Terms, AccountMenuAction.Privacy, AccountMenuAction.Support, AccountMenuAction.Correction -> {
-                        help = when (action) {
-                            AccountMenuAction.Terms -> HelpGuideKind.Terms
-                            AccountMenuAction.Privacy -> HelpGuideKind.PrivacyPolicy
-                            AccountMenuAction.Support -> HelpGuideKind.Support
-                            else -> HelpGuideKind.Correction
-                        }; go(ServicePage.Help)
-                    }
-                    else -> go(ServicePage.Preparing)
+                    AccountMenuAction.Help -> go(ServicePage.HelpHub)
                 } })
+                ServicePage.HelpHub -> HelpHubScreen(onOpen = { help = it; go(ServicePage.Help) }, onBack = { go(ServicePage.Menu) })
                 ServicePage.Help -> HelpGuideScreen(state.guide ?: HelpGuideState(help, HelpGuideStage.Loading), onAction = { action -> when (action) {
-                    HelpGuideAction.Back -> go(ServicePage.Menu)
+                    HelpGuideAction.Back -> go(ServicePage.HelpHub)
                     HelpGuideAction.Reload -> model.guide(help)
                     HelpGuideAction.Open -> state.guide?.openUrl?.let { if (runCatching { uri.openUri(it) }.isFailure) model.guideOpenFailed() }
                 } })

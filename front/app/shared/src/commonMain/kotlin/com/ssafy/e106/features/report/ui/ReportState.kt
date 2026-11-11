@@ -32,7 +32,7 @@ data class ReportState(
         (evidenceLoad == EvidenceLoad.Ready && selectedIds.all { id -> visibleEvidence.any { it.id == id } }))
     val validSubmission: Boolean get() = validForm && validEvidence
 }
-enum class ReportAction { Back, NextEvidence, Review, Edit, Submit, Retry, CheckResult, ReloadEvidence, LoadMoreEvidence, ClearEvidence, Close }
+enum class ReportAction { Back, NextEvidence, Review, Edit, Submit, Retry, CheckResult, ReloadEvidence, LoadMoreEvidence, ClearEvidence, Close, Block }
 
 // Retry/CheckResult는 명세의 동일 Idempotency-Key·동일 본문 POST 재시도에 연결한다.
 // 전용 GET 조회 API나 같은 사유 중복 거절 코드를 가정하지 않는다. Conflict는 IDEMPOTENCY_CONFLICT 전용이다.

@@ -173,7 +173,7 @@ class ReportViewModel(private val api: ReportRepository, private val chats: Chat
     } }
     private fun submit() {
         val s = mutable.value; val owner = s.owner ?: return; val room = s.room ?: return
-        if(!s.recoveryComplete || s.busy || s.pending != null || s.ui.step != ReportStep.Confirm || !s.ui.validSubmission) return
+        if(!s.recoveryComplete || s.busy || s.pending != null || s.ui.step !in listOf(ReportStep.Form, ReportStep.Confirm) || !s.ui.validSubmission) return // 사유 시트에서 바로 접수할 수 있다
         transmit(PendingReport(owner.userId, Uuid.random().toString(), ReportBody(room, s.ui.reason!!.name,
             s.ui.selectedIds.sorted(), s.ui.detail.takeIf { it.isNotEmpty() })))
     }

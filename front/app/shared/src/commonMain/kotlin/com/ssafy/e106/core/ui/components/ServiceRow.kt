@@ -13,6 +13,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import com.ssafy.e106.core.ui.theme.AppColors
@@ -25,6 +26,7 @@ fun ServiceRow(
     modifier: Modifier = Modifier,
     detail: String? = null,
     onClick: (() -> Unit)? = null,
+    titleColor: Color = AppColors.TextPrimary,
 ) {
     Column(
         modifier = modifier.fillMaxWidth()
@@ -37,7 +39,7 @@ fun ServiceRow(
         verticalArrangement = Arrangement.spacedBy(AppSpacing.Medium),
     ) {
         Row(horizontalArrangement = Arrangement.spacedBy(AppSpacing.Small)) {
-            Text(title, style = MaterialTheme.typography.labelLarge, color = AppColors.TextPrimary, modifier = Modifier.weight(1f))
+            Text(title, style = MaterialTheme.typography.labelLarge, color = titleColor, modifier = Modifier.weight(1f))
             // 장식이라 화면 리더에 읽히지 않게 한다
             if (onClick != null) Text(Chevron, style = MaterialTheme.typography.labelLarge, color = AppColors.TextSecondary,
                 modifier = Modifier.clearAndSetSemantics {})

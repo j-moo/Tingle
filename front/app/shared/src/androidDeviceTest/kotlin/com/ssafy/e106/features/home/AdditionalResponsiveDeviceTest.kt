@@ -144,10 +144,6 @@ class AdditionalResponsiveDeviceTest(private val screen: String, private val wid
                 else -> listOf("로그아웃")
             }
             labels.forEach { label ->
-                // LazyColumn의 화면 밖 버튼은 아직 생성되지 않을 수 있어 목록을 통해 먼저 찾는다.
-                if (screen == "report" && height <= 320) {
-                    compose.onNode(hasScrollToIndexAction()).performScrollToNode(hasText(label))
-                }
                 val node = compose.onNodeWithText(label)
                 // 스크롤 밖 고정 버튼과 스크롤 안의 버튼을 동일한 도달 조건으로 검사한다.
                 try { node.performScrollTo() } catch (_: AssertionError) { node.assertIsDisplayed() }
@@ -187,8 +183,6 @@ class AdditionalFormImeDeviceTest {
                 val bounds = compose.onAllNodesWithTag("responsiveViewport").fetchSemanticsNodes().firstOrNull()?.boundsInRoot
                 bounds != null && bounds.width > bounds.height
             }
-            // 신고는 LazyColumn이라 화면 밖 항목을 먼저 구성하게 스크롤한다.
-            if (screen == "report") compose.onNode(hasScrollToIndexAction()).performScrollToNode(hasSetTextAction())
             val input = compose.onAllNodes(hasSetTextAction())[0]
             input.performScrollTo().performClick()
             compose.waitUntil(10_000) {
@@ -211,13 +205,11 @@ class AdditionalFormImeDeviceTest {
             java.io.File(evidence, "$screen-tree.txt").writeText(compose.onRoot().printToString())
             assertTrue("$screen 키보드 위 입력칸 높이가 부족함: $bounds", bounds.height >= 48 * density)
             val button = compose.onNodeWithText(submit)
-            if (screen == "report") compose.onNode(hasScrollToIndexAction()).performScrollToNode(hasText(submit))
             try { button.performScrollTo() } catch (_: AssertionError) { button.assertIsDisplayed() }
             button.assertIsDisplayed()
             // 화면 재배치가 키보드를 강제로 닫아 통과한 것으로 보이지 않도록 끝에서도 확인한다.
             scenario.onActivity { assertTrue("검사 중 IME 유지", it.window.decorView.rootWindowInsets.isVisible(WindowInsets.Type.ime())) }
             androidx.test.espresso.Espresso.closeSoftKeyboard()
-            if (screen == "report") compose.onNode(hasScrollToIndexAction()).performScrollToNode(hasSetTextAction())
             input.performScrollTo().assertTextContains(if (screen == "age") "25" else "시험 입력")
         }
     }

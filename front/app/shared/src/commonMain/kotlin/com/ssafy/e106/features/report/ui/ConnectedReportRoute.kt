@@ -14,7 +14,7 @@ import com.ssafy.e106.features.profile.ui.ProfileBackHandler
 import org.koin.compose.viewmodel.koinViewModel
 
 @Composable fun ConnectedReportRoute(session: Session.SignedIn, room: Long, onBack: () -> Unit,
-    model: ReportViewModel = koinViewModel()) {
+    model: ReportViewModel = koinViewModel(), onBlock: () -> Unit = {}) {
     val state by model.state.collectAsStateWithLifecycle()
     LaunchedEffect(session, room) { model.bind(room) }
     // 저장 요청 조회가 중단됐다면 증거 조회보다 복구를 먼저 재개한다.
@@ -46,6 +46,7 @@ import org.koin.compose.viewmodel.koinViewModel
         }
         ReportScreen(state.ui, model::reason, model::detail, model::select) { action ->
             if(action in listOf(ReportAction.Back, ReportAction.Close)) { if(!state.busy) onBack() }
+            else if(action == ReportAction.Block) { if(!state.busy) onBlock() }
             else model.action(action)
         }
     }

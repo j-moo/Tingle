@@ -20,24 +20,24 @@ fun AiConsentScreen(state: AiConsentState, onChecked: (Boolean) -> Unit, onActio
             val value = state.snapshot
             Text(stringResource(Res.string.ai_consent_heading), style = MaterialTheme.typography.headlineMedium)
             Text(stringResource(Res.string.ai_consent_summary))
+            // 켜져 있으면 끌 때 철회 확인창을 띄우고, 꺼져 있으면 안내 전문을 확인한 뒤에만 켤 수 있다(저장은 아래 버튼으로)
+            AppSwitch(value.enabled || state.checked, { on -> if (value.enabled) { if (!on) onAction(AiConsentAction.Withdraw) } else onChecked(on) },
+                stringResource(Res.string.ai_consent_switch),
+                enabled = if (value.enabled) state.canWithdraw else state.noticeAvailable && state.reviewedVersion == value.noticeVersion)
+            // 스위치를 켠 것만으로는 저장되지 않는다. 왜 못 켜는지와 저장 버튼을 스위치 바로 아래에 둔다
+            if (!value.enabled) {
+                if (state.reviewedVersion != value.noticeVersion) Text(stringResource(Res.string.ai_consent_read_first), style = MaterialTheme.typography.bodySmall)
+                AppButton(stringResource(Res.string.ai_consent_grant), Modifier.fillMaxWidth(), enabled = state.canGrant,
+                    onClick = { if (state.canGrant) onAction(AiConsentAction.Grant) })
+            }
             StatusCard(stringResource(if (value.enabled) Res.string.ai_consent_enabled else Res.string.ai_consent_disabled),
                 stringResource(if (value.enabled) Res.string.ai_consent_separate else Res.string.ai_consent_disabled_help))
             state.savedEnabled?.let { Text(stringResource(if (it) Res.string.ai_consent_saved else Res.string.ai_consent_withdrawn), color = AppColors.SelectionBorder) }
             Text(stringResource(Res.string.ai_consent_version, value.noticeVersion), style = MaterialTheme.typography.bodySmall)
             if (value.enabled && value.grantedAtLabel != null) Text(stringResource(Res.string.ai_consent_date, value.grantedAtLabel), style = MaterialTheme.typography.bodySmall)
-            AppButton(stringResource(Res.string.ai_consent_open_notice), Modifier.fillMaxWidth(), variant = AppButtonVariant.Secondary,
-                onClick = { onAction(AiConsentAction.OpenNotice) })
+            ServiceRow(stringResource(Res.string.ai_consent_open_notice), onClick = { onAction(AiConsentAction.OpenNotice) })
             if (!state.noticeAvailable) Text(stringResource(Res.string.ai_consent_notice_missing), color = AppColors.TextSecondary)
             Text(stringResource(Res.string.ai_consent_no_restore), style = MaterialTheme.typography.bodySmall)
-            if (value.enabled) AppButton(stringResource(Res.string.ai_consent_withdraw), Modifier.fillMaxWidth(), variant = AppButtonVariant.Danger,
-                enabled = state.canWithdraw, onClick = { onAction(AiConsentAction.Withdraw) })
-            else {
-                if (state.reviewedVersion != value.noticeVersion) Text(stringResource(Res.string.ai_consent_read_first), style = MaterialTheme.typography.bodySmall)
-                AppCheckbox(state.checked, onChecked, stringResource(Res.string.ai_consent_check),
-                    enabled = state.noticeAvailable && state.reviewedVersion == value.noticeVersion)
-                AppButton(stringResource(Res.string.ai_consent_grant), Modifier.fillMaxWidth(), enabled = state.canGrant,
-                    onClick = { if (state.canGrant) onAction(AiConsentAction.Grant) })
-            }
         } else {
             val title = when (state.stage) {
                 AiConsentStage.Loading -> Res.string.ai_consent_loading
