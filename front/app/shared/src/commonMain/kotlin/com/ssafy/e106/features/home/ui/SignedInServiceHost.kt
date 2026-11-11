@@ -29,6 +29,7 @@ import com.ssafy.e106.features.keyring.ui.ConnectedKeyringEncounterRoute
 import com.ssafy.e106.features.keyring.ui.KeyringForegroundSync
 import com.ssafy.e106.features.keyring.ui.ConnectedKeyringResetRoute
 import com.ssafy.e106.features.keyring.ui.BleProbeViewModel
+import com.ssafy.e106.features.keyring.ui.observeOwnedKeyringConnection
 import com.ssafy.e106.resources.*
 import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.koinInject
@@ -128,7 +129,9 @@ internal enum class ServicePage { Home, Proposals, Menu, Chats, Safety, Report, 
                     HomeAction.Profile -> go(ServicePage.Menu)
                     HomeAction.Chats -> chats()
                     HomeAction.Keyring -> { keyringFromMenu = false; go(ServicePage.Keyrings) }
-                } })
+                } }, keyringStatus = {
+                    observeOwnedKeyringConnection(session, state.home.keyrings, koinViewModel<BleProbeViewModel>()).liveStatus
+                })
                 ServicePage.Proposals -> ConnectedProposalRoute(session, { go(ServicePage.Home) }, { go(ServicePage.Menu) },
                     { chats() }, { chats(it) }, initialProposalId = proposalId)
                 ServicePage.Chats -> ConnectedChatRoute(session, roomId, { go(ServicePage.Home) }, { proposals() }, { go(ServicePage.Menu) },

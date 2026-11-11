@@ -20,7 +20,9 @@ import com.ssafy.e106.core.ui.components.*
 import com.ssafy.e106.core.ui.theme.AppColors
 import com.ssafy.e106.core.ui.theme.AppSpacing
 import com.ssafy.e106.core.ui.theme.screenGutter
+import com.ssafy.e106.features.keyring.data.BleDeviceStatus
 import com.ssafy.e106.features.keyring.data.KeyringOwnerAuthorizer
+import com.ssafy.e106.features.keyring.data.OwnedKeyring
 import com.ssafy.e106.features.keyring.data.KeyringSyncStore
 import com.ssafy.e106.features.keyring.data.unsentCount
 import com.ssafy.e106.features.profile.ui.ProfileBackHandler
@@ -43,31 +45,9 @@ import org.koin.compose.viewmodel.koinViewModel
     }
     ProfileBackHandler(true, onBack)
     if (state.owner != session) return
-    var connectedDeviceId: Long? = null
-    var liveStatus: OwnedKeyringLiveStatus? = null
-    var refreshStatus: (() -> Unit)? = null
-    if (ble != null) {
-        val link by ble.state.collectAsStateWithLifecycle()
-        val transfer by koinViewModel<KeyringEncounterViewModel>().state.collectAsStateWithLifecycle()
-        val syncing by koinViewModel<KeyringSyncViewModel>().state.collectAsStateWithLifecycle()
-        val store = koinInject<KeyringSyncStore>()
-        val authorizer = koinInject<KeyringOwnerAuthorizer>()
-        val serial = link.info?.serial?.takeIf { link.connected }
-        val device = serial?.let { value -> state.items?.singleOrNull { it.deviceSerial == value } }
-        connectedDeviceId = device?.deviceId
-        val working = transfer == EncounterTransferState.Sending || syncing.busy
-        liveStatus = link.ownedStatus?.takeIf { !working && it.owner == session.userId &&
-            it.deviceId == device?.deviceId && it.connectionGeneration == link.connectionGeneration }
-        if (device != null && !working && liveStatus?.loading != true) {
-            refreshStatus = { ble.readOwnedStatus(session.userId, device, store, authorizer) }
-        }
-        // 입장·재연결·동기화/전송 종료 시 현 기기 상태를 다시 읽는다.
-        LaunchedEffect(session.userId, device?.deviceId, link.connectionGeneration, working) {
-            if (device != null && !working) ble.readOwnedStatus(session.userId, device, store, authorizer)
-        }
-    }
+    val connection = if (ble != null) observeOwnedKeyringConnection(session, state.items.orEmpty(), ble) else null
     OwnedKeyringsScreen(state, model::load, onBack, onReset, onConnectForRecords,
-        connectedDeviceId, liveStatus, refreshStatus) {
+        connection?.deviceId, connection?.liveStatus, connection?.refresh) {
         if (recoveryLinks != null) recoveryLinks()
         else {
             // 목록이 아직 없으면(불러오는 중 · 실패) 중복 여부를 모르므로 띄우지 않는다
@@ -75,6 +55,36 @@ import org.koin.compose.viewmodel.koinViewModel
             if (items != null) KeyringResetRecoveryLinks(session.userId, onReset, skip = items.map { it.deviceId }.toSet())
         }
     }
+}
+
+internal data class OwnedKeyringConnection(
+    val deviceId: Long?,
+    val liveStatus: OwnedKeyringLiveStatus?,
+    val refresh: (() -> Unit)?,
+)
+
+/** 홈과 관리 화면은 같은 BLE 연결의 소유 기기만 읽고, 동기화·기록 전송이 끝난 뒤 조회한다. */
+@Composable internal fun observeOwnedKeyringConnection(
+    session: Session.SignedIn, devices: List<OwnedKeyring>, ble: BleProbeViewModel,
+): OwnedKeyringConnection {
+    val link by ble.state.collectAsStateWithLifecycle()
+    val transfer by koinViewModel<KeyringEncounterViewModel>().state.collectAsStateWithLifecycle()
+    val syncing by koinViewModel<KeyringSyncViewModel>().state.collectAsStateWithLifecycle()
+    val store = koinInject<KeyringSyncStore>()
+    val authorizer = koinInject<KeyringOwnerAuthorizer>()
+    val serial = link.info?.serial?.takeIf { link.connected }
+    val device = serial?.let { value -> devices.singleOrNull { it.deviceSerial == value } }
+    val working = transfer == EncounterTransferState.Sending || syncing.busy
+    val liveStatus = link.ownedStatus?.takeIf { !working && it.owner == session.userId &&
+        it.deviceId == device?.deviceId && it.connectionGeneration == link.connectionGeneration }
+    val refresh: (() -> Unit)? = if (device != null && !working && liveStatus?.loading != true) {
+        { ble.readOwnedStatus(session.userId, device, store, authorizer) }
+    } else null
+    // 입장·재연결·동기화/전송 종료 시 현 기기 상태를 다시 읽는다.
+    LaunchedEffect(session.userId, device?.deviceId, link.connectionGeneration, working) {
+        if (device != null && !working) ble.readOwnedStatus(session.userId, device, store, authorizer)
+    }
+    return OwnedKeyringConnection(device?.deviceId, liveStatus, refresh)
 }
 
 /**
@@ -149,18 +159,22 @@ import org.koin.compose.viewmodel.koinViewModel
         liveStatus.failed -> KeyringStatusText(stringResource(Res.string.owned_keyrings_status_failed))
         else -> {
             val metrics = liveStatus.metrics
-            val battery = metrics?.batteryPercent?.takeUnless { metrics.ownerFlow.batteryPresence == "ABSENT" }
-            val batteryText = if (battery == null) stringResource(Res.string.owned_keyrings_status_unknown)
-            else if (metrics.ownerFlow.batteryPercentSource == "VOLTAGE_ESTIMATE") {
-                stringResource(Res.string.owned_keyrings_battery_estimate, battery.toString())
-            } else stringResource(Res.string.owned_keyrings_battery_percent, battery.toString())
             val pending = metrics?.unsentCount
             val pendingText = if (pending == null) stringResource(Res.string.owned_keyrings_status_unknown)
             else stringResource(Res.string.owned_keyrings_records_count, pending.toString())
-            KeyringStatusText(stringResource(Res.string.owned_keyrings_battery, batteryText))
+            KeyringStatusText(stringResource(Res.string.owned_keyrings_battery, keyringBatteryText(metrics)))
             KeyringStatusText(stringResource(Res.string.owned_keyrings_records, pendingText))
         }
     }
+}
+
+/** 잔량을 읽지 못하거나 배터리가 없으면 미확인으로 표시하고, 전압 추정값에는 '약'을 붙인다. */
+@Composable internal fun keyringBatteryText(metrics: BleDeviceStatus?): String {
+    val battery = metrics?.batteryPercent?.takeUnless { metrics.ownerFlow.batteryPresence == "ABSENT" }
+        ?: return stringResource(Res.string.owned_keyrings_status_unknown)
+    val format = if (metrics.ownerFlow.batteryPercentSource == "VOLTAGE_ESTIMATE")
+        Res.string.owned_keyrings_battery_estimate else Res.string.owned_keyrings_battery_percent
+    return stringResource(format, battery.toString())
 }
 
 @Composable private fun KeyringStatusText(value: String) {
