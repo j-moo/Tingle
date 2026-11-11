@@ -58,7 +58,9 @@ class KeyringRegistrationIntegrationTest extends IntegrationTestSupport {
 		JsonNode challenge = issue(user);
 		UUID requestKey = UUID.randomUUID();
 		JsonNode response = register(user, requestKey, request(challenge, device));
-		assertThat(response.size()).isEqualTo(3);
+		assertThat(response.size()).isEqualTo(4);
+		assertThat(response.path("deviceSerial").asString()).isEqualTo(jdbc.queryForObject(
+			"select serial_number from keyring where id=?", String.class, device.id()));
 		assertThat(response.path("deviceId").asLong()).isEqualTo(device.id());
 		assertThat(response.path("status").asString()).isEqualTo("SYNC_PENDING");
 		assertThat(response.path("firmwareVersion").asString()).isEqualTo("test-fw");

@@ -10,7 +10,7 @@
 
 ## 2026-10-28 저장 이관 단위 · S15P31E106-175
 
-현재 목록의 `deviceId`는 `keyring.id`의 양수 int64 숫자다. DTO는 deviceId/status/firmwareVersion 세 필드이며 serial·검증 자격·owner·추정 등록 시각을 반환하지 않는다. 조회는 현재 본인 소유 `REGISTERED` 행만 읽고 숫자 ID 오름차순으로 반환한다. 구매 안내도 같은 현재 소유/상태를 기준으로 한다.
+현재 목록의 `deviceId`는 `keyring.id`의 양수 int64 숫자다. DTO는 deviceId/deviceSerial/status/firmwareVersion 네 필드이며 검증 자격·owner·추정 등록 시각을 반환하지 않는다. `deviceSerial`(333)은 본인 키링의 일련번호로, 앱이 연결한 BLE 기기를 내 목록과 대조하는 데 쓴다. 남의 키링 일련번호는 반환하지 않는다. 조회는 현재 본인 소유 `REGISTERED` 행만 읽고 숫자 ID 오름차순으로 반환한다. 구매 안내도 같은 현재 소유/상태를 기준으로 한다.
 
 기기별 READY는 양수의 현재 `user_setting.settings_version`과 저장된 `keyring.synced_settings_version`이 같은 경우다. 설정 또는 ACK가 있으나 현재 버전이 아니면 SYNC_PENDING, 둘 다 없으면 REGISTERED다. 타인·해제 기기·과거/미래/음수 ACK나 synced_at 시각을 현재 확인으로 추정하지 않는다. 회원 전체 준비 여부와 BLE 온라인 상태를 대신하지 않는다.
 

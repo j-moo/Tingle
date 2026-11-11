@@ -40,7 +40,7 @@ class KeyringListIntegrationTest extends IntegrationTestSupport {
 	}
 
 	@Test
-	void returnsOnlyCurrentOwnedNumericDevicesWithoutCredentials() throws Exception {
+	void returnsOnlyCurrentOwnedDevicesWithTheirSerialButWithoutCredentials() throws Exception {
 		JsonNode owner = eligibleUser();
 		JsonNode other = eligibleUser();
 		long first = device(userIdOf(owner), "REGISTERED");
@@ -54,8 +54,16 @@ class KeyringListIntegrationTest extends IntegrationTestSupport {
 		JsonNode result = jsonMapper.readTree(body).path("items");
 		assertThat(result.get(0).path("deviceId").asLong()).isEqualTo(first);
 		assertThat(result.get(1).path("deviceId").asLong()).isEqualTo(second);
-		assertThat(result.get(0).size()).isEqualTo(3);
-		assertThat(body).doesNotContain("serial", "verification", "boundAt", "bindingId", "ownerUserId");
+		assertThat(result.get(0).size()).isEqualTo(4);
+		// 앱이 BLE 로 읽은 일련번호와 대조할 수 있게 내 기기의 일련번호만 준다. 남의 기기·자격 정보는 주지 않는다.
+		String own = jdbc.queryForObject("select serial_number from keyring where id=?", String.class, first);
+		String foreignSerial = jdbc.queryForObject("select serial_number from keyring where id=?", String.class,
+			foreign);
+		assertThat(result.get(0).path("deviceSerial").asString()).isEqualTo(own);
+		assertThat(result.get(1).path("deviceSerial").asString()).isEqualTo(jdbc.queryForObject(
+			"select serial_number from keyring where id=?", String.class, second));
+		assertThat(body).doesNotContain(foreignSerial, "verification", "credential", "boundAt", "bindingId",
+			"ownerUserId");
 	}
 
 	@Test
