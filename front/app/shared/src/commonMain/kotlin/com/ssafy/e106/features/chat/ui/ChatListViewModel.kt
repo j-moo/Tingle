@@ -61,11 +61,14 @@ class ChatListViewModel(private val api: ChatRepository, private val sessions: S
                     }
                     val rows = result.value.items.filter { it.chatRoomId > 0 }.map { room ->
                         lifetimes.getOrPut(room.chatRoomId) { ChatExpiry(now) }.observe(room, requestStarted)
-                        ChatListItem(
-                        chatRoomId = room.chatRoomId, hasNewMessages = room.hasNewMessage, closesAtLabel = room.expiresAt,
-                        access = when { room.status == "CLOSED" || lifetimes.getValue(room.chatRoomId).remaining() <= 0 -> ChatRoomAccess.Closed
+                        val access = when { room.status == "CLOSED" || lifetimes.getValue(room.chatRoomId).remaining() <= 0 -> ChatRoomAccess.Closed
                             room.status == "ACTIVE" && room.canRead -> ChatRoomAccess.Allowed
-                            else -> ChatRoomAccess.Unknown }) }
+                            else -> ChatRoomAccess.Unknown }
+                        // 권한이 미확인인 행에는 서버 값이 있어도 상대 닉네임을 보관하지 않는다.
+                        ChatListItem(chatRoomId = room.chatRoomId,
+                            nickname = room.partnerNickname?.takeIf { access == ChatRoomAccess.Allowed && it.isNotBlank() },
+                            hasNewMessages = room.hasNewMessage, closesAtLabel = room.expiresAt, access = access)
+                    }
                     cursor = result.value.nextCursor
                     // 다음 쪽만 받은 것이면 새로고침 실패 안내는 그대로 둔다(첫 쪽은 아직 옛 내용)
                     mutable.update { it.copy(ui = ChatListState(ChatListLoad.Ready,

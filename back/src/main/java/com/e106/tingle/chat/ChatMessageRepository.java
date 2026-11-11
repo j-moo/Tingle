@@ -16,12 +16,27 @@ public interface ChatMessageRepository extends JpaRepository<ChatMessage, Long> 
 		+ "and (p.read_state -> cast(m.id as text) ->> 'readAt') is null)", nativeQuery = true)
 	boolean hasUnacknowledgedPartnerMessage(@Param("roomId") long roomId, @Param("userId") long userId);
 
-	@Query(value = "select p.chat_id from chat_participant p where p.user_id=:userId and p.chat_id in :roomIds "
-		+ "and exists (select 1 from chat_message m where m.chat_id=p.chat_id "
-		+ "and m.sender_participant_id<>p.id and (p.read_state->cast(m.id as text)->>'readAt') is null)",
+	// 권한을 통과한 페이지의 공개 닉네임과 새 메시지 여부를 한 번의 조회로 읽는다.
+	@Query(value = "select p.chat_id as \"roomId\", profile.nickname as \"partnerNickname\", "
+		+ "exists (select 1 from chat_message m where m.chat_id=p.chat_id "
+		+ "and m.sender_participant_id<>p.id and (p.read_state->cast(m.id as text)->>'readAt') is null) "
+		+ "as \"hasNewMessage\" from chat_participant p join chat r on r.id=p.chat_id "
+		+ "join matching pair on pair.id=r.matching_id "
+		+ "left join profile on profile.user_id=case when pair.user_low_id=p.user_id "
+		+ "then pair.user_high_id when pair.user_high_id=p.user_id then pair.user_low_id end "
+		+ "and profile.birth_date is not null "
+		+ "where p.user_id=:userId and p.chat_id in :roomIds",
 		nativeQuery = true)
-	List<Long> roomsWithUnacknowledgedPartnerMessage(@Param("roomIds") Collection<Long> roomIds,
+	List<ListSummary> summarizeList(@Param("roomIds") Collection<Long> roomIds,
 		@Param("userId") long userId);
+
+	interface ListSummary {
+		Long getRoomId();
+
+		String getPartnerNickname();
+
+		boolean getHasNewMessage();
+	}
 
 	@Query("select m from ChatMessage m join ChatMember p on p.id=m.senderParticipantId "
 		+ "where p.userId=:userId and m.requestKey=:key")

@@ -62,13 +62,19 @@ class HomeNavigationTestActivity : ComponentActivity() {
         val sessions = LoggedIn()
         val session = sessions.state.value as Session.SignedIn
         val emptyPage = """{"items":[],"nextCursor":null,"serverTime":"2026-11-11T09:00:00Z"}"""
+        // 실제 목록 응답의 닉네임이 서비스 호스트를 거쳐 채팅 화면에 도달하는지 확인한다.
+        val chatPage = """{"items":[{"chatRoomId":20,"status":"ACTIVE","createdAt":"2026-11-11T09:00:00Z",
+            "expiresAt":"2026-11-18T09:00:00Z","closedAt":null,"deleteAt":null,"serverTime":"2026-11-11T09:00:00Z",
+            "canRead":true,"canSend":true,"hasNewMessage":false,"partnerNickname":"하늘"}],
+            "nextCursor":null,"serverTime":"2026-11-11T09:00:00Z"}"""
         client = createHttpClient("https://test/dev/api/", false, engine = MockEngine { request ->
             check(request.method == HttpMethod.Get)
             val body = when (request.url.encodedPath) {
                 "/dev/api/users/75/settings" -> """{"matchingEnabled":true,"requirePartnerPhoto":false,"settingsVersion":1}"""
                 "/dev/api/users/75/profile" -> """{"userId":75,"nickname":"메뉴 검증"}"""
                 "/dev/api/keyrings" -> """{"items":[{"deviceId":4,"status":"REGISTERED","firmwareVersion":"test"}]}"""
-                "/dev/api/match-proposals", "/dev/api/chat-rooms" -> emptyPage
+                "/dev/api/match-proposals" -> emptyPage
+                "/dev/api/chat-rooms" -> chatPage
                 else -> error("Unexpected request: ${request.url.encodedPath}")
             }
             respond(body, headers = headersOf(HttpHeaders.ContentType to listOf("application/json"), HttpHeaders.ETag to listOf("\"v1\"")))
@@ -131,7 +137,8 @@ class HomeNavigationDeviceTest {
 
             openAccount()
             compose.onNodeWithText("채팅").performClick()
-            awaitText("진행 중인 대화가 없어요")
+            awaitText("하늘")
+            compose.onNodeWithText("상대 정보 확인 필요").assertDoesNotExist()
         }
     }
 

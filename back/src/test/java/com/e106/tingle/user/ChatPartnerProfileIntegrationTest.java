@@ -50,6 +50,7 @@ class ChatPartnerProfileIntegrationTest extends IntegrationTestSupport {
 	private MatchingParticipantRepository participantRows;
 	private JsonNode first;
 	private JsonNode second;
+	private String firstNickname;
 	private String secondNickname;
 	private long firstId;
 	private long secondId;
@@ -59,7 +60,7 @@ class ChatPartnerProfileIntegrationTest extends IntegrationTestSupport {
 	void prepareChat() throws Exception {
 		first = login("google", newSocialId());
 		second = login("google", newSocialId());
-		completeOnboarding(first);
+		firstNickname = completeOnboarding(first);
 		secondNickname = completeOnboarding(second);
 		firstId = userIdOf(first);
 		secondId = userIdOf(second);
@@ -100,6 +101,31 @@ class ChatPartnerProfileIntegrationTest extends IntegrationTestSupport {
 			.andExpect(jsonPath("$.religion").value("UNDISCLOSED"))
 			.andExpect(jsonPath("$.introduction").value("산책 좋아해요"))
 			.andExpect(jsonPath("$.hasProfilePhoto").value(true));
+	}
+
+	@Test
+	void listShowsOnlyTheReadableRoomsCurrentPartnerNickname() throws Exception {
+		// 양쪽 목록에는 각각 상대 닉네임만 보인다. 닉네임 변경은 다음 조회에 반영된다.
+		var list = get("/api/chat-rooms");
+		perform(list, first, null).andExpect(status().isOk())
+			.andExpect(jsonPath("$.items[0].partnerNickname").value(secondNickname))
+			.andExpect(jsonPath("$.items[0].userId").doesNotExist());
+		perform(get("/api/chat-rooms"), second, null).andExpect(status().isOk())
+			.andExpect(jsonPath("$.items[0].partnerNickname").value(firstNickname));
+		String updated = "새닉" + secondNickname;
+		jdbc.update("update profile set nickname=? where user_id=?", updated, secondId);
+		perform(get("/api/chat-rooms"), first, null).andExpect(status().isOk())
+			.andExpect(jsonPath("$.items[0].partnerNickname").value(updated));
+
+		JsonNode outsider = login("google", newSocialId());
+		completeOnboarding(outsider);
+		perform(get("/api/chat-rooms"), outsider, null).andExpect(status().isOk())
+			.andExpect(jsonPath("$.items").isEmpty());
+		jdbc.update("update chat set closed_at=? where id=?", Timestamp.from(clock.instant()), room.getId());
+		perform(get("/api/chat-rooms"), first, null).andExpect(status().isOk())
+			.andExpect(jsonPath("$.items").isEmpty());
+		perform(get("/api/chat-rooms/" + room.getPublicId()), first, null).andExpect(status().isOk())
+			.andExpect(jsonPath("$.partnerNickname").doesNotHaveJsonPath());
 	}
 
 	@Test
