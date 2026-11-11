@@ -1,6 +1,7 @@
 package com.e106.tingle.keyring;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.BDDMockito.given;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -20,7 +21,6 @@ import java.util.Arrays;
 import java.util.Base64;
 import java.util.HexFormat;
 import java.util.Map;
-import java.util.Set;
 import java.util.UUID;
 
 import org.junit.jupiter.api.BeforeEach;
@@ -64,6 +64,8 @@ class PeerSettingsIntegrationTest extends IntegrationTestSupport {
 	private static final String PUBLIC = "03a107bff3ce10be1d70dd18e74bc09967e4d6309ba50d5f1ddc8664125531b8";
 	@Autowired
 	private PeerSettingsIssuer issuer;
+	@Autowired
+	private KeyringRegistrationRepository devices;
 	@MockitoBean
 	private KeyringCanonicalSnapshotService snapshots;
 	private byte[] profile;
@@ -253,6 +255,30 @@ class PeerSettingsIntegrationTest extends IntegrationTestSupport {
 			fixture.deviceId())).isZero();
 	}
 
+	@Test
+	void registeredXiaoNeedsNoSerialListButNonXiaoAndUnusableCredentialsAreRefused() throws Exception {
+		Fixture fixture = fixture();
+		issuer.requireSupported(devices.findById(fixture.deviceId()).orElseThrow());
+		jdbc.update("update keyring set serial_number=? where id=?", "NRF-" + fixture.serial().substring(5),
+			fixture.deviceId());
+		createCall(fixture, UUID.randomUUID(), nonce(1)).andExpect(status().isUnprocessableContent())
+			.andExpect(jsonPath("$.code").value("POLICY_UNRESOLVED"));
+		jdbc.update("update keyring set serial_number=? where id=?", fixture.serial(), fixture.deviceId());
+		String key = jdbc.queryForObject("select credential_public_key from keyring where id=?", String.class,
+			fixture.deviceId());
+		for (String broken : new String[] {"credential_revoked_at=now()", "credential_public_key=null",
+			"credential_key_id=null"}) {
+			jdbc.update("update keyring set " + broken + " where id=?", fixture.deviceId());
+			Keyring device = devices.findById(fixture.deviceId()).orElseThrow();
+			assertThatThrownBy(() -> issuer.requireSupported(device)).isInstanceOf(BusinessException.class)
+				.extracting("errorCode").isEqualTo(ErrorCode.POLICY_UNRESOLVED);
+			jdbc.update("update keyring set credential_revoked_at=null,credential_public_key=?,credential_key_id=? "
+				+ "where id=?", key, fixture.keyId(), fixture.deviceId());
+		}
+		assertThat(jdbc.queryForObject("select count(*) from keyring_sync_run where keyring_id=?", Long.class,
+			fixture.deviceId())).isZero();
+	}
+
 	private Fixture fixture() throws Exception {
 		JsonNode tokens = login("kakao", newSocialId());
 		agree(tokens).andExpect(status().isOk());
@@ -269,7 +295,6 @@ class PeerSettingsIntegrationTest extends IntegrationTestSupport {
 		completeProfile(tokens).andExpect(status().isOk());
 		finishSurvey(userId);
 		setPreferences(userId);
-		ReflectionTestUtils.setField(issuer, "deviceSerials", Set.of(serial));
 		given(snapshots.generateStoragePayload(userId)).willReturn(profile);
 		return new Fixture(tokens, userId, device, serial, keyId, generation, keys);
 	}

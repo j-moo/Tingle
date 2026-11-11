@@ -11,7 +11,6 @@ import java.time.temporal.ChronoUnit;
 import java.util.Base64;
 import java.util.HexFormat;
 import java.util.Objects;
-import java.util.Set;
 import java.util.UUID;
 
 import org.springframework.beans.factory.ObjectProvider;
@@ -27,6 +26,7 @@ import com.e106.tingle.encounter.peer.Ter2ReceiptService.Stored;
 import com.e106.tingle.global.error.BusinessException;
 import com.e106.tingle.global.error.ErrorCode;
 import com.e106.tingle.keyring.ownership.PeerOwnershipService;
+import com.e106.tingle.keyring.peer.PeerSettingsIssuer;
 import com.e106.tingle.keyring.proof.PeerCommandTranscripts;
 import com.e106.tingle.keyring.proof.PeerCommandTranscripts.Binding;
 import com.e106.tingle.keyring.reset.KeyringResetGuard;
@@ -52,8 +52,6 @@ public class PeerRecordCommandService {
 	private final Clock clock;
 	@Value("${app.keyring.peer.server-public-key-hex:}")
 	private String expectedServerPublicKey;
-	@Value("${app.keyring.peer.device-serials:}")
-	private Set<String> allowedSerials;
 	@Value("${app.keyring.peer.release-policy-approved:false}")
 	private boolean releasePolicyApproved;
 
@@ -191,8 +189,7 @@ public class PeerRecordCommandService {
 			.orElseThrow(() -> error(ErrorCode.RESOURCE_NOT_FOUND));
 		resets.requireNoPendingReset(deviceId);
 		if (!Long.valueOf(user).equals(device.getOwnerUserId()) || device.getState() != KeyringState.REGISTERED
-			|| device.getOwnerGeneration() == null || device.getOwnershipEpoch() == null
-			|| device.getCredentialRevokedAt() != null || !allowedSerials.contains(device.getSerialNumber())) {
+			|| device.getOwnerGeneration() == null || !PeerSettingsIssuer.eligible(device)) {
 			throw error(ErrorCode.OWNER_MISMATCH);
 		}
 		return device;
