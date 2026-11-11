@@ -427,8 +427,17 @@ class KeyringSyncViewModel(private val api: KeyringSyncRepository, private val s
         show(id, SyncPhase.ApplyConfirmed)
         unwrap(sessions.refreshOnboarding(), owner, stamp)
         val status = (sessions.state.value as? Session.SignedIn)?.status
-        // 서버가 동기화 대기를 반환하면 적용 POST를 반복하지 않고 가입 상태를 다시 확인할 수 있게 둔다.
-        if (status == OnboardingStatus.SYNC_PENDING) return
+        // 적용 POST 성공 뒤 서버의 요구 버전이 바뀌면 가입 조회만 반복해서는 대기를 벗어나지 못한다.
+        // 결과가 확정된 적용 증명은 다시 보내지 않고, 실행 조회로 구버전이 확인될 때만 기존 갱신 경로를 쓴다.
+        if (status == OnboardingStatus.SYNC_PENDING) {
+            val current = api.get(id, identity.syncRunId)
+            ensure(owner, stamp)
+            if (current.isStaleRejection()) { renew(); return }
+            val run = unwrap(current, owner, stamp)
+            check(KeyringSyncProtocol.valid(run, id) && run.identity() == identity)
+            if (run.stale) renew()
+            return
+        }
         store.save(owner, ticket.copy(appliedOnboardingChecked = true)); ensure(owner, stamp)
         if (duringSignup && status == OnboardingStatus.READY) {
             // 첫 가입 완료에서만 새 설정을 발급한다. 이미 READY인 계정의 적용 확인은 재발급을 반복하지 않는다.
