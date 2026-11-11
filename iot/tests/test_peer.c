@@ -20,7 +20,13 @@ static void random_bytes(void *ctx, uint8_t *out, size_t n)
 {
 	unsigned *state = ctx; for (size_t i = 0; i < n; ++i) { *state = *state * 1664525 + 1013904223; out[i] = (uint8_t)(*state >> 24); }
 }
-static void feedback(void *ctx, const uint8_t id[16]) { (void)ctx; (void)id; ++feedbacks; }
+static void feedback(void *ctx, const struct kr_record *record, const struct kr_profile *peer)
+{
+	(void)ctx;
+	assert(record->kind == KR_CONFIRMED && record->feedback_claimed);
+	assert(peer->data_len == KR_PROFILE_STORAGE_BYTES);
+	++feedbacks;
+}
 static void load(const char *path, uint8_t out[196])
 {
 	FILE *f = fopen(path, "rb"); assert(f); assert(fread(out, 1, 196, f) == 196); assert(fgetc(f) == EOF); assert(!fclose(f));

@@ -447,7 +447,7 @@ static enum kr_result control(struct kr_engine *e, const uint8_t *p, size_t len,
 	}
 	enum kr_result result = save(e, (unsigned)slot, &r);
 	if (result == KR_OK && confirm && e->io.feedback) {
-		e->io.feedback(e->io.ctx, r.id);
+		e->io.feedback(e->io.ctx, &r, &peer);
 	}
 	return result;
 }

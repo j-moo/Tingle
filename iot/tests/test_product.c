@@ -1,6 +1,7 @@
 #include "product.h"
 #include "matching.h"
 #include "battery.h"
+#include "feedback.h"
 #include "service.h"
 #include "monocypher.h"
 #include "monocypher-ed25519.h"
@@ -525,9 +526,80 @@ static void test_failed_input_change(FILE *scratch)
 	assert(kr_count(&a->engine, KR_CONFIRMED) == 1 && !a->engine.storage_error);
 	puts("retry-flow: identical failed input stays suppressed; changed signed input retries after ACK/reboot with immutable old proof");
 }
+static void test_carrier_feedback(void)
+{
+	const uint8_t event[16] = {23};
+	struct kr_profile own = {.data_len = sizeof(profile)}, peer = {.data_len = sizeof(profile)};
+	memcpy(own.data, profile, sizeof(profile));
+	memcpy(peer.data, profile, sizeof(profile));
+	for (uint8_t a = 0; a < 8; ++a) {
+		for (uint8_t b = 0; b < 8; ++b) {
+			own.data[195] = a;
+			peer.data[195] = b;
+			const bool matching = (a & b & 1) != 0;
+			struct kr_feedback_options left = kr_feedback_options(event, &own, &peer);
+			struct kr_feedback_options right = kr_feedback_options(event, &peer, &own);
+			assert((left.rgb != 0) == (matching && (a & 4)));
+			assert((right.rgb != 0) == (matching && (b & 4)));
+			if (left.rgb && right.rgb) { assert(left.rgb == right.rgb); }
+			assert(left.vibrate == (matching && (a & b & 2)) && left.vibrate == right.vibrate);
+		}
+	}
+	peer.data[0] ^= 1;
+	struct kr_feedback_options invalid = kr_feedback_options(event, &own, &peer);
+	assert(!invalid.rgb && !invalid.vibrate);
+
+	struct kr_status power = {.usb_valid = true, .battery_mv = 3850, .charging = 0};
+	assert(kr_feedback_motor_can_start(&power, false));
+	assert(kr_feedback_motor_can_start(&power, true));
+	power.usb_present = true;
+	power.charging = 1;
+	assert(!kr_feedback_motor_can_start(&power, false));
+	assert(kr_feedback_motor_can_start(&power, true));
+	power.usb_valid = false;
+	assert(!kr_feedback_motor_can_start(&power, true));
+	power.usb_valid = true;
+	power.usb_present = false;
+	power.charging = -1;
+	assert(!kr_feedback_motor_can_start(&power, true));
+	power.charging = 0;
+	power.battery_mv = 3299;
+	assert(!kr_feedback_motor_can_start(&power, true));
+	power.battery_mv = 3850;
+	power.presence_valid = true;
+	assert(!kr_feedback_motor_can_start(&power, true));
+
+	struct kr_feedback alert = {0};
+	const struct kr_feedback_options both = {.rgb = 3, .vibrate = true};
+	const int64_t start = 5000;
+	assert(kr_feedback_start(&alert, start, both));
+	assert(kr_feedback_step(&alert, start, true).motor);
+	assert(!kr_feedback_start(&alert, start + 50, both));
+	assert(kr_feedback_step(&alert, start + 119, true).motor);
+	assert(!kr_feedback_step(&alert, start + 120, true).motor);
+	assert(kr_feedback_step(&alert, start + 270, true).motor);
+	assert(kr_feedback_step(&alert, start + 389, true).motor);
+	assert(!kr_feedback_step(&alert, start + 390, true).motor);
+	assert(kr_feedback_step(&alert, start + 29999, true).rgb == 3);
+	assert(!kr_feedback_step(&alert, start + 30000, true).wake_ms);
+
+	assert(kr_feedback_start(&alert, start, both));
+	assert(kr_feedback_step(&alert, start, true).motor);
+	assert(!kr_feedback_step(&alert, start + 10, false).motor);
+	struct kr_feedback_output out = kr_feedback_step(&alert, start + 270, true);
+	assert(!out.motor && out.rgb == 3);
+	assert(kr_feedback_start(&alert, start, both));
+	assert(!kr_feedback_step(&alert, start + 120, true).motor);
+	kr_feedback_stop(&alert);
+	out = kr_feedback_step(&alert, start + 270, true);
+	assert(!out.motor && !out.rgb && !out.wake_ms);
+	puts("carrier feedback: Rev G/D3.1 power policy, bilateral switches, pulse/LED timing and power-change cancellation passed");
+}
+
 int main(int argc, char **argv)
 {
 	assert(argc == 3); FILE *f = fopen(argv[1], "rb"); assert(f && fread(profile, 1, 196, f) == 196 && !fclose(f));
+	test_carrier_feedback();
 	f = fopen(argv[2], "wb"); assert(f); uint8_t seed[32]; for (unsigned i = 0; i < 32; ++i) { seed[i] = (uint8_t)i; }
 	crypto_ed25519_key_pair(server_secret, server, seed); kr_hex(server, 8, server_id + 12); vector(f, "serverPublic", server, 32);
 	boot(0, 1, f); boot(1, 2, f); boot(2, 1, f);
