@@ -253,10 +253,11 @@ def test_shadow_cannot_mutate_primary_context_or_public_result(async_host):
     assert SECRET_MARKER not in repr(engine.records)
 
 
-async def request_on_app(host):
+async def request_on_app(host, *, payload=None):
     transport = httpx.ASGITransport(app=host.client.app, raise_app_exceptions=False)
     async with httpx.AsyncClient(transport=transport, base_url="http://asgi-contract.invalid") as client:
-        payload = request_for(host.release)
+        if payload is None:
+            payload = request_for(host.release)
         response = await client.post(ROUTE, json=payload,
                                      headers={"Authorization": "Bearer " + host.token()})
         if response.status_code == 200:
