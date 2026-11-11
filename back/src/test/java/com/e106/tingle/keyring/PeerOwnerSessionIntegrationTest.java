@@ -37,8 +37,6 @@ import tools.jackson.databind.JsonNode;
 
 /** Isolated PostgreSQL and synthetic Ed25519 keys; no live keyring or team signing key. */
 @SpringBootTest(properties = {"app.keyring.peer.enabled=true",
-	"app.keyring.peer.device-serials=XIAO-a000000000000001,XIAO-a000000000000002,"
-		+ "XIAO-a000000000000003,XIAO-a000000000000004,XIAO-a000000000000005,XIAO-a000000000000006",
 	"spring.sql.init.schema-locations=classpath:database/schema.sql,"
 		+ "classpath:database/keyring-peer-ownership-270.sql,classpath:database/keyring-peer-commands-270.sql"})
 @AutoConfigureMockMvc
@@ -145,6 +143,23 @@ class PeerOwnerSessionIntegrationTest extends IntegrationTestSupport {
 		logout(fixture.tokens().path("refreshToken").asString()).andExpect(status().isNoContent());
 		create(fixture, UUID.randomUUID(), request(fixture, nonce(2), 1, 60), 401);
 		perform(get(path(fixture) + "/" + key), fixture.tokens(), null).andExpect(status().isUnauthorized());
+	}
+
+	@Test
+	void refusesNonXiaoSerialAndRevokedOrMissingCredential() throws Exception {
+		Fixture fixture = fixture(7, true);
+		String key = jdbc.queryForObject("select credential_public_key from keyring where id=?", String.class,
+			fixture.deviceId());
+		for (String broken : new String[] {"serial_number='NRF-a000000000000007'", "credential_revoked_at=now()",
+			"credential_public_key=null", "credential_key_id=null"}) {
+			jdbc.update("update keyring set " + broken + " where id=?", fixture.deviceId());
+			perform(post(path(fixture)).header("Idempotency-Key", UUID.randomUUID()), fixture.tokens(),
+				toJson(request(fixture, nonce(1), 1, 60))).andExpect(status().isUnprocessableContent())
+				.andExpect(jsonPath("$.code").value("POLICY_UNRESOLVED"));
+			jdbc.update("update keyring set serial_number=?,credential_revoked_at=null,credential_public_key=?,"
+				+ "credential_key_id=? where id=?", fixture.serial(), key, fixture.keyId(), fixture.deviceId());
+		}
+		create(fixture, UUID.randomUUID(), request(fixture, nonce(1), 1, 60), 200);
 	}
 
 	private Fixture fixture(int serialNumber, boolean agreed) throws Exception {

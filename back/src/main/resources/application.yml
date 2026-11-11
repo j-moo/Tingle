@@ -117,7 +117,6 @@ app:
       opportunity-seconds: ${KEYRING_PEER_OPPORTUNITY_SECONDS:0}
       presence-gap-seconds: ${KEYRING_PEER_PRESENCE_GAP_SECONDS:0}
       server-public-key-hex: ${KEYRING_PEER_SERVER_PUBLIC_KEY_HEX:}
-      device-serials: ${KEYRING_PEER_DEVICE_SERIALS:}
 
   # 새 설문 회차가 쓰는 설문 버전 (resources/survey/questionnaires/{버전}.json). 바꿔도 이미 시작한 회차는 원래 버전을 쓴다.
   survey:

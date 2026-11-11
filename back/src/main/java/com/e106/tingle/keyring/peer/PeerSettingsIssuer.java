@@ -10,7 +10,6 @@ import java.time.temporal.ChronoUnit;
 import java.util.Arrays;
 import java.util.Base64;
 import java.util.HexFormat;
-import java.util.Set;
 import java.util.UUID;
 
 import org.springframework.beans.factory.ObjectProvider;
@@ -39,15 +38,20 @@ public class PeerSettingsIssuer {
 	private final PeerOwnershipService owners;
 	private final PeerSettingsPolicyProvider policies;
 	private final ObjectProvider<DevSettingsIssuer> signers;
-	@Value("${app.keyring.peer.device-serials:}")
-	private Set<String> deviceSerials;
 	@Value("${app.keyring.peer.server-public-key-hex:}")
 	private String expectedServerPublicKey;
 
+	/** TSV3 대상: DB에 등록된 XIAO 키링 + 폐기되지 않은 credential. 소유자·상태 확인은 호출한 쪽에서 한다. */
+	public static boolean eligible(Keyring device) {
+		Long epoch = device.getOwnershipEpoch();
+		String serial = device.getSerialNumber();
+		return epoch != null && epoch >= 0 && epoch <= 0xffff_ffffL && serial != null
+			&& serial.matches("XIAO-[0-9a-f]{16}") && device.getCredentialPublicKey() != null
+			&& device.getCredentialKeyId() != null && device.getCredentialRevokedAt() == null;
+	}
+
 	public void requireSupported(Keyring device) {
-		if (!deviceSerials.contains(device.getSerialNumber()) || device.getOwnershipEpoch() == null
-			|| device.getOwnershipEpoch() < 0 || device.getOwnershipEpoch() > 0xffff_ffffL
-			|| !device.getSerialNumber().matches("XIAO-[0-9a-f]{16}")) {
+		if (!eligible(device)) {
 			throw unresolved();
 		}
 		signer();

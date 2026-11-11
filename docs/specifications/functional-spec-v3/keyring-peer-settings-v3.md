@@ -193,7 +193,7 @@ encounterStatus=BUSINESS_POLICY_PENDING, errorCode=POLICY_UNRESOLVED를 반환�
 
 POST는 `Idempotency-Key` UUID와 receiptId·command를 요구한다. command는 RESTORE_ACCOUNT_LOCK,
 RELEASE_AFTER_DEPARTURE, ERROR_REVIEWED 중 하나다. 현재 로그인·기기 소유·generation/epoch·credential,
-기기 allowlist·서버 공개키 pin·초기화 guard와 원 접수의 폐기 여부를 다시 확인한다.
+DB에 등록된 XIAO 기기·서버 공개키 pin·초기화 guard와 원 접수의 폐기 여부를 다시 확인한다.
 과거 소유자의 원본 receipt를 새 소유자의 제어 명령으로 바꾸지 않는다. 같은 요청 키에 다른 receiptId/command는409다.
 
 - RESTORE_ACCOUNT_LOCK은 당시 영속 접수한 상대 credential 357B를 그대로 사용한다. 현재 상대 소유자나
@@ -235,9 +235,9 @@ keyring-peer-commands-270.sql, keyring-peer-encounter-270.sql 세 파일이다.
 입력 철회의 원문·credential·hash·receipt 정리는 접수 기능 OFF 여부와 관계없이 수행한다.
 선택 테이블이 아예 없는 기존 배포에서는 테이블 존재를 확인한 뒤 해당 정리를 생략한다.
 
-TSV3 공급에는 기기 allowlist, 펌웨어에 고정한 서버 공개키와 일치하는 전용 서명 공급,
+TSV3 공급에는 DB에 등록된 XIAO 기기 + 폐기되지 않은 credential, 펌웨어에 고정한 서버 공개키와 일치하는 전용 서명 공급,
 승인한 policy/rule·lease/opportunity/presence 값 및 실제 사용자 입력이 필요하다.
-기본 빈 allowlist·미승인 정책·미확정 수명을 정상 매칭 설정으로 보정하지 않는다.
+미승인 정책·미확정 수명을 정상 매칭 설정으로 보정하지 않는다.
 기존 개발 키 loader의 dev/test 전용·prod 거부와 임의 키 생성 금지를 유지한다.
 
 정확한 바이너리·서명 원문은 이 기능 명세에 복사하지 않는다. 관련 Jira에서 외부 인계 기준을 연결하고

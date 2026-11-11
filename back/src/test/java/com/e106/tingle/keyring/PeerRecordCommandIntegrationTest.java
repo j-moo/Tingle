@@ -19,7 +19,6 @@ import java.util.Arrays;
 import java.util.Base64;
 import java.util.HexFormat;
 import java.util.Map;
-import java.util.Set;
 import java.util.UUID;
 
 import org.junit.jupiter.api.BeforeEach;
@@ -165,6 +164,22 @@ class PeerRecordCommandIntegrationTest extends IntegrationTestSupport {
 		verify(fixture, result);
 	}
 
+	@Test
+	void refusesNonXiaoSerialAndRevokedOrMissingCredential() throws Exception {
+		Fixture fixture = fixture("VERIFIED_BOTH");
+		String key = jdbc.queryForObject("select credential_public_key from keyring where id=?", String.class,
+			fixture.device());
+		for (String broken : new String[] {"serial_number='NRF-" + fixture.serial().substring(5) + "'",
+			"credential_revoked_at=now()", "credential_public_key=null", "credential_key_id=null"}) {
+			jdbc.update("update keyring set " + broken + " where id=?", fixture.device());
+			assertThat(command(fixture, UUID.randomUUID(), "RESTORE_ACCOUNT_LOCK", 409).path("code").asString())
+				.isEqualTo("OWNER_MISMATCH");
+			jdbc.update("update keyring set serial_number=?,credential_revoked_at=null,credential_public_key=?,"
+				+ "credential_key_id=? where id=?", fixture.serial(), key, fixture.keyId(), fixture.device());
+		}
+		command(fixture, UUID.randomUUID(), "RESTORE_ACCOUNT_LOCK", 200);
+	}
+
 	private Fixture fixture(String state) throws Exception {
 		JsonNode tokens = login("kakao", newSocialId());
 		agree(tokens).andExpect(status().isOk());
@@ -179,7 +194,6 @@ class PeerRecordCommandIntegrationTest extends IntegrationTestSupport {
 			+ "owner_generation,ownership_epoch,credential_key_id,credential_public_key) "
 			+ "values (?,'synthetic','REGISTERED',?,?,2,?,?) returning id", Long.class, serial, user, generation,
 			keyId, publicKey);
-		ReflectionTestUtils.setField(service, "allowedSerials", Set.of(serial));
 		jdbc.update("insert into keyring_peer_owner(user_id,owner_ref,created_at) values (?,?,?)", user,
 			UUID.randomUUID(), Timestamp.from(now.minusSeconds(120)));
 		UUID ownerRef = jdbc.queryForObject("select owner_ref from keyring_peer_owner where user_id=?",

@@ -9,7 +9,6 @@ import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.HexFormat;
 import java.util.Objects;
-import java.util.Set;
 import java.util.UUID;
 
 import org.springframework.beans.factory.ObjectProvider;
@@ -23,6 +22,7 @@ import com.e106.tingle.auth.RefreshTokenRepository;
 import com.e106.tingle.global.error.BusinessException;
 import com.e106.tingle.global.error.ErrorCode;
 import com.e106.tingle.keyring.ownership.PeerOwnershipService;
+import com.e106.tingle.keyring.peer.PeerSettingsIssuer;
 import com.e106.tingle.keyring.proof.PeerCommandTranscripts;
 import com.e106.tingle.keyring.reset.KeyringResetGuard;
 import com.e106.tingle.user.UserRepository;
@@ -46,8 +46,6 @@ public class PeerOwnerSessionService {
 	private final Clock clock;
 	private final JdbcTemplate jdbc;
 	private final JsonMapper json;
-	@Value("${app.keyring.peer.device-serials:}")
-	private Set<String> allowedSerials;
 	@Value("${app.keyring.peer.server-public-key-hex:}")
 	private String expectedServerPublicKey;
 
@@ -133,8 +131,7 @@ public class PeerOwnerSessionService {
 			throw error(ErrorCode.OWNER_MISMATCH);
 		}
 		resets.requireNoPendingReset(deviceId);
-		if (device.getOwnershipEpoch() == null || device.getCredentialPublicKey() == null
-			|| device.getCredentialRevokedAt() != null || !allowedSerials.contains(device.getSerialNumber())) {
+		if (!PeerSettingsIssuer.eligible(device)) {
 			throw error(ErrorCode.POLICY_UNRESOLVED);
 		}
 		return device;
