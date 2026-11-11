@@ -60,7 +60,8 @@ fun OnboardingRoute(
     var hubSeen by rememberSaveable(session.userId) { mutableStateOf(-1) }
     when {
         // 연결 화면을 로딩 분기보다 먼저 둔다. 등록 뒤 가입 단계가 바뀌는 순간 로딩 화면이 끼면 연결 화면이 빠지면서 BLE 연결이 끊긴다
-        keyringStep && openBleProbe -> ConnectedKeyringSetupRoute({ openBleProbe = false }, managedConnection = managedKeyringConnection)
+        keyringStep && openBleProbe -> ConnectedKeyringSetupRoute({ openBleProbe = false },
+            managedConnection = managedKeyringConnection, allowRegistration = session.status == OnboardingStatus.KEYRING_REQUIRED)
         state.session != session -> OnboardingPanel(stringResource(Res.string.onboarding_title)) { Text(stringResource(Res.string.onboarding_loading)) }
         canSettings && openSettings -> ConnectedSettingsRoute(session, { openSettings = false })
         canSurvey && openSurvey -> SurveyRoute(session, { openSurvey = false })

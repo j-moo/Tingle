@@ -194,13 +194,15 @@ import org.jetbrains.compose.resources.stringResource
     }
     items.forEachIndexed { index, item ->
         // 누르면 고른 카드만 초록 테두리 · 체크. 확정은 아래 버튼으로
-        KeyringCard(stringResource(Res.string.sync_live_device, (index + 1).toString()), selected = item.deviceId == tapped, enabled = enabled,
+        // 다른 소유 기기의 목록 항목과 지금 연결한 실물을 서로 대응시키지 않는다.
+        KeyringCard(stringResource(Res.string.sync_live_device, (index + 1).toString()), selected = item.deviceId == tapped,
+            enabled = enabled && item.deviceSerial == serial,
             onClick = { tapped = item.deviceId }) {
             Text(stringResource(Res.string.sync_pick_firmware, item.firmwareVersion), style = MaterialTheme.typography.bodySmall,
                 color = AppColors.TextSecondary)
         }
     }
-    val chosen = items.firstOrNull { it.deviceId == tapped }
+    val chosen = items.firstOrNull { it.deviceId == tapped && it.deviceSerial == serial }
     // 고른 키링으로 이미 보내는 중(보냄)이면 확정 · 다시 불러오기 버튼은 숨기고 아래 진행 상태만 둔다
     if (chosen != null && chosen.deviceId in syncing) return
     if (items.isNotEmpty()) AppButton(stringResource(Res.string.sync_pick_confirm), Modifier.fillMaxWidth(),

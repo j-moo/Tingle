@@ -32,5 +32,5 @@ val keyringModule = module {
     viewModel { KeyringSyncViewModel(get(), get(), get(), get(), changes = get(), network = get()) }
     viewModel { KeyringRegistrationViewModel(get(), get(), get(), get(), get(), get()) }
     viewModel { OwnedKeyringsViewModel(get(), get()) }
-    viewModel { BleProbeViewModel(get(), get()) }
+    viewModel { BleProbeViewModel(get(), get(), get()) }
 }

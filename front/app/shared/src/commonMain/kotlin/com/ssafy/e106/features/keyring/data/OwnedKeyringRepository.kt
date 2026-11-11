@@ -8,7 +8,13 @@ import kotlinx.serialization.Serializable
 
 /** 서버 등록 정보만 읽는다. READY를 현재 BLE 연결 성공이나 배터리 상태로 변환하지 않는다. */
 @Serializable
-data class OwnedKeyring(val deviceId: Long, val status: String, val firmwareVersion: String)
+data class OwnedKeyring(
+    val deviceId: Long,
+    val status: String,
+    val firmwareVersion: String,
+    // 구 응답도 목록은 표시할 수 있다. 연결 허용에는 서버가 준 실물 식별자가 필요하다.
+    val deviceSerial: String? = null,
+)
 
 @Serializable
 private data class OwnedKeyringsResponse(val items: List<OwnedKeyring>)

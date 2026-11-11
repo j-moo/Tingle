@@ -122,9 +122,13 @@ class KeyringRegistrationViewModel(private val api: KeyringRegistrationRepositor
             // 모든 409를 거절로 취급하지 않는다. 멱등 충돌·5xx·통신 단절은 기존 요청을 보존한다.
             val code = (response.error as? AppError.Server)?.code
             mutable.update { it.copy(canRestart = code in setOf("INVALID_REQUEST", "INVALID_DEVICE_PROOF", "DEVICE_ALREADY_BOUND")) }
+            if (code == "DEVICE_ALREADY_BOUND") throw RegistrationProblem(RegistrationIssue.DeviceBound)
         }
         val receipt = operation.unwrap(response)
-        if (!KeyringRegistrationProtocol.validReceipt(receipt)) throw RegistrationProblem(RegistrationIssue.InvalidResponse)
+        if (!KeyringRegistrationProtocol.validReceipt(receipt) ||
+            (receipt.deviceSerial != null && receipt.deviceSerial != pending.serial)) {
+            throw RegistrationProblem(RegistrationIssue.InvalidResponse)
+        }
         val accepted = pending.copy(receipt = receipt)
         operation.save(accepted)
         checkOwned(operation, accepted)
@@ -133,7 +137,10 @@ class KeyringRegistrationViewModel(private val api: KeyringRegistrationRepositor
     private suspend fun checkOwned(operation: Operation, pending: PendingKeyringRegistration) {
         operation.requireResetFinished(pending.serial)
         val receipt = requireNotNull(pending.receipt)
-        val match = operation.unwrap(owned.list()).find { it.deviceId == receipt.deviceId }
+        // 필드 추가 전 응답은 등록 결과를 복구할 수 있고, 일련번호가 오면 BLE 값과 정확히 대조한다.
+        val match = operation.unwrap(owned.list()).find {
+            it.deviceId == receipt.deviceId && (it.deviceSerial == null || it.deviceSerial == pending.serial)
+        }
             ?: throw RegistrationProblem(RegistrationIssue.NotInOwnedList)
         // 등록 복구 기록을 지우기 전에 동기화 대상을 보존한다. 프로필/설문을 마친 후에도
         // 같은 기기 번호로 자동 재개하며, 저장 실패 시 등록 API를 새로 호출하지 않는다.

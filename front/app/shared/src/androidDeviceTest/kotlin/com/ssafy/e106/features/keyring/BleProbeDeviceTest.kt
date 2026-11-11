@@ -13,6 +13,9 @@ import androidx.test.core.app.ActivityScenario
 import androidx.test.platform.app.InstrumentationRegistry
 import com.ssafy.e106.core.auth.OnboardingStatus
 import com.ssafy.e106.core.ble.*
+import com.ssafy.e106.core.network.ApiResult
+import com.ssafy.e106.features.keyring.data.OwnedKeyring
+import com.ssafy.e106.features.keyring.data.OwnedKeyringRepository
 import com.ssafy.e106.core.ui.theme.AppTheme
 import com.ssafy.e106.features.keyring.data.BleDeviceInfo
 import com.ssafy.e106.features.keyring.data.BleDeviceStatus
@@ -32,7 +35,12 @@ class BleProbeTestActivity : ComponentActivity() {
         val model = ViewModelProvider(this, object : ViewModelProvider.Factory {
             @Suppress("UNCHECKED_CAST")
             override fun <T : ViewModel> create(clazz: Class<T>): T = BleProbeViewModel(
-                AndroidKeyringBle(applicationContext), TestSession(OnboardingStatus.KEYRING_REQUIRED)) as T
+                AndroidKeyringBle(applicationContext), TestSession(OnboardingStatus.KEYRING_REQUIRED),
+                object : OwnedKeyringRepository {
+                    // 이 호스트는 권한 UI만 검증하며 제품 서버나 실물 소유 정보를 사용하지 않는다.
+                    override suspend fun list() = ApiResult.Ok(emptyList<OwnedKeyring>())
+                },
+            ) as T
         })[BleProbeViewModel::class.java]
         setContent { AppTheme { ConnectedBleProbeRoute({ finish() }, model) } }
     }

@@ -8,7 +8,7 @@ data class BleCandidate(val id: String, val name: String?, val rssi: Int)
 enum class BleLinkState { Ready, Closed }
 enum class BleFailure { Unsupported, PermissionRequired, BluetoothOff, LocationOff, Busy, NotFound, ScanFailed,
     ConnectFailed, ServiceMissing, SubscribeFailed, WriteFailed, Disconnected, Timeout, InvalidFrame, Overflow,
-    SecureTransportRequired }
+    SecureTransportRequired, NotOwned, OwnershipUnverified }
 class BleException(val reason: BleFailure) : Exception(reason.name)
 
 /**

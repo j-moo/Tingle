@@ -426,8 +426,104 @@ class BleProbeViewModelTest {
     private val store = ViewModelStore()
     @BeforeTest fun before() { Dispatchers.setMain(dispatcher) }
     @AfterTest fun after() { store.clear(); Dispatchers.resetMain() }
-    private fun model(port: ProbeFixture, session: TestSession = TestSession(OnboardingStatus.KEYRING_REQUIRED)) =
-        BleProbeViewModel(port, session).also { store.put("ble", it) }
+    private fun model(
+        port: ProbeFixture,
+        session: TestSession = TestSession(OnboardingStatus.KEYRING_REQUIRED),
+        list: suspend () -> ApiResult<List<OwnedKeyring>> = {
+            ApiResult.Ok(listOf(OwnedKeyring(4, "READY", "test", "XIAO-test")))
+        },
+    ) = BleProbeViewModel(port, session, object : OwnedKeyringRepository {
+        override suspend fun list() = list()
+    }).also { store.put("ble", it) }
+
+    /** 다른 실물을 연결하면 기기 정보 조회까지만 진행하고 연결을 즉시 닫는다. */
+    @Test fun foreignBoardClosesBeforePublishingConnectedState() = runTest(dispatcher) {
+        val port = ownerPort()
+        val vm = model(port) { ApiResult.Ok(listOf(OwnedKeyring(7, "READY", "test", "XIAO-other"))) }
+
+        vm.scan(); runCurrent()
+        vm.connect(port.currentId); runCurrent()
+
+        assertEquals(BleFailure.NotOwned, vm.state.value.error)
+        assertFalse(vm.state.value.connected)
+        assertNull(vm.state.value.info)
+        assertEquals(BleLinkState.Closed, port.linkState.value)
+        assertEquals(listOf("GET_DEVICE_INFO"), port.commands)
+    }
+
+    /** 재연결 직전에 귀속이 해제되면, 같은 serial이어도 이전 성공 판정을 재사용하지 않는다. */
+    @Test fun automaticReconnectRechecksAccountOwnership() = runTest(dispatcher) {
+        val port = ownerPort()
+        var own = true
+        var calls = 0
+        val vm = model(port) {
+            calls++
+            ApiResult.Ok(if (own) listOf(OwnedKeyring(4, "READY", "test", "XIAO-test")) else emptyList())
+        }
+        vm.setForeground(true)
+        vm.scan(); runCurrent()
+        vm.connect(port.currentId); runCurrent()
+        assertTrue(vm.state.value.connected)
+
+        own = false
+        port.link.close()
+        advanceTimeBy(10_000); runCurrent()
+
+        assertEquals(2, calls)
+        assertEquals(2, port.connections)
+        assertEquals(BleFailure.NotOwned, vm.state.value.error)
+        assertFalse(vm.state.value.connected)
+        assertEquals(BleLinkState.Closed, port.linkState.value)
+    }
+
+    /** 구 목록 응답을 타인 소유로 단정하지 않고, 식별자를 얻을 때까지 연결을 닫는다. */
+    @Test fun missingSerialInOwnedListDoesNotApproveConnection() = runTest(dispatcher) {
+        val port = ownerPort()
+        val vm = model(port) { ApiResult.Ok(listOf(OwnedKeyring(4, "READY", "test"))) }
+
+        vm.scan(); runCurrent()
+        vm.connect(port.currentId); runCurrent()
+
+        assertEquals(BleFailure.OwnershipUnverified, vm.state.value.error)
+        assertFalse(vm.state.value.connected)
+        assertEquals(BleLinkState.Closed, port.linkState.value)
+    }
+
+    /** 등록 예외를 일반 연결에서 재사용하면 미귀속 보드가 서비스 화면에 남을 수 있다. */
+    @Test fun unownedBoardCanEnterOnlyTheRegistrationFlow() = runTest(dispatcher) {
+        val port = ownerPort().apply {
+            extraInfo = extraInfo + ("ownerState" to JsonPrimitive("UNOWNED"))
+        }
+        var reads = 0
+        val vm = model(port) { reads++; ApiResult.Ok(emptyList()) }
+
+        vm.scan(); runCurrent()
+        vm.connect(port.currentId, registrationMode = true); runCurrent()
+
+        assertTrue(vm.state.value.connected)
+        assertEquals("UNOWNED", vm.state.value.info?.ownerState)
+        assertEquals(0, reads)
+
+        vm.leave()
+        vm.scan(); runCurrent()
+        vm.connect(port.currentId); runCurrent()
+
+        assertEquals(1, reads)
+        assertEquals(BleFailure.NotOwned, vm.state.value.error)
+        assertFalse(vm.state.value.connected)
+    }
+
+    @Test fun normalConnectionRequiresAnExactCaseSensitiveSerial() = runTest(dispatcher) {
+        val port = ownerPort()
+        val session = TestSession(OnboardingStatus.READY)
+        val vm = model(port, session) { ApiResult.Ok(listOf(OwnedKeyring(4, "READY", "test", "xiao-test"))) }
+
+        vm.scan(); runCurrent()
+        vm.connect(port.currentId, registrationMode = true); runCurrent()
+
+        assertEquals(BleFailure.NotOwned, vm.state.value.error)
+        assertEquals(BleLinkState.Closed, port.linkState.value)
+    }
 
     @Test fun scanStopsBeforeConnectAndDoubleClickIsIgnored() = runTest(dispatcher) {
         val port = ProbeFixture(); val vm = model(port)

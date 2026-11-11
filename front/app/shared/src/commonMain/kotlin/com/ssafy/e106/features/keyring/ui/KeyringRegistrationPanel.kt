@@ -16,10 +16,12 @@ import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.viewmodel.koinViewModel
 
 /** 가입 키링 단계의 실제 서버 등록 경로(운영 앱 · 개발 앱 같음). */
-@Composable fun ConnectedKeyringSetupRoute(onBack: () -> Unit, managedConnection: Boolean = false) {
+@Composable fun ConnectedKeyringSetupRoute(onBack: () -> Unit, managedConnection: Boolean = false, allowRegistration: Boolean = false) {
     // 호스트가 연결을 관리하는 경우 화면을 나가도 설정 저장/가입 단계 전환까지 같은 연결을 사용한다.
-    ConnectedBleProbeRoute(onBack, koinViewModel(), koinViewModel<KeyringRegistrationViewModel>(), koinViewModel<KeyringSyncViewModel>(), managedConnection,
-        autoScan = true)
+    // 등록 화면은 등록 증명만 다룬다. 동기화 화면과 초기화 연결에는 소유 목록 확인을 적용한다.
+    ConnectedBleProbeRoute(onBack, registration = if (allowRegistration) koinViewModel<KeyringRegistrationViewModel>() else null,
+        sync = if (allowRegistration) null else koinViewModel<KeyringSyncViewModel>(),
+        managedConnection = managedConnection, autoScan = true)
 }
 
 /** 재시도는 새 등록이 아니라 보관한 동일 요청의 결과 확인이다. 자동으로 서버 등록을 시작하지 않는다. */
