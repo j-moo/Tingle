@@ -216,6 +216,7 @@ sh gradlew check :androidApp:$APK_TASK --no-daemon -Dorg.gradle.jvmargs=-Xmx3g -
                 echo "DB 백업: $f ($(du -h "$f" | cut -f1))"
               '''
             }
+            def compose = "docker compose --env-file /srv/tingle/.env --env-file /srv/tingle/app.env -f ${target.dir}/infra/docker-compose.yml ${composeOverride}"
             sh """
               # 폴더를 통째로 바꾸지 않고 안의 파일만 바꾼다. 폴더째 바꾸면 그 안을 마운트한 nginx · grafana 가 지워진 옛 폴더를 계속 본다 (2026-10-27).
               # 커밋에 없는 파일(저장소에서 지운 것)은 지운다. 한글 경로가 따옴표로 바뀌지 않게 core.quotePath=false.
@@ -224,12 +225,12 @@ sh gradlew check :androidApp:$APK_TASK --no-daemon -Dorg.gradle.jvmargs=-Xmx3g -
               git -c core.quotePath=false ls-tree -r --name-only HEAD | sort > \$WORKSPACE/.deploy-files
               (cd ${target.dir} && find . -type f ! -name .deployed-commit | sed 's#^\\./##' | sort | comm -23 - \$WORKSPACE/.deploy-files | xargs -r -d '\\n' rm -f --)
               git rev-parse --short HEAD > ${target.dir}/.deployed-commit
-              docker compose --env-file /srv/tingle/.env --env-file /srv/tingle/app.env -f ${target.dir}/infra/docker-compose.yml ${composeOverride} up -d --build --no-deps ${target.services.keySet().join(' ')}
+              ${compose} up -d --build --no-deps ${target.services.keySet().join(' ')}
               docker image prune -f
             """
-            // 떠서 응답하는지 확인 (Jenkins 는 compose 내부망에 있어 서비스 이름으로 부른다)
+            // 떠서 응답하는지 확인 (Jenkins 는 compose 내부망에 있어 서비스 이름으로 부른다). 실패하면 원인 확인용으로 로그 끝부분만 남긴다 (환경변수는 비밀값이라 찍지 않는다)
             target.services.each { name, url ->
-              sh "for i in \$(seq 1 60); do curl -fsS -o /dev/null ${url} && exit 0; sleep 2; done; echo '${name} 응답 없음'; exit 1"
+              sh "for i in \$(seq 1 60); do curl -fsS -o /dev/null ${url} && exit 0; sleep 2; done; echo '${name} 응답 없음 — 로그 마지막 100줄:'; ${compose} logs --no-color --tail 100 ${name} || true; exit 1"
             }
             // 무중단 전환 대상: 새 색 기동 → 상태 확인 → nginx 전환 → 옛 색 정지 (실패하면 운영은 옛 색 그대로)
             target.bluegreen?.each { name ->

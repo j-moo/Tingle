@@ -16,6 +16,28 @@ esac
 root=$(cd "$(dirname "$0")/.." && pwd)
 dc="docker compose --env-file /srv/tingle/.env --env-file /srv/tingle/app.env -f $root/infra/docker-compose.yml"
 state=/srv/tingle/nginx-state/$svc.conf
+# 실패: 새 색 로그 끝부분을 Jenkins 로그에 남기고 새 색만 내린 뒤 exit 1 → Jenkins 빌드 FAILURE.
+# 환경변수·docker inspect 는 찍지 않는다. 앱 로그 줄 자체에 값이 섞일 수는 있다(예: Spring 설정 바인딩 오류) — docker logs · Loki 에 이미 있는 그 로그이고 따로 거르지 않는다.
+logs() {
+  echo "--- $svc-$new 로그 마지막 100줄 ---"
+  $dc logs --no-color --tail 100 "$svc-$new" || true
+}
+fail() {
+  echo "$1"
+  logs
+  $dc stop "$svc-$new"
+  exit 1
+}
+# 새 색 상태 확인: 2초 간격 최대 $1 번. 끝까지 실패하면 1 (set -e 에 걸리지 않게 `wait_healthy N || ...` 로 쓴다).
+wait_healthy() {
+  i=1
+  until docker exec tingle-nginx-1 wget -q -O /dev/null "http://$svc-$new:$port$health" 2>/dev/null; do
+    [ "$i" -lt "$1" ] || return 1
+    i=$((i + 1))
+    sleep 2
+  done
+}
+restore_state() { if [ -n "$old" ]; then echo "$old" > "$state"; else rm -f "$state"; fi; }
 
 cur=none
 if [ -f "$state" ]; then cur=blue; grep -q green "$state" && cur=green; fi
@@ -29,34 +51,36 @@ else
   $dc up -d --build --no-deps "$svc-$new"
 fi
 
-# 상태 확인: 2초 간격 최대 90초
-i=0
-until docker exec tingle-nginx-1 wget -q -O /dev/null "http://$svc-$new:$port$health" 2>/dev/null; do
-  i=$((i + 1))
-  if [ "$i" -ge 45 ]; then
-    echo "$svc-$new 상태 확인 실패 — 새 색을 내리고 운영은 $cur 그대로"
-    $dc stop "$svc-$new"
-    exit 1
-  fi
-  sleep 2
-done
+# 상태 확인: 최대 90초
+wait_healthy 45 || fail "$svc-$new 상태 확인 실패 — 새 색을 내리고 운영은 $cur 그대로"
 
 # 전환: 상태 파일을 바꾸고 nginx 설정 검사 후 reload. 기존 연결은 옛 worker 가 끝까지 처리한다.
 mkdir -p "$(dirname "$state")"
 old=$(cat "$state" 2>/dev/null || true)
 echo "set \$up $svc-$new:$port;" > "$state"
 if ! docker exec tingle-nginx-1 nginx -t -q; then
-  if [ -n "$old" ]; then echo "$old" > "$state"; else rm -f "$state"; fi
-  $dc stop "$svc-$new"
-  echo "nginx 설정 오류 — 되돌림"
-  exit 1
+  restore_state
+  fail "nginx 설정 오류 — 되돌림"
 fi
 docker exec tingle-nginx-1 nginx -s reload
 echo "$svc: nginx → $svc-$new"
 
-# 정리: 옛 색은 30초 뒤 끈다 (graceful shutdown 20초 + 여유). 지우지 않고 멈춰만 둬서 rollback 에 쓴다.
+# 재확인 후 정리: 30초(graceful shutdown 20초 + 여유) 뒤 옛 색을 끄기 직전에 새 색이 아직 살아 있는지 3번 본다.
+# 전환 뒤 죽었으면 nginx 를 옛 색으로 되돌리고 새 색을 내린 뒤 실패 (옛 색은 계속 켜져 있다).
+# nginx 되돌리기마저 실패하면 nginx 는 아직 새 색을 보므로 새 색을 내리지 않고, 상태 파일도 새 색으로 맞춰 둔 채 실패한다 (수동 확인).
+# 옛 색은 지우지 않고 멈춰만 둬서 rollback 에 쓴다. 첫 배포(옛 색 없음)는 되돌릴 곳도 끌 것도 없어 건너뛴다.
 if [ "$cur" != none ]; then
   sleep 30
+  wait_healthy 3 || {
+    restore_state
+    if docker exec tingle-nginx-1 nginx -t -q && docker exec tingle-nginx-1 nginx -s reload; then
+      fail "$svc-$new 재확인 실패 — nginx 를 $cur 로 되돌리고 새 색을 내림"
+    fi
+    echo "set \$up $svc-$new:$port;" > "$state"
+    echo "$svc-$new 재확인 실패, nginx 되돌리기 실패 — 수동 확인 필요 (새 색은 켜 둠)"
+    logs
+    exit 1
+  }
   $dc stop -t 25 "$svc-$cur"
   echo "$svc-$cur 멈춤"
 fi
