@@ -32,6 +32,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
 import com.e106.tingle.IntegrationTestSupport;
 import com.e106.tingle.TestcontainersConfiguration;
+import com.e106.tingle.global.ai.AiCallException;
 import com.e106.tingle.global.error.BusinessException;
 import com.e106.tingle.global.error.ErrorCode;
 import com.e106.tingle.risk.RiskAnalysisTypes.Audience;
@@ -511,6 +512,173 @@ class RiskAnalysisIntegrationTest extends IntegrationTestSupport {
 		assertThat(store.candidates(room.id() - 1, 20)).doesNotContain(room.id());
 		assertThat(service.analyzeNext(room.id(), manifest("synthetic-v1"))).isFalse();
 		verify(gateway, never()).analyze(any(), any(), any(Duration.class));
+	}
+
+	@Test
+	void automaticSkipsAMessageThatExceedsTheLimitAloneAndAnalyzesTheNextOne() throws Exception {
+		Fixture room = room();
+		// 채팅은 600글자로 허용하지만 분석 입력에서는 4,200 코드 포인트다.
+		String family = "👨‍👩‍👧‍👦";
+		message(room, 1, room.firstParticipant(), family.repeat(600));
+		message(room, 2, room.secondParticipant(), "뒤에 도착한 가상 메시지");
+		given(gateway.analyze(any(), any(), any(Duration.class))).willReturn(normal());
+		Manifest manifest = manifest("synthetic-v1");
+
+		assertThat(service.analyzeNext(room.id(), manifest)).isFalse();
+		JsonNode skipped = jsonMapper.readTree(state(room)).path("riskAnalysis");
+		String attempt = skipped.path("attemptId").asString();
+		assertThat(skipped.path("terminalRanges").path(attempt).path("fromSeq").asLong()).isEqualTo(1);
+		assertThat(skipped.path("terminalRanges").path(attempt).path("throughSeq").asLong()).isEqualTo(1);
+		assertThat(skipped.path("terminalRanges").path(attempt).path("kind").asString()).isEqualTo("FAILED");
+		assertThat(skipped.path("processedThroughSeq").asLong()).isEqualTo(1);
+		assertThat(skipped.path("lastAnalyzedSeq").asLong()).isZero();
+		verify(gateway, never()).analyze(any(), any(), any(Duration.class));
+
+		assertThat(service.analyzeNext(room.id(), manifest)).isTrue();
+		ArgumentCaptor<Input> sent = ArgumentCaptor.forClass(Input.class);
+		verify(gateway).analyze(any(), sent.capture(), any(Duration.class));
+		assertThat(sent.getValue().messages()).extracting(Message::sequence).containsExactly(2L);
+		JsonNode next = jsonMapper.readTree(state(room)).path("riskAnalysis");
+		assertThat(next.path("lastAnalyzedSeq").asLong()).isEqualTo(2);
+		assertThat(next.path("terminalRanges").path(attempt))
+			.isEqualTo(skipped.path("terminalRanges").path(attempt));
+		assertThat(store.candidates(room.id() - 1, 20)).doesNotContain(room.id());
+	}
+
+	@Test
+	void automaticInputRejectedByTheAiServerIsFinalizedWithoutRetries() throws Exception {
+		Fixture room = room();
+		message(room, 1, room.firstParticipant(), "AI가 거절하는 가상 메시지");
+		given(gateway.analyze(any(), any(), any(Duration.class))).willThrow(new AiCallException(false, 400));
+		Manifest manifest = manifest("synthetic-v1");
+
+		assertThat(service.analyzeNext(room.id(), manifest)).isTrue();
+		JsonNode rejected = jsonMapper.readTree(state(room)).path("riskAnalysis");
+		String attempt = rejected.path("attemptId").asString();
+		assertThat(rejected.path("terminal").asBoolean()).isTrue();
+		assertThat(rejected.path("terminalRanges").path(attempt).path("throughSeq").asLong()).isEqualTo(1);
+		assertThat(rejected.path("processedThroughSeq").asLong()).isEqualTo(1);
+		assertThat(store.candidates(room.id() - 1, 20)).doesNotContain(room.id());
+
+		message(room, 2, room.secondParticipant(), "뒤에 도착한 가상 메시지");
+		given(gateway.analyze(any(), any(), any(Duration.class))).willReturn(normal());
+		given(testClock.instant()).willReturn(NOW.plusSeconds(1));
+		assertThat(service.analyzeNext(room.id(), manifest)).isTrue();
+		ArgumentCaptor<Input> sent = ArgumentCaptor.forClass(Input.class);
+		verify(gateway, times(2)).analyze(any(), sent.capture(), any(Duration.class));
+		assertThat(sent.getAllValues().getLast().messages().stream().filter(Message::fresh).map(Message::sequence))
+			.containsExactly(2L);
+	}
+
+	@Test
+	void automaticTransientAiFailureIsStillRetried() throws Exception {
+		Fixture room = room();
+		message(room, 1, room.firstParticipant(), "가상 메시지");
+		given(gateway.analyze(any(), any(), any(Duration.class))).willThrow(new AiCallException(true, 503));
+		Manifest manifest = manifest("synthetic-v1");
+		assertThat(service.analyzeNext(room.id(), manifest)).isTrue();
+		JsonNode failed = jsonMapper.readTree(state(room)).path("riskAnalysis");
+		assertThat(failed.path("terminal").asBoolean()).isFalse();
+		assertThat(failed.path("processedThroughSeq").asLong()).isZero();
+		given(testClock.instant()).willReturn(NOW.plusSeconds(1));
+		assertThat(service.analyzeNext(room.id(), manifest)).isTrue();
+		verify(gateway, times(2)).analyze(any(), any(), any(Duration.class));
+	}
+
+	@Test
+	void automaticPolicyRejectionFromTheAiServerIsAlsoFinalizedWithoutRetries() throws Exception {
+		Fixture room = room();
+		message(room, 1, room.firstParticipant(), "정책 미확정 가상 메시지");
+		given(gateway.analyze(any(), any(), any(Duration.class))).willThrow(new AiCallException(false, 422));
+		assertThat(service.analyzeNext(room.id(), manifest("synthetic-v1"))).isTrue();
+		JsonNode rejected = jsonMapper.readTree(state(room)).path("riskAnalysis");
+		assertThat(rejected.path("terminal").asBoolean()).isTrue();
+		assertThat(rejected.path("processedThroughSeq").asLong()).isEqualTo(1);
+		given(testClock.instant()).willReturn(NOW.plusSeconds(2));
+		assertThat(service.analyzeNext(room.id(), manifest("synthetic-v1"))).isFalse();
+		verify(gateway, times(1)).analyze(any(), any(), any(Duration.class));
+	}
+
+	@Test
+	void batchPinnedUnderOlderInputRulesIsReanalyzedInsteadOfClosedAsMutated() throws Exception {
+		Fixture room = room();
+		message(room, 1, room.firstParticipant(), "배포 전에 고정된 가상 메시지");
+		message(room, 2, room.secondParticipant(), "그 뒤 위협 가상 메시지");
+		Manifest manifest = manifest("synthetic-v1");
+		given(gateway.analyze(any(), any(), any(Duration.class))).willThrow(new AiCallException(true, 503));
+		assertThat(service.analyzeNext(room.id(), manifest)).isTrue();
+		// 이전 버전이 남긴 상태처럼: 규칙 표시가 없고 해시가 이전 마스킹 결과다.
+		jdbc.update("update chat set ai_state=jsonb_set(ai_state #- '{riskAnalysis,inputRules}', "
+			+ "'{riskAnalysis,inputHash}', '\"old-masking-hash\"') where id=?", room.id());
+
+		given(gateway.analyze(any(), any(), any(Duration.class))).willReturn(normal());
+		given(testClock.instant()).willReturn(NOW.plusSeconds(2));
+		assertThat(service.analyzeNext(room.id(), manifest)).isTrue();
+		JsonNode state = jsonMapper.readTree(state(room)).path("riskAnalysis");
+		assertThat(state.path("terminalRanges").isEmpty()).isTrue();
+		assertThat(state.path("lastAnalyzedSeq").asLong()).isEqualTo(2);
+		verify(gateway, times(2)).analyze(any(), any(), any(Duration.class));
+	}
+
+	@Test
+	void batchPinnedUnderOlderInputRulesWithTheSameHashKeepsItsAttemptsAndBudget() throws Exception {
+		Fixture room = room();
+		message(room, 1, room.firstParticipant(), "배포 전에 세 번 실패한 가상 메시지");
+		Manifest manifest = manifest("synthetic-v1");
+		given(gateway.analyze(any(), any(), any(Duration.class))).willThrow(new AiCallException(true, 503));
+		for (int attempt = 0; attempt < 3; attempt++) {
+			given(testClock.instant()).willReturn(NOW.plusSeconds(attempt));
+			assertThat(service.analyzeNext(room.id(), manifest)).isTrue();
+		}
+		// 이전 버전이 남긴 상태처럼 규칙 표시만 없고, 입력 해시는 현재 규칙으로 만든 것과 같다.
+		jdbc.update("update chat set ai_state=ai_state #- '{riskAnalysis,inputRules}' where id=?", room.id());
+
+		// 같은지 확인하는 중 토큰 계산이 한 번 실패해도 "입력이 다름"으로 보고 횟수를 0으로 되돌리지 않는다.
+		given(gateway.countTokens(any())).willThrow(new IllegalStateException("synthetic outage")).willReturn(100);
+		given(testClock.instant()).willReturn(NOW.plusSeconds(3));
+		assertCode(() -> service.analyzeNext(room.id(), manifest), ErrorCode.SERVICE_UNAVAILABLE);
+		assertThat(service.analyzeNext(room.id(), manifest)).isFalse();
+		JsonNode state = jsonMapper.readTree(state(room)).path("riskAnalysis");
+		assertThat(state.path("terminal").asBoolean()).isTrue();
+		assertThat(state.path("processedThroughSeq").asLong()).isEqualTo(1);
+		verify(gateway, times(3)).analyze(any(), any(), any(Duration.class));
+	}
+
+	@Test
+	void batchPinnedUnderOlderInputRulesWithTheSameHashContinuesItsAttempts() throws Exception {
+		Fixture room = room();
+		message(room, 1, room.firstParticipant(), "배포 전에 한 번 실패한 가상 메시지");
+		Manifest manifest = manifest("synthetic-v1");
+		given(gateway.analyze(any(), any(), any(Duration.class))).willThrow(new AiCallException(true, 503));
+		assertThat(service.analyzeNext(room.id(), manifest)).isTrue();
+		jdbc.update("update chat set ai_state=ai_state #- '{riskAnalysis,inputRules}' where id=?", room.id());
+
+		given(testClock.instant()).willReturn(NOW.plusSeconds(1));
+		assertThat(service.analyzeNext(room.id(), manifest)).isTrue();
+		JsonNode state = jsonMapper.readTree(state(room)).path("riskAnalysis");
+		assertThat(state.path("attempts").asInt()).isEqualTo(2);
+		assertThat(state.path("firstStartedAt").asString()).isEqualTo(NOW.toString());
+		assertThat(state.path("inputRules").asString()).isNotBlank();
+		verify(gateway, times(2)).analyze(any(), any(), any(Duration.class));
+	}
+
+	@Test
+	void tokenizerOutageWhileRebuildingAPinnedBatchCancelsOnlyThisClaim() throws Exception {
+		Fixture room = room();
+		message(room, 1, room.firstParticipant(), "재시도 중 토큰 계산 장애 가상 메시지");
+		Manifest manifest = manifest("synthetic-v1");
+		given(gateway.analyze(any(), any(), any(Duration.class))).willThrow(new AiCallException(true, 503));
+		assertThat(service.analyzeNext(room.id(), manifest)).isTrue();
+
+		given(gateway.countTokens(any())).willThrow(new IllegalStateException("synthetic outage")).willReturn(100);
+		given(testClock.instant()).willReturn(NOW.plusSeconds(1));
+		assertCode(() -> service.analyzeNext(room.id(), manifest), ErrorCode.SERVICE_UNAVAILABLE);
+		JsonNode state = jsonMapper.readTree(state(room)).path("riskAnalysis");
+		assertThat(state.path("terminal").asBoolean()).isFalse();
+		assertThat(state.path("attempts").asInt()).isEqualTo(1);
+
+		assertThat(service.analyzeNext(room.id(), manifest)).isTrue();
+		verify(gateway, times(2)).analyze(any(), any(), any(Duration.class));
 	}
 
 	@Test
