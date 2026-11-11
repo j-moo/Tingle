@@ -62,12 +62,13 @@ static void random_bytes(void *ctx, uint8_t *out, size_t len)
 	memset(out, (int)++d->random, len);
 }
 
-static void feedback(void *ctx, const uint8_t id[16])
+static void feedback(void *ctx, const struct kr_record *record, const struct kr_profile *peer)
 {
+	(void)peer;
 	struct disk *d = ctx;
 	bool found = false;
 	for (unsigned i = 0; i < KR_RECORDS; ++i) {
-		if (d->records[i].kind == KR_CONFIRMED && !memcmp(d->records[i].id, id, 16)) {
+		if (d->records[i].kind == KR_CONFIRMED && !memcmp(d->records[i].id, record->id, 16)) {
 			assert(d->records[i].feedback_claimed);
 			found = true;
 		}

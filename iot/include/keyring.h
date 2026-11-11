@@ -84,7 +84,7 @@ struct kr_io {
 	bool (*candidate_ready)(void *, unsigned);
 	uint64_t (*error_key)(void *, uint64_t, const uint8_t *, size_t);
 	void (*random)(void *, uint8_t *, size_t);
-	void (*feedback)(void *, const uint8_t id[16]);
+	void (*feedback)(void *, const struct kr_record *, const struct kr_profile *peer);
 	enum kr_decision (*calculate)(void *, const struct kr_profile *,
 		const struct kr_profile *);
 	bool synthetic_only;

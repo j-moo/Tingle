@@ -1,0 +1,4 @@
+&{/zephyr,user} {
+	/* Y3 SW1 switches BAT_SW. The board does not connect SW1 to D5. */
+	/delete-property/ keyring-off-gpios;
+};

@@ -34,6 +34,14 @@ static const struct device *gpio = DEVICE_DT_GET(DT_NODELABEL(gpio0));
 static const struct device *adc = DEVICE_DT_GET(DT_NODELABEL(adc));
 static const struct gpio_dt_spec led = GPIO_DT_SPEC_GET(DT_ALIAS(led2), gpios);
 static bool battery_ready;
+
+int kr_board_charge_init(void)
+{
+	/* Seeed XIAO nRF52840: P0.13 high impedance selects nominal 50 mA.
+	 * No pulls, including while the MCU is in System OFF. */
+	return device_is_ready(gpio) ? gpio_pin_configure(gpio, 13, GPIO_DISCONNECTED) : -ENODEV;
+}
+
 #ifdef KR_DEV_SERVER_KEY_HEX
 static uint8_t server_key[32];
 static struct kr_settings_nonce challenge;
@@ -160,6 +168,33 @@ static const char *clear_bonds(void)
 		ssize_t remaining = settings_get_val_len(name);
 		if (remaining != -ENOENT && remaining != 0) { return "BOND_CLEAR_FAILED"; }
 	}
+}
+
+int kr_board_forget_phone_bond(const bt_addr_le_t *address)
+{
+	if (!address || address->type > BT_ADDR_LE_RANDOM || bt_addr_le_eq(address, BT_ADDR_LE_ANY)) {
+		return -EINVAL;
+	}
+	int result = bt_unpair(BT_ID_DEFAULT, address);
+	if (result) { return result; }
+
+	/* Zephyr 4.2 uses bt/<subsystem>/<address><type> for the default identity.
+	 * Verify that exact key after bt_unpair(), which drops settings errors. */
+	static const char *const subsystems[] = {"keys", "ccc", "sc", "cf"};
+	const uint8_t *a = address->a.val;
+	for (size_t i = 0; i < ARRAY_SIZE(subsystems); ++i) {
+		char name[32];
+		snprintk(name, sizeof(name), "bt/%s/%02x%02x%02x%02x%02x%02x%u",
+			subsystems[i], a[5], a[4], a[3], a[2], a[1], a[0], address->type);
+		ssize_t remaining = settings_get_val_len(name);
+		if (remaining == -ENOENT || remaining == 0) { continue; }
+		if (remaining < 0) { return (int)remaining; }
+		result = settings_delete(name);
+		if (result) { return result; }
+		remaining = settings_get_val_len(name);
+		if (remaining != -ENOENT && remaining != 0) { return -EIO; }
+	}
+	return 0;
 }
 
 static const char *erase_owner(void *ctx)
@@ -353,10 +388,17 @@ void kr_board_print_identity(const struct kr_identity *id)
 		id->serial, id->key_id, encoded);
 }
 
+bool kr_board_usb_present(void)
+{
+	return nrf_power_usbregstatus_vbusdet_get(NRF_POWER);
+}
+
 struct kr_status kr_board_status(void)
 {
 	struct kr_status status = {.battery_mv = -1, .charging = -1};
-	status.usb_valid = true; status.usb_present = nrf_power_usbregstatus_vbusdet_get(NRF_POWER);
+	status.usb_valid = true;
+	status.usb_present = kr_board_usb_present();
+	if (!status.usb_present) { status.charging = 0; }
 #if DT_NODE_EXISTS(DT_ALIAS(keyring_fuel_gauge))
 	status.gauge_ready = true;
 	if (device_is_ready(gauge)) {
@@ -370,8 +412,10 @@ struct kr_status kr_board_status(void)
 	}
 #endif
 	if (!battery_ready) { return status; }
-	int charge = gpio_pin_get(gpio, 17);
-	if (charge >= 0) { status.charging = !charge; }
+	if (status.usb_present) {
+		int charge = gpio_pin_get(gpio, 17);
+		if (charge >= 0) { status.charging = !charge; }
+	}
 	int16_t raw[8];
 	struct adc_sequence sequence = {.channels = BIT(0), .buffer = &raw,
 		.buffer_size = sizeof(raw), .resolution = 12};

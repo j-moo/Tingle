@@ -28,6 +28,8 @@ static atomic_t has_settings;
 static atomic_t reset_pending, reset_history, reset_recovery;
 static int64_t window_deadline;
 static struct bt_conn *peer;
+static bt_addr_le_t failed_bond_address;
+static uint32_t failed_bond_token;
 static uint32_t generation;
 static bool ready, busy;
 static bool incoming_protected;
@@ -35,8 +37,17 @@ static struct kr_frame incoming;
 static char frame[KR_FRAME_MAX + 1], response[KR_RESPONSE_MAX];
 K_MUTEX_DEFINE(transport_lock);
 K_MUTEX_DEFINE(core_lock);
+static atomic_t quiescing;
 K_MUTEX_DEFINE(peer_plan_lock);
 K_SEM_DEFINE(request_ready, 0, 1);
+
+void kr_nus_quiesce(void)
+{
+	atomic_set(&quiescing, 1);
+	/* Let a synchronous settings/record write finish before shutting down. */
+	k_mutex_lock(&core_lock, K_FOREVER);
+	k_mutex_unlock(&core_lock);
+}
 
 static ssize_t receive_frame(struct bt_conn *conn, const struct bt_gatt_attr *attr,
 	const void *buf, uint16_t len, uint16_t offset, uint8_t flags, bool protected)
@@ -49,7 +60,7 @@ static ssize_t receive_frame(struct bt_conn *conn, const struct bt_gatt_attr *at
 		return BT_GATT_ERR(BT_ATT_ERR_INVALID_ATTRIBUTE_LEN);
 	}
 	k_mutex_lock(&transport_lock, K_FOREVER);
-	if (conn != peer || busy) {
+	if (conn != peer || busy || atomic_get(&quiescing)) {
 		k_mutex_unlock(&transport_lock);
 		return BT_GATT_ERR(BT_ATT_ERR_INSUFFICIENT_RESOURCES);
 	}
@@ -119,6 +130,7 @@ static void connected(struct bt_conn *conn, uint8_t error)
 	if (error) { return; }
 	k_mutex_lock(&transport_lock, K_FOREVER);
 	peer = bt_conn_ref(conn);
+	failed_bond_token = 0;
 	++generation;
 	atomic_inc(&connection_epoch);
 	kr_frame_reset(&incoming); ready = busy = false;
@@ -139,7 +151,93 @@ static void disconnected(struct bt_conn *conn, uint8_t reason)
 	printk("BLE disconnected reason=%u; incomplete frame discarded\n", reason);
 }
 
-BT_CONN_CB_DEFINE(callbacks) = {.connected = connected, .disconnected = disconnected};
+static void security_changed(struct bt_conn *conn, bt_security_t level, enum bt_security_err error)
+{
+	if (!error && level >= BT_SECURITY_L2) {
+		k_mutex_lock(&transport_lock, K_FOREVER);
+		if (peer == conn) { failed_bond_token = 0; }
+		k_mutex_unlock(&transport_lock);
+	}
+	printk("BLE security connection=%u level=%u error=%u\n",
+		(unsigned)atomic_get(&connection_epoch), level, error);
+}
+
+BT_CONN_CB_DEFINE(callbacks) = {
+	.connected = connected, .disconnected = disconnected, .security_changed = security_changed,
+};
+
+struct bond_match {
+	const bt_addr_le_t *address;
+	bool found;
+};
+
+static void match_bond(const struct bt_bond_info *bond, void *context)
+{
+	struct bond_match *match = context;
+	if (bt_addr_le_eq(&bond->addr, match->address)) { match->found = true; }
+}
+
+static void pairing_failed(struct bt_conn *conn, enum bt_security_err error)
+{
+	struct bond_match match = {0};
+	struct bt_conn_info info;
+	uint32_t token = 0;
+	k_mutex_lock(&transport_lock, K_FOREVER);
+	unsigned connection = (unsigned)atomic_get(&connection_epoch);
+	if (conn == peer) {
+		failed_bond_token = 0;
+		if (!bt_conn_get_info(conn, &info) && info.type == BT_CONN_TYPE_LE &&
+			info.id == BT_ID_DEFAULT && info.le.dst && !bt_addr_le_eq(info.le.dst, BT_ADDR_LE_ANY)) {
+			match.address = info.le.dst;
+			bt_foreach_bond(info.id, match_bond, &match);
+			if (match.found && error == BT_SECURITY_ERR_AUTH_REQUIREMENT) {
+				token = sys_rand32_get();
+				if (!token) { token = 1; }
+				bt_addr_le_copy(&failed_bond_address, match.address);
+				failed_bond_token = token;
+			}
+		}
+	}
+	k_mutex_unlock(&transport_lock);
+	printk("BLE pairing failed connection=%u error=%u knownBond=%u\n", connection, error, match.found);
+	if (token) { printk("BLE bond repair available: BLE FORGET %08x\n", token); }
+}
+
+static void pairing_complete(struct bt_conn *conn, bool bonded)
+{
+	ARG_UNUSED(conn);
+	printk("BLE pairing complete connection=%u bonded=%u\n",
+		(unsigned)atomic_get(&connection_epoch), bonded);
+}
+
+static struct bt_conn_auth_info_cb pairing_callbacks = {
+	.pairing_complete = pairing_complete, .pairing_failed = pairing_failed,
+};
+
+/* Called from the USB console with phone advertising stopped. A new
+ * connection or successful encryption invalidates an earlier repair token. */
+int kr_nus_forget_failed_bond(uint32_t token)
+{
+	k_mutex_lock(&transport_lock, K_FOREVER);
+	if (peer || atomic_get(&reset_pending) || atomic_get(&quiescing)) {
+		k_mutex_unlock(&transport_lock);
+		return -EBUSY;
+	}
+	if (!token || token != failed_bond_token) {
+		k_mutex_unlock(&transport_lock);
+		return -ENOENT;
+	}
+	bt_addr_le_t address = failed_bond_address;
+	k_mutex_unlock(&transport_lock);
+
+	int result = kr_board_forget_phone_bond(&address);
+	if (!result) {
+		k_mutex_lock(&transport_lock, K_FOREVER);
+		if (failed_bond_token == token) { failed_bond_token = 0; }
+		k_mutex_unlock(&transport_lock);
+	}
+	return result;
+}
 
 static int respond(struct bt_conn *conn, const char *text)
 {
@@ -165,6 +263,7 @@ int kr_nus_init(struct k_sem *wake)
 	atomic_set(&reset_pending, core.reset.phase == KR_RESETTING);
 	atomic_set(&reset_history, core.reset.ownership_epoch != 0);
 	atomic_set(&reset_recovery, core.reset.ownership_epoch && !core.current.magic);
+	if (!result) { result = bt_conn_auth_info_cb_register(&pairing_callbacks); }
 	return result;
 }
 
@@ -276,6 +375,12 @@ static void process_requests(void *a, void *b, void *c)
 		}
 
 		k_mutex_lock(&core_lock, K_FOREVER);
+		if (atomic_get(&quiescing)) {
+			k_mutex_unlock(&core_lock);
+			bt_conn_unref(conn);
+			crypto_wipe(frame, sizeof(frame));
+			continue;
+		}
 		core.profile_transport_protected = protected;
 		core.connection_epoch = request_epoch;
 		kr_request(&core, frame, kr_board_status(), !core.current.magic &&
@@ -378,3 +483,7 @@ void kr_nus_clear_application(void) { kr_product_forget_owner(&application); }
 int kr_nus_write_record(unsigned slot, const struct kr_record *record) { return kr_product_record(&application, slot, record); }
 void kr_nus_application_tick(void) { kr_product_tick(&application); }
 uint64_t kr_nus_application_time(void) { return kr_product_now(&application); }
+unsigned kr_nus_feedback_presence_seconds(void)
+{
+	return kr_product_ready(&application) ? application.policy.presence_seconds : 0;
+}

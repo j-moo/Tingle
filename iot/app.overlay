@@ -1,3 +1,18 @@
+#include <zephyr/dt-bindings/gpio/gpio.h>
+
+/ {
+	zephyr,user {
+		/* Shared GPIOs: common-cathode RGB, motor input and SW2 to GND. */
+		keyring-red-gpios = <&xiao_d 0 GPIO_ACTIVE_HIGH>;
+		keyring-green-gpios = <&xiao_d 1 GPIO_ACTIVE_HIGH>;
+		keyring-motor-gpios = <&xiao_d 2 GPIO_ACTIVE_HIGH>;
+		keyring-blue-gpios = <&xiao_d 3 GPIO_ACTIVE_HIGH>;
+		keyring-stop-gpios = <&xiao_d 4 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>;
+		/* Rev G only: SW1 shorts D5 to ground in OFF. R13 supplies the pull-up. */
+		keyring-off-gpios = <&xiao_d 5 GPIO_ACTIVE_LOW>;
+	};
+};
+
 /* Keep the stock UF2 bootloader/code/internal settings partitions unchanged. */
 &p25q16h {
 	/* Bring up USB diagnostics before probing the external flash chip. */

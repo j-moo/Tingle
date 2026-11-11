@@ -1,8 +1,48 @@
 # Tingle 키링 펌웨어
 
-기준일: 2026-11-06. `iot/` 전체가 Seeed XIAO nRF52840용 **단일 Zephyr 펌웨어 프로젝트**다. 등록·설정 저장·통신 코드를 함께 빌드하며, 보드에 복사하는 파일은 **[build/zephyr.uf2](build/zephyr.uf2)** 하나다.
+2026-11-11 기준 `iot/`는 Seeed XIAO nRF52840용 단일 Zephyr 펌웨어 프로젝트다. 주문한 SIS D3.1 Y3를 기본으로 등록·설정 저장·통신·물리 안내를 함께 빌드한다. 보드에 복사할 파일은 [build/zephyr.uf2](build/zephyr.uf2)다.
 
 앱·서버 연동 담당자에게 공유할 내용은 기존 인계의 **[FE 전달문](app-flow-v2-handoff.md#fe-전달문)**·**[BE 전달문](app-flow-v2-handoff.md#be-전달문)**과 [합동 시험/완료 기준](app-flow-v2-handoff.md#합동-시험과-완료-기준)을 따른다. 현재 구현 기반·추가 연동 작업·제안 API·실물 미검증 범위를 구분했다.
+
+## SIS D3.1 Y3 PCB
+
+`0.9.2-d31`은 제조 파일 `01_SIS_D31_GERBER_CAM_Y3.zip`과 D3.1의 `06_PIN_NET_MAP.csv`를 기준으로 한다. 기본 빌드와 `-Carrier d31`은 같은 설정을 사용한다. Fold6 시험은 [검색·페어링 인계](app-flow-v2-handoff.md#fold6-ble-recovery)를 따른다.
+
+| 기능 | XIAO 핀 | 제조 기판 연결 |
+| --- | --- | --- |
+| RGB 빨강 | D0 / P0.02 | R1 → J4.3, HIGH에서 점등 |
+| RGB 초록 | D1 / P0.03 | R2 → J4.2, HIGH에서 점등 |
+| RGB 파랑 | D3 / P0.29 | R3 → J4.1, HIGH에서 점등. J4.4는 GND |
+| 진동 | D2 / P0.28 | R4 → J5.1 IN. J5.2는 BAT_SW에서 공급되는 VMOTOR, J5.3은 GND |
+| 물리 안내 중지 | D4 / P0.04 | SW2를 누르면 LOW |
+| 전원 | SW1 / BAT_SW | SW1이 배터리 전원 경로를 끊는다. D5 소프트 전원 입력은 사용하지 않는다. |
+
+진동은 배터리 조건이 맞을 때 동작하며, USB VBUS 연결 중에는 차단한다. USB로 보드에 전원을 공급하면 등록·동기화·LED 등의 기능을 사용할 수 있다. SW1으로 재시작하면 저장된 기기 키·설정·만남 기록을 복원하고, 앱 설정·시간 동기화 후 새 매칭을 시작한다.
+
+## Rev G PCB와 물리 안내
+
+`-Carrier revg`는 **Tingle Rev G 31x50 Connector** 프로필의 `0.9.2-revg`를 빌드한다. Rev F도 같은 GPIO와 모터 전원을 사용한다. Rev G는 배터리 입력 J1과 XIAO BAT 연결 J2를 구분하고 XIAO 내장 USB-C 충전을 사용한다. [Seeed XIAO 회로도](https://files.seeedstudio.com/wiki/XIAO-BLE/Seeed_Studio_XIAO_nRF52840_PDF.pdf)
+
+| 기능 | XIAO 핀 | PCB 연결과 동작 |
+| --- | --- | --- |
+| RGB 빨강 | D0 / P0.02 | R8 470Ω → J6.3, HIGH에서 점등 |
+| RGB 초록 | D1 / P0.03 | R9 470Ω → J6.2, HIGH에서 점등 |
+| RGB 파랑 | D3 / P0.29 | R10 470Ω → J6.1, HIGH에서 점등. J6.4는 GND |
+| 진동 | D2 / P0.28 | R19 100Ω → J5.1 IN. J5.3은 XIAO 3V3, J5.4는 GND |
+| 물리 안내 중지 | D4 / P0.04 | SW2를 누르면 LOW |
+| 소프트 전원 | D5 / P0.05 | SW1이 GND에 연결되면 OFF. R13 풀업으로 HIGH면 ON |
+
+Rev G의 RGB 출력은 HIGH에서 고구동(S0H1)을 사용한다. 각 채널의 470Ω 직렬 저항은 PCB에 있다. [nRF52840 GPIO 전기 특성](https://docs.nordicsemi.com/r/bundle/ps_nrf52840/page/gpio.html)
+
+만남을 비휘발성 저장한 뒤에 물리 안내를 시작한다. LED는 각자의 설정을 따르고 동일 만남 ID에서 같은 색을 고른다. 계속 근접한 경우 점등 30초 후 종료한다. 진동은 양쪽 설정이 모두 ON일 때 120ms 구동, 150ms 간격, 120ms 구동을 한 묶음으로 실행한다. 진동 묶음과 겹친 추가 만남은 정상 저장하며 현재 물리 출력을 연장하거나 재시작하지 않는다.
+
+SW2와 앱의 `STOP_FEEDBACK`은 현재 RGB와 남은 진동을 취소한다. 상대가 서명된 근접 관측 시간 안에 다시 감지되지 않거나 현재 설정·소유 세대·준비 상태가 유효하지 않으면 출력을 종료한다. 매칭 OFF·초기화에도 출력을 끈다. 재전송과 재부팅 뒤에도 동일 확정 기록의 안내는 다시 실행하지 않는다. 보드 자체 LED는 부팅·Lab 진단에 사용한다.
+
+Rev G의 Grove 모터는 XIAO 3V3에서 전원을 받는다. USB가 연결돼도 ON 상태에서 알림을 구동할 수 있다. 배터리 단독에서는 기존 3.30–4.30V 조건을 적용한다. 구동 중 USB 상태가 바뀌면 남은 진동을 취소한다. 내장 충전 전류는 P0.13을 풀 없는 하이임피던스로 설정해 정전류 구간 공칭 50mA를 선택한다. 배터리 잔량은 기존 전압 기반 추정 및 미확인 표시를 유지한다. [Seeed 충전 설정](https://wiki.seeedstudio.com/XIAO_BLE/#battery-charging-current)
+
+SW1을 OFF로 옮기면 진행 중인 저장을 마친 뒤 BLE와 물리 출력을 끄고 nRF52840 System OFF에 진입한다. 배터리와 충전 회로는 연결된 상태다. ON 복귀는 콜드 부팅 경로로 진행하며 기존 키·설정·만남 기록을 복원한다. 새 매칭은 기존 부팅 정책대로 설정·시간을 다시 동기화한 뒤 시작한다.
+
+실물 시험에서는 J1·J2 및 J5·J6 하네스 극성을 확인하고, 배터리와 USB 각각에서 동시 LED·모터 부하, 버튼 중지, 전원 전환, OFF 소비 전류와 충전, ON 복귀 및 실제 앱 재동기화를 검증한다.
 
 ## 폴더 구조
 
@@ -18,6 +58,8 @@ iot/
 │
 ├─ src/                              # 펌웨어 구현
 │  ├─ main.c                         # 부팅·무선 동작·등록 경로와 시험 경로 연결
+│  ├─ carrier.c                      # PCB GPIO, 알림 및 절전 복귀
+│  ├─ feedback.c                     # 양쪽 옵션과 안내 타이밍
 │  ├─ nus.c                          # BLE NUS 서비스·JSON 요청 수신·응답 전송
 │  ├─ request.c                      # 기기 정보·등록·설정·상태 요청 처리
 │  ├─ proof.c                        # 등록·STORED 증명과 공통 검증 처리
@@ -110,8 +152,8 @@ Get-Content ./iot/build/firmware-manifest.json
 
 ## 현재 개발 빌드 범위
 
-- 기본 버전은 `0.7.3-applied-proof`다. 팀 서버 검증키는 `config/dev-settings-public-key.hex`, 키 ID는 `dev-ed25519-799e2999c648fda3`다. 서버 비밀키는 보드에 넣지 않는다.
-- TSV3 적용 확인은 [GET_SETTINGS_APPLIED_PROOF](app-flow-v2-handoff.md#tsv3-설정-적용-증명--073-applied-proof)로 조회한다.
+- 기본 버전은 SIS D3.1 Y3용 `0.9.2-d31`이다. 팀 서버 검증키는 `config/dev-settings-public-key.hex`, 키 ID는 `dev-ed25519-799e2999c648fda3`다.
+- TSV3 적용 확인은 [`GET_SETTINGS_APPLIED_PROOF`](app-flow-v2-handoff.md#tsv3-설정-적용-증명--073-applied-proof)로 조회한다.
 - 실제 앱의 NUS JSON 기기 정보 조회·등록 challenge 서명·설정 검증/영구 저장·서명된 `STORED` 응답 경로를 포함한다.
 - 기존1바이트 ON/OFF 외에 최신 develop `411fce89`는 FE264·BE257의196B 성향 저장 공급/서명·보호 중계를 포함한다. 펌웨어의 전체 TSV3 성향/개인 조건 설정도 지원하며 해당 grant/기록 연동은 아래 인계대로 추가 연결해야 한다. 정상 저장 후 `LAB ENABLE` 없이 무선을 제어하고 저장 완료와 전체 매칭 준비를 구분한다.
 - `0.3.1`에는 `tingle-profile-storage-v1` 성향·최소 프로필 저장 경로를 추가했다. AI r2 파생값·네 값 상태, 나이/성별/희망 조건/사진 여부/흡연/음주/종교/알림 옵션을 196B로 받아 기존 서명·영구 저장·STORED 경로를 사용한다. 추가 암호화 특성 `6e400004...`에서 먼저 Read probe(`01`)를 성공시킨 후 같은 연결로 전송한다. 이름·생년월일·사진 원문·원본 설문을 넣지 않는다. 후속 FE264·BE257이 이 저장 형식을 지원하며, 실제 앱/서버 배포·보드 종단 및 전체 TSV3 매칭 연동은 별도로 확인한다.

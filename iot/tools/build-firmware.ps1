@@ -6,7 +6,8 @@ param(
     [string]$ZephyrSdk = '',
     [string]$ArmToolchain = '',
     [string]$ExtraConf = '',
-    [string]$DevSettingsPublicKeyFile = ''
+    [string]$DevSettingsPublicKeyFile = '',
+    [ValidateSet('d31','revg')][string]$Carrier = 'd31'
 )
 $ErrorActionPreference = 'Stop'
 $projectRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
@@ -20,6 +21,7 @@ if ($ZephyrSdk -and $ArmToolchain) {
     throw 'Choose either ZephyrSdk or ArmToolchain.'
 }
 $BuildDirectory = Join-Path $projectRoot 'build/firmware'
+$d31Carrier = if ($Carrier -eq 'd31') { 'ON' } else { 'OFF' }
 $toolchainArgs = @()
 if ($ZephyrSdk) {
     $env:ZEPHYR_TOOLCHAIN_VARIANT = 'zephyr'
@@ -49,7 +51,8 @@ $devPublicKey = (Get-Content -Raw -LiteralPath $DevSettingsPublicKeyFile).Trim()
 if ($devPublicKey -cnotmatch '^[0-9a-f]{64}$') { throw 'Expected a raw Ed25519 public key in lowercase hex.' }
 & $CMake -S $projectRoot -B $BuildDirectory -G Ninja `
     '-DBOARD=xiao_ble/nrf52840' "-DPython3_EXECUTABLE=$Python" "-DCMAKE_MAKE_PROGRAM=$Ninja" `
-    "-DEXTRA_CONF_FILE=$ExtraConf" "-DKR_DEV_SETTINGS_PUBLIC_KEY=$devPublicKey" '-DKR_DIAG_INTERACTIVE_BOOT=OFF' @toolchainArgs
+    "-DEXTRA_CONF_FILE=$ExtraConf" "-DKR_DEV_SETTINGS_PUBLIC_KEY=$devPublicKey" '-DKR_DIAG_INTERACTIVE_BOOT=OFF' `
+    "-DKR_CARRIER_D31=$d31Carrier" @toolchainArgs
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 & $CMake --build $BuildDirectory --parallel 4
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
@@ -66,6 +69,7 @@ if ($bytes.Length -eq 0 -or $bytes.Length % 512 -ne 0 -or
 }
 $sourceFiles = @('CMakeLists.txt', 'prj.conf', 'app.overlay', 'west.yml') |
     ForEach-Object { Get-Item -LiteralPath (Join-Path $projectRoot $_) }
+if ($Carrier -eq 'd31') { $sourceFiles += Get-Item -LiteralPath (Join-Path $projectRoot 'boards/carrier-d31.overlay') }
 foreach ($directory in @('src', 'include', 'vendor', 'config')) {
     $sourceFiles += Get-ChildItem -LiteralPath (Join-Path $projectRoot $directory) -File -Recurse
 }
@@ -78,7 +82,8 @@ $commit = & git -C $projectRoot rev-parse HEAD
 $dirty = [bool](& git -C $projectRoot status --porcelain -- .)
 $manifest = [ordered]@{
     artifact = 'iot/build/zephyr.uf2'
-    firmwareVersion = '0.7.3-applied-proof'
+    firmwareVersion = "0.9.2-$Carrier"
+    carrierRevision = if ($Carrier -eq 'd31') { 'SIS D3.1 Y3' } else { 'Tingle Rev G 31x50 Connector' }
     sourceCommit = $commit
     sourceDirty = $dirty
     builtAtUtc = [DateTime]::UtcNow.ToString('o')
