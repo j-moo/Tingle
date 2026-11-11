@@ -16,7 +16,11 @@ data class BleProbeState(val candidates: List<BleCandidate> = emptyList(), val s
     val status: BleDeviceStatus? = null, val error: BleFailure? = null, val commandError: String? = null,
     /** 사용자가 고른(연결한) 후보. 연결 화면이 목록에서 이 카드를 선택 표시한다 */
     val selectedId: String? = null,
-    val connectionGeneration: Long? = null)
+    val connectionGeneration: Long? = null,
+    val ownedStatus: OwnedKeyringLiveStatus? = null)
+
+data class OwnedKeyringLiveStatus(val owner: Long, val deviceId: Long, val connectionGeneration: Long,
+    val loading: Boolean = true, val metrics: BleDeviceStatus? = null, val failed: Boolean = false)
 
 /**
  * 첫 연동 진단: 발견/Notify 구독/기기 정보/상태를 분리한다. 서버 계정 귀속은 변경하지 않는다.
@@ -35,6 +39,7 @@ class BleProbeViewModel(
     private var connection: BleConnection? = null
     private var foreground = false
     private var reconnect: Job? = null
+    private var ownedStatusRequest: Job? = null
 
     /** 전경 호스트만 자동 복구를 허용한다. 중지·권한 상실·명시적 연결 해제는 재탐색도 함께 취소한다. */
     fun setForeground(value: Boolean) { foreground = value; if (!value) leave() }
@@ -102,7 +107,9 @@ class BleProbeViewModel(
             channel.state.first { it == BleLinkState.Closed }
             if (stamp != generation || channel !== connection) return@launch
             connection = null
-            mutable.update { it.copy(connected = false, busy = false, info = null, status = null, error = BleFailure.Disconnected) }
+            ownedStatusRequest?.cancel()
+            mutable.update { it.copy(connected = false, busy = false, info = null, status = null,
+                ownedStatus = null, error = BleFailure.Disconnected) }
             if (!foreground) return@launch
             val owner = (sessions.state.value as? Session.SignedIn)?.userId ?: return@launch
             val previous = work
@@ -211,6 +218,54 @@ class BleProbeViewModel(
                     showFailure(failure)
                 }
             } finally { if (stamp == generation) mutable.value = mutable.value.copy(busy = false) }
+        }
+    }
+
+    /** 등록 목록과 현재 연결이 일치하는 경우에만 상태를 읽고, 늦게 도착한 이전 연결 결과는 버린다. */
+    @OptIn(ExperimentalUuidApi::class)
+    internal fun readOwnedStatus(owner: Long, device: OwnedKeyring, syncStore: KeyringSyncStore,
+        authorizer: KeyringOwnerAuthorizer) {
+        val link = state.value
+        val info = link.info ?: return
+        val stamp = link.connectionGeneration ?: return
+        fun current(): Boolean = state.value.connected && state.value.connectionGeneration == stamp &&
+            state.value.info?.serial == device.deviceSerial && (sessions.state.value as? Session.SignedIn)?.userId == owner
+        if (!current() || ownedStatusRequest?.isActive == true) return
+        val loading = OwnedKeyringLiveStatus(owner, device.deviceId, stamp)
+        if (!info.supportsStatus) {
+            mutable.update { it.copy(ownedStatus = loading.copy(loading = false)) }
+            return
+        }
+        mutable.update { it.copy(ownedStatus = loading) }
+        ownedStatusRequest = viewModelScope.launch {
+            try {
+                val identity = syncStore.read(owner).singleOrNull { it.deviceId == device.deviceId &&
+                    it.serial == info.serial && it.complete }?.identity
+                if (!current()) return@launch
+                val id = Uuid.random().toString()
+                val request = BleProbeProtocol.request("GET_STATUS", id)
+                val authorized = info.supportsEncounterTransfer && info.ownerState == "BOUND" &&
+                    identity?.ownershipEpoch != null && identity.ownershipEpoch == info.ownershipEpoch
+                // 신형 기기의 미전송 개수는 소유자 READ로 조회한다. 공개 응답은 배터리만 쓸 수 있다.
+                val response = if (authorized) {
+                    withOwnerSession(info.serial, identity, KeyringOwnerPermission.Read, authorizer) { it(request) }
+                } else {
+                    awaitAvailable(info.serial)
+                    if (!current()) return@launch
+                    val channel = connection ?: return@launch
+                    mutable.update { it.copy(busy = true) }
+                    try { channel.exchange(request, maxResponseBytes = BleProbeProtocol.STATUS_RESPONSE_MAX_BYTES) }
+                    finally { if (current()) mutable.update { it.copy(busy = false) } }
+                }
+                val status = BleProbeProtocol.status(BleProbeProtocol.response(response, id, "STATUS"))
+                val metrics = if (info.supportsEncounterTransfer && !authorized) {
+                    status.copy(pendingRecordCount = null, ownerFlow = status.ownerFlow.copy(records = null))
+                } else status
+                if (current()) mutable.update { it.copy(ownedStatus = loading.copy(loading = false, metrics = metrics)) }
+            } catch (cancelled: CancellationException) { throw cancelled }
+            catch (_: Exception) {
+                if (current()) mutable.update { it.copy(ownedStatus = loading.copy(loading = false, failed = true)) }
+            }
         }
     }
 
@@ -467,7 +522,7 @@ class BleProbeViewModel(
     /** 실제 앱 중지/권한 상실/계정 변경/사용자 해제 시 뒤늦은 응답과 재연결을 함께 차단한다. */
     fun leave() {
         generation++
-        work?.cancel(); watcher?.cancel(); reconnect?.cancel()
+        work?.cancel(); watcher?.cancel(); reconnect?.cancel(); ownedStatusRequest?.cancel()
         connection?.close(); connection = null
         mutable.value = BleProbeState()
     }

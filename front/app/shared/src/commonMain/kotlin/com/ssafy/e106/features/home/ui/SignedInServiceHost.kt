@@ -150,7 +150,7 @@ internal enum class ServicePage { Home, Proposals, Menu, Chats, Safety, Report, 
                 // 소유 정보 확인만 수행하므로 메뉴를 열었다고 등록/동기화를 요청하지 않는다.
                 ServicePage.Keyrings -> ConnectedOwnedKeyringsRoute(session, { go(if (keyringFromMenu) ServicePage.Menu else ServicePage.Home) },
                     onReset = { id -> resetDeviceId = id; connectForReset = false; go(ServicePage.KeyringReset) },
-                    onConnectForRecords = { connectForReset = false; go(ServicePage.BleProbe) })
+                    onConnectForRecords = { connectForReset = false; go(ServicePage.BleProbe) }, ble = koinViewModel())
                 // 키링 초기화는 운영 · 개발 앱 같다. 초기화하려면 키링 연결이 필요해 연결 화면으로 보낸다
                 ServicePage.KeyringReset -> resetDeviceId?.let { id ->
                     ConnectedKeyringResetRoute(id, { go(ServicePage.Keyrings) }, { connectForReset = true; go(ServicePage.BleProbe) })

@@ -16,6 +16,8 @@ import com.ssafy.e106.features.keyring.data.*
 import com.ssafy.e106.features.keyring.ui.*
 import com.ssafy.e106.features.onboarding.TestSession
 import java.util.concurrent.atomic.AtomicInteger
+import kotlinx.coroutines.flow.MutableStateFlow
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
@@ -25,6 +27,7 @@ class OwnedKeyringsTestActivity : ComponentActivity() {
     companion object {
         val reads = AtomicInteger()
         val recordEntries = AtomicInteger()
+        val metricFixture = MutableStateFlow<Pair<Long?, OwnedKeyringLiveStatus?>>(null to null)
     }
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -39,7 +42,12 @@ class OwnedKeyringsTestActivity : ComponentActivity() {
                 }, TestSession(OnboardingStatus.READY)) as T
         })[OwnedKeyringsViewModel::class.java]
         setContent { AppTheme {
-            ConnectedOwnedKeyringsRoute(Session.SignedIn(1, OnboardingStatus.READY, false), {}, model, onReset = {},
+            val session = Session.SignedIn(1, OnboardingStatus.READY, false)
+            if (intent.getBooleanExtra("metrics", false)) {
+                val (id, snapshot) = metricFixture.collectAsStateWithLifecycle().value
+                OwnedKeyringsScreen(OwnedKeyringsState(session, listOf(OwnedKeyring(7, "READY", "1.0"))),
+                    {}, {}, {}, connectedDeviceId = id, liveStatus = snapshot, onRefreshStatus = {})
+            } else ConnectedOwnedKeyringsRoute(session, {}, model, onReset = {},
                 recoveryLinks = {}, onConnectForRecords = { recordEntries.incrementAndGet() })
         } }
     }
@@ -72,6 +80,26 @@ class OwnedKeyringsDeviceTest {
             assertEquals(0, OwnedKeyringsTestActivity.recordEntries.get())
             compose.onNodeWithText("만남 기록 전송을 위해 키링 연결").performClick()
             assertEquals(1, OwnedKeyringsTestActivity.recordEntries.get())
+        }
+    }
+
+    @Test fun connectedCardShowsZeroUnknownFailureAndDropsValuesOnDisconnect() {
+        val status = OwnedKeyringLiveStatus(1, 7, 1, loading = false,
+            metrics = BleDeviceStatus(0, null, null, 0))
+        OwnedKeyringsTestActivity.metricFixture.value = 7L to status
+        val intent = Intent(InstrumentationRegistry.getInstrumentation().context, OwnedKeyringsTestActivity::class.java)
+            .putExtra("metrics", true)
+        ActivityScenario.launch<OwnedKeyringsTestActivity>(intent).use {
+            compose.onNodeWithText("배터리 0%").assertExists()
+            compose.onNodeWithText("미전송 기록 0건").assertExists()
+            OwnedKeyringsTestActivity.metricFixture.value = 7L to status.copy(metrics = null)
+            compose.onNodeWithText("배터리 미확인").assertExists()
+            compose.onNodeWithText("미전송 기록 미확인").assertExists()
+            OwnedKeyringsTestActivity.metricFixture.value = 7L to status.copy(metrics = null, failed = true)
+            compose.onNodeWithText("키링 상태를 불러오지 못했어요.").assertExists()
+            OwnedKeyringsTestActivity.metricFixture.value = null to status
+            compose.onNodeWithText("연결하면 상태를 확인할 수 있어요.").assertExists()
+            compose.onNodeWithText("배터리 0%").assertDoesNotExist()
         }
     }
 }

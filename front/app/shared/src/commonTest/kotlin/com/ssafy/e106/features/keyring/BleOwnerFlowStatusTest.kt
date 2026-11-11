@@ -26,6 +26,15 @@ class BleOwnerFlowStatusTest {
         assertEquals(0L, result.pendingRecordCount); assertEquals(0L, result.ownerFlow.records?.reviewCount)
         assertEquals(0L, result.ownerFlow.records?.usedBytes); assertEquals(false, result.ownerFlow.applied)
         assertEquals(true, result.ownerFlow.timeReady); assertEquals(false, result.ownerFlow.matchingReady)
+        assertEquals(0L, result.unsentCount)
+    }
+    @Test fun totalIncludesReviewButRequiresBothAuthorizedCounts() {
+        assertEquals(5L, status("""{"ownerAuthorized":true,"storageState":"FULL","pendingRecordCount":2,"reviewRecordCount":3,"candidateCount":9}""").unsentCount)
+        assertEquals(4L, status("""{"pendingRecordCount":4}""").unsentCount)
+        assertNull(status("""{"ownerAuthorized":true,"storageState":"AVAILABLE","pendingRecordCount":2}""").unsentCount)
+        assertNull(status("""{"ownerAuthorized":false,"storageState":"AVAILABLE","pendingRecordCount":2,"reviewRecordCount":3}""").unsentCount)
+        assertNull(status("""{"ownerAuthorized":true,"storageState":"ERROR","pendingRecordCount":0,"reviewRecordCount":0}""").unsentCount)
+        assertNull(status("""{"ownerAuthorized":true,"storageState":"AVAILABLE","pendingRecordCount":9223372036854775807,"reviewRecordCount":1}""").unsentCount)
     }
     @Test fun inconsistentStorageAndInvalidTypesDoNotBecomeHealthyValues() {
         val flow = status("""{"ownerAuthorized":true,"storageTotalBytes":10,"storageUsedBytes":11,"storageState":"NEW_STATE","candidateCount":"3","reviewRecordCount":-1,"unresolvedAccountLockCount":null,"applied":"true","recordCursorEpoch":"not-an-epoch"}""").ownerFlow
