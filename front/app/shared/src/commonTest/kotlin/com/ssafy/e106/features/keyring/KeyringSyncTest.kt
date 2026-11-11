@@ -685,6 +685,74 @@ class KeyringSyncTest {
         assertEquals(OnboardingStatus.READY, (session.state.value as Session.SignedIn).status)
     }
 
+    /** 적용 POST는 성공했어도 그 사이 새 버전이 생기면 조회만 반복하지 않고 최신 설정으로 넘어간다. */
+    @Test fun appliedRecoveryRenewsWhenOnboardingNeedsNewerSettings() = runTest(dispatcher) {
+        for (rejectStale in listOf(false, true)) {
+            val old = tsv3Run().copy(settingsVersion = 8, currentSettingsVersion = 8)
+            val nextId = "44444444-4444-4444-8444-444444444444"
+            val next = old.copy(syncRunId = nextId, settingsSnapshotId = nextId,
+                settingsVersion = 9, currentSettingsVersion = 9, payloadHash = "b".repeat(64))
+            val server = SyncServer().apply {
+                run = old
+                createAction = {
+                    run = (if (creates.size == 1) old else next).copy(deviceNonce = bodies.last().deviceNonce)
+                    ApiResult.Ok(run)
+                }
+                getAction = {
+                    if (applications.last().second.settingsVersion == 8L) {
+                        if (rejectStale) ApiResult.Fail(AppError.Server(409, "SYNC_VERSION_STALE", "old"))
+                        else ApiResult.Ok(run.copy(stale = true, currentSettingsVersion = 9))
+                    } else ApiResult.Ok(run)
+                }
+            }
+            val store = KeyringSyncStore(SyncPrefs())
+            store.rememberTarget(1, old.deviceId, "XIAO-test")
+            val session = object : SessionStore {
+                // 이미 가입한 계정도 새 설정 때문에 서버의 nextStep만 SYNC_PENDING일 수 있다.
+                override val state = MutableStateFlow<Session>(Session.SignedIn(1, OnboardingStatus.READY, true))
+                override val events = emptyFlow<SessionEvent>()
+                override suspend fun refreshOnboarding(): ApiResult<Unit> {
+                    val ready = server.applications.last().second.settingsVersion == 9L
+                    state.value = Session.SignedIn(1,
+                        if (ready) OnboardingStatus.READY else OnboardingStatus.SYNC_PENDING, true)
+                    return ApiResult.Ok(Unit)
+                }
+            }
+            val m = model(server, store, session)
+            m.attachRequest("XIAO-test", { SyncChallengeBody("A".repeat(43), KeyringSyncProtocol.FULL_SETTINGS_FORMAT) },
+                getApplied = ::appliedProof) { stored(it) }
+            runCurrent()
+            assertEquals(listOf(8L, 9L), server.applications.map { it.second.settingsVersion })
+            assertEquals(2, server.creates.size)
+            assertEquals(2, server.acks.size)
+            assertEquals(1, server.getCount)
+            assertEquals(9L, store.read(1).single().identity?.settingsVersion)
+            assertTrue(store.read(1).single().appliedOnboardingChecked)
+            assertEquals(SyncPhase.Confirmed, m.state.value.items.single().phase)
+            models.clear()
+        }
+    }
+
+    /** 설정이 최신이면 SYNC_PENDING만으로 새 실행을 만들지 않고 사용자의 상태 재조회를 기다린다. */
+    @Test fun pendingOnboardingKeepsCurrentAppliedRunWithoutRepostingProof() = runTest(dispatcher) {
+        val server = SyncServer().apply { run = tsv3Run() }
+        val store = KeyringSyncStore(SyncPrefs())
+        store.rememberTarget(1, syncRun.deviceId, "XIAO-test")
+        val session = TestSession(OnboardingStatus.SYNC_PENDING)
+        val m = model(server, store, session)
+        m.attachRequest("XIAO-test", { SyncChallengeBody("A".repeat(43), KeyringSyncProtocol.FULL_SETTINGS_FORMAT) },
+            getApplied = ::appliedProof) { stored(it) }
+        runCurrent()
+        assertEquals(SyncPhase.ApplyConfirmed, m.state.value.items.single().phase)
+        m.retry(syncRun.deviceId); runCurrent()
+        assertEquals(1, server.creates.size)
+        assertEquals(1, server.acks.size)
+        assertEquals(1, server.applications.size)
+        assertEquals(2, server.getCount)
+        assertTrue(store.read(1).single().appliedConfirmed)
+        assertFalse(store.read(1).single().appliedOnboardingChecked)
+    }
+
     /** READY 계정에서 적용 확인 뒤 상태 조회가 끊기면, 재시작 후 조회만 다시 한다. */
     @Test fun readyAccountRetriesOnlyOnboardingAfterAppliedSuccess() = runTest(dispatcher) {
         val server = SyncServer().apply { run = tsv3Run() }
