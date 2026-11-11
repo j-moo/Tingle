@@ -9,6 +9,7 @@ import java.util.ArrayList;
 import java.util.Base64;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -155,10 +156,15 @@ public class ChatService {
 		}
 		List<ChatRoom> page = visible.stream().limit(limit).toList();
 		String next = visible.size() > limit ? encode("r|" + userId + "|" + page.getLast().getPublicId()) : null;
-		Set<Long> newMessages = page.isEmpty() ? Set.of() : new HashSet<>(
-			messages.roomsWithUnacknowledgedPartnerMessage(page.stream().map(ChatRoom::getId).toList(), userId));
-		return new ChatPage(page.stream().map(r -> roomView(r, userId, true, newMessages.contains(r.getId())))
-			.toList(), next, clock.instant());
+		Map<Long, ChatMessageRepository.ListSummary> summaries = page.isEmpty() ? Map.of()
+			: messages.summarizeList(page.stream().map(ChatRoom::getId).toList(), userId).stream()
+				.collect(Collectors.toMap(ChatMessageRepository.ListSummary::getRoomId, summary -> summary));
+		return new ChatPage(page.stream().map(room -> {
+			var summary = summaries.get(room.getId());
+			String nickname = summary == null ? null : summary.getPartnerNickname();
+			return roomView(room, userId, true, summary != null && summary.getHasNewMessage(),
+				nickname == null || nickname.isBlank() ? null : nickname);
+		}).toList(), next, clock.instant());
 	}
 
 	@Transactional(readOnly = true)
@@ -394,10 +400,11 @@ public class ChatService {
 	}
 
 	private ChatRoomView roomView(ChatRoom room, long userId, boolean allowed) {
-		return roomView(room, userId, allowed, null);
+		return roomView(room, userId, allowed, null, null);
 	}
 
-	private ChatRoomView roomView(ChatRoom room, long userId, boolean allowed, Boolean hasNewMessage) {
+	private ChatRoomView roomView(ChatRoom room, long userId, boolean allowed, Boolean hasNewMessage,
+		String partnerNickname) {
 		Instant now = clock.instant();
 		boolean active = room.active(now);
 		Instant closed = room.getClosedAt() != null ? room.getClosedAt() : active ? null : room.getExpiresAt();
@@ -409,7 +416,8 @@ public class ChatService {
 		return new ChatRoomView(room.getPublicId(), active ? "ACTIVE" : "CLOSED", room.getCreatedAt(),
 			room.getExpiresAt(), closed, deletion, now, active && allowed, active && allowed,
 			active && allowed && (hasNewMessage != null ? hasNewMessage
-				: messages.hasUnacknowledgedPartnerMessage(room.getId(), userId)));
+				: messages.hasUnacknowledgedPartnerMessage(room.getId(), userId)),
+			active && allowed ? partnerNickname : null);
 	}
 
 	private String encode(String value) {

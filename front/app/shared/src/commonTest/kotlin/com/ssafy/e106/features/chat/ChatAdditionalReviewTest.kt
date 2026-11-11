@@ -183,6 +183,21 @@ class ChatAdditionalReviewTest {
         assertEquals(ChatPartnerPhoto.Empty, m.state.value.photo); assertEquals(1, api.photos)
     }
 
+    @Test fun listKeepsNicknameOnlyForReadableRooms() = test {
+        val api = object : ChatTestServer() {
+            override suspend fun list(cursor: String?) = ApiResult.Ok(ChatRoomsPage(listOf(
+                roomRecord.copy(partnerNickname = "하늘"),
+                roomRecord.copy(chatRoomId = 21, canRead = false, partnerNickname = "숨김"),
+                roomRecord.copy(chatRoomId = 22),
+            ), null, now))
+        }
+        val m = ChatListViewModel(api, TestSession(OnboardingStatus.READY), ChatLocalStorage(ChatMemoryPrefs()))
+            .also { models.put("list", it); it.refresh() }
+        runCurrent()
+        val names = m.state.value.ui.rooms.associate { it.chatRoomId to it.nickname }
+        assertEquals(mapOf(20L to "하늘", 21L to null, 22L to null), names)
+    }
+
     @Test fun absentClosedRoomIsRecheckedAndCleanedAfterStorageRecreation() = test {
         val prefs = ChatMemoryPrefs(); val firstLocal = ChatLocalStorage(prefs)
         firstLocal.mutex.withLock { firstLocal.trackLocked(1, 20) }
