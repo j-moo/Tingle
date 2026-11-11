@@ -32,4 +32,15 @@
     <string name="home_keyring_none">등록된 키링이 없어요.</string>
     <string name="home_keyring_checking">키링 정보를 확인하고 있어요.</string>
     <string name="home_keyring_unknown">키링 정보를 불러오지 못했어요.</string>
+    <string name="home_keyring_alias_edit">별명 편집</string>
+    <string name="home_keyring_alias_edit_for">%1$s 별명 편집</string>
+    <string name="home_keyring_alias_title">키링 별명</string>
+    <string name="home_keyring_alias_label">별명</string>
+    <string name="home_keyring_alias_help">이 휴대폰의 홈에서만 보여요.</string>
+    <string name="home_keyring_alias_limit">별명은 20자 이내로 입력해 주세요.</string>
+    <string name="home_keyring_alias_failed">별명을 저장하지 못했어요. 다시 시도해 주세요.</string>
+    <string name="home_keyring_alias_remove">기본 이름으로</string>
+    <string name="home_keyring_alias_save">별명 저장</string>
+    <string name="home_keyring_alias_saving">저장 중</string>
+    <string name="home_keyring_alias_cancel">취소</string>
 </resources>

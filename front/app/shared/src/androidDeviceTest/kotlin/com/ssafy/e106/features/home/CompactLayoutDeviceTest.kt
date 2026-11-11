@@ -54,14 +54,19 @@ class CompactLayoutTestActivity : ComponentActivity() {
                     var birth by rememberSaveable { mutableStateOf("") }
                     var draft by rememberSaveable { mutableStateOf("테스트 입력") }
                     var selected by remember { mutableStateOf<SurveyAnswer?>(null) }
+                    var aliases by remember { mutableStateOf(mapOf(7L to "초록 키링")) }
                     AppTheme {
                         when (intent.getStringExtra("screen")) {
                             "home" -> HomeScreen(HomeState(HomeLoadState.Ready), {}, {})
                             "home_keyrings" -> HomeScreen(
                                 HomeState(HomeLoadState.Ready, keyring = HomeKeyringState.Registered, keyrings = listOf(
-                                    OwnedKeyring(7, "REGISTERED", "0.1.0-registration", label = "초록 키링"),
+                                    OwnedKeyring(7, "REGISTERED", "0.1.0-registration"),
                                     OwnedKeyring(8, "REGISTERED", "0.1.0-registration"),
-                                )), {}, {},
+                                ), keyringAliases = aliases), {}, {},
+                                onSaveKeyringAlias = { id, value ->
+                                    aliases = if (value.isEmpty()) aliases - id else aliases + (id to value)
+                                    true
+                                },
                                 // 실제 BLE 대신 한 대의 관측값만 넣어 다른 키링 행으로 복제되지 않는지 확인한다.
                                 keyringStatus = { OwnedKeyringLiveStatus(1, 7, 1, loading = false,
                                     metrics = BleDeviceStatus(72, null, null, null,
@@ -107,6 +112,19 @@ class CompactLayoutDeviceTest {
             compose.onNode(hasText("초록 키링") and hasText("배터리 약 72%")).assertExists()
             compose.onNode(hasText("내 키링 2") and hasText("배터리 미확인")).assertExists()
             compose.onNodeWithText("0.1.0-registration", substring = true).assertDoesNotExist()
+        }
+    }
+
+    @Test fun homeEditsAndRemovesTheSelectedKeyringAlias() {
+        launch("home_keyrings").use {
+            compose.onNodeWithText("내 키링").performScrollTo().performClick()
+            compose.onNodeWithContentDescription("내 키링 2 별명 편집").performScrollTo().performClick()
+            compose.onNode(hasSetTextAction()).performTextInput("파랑 키링")
+            compose.onNodeWithText("별명 저장").performClick()
+            compose.onNodeWithText("초록 키링").assertExists()
+            compose.onNodeWithContentDescription("파랑 키링 별명 편집").performScrollTo().performClick()
+            compose.onNodeWithText("기본 이름으로").performScrollTo().performClick()
+            compose.onNodeWithText("내 키링 2").assertExists()
         }
     }
 

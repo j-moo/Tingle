@@ -47,7 +47,7 @@ class HomeMatchingToggleTest {
             val owned = object : OwnedKeyringRepository { override suspend fun list() = ApiResult.Ok(listOf(OwnedKeyring(4, "READY", "1.0"))) }
             val settings = FakeSettings(); val changes = KeyringSettingsChanges()
             val vm = HomeSessionViewModel(HttpProfileRepository(client), settings, HttpOnboardingRepository(client),
-                session, auth, owned, changes, photos = HttpOptionalProfileRepository(client)).also { models.put("home", it) }
+                session, auth, owned, changes, photos = HttpOptionalProfileRepository(client), prefs = HomeTestPrefs()).also { models.put("home", it) }
             vm.home(); runCurrent()
             assertEquals(1, vm.state.value.home.keyrings.size)
 

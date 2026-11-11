@@ -12,8 +12,9 @@ data class HomeState(
     val savingMatching: Boolean = false,
     val matchingSaveFailed: Boolean = false,
     val keyring: HomeKeyringState = HomeKeyringState.Unknown,
-    /** 서버에 등록된 내 키링(펌웨어). 이름 · 시리얼은 서버가 주지 않아 "내 키링 n"으로만 보인다 */
+    /** 서버 등록 목록과 앱 내부 별명을 분리한다. 기본 이름은 목록 순서로 표시한다. */
     val keyrings: List<com.ssafy.e106.features.keyring.data.OwnedKeyring> = emptyList(),
+    val keyringAliases: Map<Long, String> = emptyMap(),
 )
 
 enum class HomeAction { Refresh, Proposals, Chats, Profile, Keyring }

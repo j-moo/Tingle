@@ -4,6 +4,9 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.ssafy.e106.core.auth.*
 import com.ssafy.e106.core.network.*
+import com.ssafy.e106.core.storage.AppPrefs
+import com.ssafy.e106.core.storage.PrefKey
+import com.ssafy.e106.core.storage.PrefRead
 import com.ssafy.e106.features.profile.data.OptionalProfileRepository
 import com.ssafy.e106.features.proposals.ui.decodeProposalImage
 import com.ssafy.e106.features.account.ui.*
@@ -15,17 +18,19 @@ import com.ssafy.e106.features.settings.data.*
 import com.ssafy.e106.features.settings.ui.ConflictValues
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
+import kotlinx.serialization.builtins.serializer
 
 data class HomeSessionState(val session: Session.SignedIn? = null, val home: HomeState = HomeState(),
     val account: AccountMenuState = AccountMenuState(), val guide: HelpGuideState? = null,
     val error: AppError? = null, val busy: Boolean = false)
 
-/** 홈은 조회를 조합하고, 새 매칭 켜기 · 끄기만 직접 저장한다(그 밖의 변경은 설정/프로필 화면의 검증·버전 충돌 흐름). */
+/** 홈은 조회를 조합하고, 매칭 켜기·끄기와 이 휴대폰의 키링 별명을 저장한다. */
 class HomeSessionViewModel(private val profiles: ProfileRepository, private val settings: MatchingSettingsRepository,
     private val agreements: OnboardingRepository, private val sessions: SessionStore, private val auth: AuthRepository,
     private val ownedKeyrings: OwnedKeyringRepository, private val changes: KeyringSettingsChanges = KeyringSettingsChanges(),
     // 사진 조회 연결이 빠진 채 기본 이미지로만 동작하는 구성을 막기 위해 필수로 받는다.
-    private val photos: OptionalProfileRepository) : ViewModel() {
+    private val photos: OptionalProfileRepository,
+    private val prefs: AppPrefs) : ViewModel() {
     // 마지막으로 받은 매칭 설정(값 + ETag). 켜기 · 끄기 저장은 이 버전에 맞춰서만 보낸다
     private var matching: SettingsDocument? = null
     // 진행 중인 켜기 · 끄기 저장. 화면 이동(leave)과 상관없이 끝까지 가고, 홈 재조회는 이게 끝난 뒤에 한다
@@ -70,8 +75,35 @@ class HomeSessionViewModel(private val profiles: ProfileRepository, private val 
             is ApiResult.Ok -> if (list.value.isEmpty()) HomeKeyringState.Missing else HomeKeyringState.Registered
             is ApiResult.Fail -> HomeKeyringState.Unknown
         }
+        val devices = (list as? ApiResult.Ok)?.value.orEmpty()
+        val aliases = devices.mapNotNull { device ->
+            (prefs.read(aliasKey(device.deviceId), user) as? PrefRead.Found)?.value?.let { device.deviceId to it }
+        }.toMap()
         // 계정 전환이나 화면 이탈 뒤 도착한 응답은 현재 화면에 반영하지 않는다.
-        if (valid(stamp)) mutable.update { it.copy(home = it.home.copy(keyring = keyring, keyrings = (list as? ApiResult.Ok)?.value.orEmpty())) }
+        if (valid(stamp)) mutable.update { it.copy(home = it.home.copy(keyring = keyring, keyrings = devices, keyringAliases = aliases)) }
+    }
+
+    /** 별명은 계정과 등록 기기 번호로 구분한다. 서버나 블루투스로 보내지 않는다. */
+    suspend fun saveKeyringAlias(deviceId: Long, alias: String): Boolean {
+        val user = mutable.value.session?.userId ?: return false
+        if (mutable.value.home.keyrings.none { it.deviceId == deviceId }) return false
+        val value = alias.trim().takeIf { it.isNotEmpty() }
+        if (value != null && value.length > KEYRING_ALIAS_LIMIT) return false
+        val key = aliasKey(deviceId)
+        prefs.set(key, value, user)
+        // 공통 저장소는 쓰기 오류를 숨기므로 다시 읽어서 화면에 성공을 표시할 수 있는지 확인한다.
+        val saved = when (val result = prefs.read(key, user)) {
+            is PrefRead.Found -> result.value == value
+            PrefRead.Missing -> value == null
+            else -> false
+        }
+        if (!saved || (sessions.state.value as? Session.SignedIn)?.userId != user) return false
+        mutable.update { state ->
+            if (state.session?.userId != user || state.home.keyrings.none { it.deviceId == deviceId }) state
+            else state.copy(home = state.home.copy(keyringAliases = if (value == null) state.home.keyringAliases - deviceId
+                else state.home.keyringAliases + (deviceId to value)))
+        }
+        return true
     }
     /**
      * 홈 큰 원: 새 매칭 켜기 · 끄기를 바로 저장한다. 사진 조건은 받은 값 그대로 두고 켜짐만 바꾼다.
@@ -145,3 +177,8 @@ class HomeSessionViewModel(private val profiles: ProfileRepository, private val 
     }
     fun logout() { if (!mutable.value.busy) viewModelScope.launch { auth.logout() } }
 }
+
+internal const val KEYRING_ALIAS_LIMIT = 20
+
+// 캐시와 다른 파일에 저장해 앱 재실행 뒤에도 남긴다. 로그아웃·계정 전환의 공통 정리 정책은 따른다.
+private fun aliasKey(deviceId: Long) = PrefKey("home.keyring.alias.$deviceId", String.serializer(), durable = true)

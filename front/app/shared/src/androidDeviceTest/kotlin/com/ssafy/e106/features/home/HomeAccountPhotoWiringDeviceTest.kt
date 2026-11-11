@@ -76,6 +76,7 @@ class HomeAccountPhotoWiringDeviceTest {
                 single<MatchingSettingsRepository> { unused() }
                 single<OnboardingRepository> { unused() }
                 single<OwnedKeyringRepository> { unused() }
+                single<com.ssafy.e106.core.storage.AppPrefs> { unused() }
             })
         }
         val store = ViewModelStore()

@@ -41,17 +41,32 @@ class HomeKeyringSummaryTest {
             val owned = object : OwnedKeyringRepository {
                 override suspend fun list() = reply.await()
             }
+            val prefs = HomeTestPrefs()
             val vm = HomeSessionViewModel(HttpProfileRepository(client), settings, HttpOnboardingRepository(client),
-                session, auth, owned, photos = HttpOptionalProfileRepository(client)).also { models.put("home", it) }
+                session, auth, owned, photos = HttpOptionalProfileRepository(client), prefs = prefs).also { models.put("home", it) }
 
             // 조회 중에도 매칭 설정을 표시하고, 서버의 READY를 현재 BLE 연결 상태로 해석하지 않는다.
             vm.home()
             runCurrent()
             assertEquals(HomeKeyringState.Checking, vm.state.value.home.keyring)
             assertEquals(true, vm.state.value.home.matchingEnabled)
-            reply.complete(ApiResult.Ok(listOf(OwnedKeyring(4, "READY", "test"))))
+            reply.complete(ApiResult.Ok(listOf(OwnedKeyring(4, "READY", "test"), OwnedKeyring(7, "READY", "test"))))
             runCurrent()
             assertEquals(HomeKeyringState.Registered, vm.state.value.home.keyring)
+            assertTrue(vm.saveKeyringAlias(4, " 재준키링 "))
+            assertFalse(vm.saveKeyringAlias(999, "내 기기 아님"))
+            prefs.refuseWrites = true
+            assertFalse(vm.saveKeyringAlias(4, "저장 실패"))
+            prefs.refuseWrites = false
+            // 목록 순서가 바뀌어도 별명은 기기 ID에 남고, 기본 이름으로 돌아가면 저장값도 지워진다.
+            reply = CompletableDeferred(ApiResult.Ok(listOf(OwnedKeyring(7, "READY", "test"), OwnedKeyring(4, "READY", "test"))))
+            vm.home()
+            runCurrent()
+            assertEquals(mapOf(4L to "재준키링"), vm.state.value.home.keyringAliases)
+            assertTrue(vm.saveKeyringAlias(4, ""))
+            vm.home()
+            runCurrent()
+            assertTrue(vm.state.value.home.keyringAliases.isEmpty())
 
             reply = CompletableDeferred(ApiResult.Ok(emptyList()))
             vm.home()
