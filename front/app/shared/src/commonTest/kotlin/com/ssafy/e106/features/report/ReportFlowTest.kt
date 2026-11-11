@@ -36,6 +36,20 @@ class ReportFlowTest {
         assertEquals(ReportStep.Received,m.state.value.ui.step); assertEquals(77,m.state.value.receipt?.reportId)
         assertTrue(chats.writes.isEmpty()); assertTrue(m.state.value.ui.evidence.isEmpty())
     }
+    // 사유 시트에서 확인 단계 없이 바로 접수한다. 사유가 없거나 한도를 넘으면 보내지 않고, 연달아 눌러도 한 번만 보낸다.
+    @Test fun formSubmitsDirectlyOnceAndOnlyWhenValid() = test {
+        val api = ReportServer(); val m = vm(api); runCurrent()
+        m.action(ReportAction.Submit); runCurrent(); assertTrue(api.calls.isEmpty())
+        m.reason(ReportReason.ABUSE); m.detail("가".repeat(1001)); m.action(ReportAction.Submit); runCurrent(); assertTrue(api.calls.isEmpty())
+        m.detail(""); m.select(2,true); m.action(ReportAction.Submit); m.action(ReportAction.Submit); runCurrent()
+        assertEquals(listOf(2L),api.calls.single().body.messageIds); assertNull(api.calls.single().body.detail)
+        assertEquals(ReportStep.Received,m.state.value.ui.step)
+    }
+    @Test fun evidenceStepStillRequiresReviewBeforeSubmit() = test {
+        val api = ReportServer(); val m = vm(api); runCurrent()
+        m.reason(ReportReason.SPAM); m.action(ReportAction.NextEvidence); m.action(ReportAction.Submit); runCurrent()
+        assertTrue(api.calls.isEmpty()); assertEquals(ReportStep.Evidence,m.state.value.ui.step)
+    }
     @Test fun responseLossRestoresOriginalRequestAfterRoomClosed() = test {
         val api = ReportServer().apply { error = AppError.Offline }; val prefs = ChatMemoryPrefs(); val chats = ChatTestServer()
         var m = vm(api,chats,prefs); runCurrent(); m.reason(ReportReason.ETC); submit(m); runCurrent()

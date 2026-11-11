@@ -7,6 +7,7 @@ import com.ssafy.e106.features.home.ui.HomeSessionViewModel
 import com.ssafy.e106.features.keyring.data.*
 import com.ssafy.e106.features.onboarding.TestSession
 import com.ssafy.e106.features.onboarding.data.HttpOnboardingRepository
+import com.ssafy.e106.features.profile.data.HttpOptionalProfileRepository
 import com.ssafy.e106.features.profile.data.HttpProfileRepository
 import com.ssafy.e106.features.settings.data.*
 import com.ssafy.e106.features.settings.ui.ConflictValues
@@ -46,7 +47,7 @@ class HomeMatchingToggleTest {
             val owned = object : OwnedKeyringRepository { override suspend fun list() = ApiResult.Ok(listOf(OwnedKeyring(4, "READY", "1.0"))) }
             val settings = FakeSettings(); val changes = KeyringSettingsChanges()
             val vm = HomeSessionViewModel(HttpProfileRepository(client), settings, HttpOnboardingRepository(client),
-                session, auth, owned, changes).also { models.put("home", it) }
+                session, auth, owned, changes, photos = HttpOptionalProfileRepository(client)).also { models.put("home", it) }
             vm.home(); runCurrent()
             assertEquals(1, vm.state.value.home.keyrings.size)
 

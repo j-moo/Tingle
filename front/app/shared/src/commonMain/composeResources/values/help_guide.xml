@@ -10,6 +10,8 @@
     <string name="help_prepare_title">문의 전에 확인해 주세요</string>
     <string name="help_support_prepare">문제가 발생한 화면, 발생 시점과 상황을 알려 주시면 확인에 도움이 돼요. 비밀번호나 인증번호는 보내지 마세요.</string>
     <string name="help_correction_prepare">수정이 필요한 항목과 사유를 준비해 주세요. 신분증 등 증빙은 서비스팀의 제출 방법을 안내받은 후 보내 주세요.</string>
+    <string name="help_hub_document">전문을 확인해요.</string>
+    <string name="help_hub_caution">문의할 때 비밀번호나 인증번호는\n보내지 마세요.</string>
     <string name="help_loading">안내 정보를 불러오고 있어요.</string>
     <string name="help_failed">안내 정보를 불러오지 못했어요</string>
     <string name="help_failed_body">연결 상태를 확인하고 다시 시도해 주세요.</string>

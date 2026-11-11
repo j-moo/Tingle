@@ -7,6 +7,7 @@ import com.ssafy.e106.features.home.ui.*
 import com.ssafy.e106.features.keyring.data.*
 import com.ssafy.e106.features.onboarding.TestSession
 import com.ssafy.e106.features.onboarding.data.HttpOnboardingRepository
+import com.ssafy.e106.features.profile.data.HttpOptionalProfileRepository
 import com.ssafy.e106.features.profile.data.HttpProfileRepository
 import com.ssafy.e106.features.settings.data.*
 import com.ssafy.e106.features.settings.ui.ConflictValues
@@ -41,7 +42,7 @@ class HomeKeyringSummaryTest {
                 override suspend fun list() = reply.await()
             }
             val vm = HomeSessionViewModel(HttpProfileRepository(client), settings, HttpOnboardingRepository(client),
-                session, auth, owned).also { models.put("home", it) }
+                session, auth, owned, photos = HttpOptionalProfileRepository(client)).also { models.put("home", it) }
 
             // 조회 중에도 매칭 설정을 표시하고, 서버의 READY를 현재 BLE 연결 상태로 해석하지 않는다.
             vm.home()

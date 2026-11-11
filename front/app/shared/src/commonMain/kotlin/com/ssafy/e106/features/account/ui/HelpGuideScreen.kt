@@ -76,3 +76,25 @@ fun HelpGuideScreen(state: HelpGuideState, onAction: (HelpGuideAction) -> Unit, 
         }
     }
 }
+
+/** 약관 · 개인정보 · 문의 · 정정 요청을 한 화면에 줄로 모은다. 줄을 누르면 해당 안내 화면으로 간다(주소 확인 · 열기는 그 화면이 한다). */
+@Composable
+fun HelpHubScreen(onOpen: (HelpGuideKind) -> Unit, onBack: () -> Unit, modifier: Modifier = Modifier) {
+    Surface(modifier.fillMaxSize(), color = AppColors.Background) {
+        Column(Modifier.fillMaxSize().safeDrawingPadding()) {
+            AppTopBar(stringResource(Res.string.account_section_help), onBack = onBack)
+            Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.TopCenter) {
+                Column(Modifier.widthIn(max = 640.dp).fillMaxWidth().verticalScroll(rememberScrollState()).padding(screenPaddingValues()),
+                    verticalArrangement = Arrangement.spacedBy(AppSpacing.Large)) {
+                    Column {
+                        ServiceRow(stringResource(Res.string.account_terms), detail = stringResource(Res.string.help_hub_document), onClick = { onOpen(HelpGuideKind.Terms) })
+                        ServiceRow(stringResource(Res.string.account_privacy), detail = stringResource(Res.string.help_hub_document), onClick = { onOpen(HelpGuideKind.PrivacyPolicy) })
+                        ServiceRow(stringResource(Res.string.account_support), detail = stringResource(Res.string.account_support_detail), onClick = { onOpen(HelpGuideKind.Support) })
+                        ServiceRow(stringResource(Res.string.account_correction), detail = stringResource(Res.string.account_correction_detail), onClick = { onOpen(HelpGuideKind.Correction) })
+                    }
+                    StatusCard(stringResource(Res.string.help_prepare_title), stringResource(Res.string.help_hub_caution))
+                }
+            }
+        }
+    }
+}

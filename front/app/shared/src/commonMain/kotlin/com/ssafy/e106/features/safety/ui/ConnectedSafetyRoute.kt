@@ -51,9 +51,8 @@ import org.koin.compose.viewmodel.koinViewModel
             Text(stringResource(if(issue == SafetyStorageIssue.Corrupt) Res.string.safety_storage_corrupt else Res.string.safety_restore_failed))
         }
         SafetyActionScreen(state.ui, onAction = { action -> when(action) {
-            SafetyUiAction.OpenConfirmation -> model.ask()
-            SafetyUiAction.Confirm -> model.submit()
-            SafetyUiAction.Cancel -> model.cancel()
+            // 시트 한 장에서 바로 확인한다: 확인 단계로 올린 뒤 곧바로 보낸다(ask 는 조건이 안 맞으면 아무것도 안 하고, submit 도 그때는 보내지 않는다)
+            SafetyUiAction.Confirm -> { model.ask(); model.submit() }
             SafetyUiAction.Retry, SafetyUiAction.CheckResult -> model.recover()
             SafetyUiAction.Close -> if(state.ui.phase in listOf(SafetyPhase.Succeeded, SafetyPhase.ClosedUnconfirmed)) onClosed() else onBack()
             SafetyUiAction.Back -> if(!state.busy) onBack()

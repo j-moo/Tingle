@@ -4,6 +4,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.ssafy.e106.core.auth.*
 import com.ssafy.e106.core.network.*
+import com.ssafy.e106.features.profile.data.OptionalProfileRepository
+import com.ssafy.e106.features.proposals.ui.decodeProposalImage
 import com.ssafy.e106.features.account.ui.*
 import com.ssafy.e106.features.keyring.data.KeyringSettingsChanges
 import com.ssafy.e106.features.keyring.data.OwnedKeyringRepository
@@ -21,7 +23,9 @@ data class HomeSessionState(val session: Session.SignedIn? = null, val home: Hom
 /** 홈은 조회를 조합하고, 새 매칭 켜기 · 끄기만 직접 저장한다(그 밖의 변경은 설정/프로필 화면의 검증·버전 충돌 흐름). */
 class HomeSessionViewModel(private val profiles: ProfileRepository, private val settings: MatchingSettingsRepository,
     private val agreements: OnboardingRepository, private val sessions: SessionStore, private val auth: AuthRepository,
-    private val ownedKeyrings: OwnedKeyringRepository, private val changes: KeyringSettingsChanges = KeyringSettingsChanges()) : ViewModel() {
+    private val ownedKeyrings: OwnedKeyringRepository, private val changes: KeyringSettingsChanges = KeyringSettingsChanges(),
+    // 사진 조회 연결이 빠진 채 기본 이미지로만 동작하는 구성을 막기 위해 필수로 받는다.
+    private val photos: OptionalProfileRepository) : ViewModel() {
     // 마지막으로 받은 매칭 설정(값 + ETag). 켜기 · 끄기 저장은 이 버전에 맞춰서만 보낸다
     private var matching: SettingsDocument? = null
     // 진행 중인 켜기 · 끄기 저장. 화면 이동(leave)과 상관없이 끝까지 가고, 홈 재조회는 이게 끝난 뒤에 한다
@@ -104,9 +108,18 @@ class HomeSessionViewModel(private val profiles: ProfileRepository, private val 
     fun account() = read { user, stamp ->
         mutable.update { it.copy(account = AccountMenuState()) }
         when (val result = profiles.get(user)) {
-            is ApiResult.Ok -> if (valid(stamp)) mutable.update { it.copy(account =
-                if (result.value.userId == user) AccountMenuState(AccountMenuLoad.Ready, result.value.nickname)
-                else AccountMenuState(AccountMenuLoad.Failed)) }
+            is ApiResult.Ok -> if (valid(stamp)) {
+                val mine = result.value.userId == user
+                // 사진은 메뉴를 먼저 보여 준 뒤 받는다. 받는 동안 busy 로 두면 로그아웃이 무시되므로 여기서 푼다
+                mutable.update { it.copy(busy = false, account = if (mine) AccountMenuState(AccountMenuLoad.Ready, result.value.nickname, result.value.hasProfilePhoto)
+                    else AccountMenuState(AccountMenuLoad.Failed)) }
+                // 실패(응답 · 디코드 오류)하면 기본 사진 그대로 둔다. 메뉴를 실패 화면으로 바꾸지 않는다
+                if (mine && result.value.hasProfilePhoto) try {
+                    (photos.photo(user) as? ApiResult.Ok)?.let { decodeProposalImage(it.value) }?.let { bitmap ->
+                        if (valid(stamp)) mutable.update { it.copy(account = it.account.copy(photo = bitmap)) }
+                    }
+                } catch (e: CancellationException) { throw e } catch (_: Exception) {}
+            }
             is ApiResult.Fail -> if (valid(stamp)) mutable.update { it.copy(account = AccountMenuState(AccountMenuLoad.Failed), error = result.error) }
         }
     }

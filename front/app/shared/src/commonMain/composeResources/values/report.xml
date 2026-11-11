@@ -36,13 +36,14 @@
     <string name="report_check_result">접수 결과 확인</string>
     <string name="report_received">신고가 접수됐어요</string>
     <string name="report_conflict">신고 요청 정보를 확인해야 해요</string>
-    <string name="report_conflict_help">이전 요청과 내용이 달라 처리하지 못했어요. 접수 성공이나 같은 사유의 중복 신고를 뜻하지 않아요.</string>
-    <string name="report_result_help">신고는 운영팀에서 검토해요. 신고만으로 상대가 자동 차단되지는 않아요.</string>
+    <string name="report_conflict_help">이전 요청과 내용이 달라 처리하지 못했어요.\n접수 성공이나 같은 사유의 중복 신고를\n뜻하지 않아요.</string>
+    <string name="report_result_help">신고는 운영팀에서 검토해요.\n신고만으로 상대가 차단되지는 않아요.</string>
     <string name="report_failed">신고를 접수하지 못했어요</string>
     <string name="report_unknown">접수 결과를 확인하지 못했어요</string>
-    <string name="report_unknown_help">다시 접수하기 전에 기존 신고의 처리 결과를 확인해 주세요.</string>
+    <string name="report_unknown_help">다시 접수하기 전에\n기존 신고의 처리 결과를 확인해 주세요.</string>
     <string name="report_input_kept">작성한 내용과 선택한 메시지는 유지돼요.</string>
     <string name="report_unavailable">지금은 신고 화면을 이용할 수 없어요</string>
-    <string name="report_unavailable_help">대화방 이용 상태와 신고 정보를 다시 확인해 주세요.</string>
+    <string name="report_unavailable_help">대화방 이용 상태와 신고 정보를\n다시 확인해 주세요.</string>
+    <string name="report_block">이 상대 차단하기</string>
     <string name="report_back">돌아가기</string>
 </resources>

@@ -68,6 +68,7 @@ kotlin {
             implementation(libs.androidx.test.runner)
             implementation(libs.androidx.test.core)
             implementation(libs.androidx.test.junit)
+            implementation(libs.ktor.client.mock)
             implementation(libs.kotlinx.coroutines.test)
             // 화면 재생성·사진 선택 결과 복원 회귀 검증에만 사용한다. 앱 배포 의존성에는 포함하지 않는다.
             implementation("androidx.compose.ui:ui-test-junit4:1.11.2")
