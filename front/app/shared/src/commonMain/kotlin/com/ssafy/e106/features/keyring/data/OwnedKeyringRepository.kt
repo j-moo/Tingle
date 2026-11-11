@@ -14,6 +14,8 @@ data class OwnedKeyring(
     val firmwareVersion: String,
     // 구 응답도 목록은 표시할 수 있다. 연결 허용에는 서버가 준 실물 식별자가 필요하다.
     val deviceSerial: String? = null,
+    // !314 이전 응답에는 별명이 없으므로 목록 자체는 계속 읽을 수 있어야 한다.
+    val label: String? = null,
 )
 
 @Serializable

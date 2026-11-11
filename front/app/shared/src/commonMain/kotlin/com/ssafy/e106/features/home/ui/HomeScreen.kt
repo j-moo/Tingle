@@ -26,6 +26,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.ssafy.e106.core.ui.components.*
 import com.ssafy.e106.core.ui.theme.*
+import com.ssafy.e106.features.keyring.ui.OwnedKeyringLiveStatus
+import com.ssafy.e106.features.keyring.ui.keyringBatteryText
 import com.ssafy.e106.resources.*
 import org.jetbrains.compose.resources.StringResource
 import org.jetbrains.compose.resources.painterResource
@@ -40,7 +42,8 @@ private val WarnInk = Color(0xFF7A4B00)
  */
 @Composable
 fun HomeScreen(state: HomeState, onMatchingChange: (Boolean) -> Unit, onAction: (HomeAction) -> Unit,
-    modifier: Modifier = Modifier, onOpenMatchingSettings: (() -> Unit)? = null) {
+    modifier: Modifier = Modifier, onOpenMatchingSettings: (() -> Unit)? = null,
+    keyringStatus: @Composable () -> OwnedKeyringLiveStatus? = { null }) {
     Surface(modifier.fillMaxSize(), color = AppColors.Background) {
         Column(Modifier.fillMaxSize().safeDrawingPadding()) {
             // 오른쪽 위 "키링 설정" = 키링 화면(내 키링 목록 · 초기화)
@@ -66,7 +69,7 @@ fun HomeScreen(state: HomeState, onMatchingChange: (Boolean) -> Unit, onAction: 
                             }
                             HomeLoadState.Ready -> {
                                 MatchingPower(state, onMatchingChange, onOpenMatchingSettings)
-                                KeyringSummary(state)
+                                KeyringSummary(state, keyringStatus)
                             }
                         }
                     }
@@ -116,7 +119,7 @@ private fun MatchingPower(state: HomeState, onMatchingChange: (Boolean) -> Unit,
  * 손볼 일이 있으면 노란 바탕과 할 일 한 줄은 접혀 있어도 보인다. 키링 설정 화면은 오른쪽 위 "키링 설정"으로 간다
  */
 @Composable
-private fun KeyringSummary(state: HomeState) {
+private fun KeyringSummary(state: HomeState, keyringStatus: @Composable () -> OwnedKeyringLiveStatus?) {
     var open by rememberSaveable { mutableStateOf(false) }
     val todo = keyringTodo(state.keyring)
     val ink = if (todo == null) AppColors.TextPrimary else WarnInk
@@ -142,11 +145,20 @@ private fun KeyringSummary(state: HomeState) {
                 verticalArrangement = Arrangement.spacedBy(AppSpacing.Small)) {
                 HorizontalDivider(color = if (todo == null) AppColors.BorderSubtle else WarnInk.copy(alpha = 0.2f))
                 when {
-                    state.keyrings.isNotEmpty() -> state.keyrings.forEachIndexed { i, item ->
-                        Row(Modifier.fillMaxWidth().semantics(mergeDescendants = true) {}) {
-                            Text(stringResource(Res.string.sync_live_device, (i + 1).toString()), Modifier.weight(1f),
-                                style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold, color = ink)
-                            Text(stringResource(Res.string.sync_pick_firmware, item.firmwareVersion), style = MaterialTheme.typography.bodySmall, color = sub)
+                    state.keyrings.isNotEmpty() -> {
+                        val status = if (open) keyringStatus() else null
+                        state.keyrings.forEachIndexed { index, device ->
+                            // 구 서버 응답에는 별명이 없고, 연결 상태는 다른 기기의 행에 재사용하지 않는다.
+                            val label = device.label?.takeIf { it.isNotBlank() }
+                                ?: stringResource(Res.string.sync_live_device, (index + 1).toString())
+                            val battery = keyringBatteryText(status?.takeIf { it.deviceId == device.deviceId }?.metrics)
+                            Row(Modifier.fillMaxWidth().semantics(mergeDescendants = true) {},
+                                horizontalArrangement = Arrangement.spacedBy(AppSpacing.Small)) {
+                                Text(label, Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = FontWeight.Bold, color = ink)
+                                Text(stringResource(Res.string.owned_keyrings_battery, battery),
+                                    style = MaterialTheme.typography.bodySmall, color = sub)
+                            }
                         }
                     }
                     state.keyring == HomeKeyringState.Missing -> Text(stringResource(Res.string.home_keyring_none), style = MaterialTheme.typography.bodySmall, color = sub)

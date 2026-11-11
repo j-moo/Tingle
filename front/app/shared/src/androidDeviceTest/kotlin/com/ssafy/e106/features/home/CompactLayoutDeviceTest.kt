@@ -23,6 +23,10 @@ import com.ssafy.e106.features.chat.ui.*
 import com.ssafy.e106.features.profile.ui.*
 import com.ssafy.e106.features.survey.ui.*
 import com.ssafy.e106.features.home.ui.*
+import com.ssafy.e106.features.keyring.data.BleDeviceStatus
+import com.ssafy.e106.features.keyring.data.BleOwnerFlowStatus
+import com.ssafy.e106.features.keyring.data.OwnedKeyring
+import com.ssafy.e106.features.keyring.ui.OwnedKeyringLiveStatus
 import org.junit.Rule
 import org.junit.Test
 import org.junit.Assert.assertTrue
@@ -53,6 +57,16 @@ class CompactLayoutTestActivity : ComponentActivity() {
                     AppTheme {
                         when (intent.getStringExtra("screen")) {
                             "home" -> HomeScreen(HomeState(HomeLoadState.Ready), {}, {})
+                            "home_keyrings" -> HomeScreen(
+                                HomeState(HomeLoadState.Ready, keyring = HomeKeyringState.Registered, keyrings = listOf(
+                                    OwnedKeyring(7, "REGISTERED", "0.1.0-registration", label = "초록 키링"),
+                                    OwnedKeyring(8, "REGISTERED", "0.1.0-registration"),
+                                )), {}, {},
+                                // 실제 BLE 대신 한 대의 관측값만 넣어 다른 키링 행으로 복제되지 않는지 확인한다.
+                                keyringStatus = { OwnedKeyringLiveStatus(1, 7, 1, loading = false,
+                                    metrics = BleDeviceStatus(72, null, null, null,
+                                        BleOwnerFlowStatus(batteryPercentSource = "VOLTAGE_ESTIMATE"))) },
+                            )
                             "profile" -> ProfileBasicsScreen(ProfileBasicsState(nickname, birth, ProfileGender.Male, canContinue = true),
                                 { nickname = it }, { birth = it }, {}, {})
                             "survey" -> SurveyQuestionScreen(SurveyQuestionState("layout", 16, 100,
@@ -87,6 +101,15 @@ class CompactLayoutDeviceTest {
             bounds.width > 0 && bounds.height > 0 && bounds.left >= viewport.left &&
                 bounds.right <= viewport.right && bounds.top >= viewport.top && bounds.bottom <= viewport.bottom)
     }
+    @Test fun homeShowsNicknameAndBatteryOnlyForTheMatchingKeyring() {
+        launch("home_keyrings").use {
+            compose.onNodeWithText("내 키링").performScrollTo().performClick()
+            compose.onNode(hasText("초록 키링") and hasText("배터리 약 72%")).assertExists()
+            compose.onNode(hasText("내 키링 2") and hasText("배터리 미확인")).assertExists()
+            compose.onNodeWithText("0.1.0-registration", substring = true).assertDoesNotExist()
+        }
+    }
+
     @Test fun chatInputAndSendRemainReachableAtLargeFont() {
         launch("chat").use {
             fullyVisible(compose.onNode(hasSetTextAction()))
