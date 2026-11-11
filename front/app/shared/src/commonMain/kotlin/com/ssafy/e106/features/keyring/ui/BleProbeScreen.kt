@@ -121,11 +121,9 @@ import org.koin.compose.viewmodel.koinViewModel
             Text(stringResource(Res.string.keyring_encounter_connected_firmware, info.firmware),
                 style = MaterialTheme.typography.bodySmall, color = AppColors.TextSecondary)
             when {
-                !info.supportsStatus || !info.supportedFunctions.containsAll(listOf(
-                    "GET_OWNER_CHALLENGE", "AUTHORIZE_OWNER", "GET_RECORD", "READ_RECORD_CHUNK", "ACK_RECORD",
-                )) -> Body(Res.string.keyring_encounter_unsupported)
+                !info.supportsEncounterTransfer -> Body(Res.string.keyring_encounter_unsupported)
                 info.ownerState != "BOUND" -> Body(Res.string.keyring_encounter_unbound)
-                else -> KeyringEncounterTransfer(info.serial, model, enabled = !registering && !state.busy)
+                else -> KeyringEncounterTransfer(model, enabled = !registering && !state.busy)
             }
         }
     }
@@ -137,13 +135,11 @@ import org.koin.compose.viewmodel.koinViewModel
         managedConnection = true, autoScan = true, allowEncounterTransfer = true)
 }
 
-/** 이 화면을 떠나면 전송만 중단하고, 응답을 기다리는 접수증은 보호 저장소에 남긴다. */
-@Composable private fun KeyringEncounterTransfer(serial: String, ble: BleProbeViewModel, enabled: Boolean,
+/** 화면은 전경 호스트의 전송 상태를 표시하며 사용자가 누른 재시도도 같은 모델로 보낸다. */
+@Composable private fun KeyringEncounterTransfer(ble: BleProbeViewModel, enabled: Boolean,
     model: KeyringEncounterViewModel = koinViewModel()) {
     val transfer by model.state.collectAsStateWithLifecycle()
-    LifecycleEventEffect(Lifecycle.Event.ON_STOP) { model.cancel() }
-    DisposableEffect(serial, model) { onDispose { model.cancel() } }
-    KeyringEncounterTransferContent(transfer, enabled, onSend = { model.send(serial, ble) })
+    KeyringEncounterTransferContent(transfer, enabled, onSend = { model.retry(ble) })
 }
 
 /** 전송 결과만 그린다. 서버 접수증이 없는 상태에서는 키링 정리 완료를 표시하지 않는다. */
@@ -157,6 +153,8 @@ import org.koin.compose.viewmodel.koinViewModel
         EncounterTransferState.LegacyOnly -> Res.string.keyring_encounter_legacy_only
         EncounterTransferState.ConfirmedStored, EncounterTransferState.Stored -> Res.string.keyring_encounter_stored
         EncounterTransferState.ReviewStored -> Res.string.keyring_encounter_review_stored
+        EncounterTransferState.Retryable -> Res.string.keyring_encounter_retryable
+        EncounterTransferState.PolicyWaiting -> Res.string.keyring_encounter_policy_waiting
         EncounterTransferState.NoReceipt -> Res.string.keyring_encounter_no_receipt
         EncounterTransferState.Failed -> Res.string.keyring_encounter_failed
     }

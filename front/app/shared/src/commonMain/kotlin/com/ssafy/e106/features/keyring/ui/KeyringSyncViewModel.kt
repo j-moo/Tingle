@@ -19,7 +19,7 @@ enum class SyncPhase {
 }
 data class KeyringSyncProgress(val deviceId: Long, val phase: SyncPhase, val error: AppError? = null,
     val applied: Boolean? = null, val timeReady: Boolean? = null, val serial: String? = null,
-    val confirmedTsv3Version: Long? = null)
+    val confirmedTsv3Version: Long? = null, val confirmedSyncRunId: String? = null)
 data class KeyringSyncState(val owner: Long? = null, val busy: Boolean = false,
     val items: List<KeyringSyncProgress> = emptyList(), val recoveryFailed: Boolean = false)
 
@@ -445,7 +445,7 @@ class KeyringSyncViewModel(private val api: KeyringSyncRepository, private val s
             delivered.remove(id)
             attempted.remove(id)
             drive()
-        } else show(id, SyncPhase.Confirmed, confirmedTsv3Version = identity.settingsVersion)
+        } else show(id, SyncPhase.Confirmed, confirmedTsv3Version = identity.settingsVersion, confirmedSyncRunId = identity.syncRunId)
     }
 
     /** 최초 1회와 대기 재조회 2회로 제한한다. 다른 오류나 취소는 즉시 기존 복구 경로로 보낸다. */
@@ -474,14 +474,15 @@ class KeyringSyncViewModel(private val api: KeyringSyncRepository, private val s
         ensure(owner, stamp)
         return when (result) { is ApiResult.Ok -> result.value; is ApiResult.Fail -> throw SyncApiFailure(result.error) }
     }
-    // 서버가 확인한 버전을 보관해야 같은 키링의 STATUS를 현재 설정에 대한 관측으로 표시할 수 있다.
+    // 서버가 확인한 버전으로 STATUS를 대조하고, 실행 ID로 같은 동기화 완료에 대한 기록 전송을 한 번만 예약한다.
     private fun showConfirmed(run: KeyringSyncRun, result: KeyringStoredResult? = null) {
         val version = run.settingsVersion.takeIf { run.payloadFormat == KeyringSyncProtocol.FULL_SETTINGS_FORMAT }
-        show(run.deviceId, SyncPhase.Confirmed, applied = result?.applied, timeReady = result?.timeReady, confirmedTsv3Version = version)
+        show(run.deviceId, SyncPhase.Confirmed, applied = result?.applied, timeReady = result?.timeReady,
+            confirmedTsv3Version = version, confirmedSyncRunId = run.syncRunId)
     }
     private fun show(id: Long, phase: SyncPhase, error: AppError? = null, applied: Boolean? = null, timeReady: Boolean? = null,
-        confirmedTsv3Version: Long? = null) {
-        val progress = KeyringSyncProgress(id, phase, error, applied, timeReady, serials[id], confirmedTsv3Version)
+        confirmedTsv3Version: Long? = null, confirmedSyncRunId: String? = null) {
+        val progress = KeyringSyncProgress(id, phase, error, applied, timeReady, serials[id], confirmedTsv3Version, confirmedSyncRunId)
         mutable.update { it.copy(items = it.items.filterNot { item -> item.deviceId == id } + progress) }
     }
     override fun onCleared() { pause() }

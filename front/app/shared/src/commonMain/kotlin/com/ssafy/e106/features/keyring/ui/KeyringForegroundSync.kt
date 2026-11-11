@@ -18,7 +18,8 @@ import kotlinx.coroutines.CancellationException
  */
 @Composable internal fun KeyringForegroundSync(ble: BleProbeViewModel = koinViewModel(),
     sync: KeyringSyncViewModel = koinViewModel(), suspendSync: Boolean = false,
-    resets: KeyringResetStore = koinInject()) {
+    resets: KeyringResetStore = koinInject(), allowEncounter: Boolean = false,
+    encounters: KeyringEncounterViewModel = koinViewModel()) {
     val permission = rememberBlePermission()
     val link by ble.state.collectAsStateWithLifecycle()
     val state by sync.state.collectAsStateWithLifecycle()
@@ -41,8 +42,10 @@ import kotlinx.coroutines.CancellationException
         }
     }
     LifecycleEventEffect(Lifecycle.Event.ON_START) { foreground = true }
-    LifecycleEventEffect(Lifecycle.Event.ON_STOP) { foreground = false; sync.pause(); ble.setForeground(false) }
-    DisposableEffect(ble, sync) { onDispose { sync.pause(); ble.setForeground(false) } }
+    LifecycleEventEffect(Lifecycle.Event.ON_STOP) {
+        foreground = false; encounters.cancel(); sync.pause(); ble.setForeground(false)
+    }
+    DisposableEffect(ble, sync, encounters) { onDispose { encounters.cancel(); sync.pause(); ble.setForeground(false) } }
     val allowed = foreground && permission.availability == BleAvailability.Ready
     LaunchedEffect(allowed) { ble.setForeground(allowed) }
     // 계정/저장 기록이 바뀐 첫 프레임에도 이전 계정의 허용 결과를 재사용하지 않는다.
@@ -55,5 +58,16 @@ import kotlinx.coroutines.CancellationException
         if (serial != null) sync.attachRequest(serial, { ble.syncIssuanceRequest(serial) },
             getApplied = { ble.readSettingsApplied(it, serial) }) { run -> ble.syncSettings(run, serial) }
         onDispose { sync.detach() }
+    }
+    val encounterTarget = link.info?.takeIf { canSync && allowEncounter && link.connected &&
+        it.ownerState == "BOUND" && it.supportsEncounterTransfer }?.let { info ->
+        val owner = state.owner ?: return@let null
+        val generation = link.connectionGeneration ?: return@let null
+        KeyringEncounterViewModel.Target(owner, info.serial, generation)
+    }
+    val confirmedRun = state.items.singleOrNull { it.serial == encounterTarget?.serial }?.confirmedSyncRunId
+    // 화면과 무관하게 연결 세대와 동기화 완료를 감시한다. BLE busy는 기록 조회 자체에서도 바뀐다.
+    LaunchedEffect(encounterTarget, state.busy, confirmedRun) {
+        encounters.update(encounterTarget, state.busy, confirmedRun, ble)
     }
 }
