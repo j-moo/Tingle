@@ -172,6 +172,9 @@ def main_factory(tmp_path, monkeypatch, synthetic_private_keys, caplog, capsys, 
         hosts.append(host)
         return host
 
+    # Dependent fixtures may finish the real lifespan before checking leaks.
+    # ExitStack.close is idempotent; the owner still closes it in finally.
+    make.close = stack.close
     try:
         yield make
     finally:

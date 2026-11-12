@@ -99,11 +99,77 @@ def async_host(main_factory, monkeypatch):
         host = main_factory(environment=environment, enabled=enabled)
         return host, created[-1] if len(created) > before else None, primary, review
 
-    yield make
-    for engine in created:
-        assert engine.boundary.pending == 0
-        assert engine.boundary.executor.active == 0
-        assert engine.shadow.pending == engine.shadow.executor.active == 0
+    try:
+        yield make
+    finally:
+        main_factory.close()
+        for engine in created:
+            assert engine.boundary.pending == 0
+            assert engine.boundary.executor.active == 0
+            assert engine.shadow.pending == engine.shadow.executor.active == 0
+
+
+def test_fixture_finishes_lifespan_before_checking_shadow_cleanup(main_factory, monkeypatch):
+    class WaitingReview(SyntheticModel):
+        async def complete(self, messages, manifest, *, deadline):
+            self.active += 1
+            self.started.set()
+            try:
+                await self.release.wait()
+            except asyncio.CancelledError:
+                self.cancelled += 1
+                raise
+            finally:
+                self.active -= 1
+
+    review = WaitingReview()
+    fixture = async_host.__wrapped__(main_factory, monkeypatch)
+    make = next(fixture)
+    try:
+        host, engine, _, _ = make(rule_kind="RISK", review=review)
+        post(host)  # Primary has responded while the comparison remains blocked.
+
+        async def started():
+            await asyncio.wait_for(review.started.wait(), 2)
+
+        host.client.portal.call(started)
+        assert engine.shadow.pending > 0 and review.active == 1
+        with pytest.raises(StopIteration):
+            next(fixture)
+        assert host.client.portal is None
+        assert engine._closing and review.cancelled == 1 and review.active == 0
+    finally:
+        fixture.close()
+
+
+def test_fixture_rejects_worker_remaining_after_lifespan(main_factory, monkeypatch):
+    fixture = async_host.__wrapped__(main_factory, monkeypatch)
+    make = next(fixture)
+    host, engine, _, _ = make(limits=ExecutionLimits(cleanup_seconds=0.01))
+    entered, release = threading.Event(), threading.Event()
+    workers = []
+
+    def blocked_rule(messages, manifest):
+        workers.append(threading.current_thread())
+        entered.set()
+        assert release.wait(5)
+        return verdict("NORMAL", [], modelVersion=MODEL_VERSION, promptVersion=PROMPT_VERSION)
+
+    engine.rules.analyze = blocked_rule
+    try:
+        post(host)
+        assert entered.wait(2)
+        with pytest.raises(AssertionError):
+            next(fixture)
+        assert host.client.portal is None  # Failure must follow lifespan shutdown.
+        assert engine.shadow.executor.active == 1
+    finally:
+        release.set()
+        for worker in workers:
+            worker.join(timeout=2)
+            assert not worker.is_alive()
+        fixture.close()
+    assert engine.shadow.executor.active == 0
 
 
 def post(host, status=200, code=None, *, payload=None):
