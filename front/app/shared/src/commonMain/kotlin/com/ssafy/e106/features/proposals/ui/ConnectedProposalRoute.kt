@@ -7,9 +7,13 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.repeatOnLifecycle
 import com.ssafy.e106.core.auth.Session
 import com.ssafy.e106.core.network.AppError
+import com.ssafy.e106.core.push.PushEvents
+import com.ssafy.e106.core.push.PushTarget
 import com.ssafy.e106.core.ui.components.AppButton
 import com.ssafy.e106.core.ui.theme.AppSpacing
 import com.ssafy.e106.features.profile.ui.ProfileBackHandler
@@ -23,16 +27,26 @@ import org.koin.compose.viewmodel.koinViewModel
 @Composable
 fun ConnectedProposalRoute(session: Session.SignedIn, onHome: () -> Unit, onProfile: () -> Unit,
     onChats: () -> Unit, onOpenChat: (Long) -> Unit, model: ProposalViewModel = koinViewModel(),
-    reasonModel: MatchReasonViewModel = koinViewModel(), initialProposalId: Long? = null) {
+    reasonModel: MatchReasonViewModel = koinViewModel(), pushes: PushEvents? = null) {
     val state by model.state.collectAsStateWithLifecycle()
-    var openedPush by rememberSaveable(session.userId, initialProposalId) { mutableStateOf(false) }
     // 목록 탭(응답 대기 | 기다리는 중): 프로필에 갔다 와도 그대로
     var listTab by rememberSaveable(session.userId) { mutableIntStateOf(0) }
-    // 미확인 기존 결정을 먼저 복구한다. 푸시의 ID만으로 수락하거나 프로필 내용을 만들어 내지 않는다.
-    LaunchedEffect(session, initialProposalId, state.busy, state.list.load) {
-        if(initialProposalId != null && initialProposalId > 0 && !openedPush && state.session == session &&
-            !state.busy && !state.storageIssue && state.pending == null && state.list.load == ProposalListLoad.Ready) {
-            openedPush = true; model.open(initialProposalId)
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
+    // 전경에서 받은 푸시는 열린 목록만 갱신한다. 상세나 수락·거절 중이면 일반 재조회 흐름에 맡긴다.
+    LaunchedEffect(pushes, lifecycle, session, model) {
+        if (pushes == null) return@LaunchedEffect
+        lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+            pushes.proposalArrivals.collect { userId ->
+                if (userId == session.userId) model.refreshAfterProposalPush(session)
+            }
+        }
+    }
+    if (pushes != null) {
+        val tap by pushes.pending.collectAsStateWithLifecycle()
+        LaunchedEffect(tap, state.page, state.session, state.busy, state.pending, state.storageIssue) {
+            // 이미 제안 목록을 보는 상태에서 알림을 누르면 다른 화면을 열지 않고 목록을 다시 읽는다.
+            val target = tap as? PushTarget.Proposal ?: return@LaunchedEffect
+            if (model.refreshAfterProposalPush(session)) pushes.consume(target)
         }
     }
     val reason by reasonModel.state.collectAsStateWithLifecycle()

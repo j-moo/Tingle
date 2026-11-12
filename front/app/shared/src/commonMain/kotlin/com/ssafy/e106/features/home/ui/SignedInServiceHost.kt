@@ -50,7 +50,6 @@ internal enum class ServicePage { Home, Proposals, Menu, Chats, Safety, Report, 
     var opened by rememberSaveable(session.userId, session.isReady, session.status) { mutableStateOf(session.isReady || pendingKeyring) }
     var page by rememberSaveable(session.userId) { mutableStateOf(if (pendingKeyring) ServicePage.Keyrings else ServicePage.Home) }
     var roomId by rememberSaveable(session.userId) { mutableStateOf<Long?>(null) }
-    var proposalId by rememberSaveable(session.userId) { mutableStateOf<Long?>(null) }
     var safetyOperation by rememberSaveable(session.userId) { mutableStateOf(SafetyOperation.Block) }
     var consentFromChat by rememberSaveable(session.userId) { mutableStateOf(false) }
     val pendingPush by pushes.pending.collectAsStateWithLifecycle()
@@ -69,7 +68,7 @@ internal enum class ServicePage { Home, Proposals, Menu, Chats, Safety, Report, 
     foregroundSync(page == ServicePage.KeyringReset || connectForReset)
     fun go(destination: ServicePage) { model.leave(); page = destination }
     fun chats(room: Long? = null) { roomId = room; go(ServicePage.Chats) }
-    fun proposals() { proposalId = null; go(ServicePage.Proposals) }
+    fun proposals() { go(ServicePage.Proposals) }
     WithdrawalKeyringNavigation(session.userId, withdrawal) {
         // 탈퇴 제한 안내의 버튼도 메뉴와 같은 키링 관리 화면으로 이동한다. 다른 계정의 늦은 이동은 소비하지 않는다.
         opened = true
@@ -82,7 +81,7 @@ internal enum class ServicePage { Home, Proposals, Menu, Chats, Safety, Report, 
         if (!opened || !session.isReady || logoutPrompt || !canOpenServicePush(page)) return@LaunchedEffect
         when (target) {
             is PushTarget.Chat -> if(target.roomId > 0) chats(target.roomId) else go(ServicePage.Home)
-            is PushTarget.Proposal -> if(target.proposalId > 0) { proposalId = target.proposalId; go(ServicePage.Proposals) } else go(ServicePage.Home)
+            is PushTarget.Proposal -> if (target.proposalId > 0) proposals() else go(ServicePage.Home)
             PushTarget.Home -> go(ServicePage.Home)
         }
         // 이동 후 상세 화면이 서버의 최신 참여/만료 권한을 다시 검사한다.
@@ -133,7 +132,7 @@ internal enum class ServicePage { Home, Proposals, Menu, Chats, Safety, Report, 
                     observeOwnedKeyringConnection(session, state.home.keyrings, koinViewModel<BleProbeViewModel>()).liveStatus
                 })
                 ServicePage.Proposals -> ConnectedProposalRoute(session, { go(ServicePage.Home) }, { go(ServicePage.Menu) },
-                    { chats() }, { chats(it) }, initialProposalId = proposalId)
+                    { chats() }, { chats(it) }, pushes = pushes)
                 ServicePage.Chats -> ConnectedChatRoute(session, roomId, { go(ServicePage.Home) }, { proposals() }, { go(ServicePage.Menu) },
                     onSafety = { id, operation ->
                         roomId = id

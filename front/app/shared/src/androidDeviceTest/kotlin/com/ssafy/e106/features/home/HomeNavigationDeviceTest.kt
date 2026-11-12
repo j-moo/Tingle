@@ -45,6 +45,8 @@ import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpMethod
 import io.ktor.http.headersOf
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.MutableSharedFlow
+import java.util.concurrent.atomic.AtomicInteger
 import org.junit.Rule
 import org.junit.Test
 import org.koin.compose.KoinIsolatedContext
@@ -56,6 +58,9 @@ import org.koin.dsl.module
 class HomeNavigationTestActivity : ComponentActivity() {
     private lateinit var client: HttpClient
     private lateinit var di: KoinApplication
+    val pushTap = MutableStateFlow<PushTarget?>(null)
+    val proposalArrivals = MutableSharedFlow<Long>(extraBufferCapacity = 1)
+    val proposalListReads = AtomicInteger()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -73,7 +78,10 @@ class HomeNavigationTestActivity : ComponentActivity() {
                 "/dev/api/users/75/settings" -> """{"matchingEnabled":true,"requirePartnerPhoto":false,"settingsVersion":1}"""
                 "/dev/api/users/75/profile" -> """{"userId":75,"nickname":"메뉴 검증"}"""
                 "/dev/api/keyrings" -> """{"items":[{"deviceId":4,"status":"REGISTERED","firmwareVersion":"test"}]}"""
-                "/dev/api/match-proposals" -> emptyPage
+                "/dev/api/match-proposals" -> {
+                    proposalListReads.incrementAndGet()
+                    emptyPage
+                }
                 "/dev/api/chat-rooms" -> chatPage
                 else -> error("Unexpected request: ${request.url.encodedPath}")
             }
@@ -98,8 +106,9 @@ class HomeNavigationTestActivity : ComponentActivity() {
                     }
                     single<PushEvents> {
                         object : PushEvents {
-                            override val pending = MutableStateFlow<PushTarget?>(null)
-                            override fun consume(target: PushTarget) = Unit
+                            override val pending = pushTap
+                            override val proposalArrivals = this@HomeNavigationTestActivity.proposalArrivals
+                            override fun consume(target: PushTarget) { pushTap.compareAndSet(target, null) }
                         }
                     }
                 })
@@ -120,6 +129,24 @@ class HomeNavigationTestActivity : ComponentActivity() {
 
 class HomeNavigationDeviceTest {
     @get:Rule val compose = createEmptyComposeRule()
+
+    @Test fun proposalTapOpensListAndForegroundReceiptRefreshesIt() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        ActivityScenario.launch<HomeNavigationTestActivity>(Intent(context, HomeNavigationTestActivity::class.java)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)).use { scenario ->
+            awaitText("새 인연을 기다리는 중")
+            lateinit var reads: AtomicInteger
+            scenario.onActivity {
+                reads = it.proposalListReads
+                it.pushTap.value = PushTarget.Proposal(42)
+            }
+            awaitText("아직 받은 제안이 없어요")
+            val before = reads.get()
+            scenario.onActivity { it.proposalArrivals.tryEmit(75) }
+            compose.waitUntil(timeoutMillis = 5_000) { reads.get() > before }
+            awaitText("아직 받은 제안이 없어요")
+        }
+    }
 
     @Test fun accountTabsOpenHomeProposalListAndChatListThroughServiceHost() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext

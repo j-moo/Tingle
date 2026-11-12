@@ -1,6 +1,8 @@
 package com.ssafy.e106.core.push
 
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.emptyFlow
 
 /** 알림을 눌렀을 때 열 화면. payload 의 type 필드로 결정. 종류·식별자는 BE 와 합의 후 늘린다 */
 sealed interface PushTarget {
@@ -12,6 +14,9 @@ sealed interface PushTarget {
 }
 
 interface PushEvents {
+    /** 수신으로 목록만 갱신할 때 사용한다. 알림 탭과 별개이며 이전 계정에는 적용하지 않는다. */
+    val proposalArrivals: Flow<Long> get() = emptyFlow()
+
     /** 알림을 눌러 앱이 열렸거나(콜드 스타트 포함) 앞으로 왔을 때 채워진다. 이동 전까지 들고 있는다. MainScaffold 한 곳에서만 소비한다 */
     val pending: StateFlow<PushTarget?>
 

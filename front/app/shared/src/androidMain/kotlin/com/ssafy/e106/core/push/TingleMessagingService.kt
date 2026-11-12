@@ -17,7 +17,10 @@ import com.ssafy.e106.resources.push_channel_name
 import com.ssafy.e106.resources.push_chat_message
 import com.ssafy.e106.resources.push_chat_ending
 import com.ssafy.e106.resources.push_other
+import com.ssafy.e106.resources.push_new_proposal
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
 import org.jetbrains.compose.resources.getString
 import org.koin.android.ext.android.inject
 
@@ -28,6 +31,7 @@ import org.koin.android.ext.android.inject
 class TingleMessagingService : FirebaseMessagingService() {
     private val device: PushDevice by inject()
     private val tokens: TokenStore by inject()
+    private val events: DefaultPushEvents by inject()
 
     override fun onNewToken(token: String) { (device as? AndroidPushDevice)?.onNewToken() }
 
@@ -35,11 +39,18 @@ class TingleMessagingService : FirebaseMessagingService() {
     override fun onMessageReceived(message: RemoteMessage) {
         val msg = pushMessageOf(message.data)
         val (userId, text) = runBlocking {
-            val userId = tokens.load()?.userId
-            if (userId == null || !msg.showTo(userId, device.binding())) return@runBlocking null
+            val userId = tokens.load()?.userId ?: return@runBlocking null
+            val binding = device.binding() ?: return@runBlocking null
+            val installation = if (msg.kind == PushKind.NEW_PROPOSAL) device.installationId() else null
+            if (!msg.showTo(userId, binding, installation)) return@runBlocking null
+            // 알림 권한이 꺼져 있어도 열린 제안 목록은 새로 조회할 수 있다.
+            if (msg.target is PushTarget.Proposal && !withContext(Dispatchers.Main.immediate) {
+                    events.proposalArrived(userId, checkNotNull(msg.bindingId), msg.target.proposalId)
+                }) return@runBlocking null
             val res = when (msg.kind) {
                 PushKind.CHAT_MESSAGE -> Res.string.push_chat_message
                 PushKind.ONE_HOUR_BEFORE_END -> Res.string.push_chat_ending
+                PushKind.NEW_PROPOSAL -> Res.string.push_new_proposal
                 PushKind.OTHER -> Res.string.push_other
             }
             userId to getString(res)
@@ -49,7 +60,8 @@ class TingleMessagingService : FirebaseMessagingService() {
         // NotificationChannel 은 API 26+ 라 Compat 으로(minSdk 24)
         manager.createNotificationChannel(NotificationChannelCompat.Builder(CHANNEL, NotificationManagerCompat.IMPORTANCE_HIGH)
             .setName(runBlocking { getString(Res.string.push_channel_name) }).build())
-        val key = message.data["chatRoomId"] ?: message.data["noticeId"] ?: ""
+        val key = if (msg.target is PushTarget.Proposal) "proposal-${msg.target.proposalId}"
+            else message.data["chatRoomId"] ?: message.data["noticeId"] ?: ""
         val id = key.hashCode()   // 같은 방 알림은 덮어쓴다
         // data 로 알림마다 다른 Intent 를 만든다. requestCode(해시)만으로 구분하면 해시가 겹친 다른 알림의 extras 를 덮어쓴다
         val tap = PendingIntent.getActivity(this, id, PushTapActivity.intent(this, msg.target, userId).setData(Uri.fromParts("tingle-push", "${msg.kind}/$key", null)),
@@ -60,6 +72,7 @@ class TingleMessagingService : FirebaseMessagingService() {
             .setContentText(text)
             .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)   // 잠금화면에는 "내용 숨김"
             .setAutoCancel(true)
+            .setOnlyAlertOnce(msg.kind == PushKind.NEW_PROPOSAL)
             .setContentIntent(tap)
             .build()
         try {
@@ -87,15 +100,26 @@ class PushTapActivity : Activity() {
 
     companion object {
         private const val ROOM = "roomId"
+        private const val PROPOSAL = "proposalId"
         private const val USER = "forUser"
 
         internal fun intent(context: Context, target: PushTarget, forUser: Long) = Intent(context, PushTapActivity::class.java)
             .putExtra(USER, forUser)
-            .apply { if (target is PushTarget.Chat) putExtra(ROOM, target.roomId) }
+            .apply {
+                when (target) {
+                    is PushTarget.Chat -> putExtra(ROOM, target.roomId)
+                    is PushTarget.Proposal -> putExtra(PROPOSAL, target.proposalId)
+                    PushTarget.Home -> Unit
+                }
+            }
 
-        private fun targetOf(intent: Intent): Pair<PushTarget, Long>? {
+        internal fun targetOf(intent: Intent): Pair<PushTarget, Long>? {
             if (!intent.hasExtra(USER)) return null
-            val target = if (intent.hasExtra(ROOM)) PushTarget.Chat(intent.getLongExtra(ROOM, 0)) else PushTarget.Home
+            val target = when {
+                intent.hasExtra(ROOM) -> PushTarget.Chat(intent.getLongExtra(ROOM, 0))
+                intent.getLongExtra(PROPOSAL, 0) > 0 -> PushTarget.Proposal(intent.getLongExtra(PROPOSAL, 0))
+                else -> PushTarget.Home
+            }
             return target to intent.getLongExtra(USER, 0)
         }
     }

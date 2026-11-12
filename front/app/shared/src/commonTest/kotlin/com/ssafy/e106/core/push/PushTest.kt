@@ -14,6 +14,7 @@ import io.ktor.http.HttpStatusCode
 import io.ktor.http.headersOf
 import kotlinx.io.IOException
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.emptyFlow
@@ -24,6 +25,7 @@ import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
+import kotlin.time.Instant
 
 private fun ready(userId: Long) = Session.SignedIn(userId, OnboardingStatus.READY, signupCompleted = true)
 
@@ -47,6 +49,26 @@ private class FakeDevice(var token: String? = "t1") : PushDevice {
 }
 
 class PushMessageTest {
+    @Test
+    fun newProposalRequiresMatchingRecipientInstallationBindingAndValidDeadline() {
+        val data = mapOf("type" to "NEW_PROPOSAL", "proposalId" to "42", "noticeId" to "proposal-42",
+            "recipientUserId" to "7", "bindingId" to "b7", "installationId" to "installation",
+            "expiresAt" to "2026-11-13T00:00:00Z")
+        val mine = PushBinding(7, "b7")
+        val now = Instant.parse("2026-11-12T00:00:00Z")
+        val push = pushMessageOf(data)
+        assertEquals(PushKind.NEW_PROPOSAL, push.kind)
+        assertEquals(PushTarget.Proposal(42), push.target)
+        assertEquals(true, push.showTo(7, mine, "installation", now))
+        assertEquals(false, push.showTo(8, PushBinding(8, "b7"), "installation", now))
+        assertEquals(false, push.showTo(7, PushBinding(7, "old"), "installation", now))
+        assertEquals(false, push.showTo(7, mine, "different", now))
+        assertEquals(false, push.showTo(7, mine, "installation", Instant.parse(data.getValue("expiresAt"))))
+        for (missing in listOf("proposalId", "noticeId", "recipientUserId", "bindingId", "installationId", "expiresAt")) {
+            assertEquals(false, pushMessageOf(data - missing).showTo(7, mine, "installation", now), missing)
+        }
+    }
+
     @Test
     fun chatMessageOpensRoomByLongId() {
         val m = pushMessageOf(mapOf("type" to "CHAT_MESSAGE", "chatRoomId" to "42", "recipientUserId" to "7", "bindingId" to "b"))
@@ -92,6 +114,19 @@ class PushMessageTest {
 
 class PushEventsTest {
     private fun TestScope.events(session: FakeSession) = DefaultPushEvents(session, backgroundScope).also { runCurrent() }
+
+    @Test
+    fun proposalReceiptRefreshesOnceAndDoesNotCreateATap() = runTest {
+        val e = events(FakeSession(ready(7)))
+        val accounts = mutableListOf<Long>()
+        backgroundScope.launch { e.proposalArrivals.collect { accounts += it } }
+        runCurrent()
+        assertEquals(true, e.proposalArrived(7, "b7", 42))
+        assertEquals(false, e.proposalArrived(7, "b7", 42))
+        runCurrent()
+        assertEquals(listOf(7L), accounts)
+        assertNull(e.pending.value)
+    }
 
     @Test
     fun signedOutTapIsIgnored() = runTest {
