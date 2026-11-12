@@ -1,5 +1,11 @@
 # 키링 상태 조회 BLE 명세 v1
 
+## 2026-11-12 / 0.9.6 설정 복구 상태
+
+`DEVICE_INFO`와 `STATUS`는 설정 복구가 필요한 경우에만 선택 필드 `settingsRecoveryRequired:true`를 추가한다. 없는 경우 기존 동작을 유지한다. `storedSettingsVersion`은 검증된 참조 설정 버전이며, 손상된 최신 버전을 정상 저장 완료로 표시하지 않는다. 복구 중 `applied:false`, `matchingReady:false`, `DEVICE_INFO.storageHealthy:false`다. 만남 저장소의 `storageState` 및 인증 후 집계는 별도 상태로 유지하므로 설정 오류를 만남 데이터 삭제/손실로 해석하지 않는다.
+
+FE는 복구 상태에서 초기화/재등록 대신 기존 계정의 정상 `GET_SYNC_CHALLENGE → SYNC_SETTINGS → STORED → 서버 ACK → APPLIED 조회`를 진행한다. 참조 버전 이하 설정은 `ERROR/SETTINGS_RECOVERY_REQUIRED`로 거부하며, 정상 서명된 상위 버전 저장을 확인한 뒤 복구 상태를 해제한다. 앱이 선택 필드를 아직 표시하지 않아도 기존 동기화 요청 형식은 바뀌지 않는다. BE는 새 실행과 서명을 기존 방식으로 발급하고 소유/설정 버전을 그대로 검증한다.
+
 ## 2026-11-12 / 0.9.5 전원 진단 추가
 
 관련 Story [S15P31E106-322](https://ssafy.atlassian.net/browse/S15P31E106-322), [MR !326](https://lab.ssafy.com/s15-final/S15P31E106/-/merge_requests/326). 기존 `GET_STATUS` 요청·인증·전송 경계를 유지하고 `STATUS`에 아래 선택 필드를 추가한다. 기존 필드를 삭제하거나 타입을 바꾸지 않는다. 아래 JSON은 추가 필드 부분만 보여 주는 예시다.

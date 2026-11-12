@@ -7,7 +7,8 @@ param(
     [string]$ArmToolchain = '',
     [string]$ExtraConf = '',
     [string]$DevSettingsPublicKeyFile = '',
-    [ValidateSet('d31','revg')][string]$Carrier = 'd31'
+    [ValidateSet('d31','revg')][string]$Carrier = 'd31',
+    [switch]$StorageInspectOnly
 )
 $ErrorActionPreference = 'Stop'
 $projectRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
@@ -22,6 +23,7 @@ if ($ZephyrSdk -and $ArmToolchain) {
 }
 $BuildDirectory = Join-Path $projectRoot 'build/firmware'
 $d31Carrier = if ($Carrier -eq 'd31') { 'ON' } else { 'OFF' }
+$storageInspect = if ($StorageInspectOnly) { 'ON' } else { 'OFF' }
 $toolchainArgs = @()
 if ($ZephyrSdk) {
     $env:ZEPHYR_TOOLCHAIN_VARIANT = 'zephyr'
@@ -52,7 +54,7 @@ if ($devPublicKey -cnotmatch '^[0-9a-f]{64}$') { throw 'Expected a raw Ed25519 p
 & $CMake -S $projectRoot -B $BuildDirectory -G Ninja `
     '-DBOARD=xiao_ble/nrf52840' "-DPython3_EXECUTABLE=$Python" "-DCMAKE_MAKE_PROGRAM=$Ninja" `
     "-DEXTRA_CONF_FILE=$ExtraConf" "-DKR_DEV_SETTINGS_PUBLIC_KEY=$devPublicKey" '-DKR_DIAG_INTERACTIVE_BOOT=OFF' `
-    "-DKR_CARRIER_D31=$d31Carrier" @toolchainArgs
+    "-DKR_CARRIER_D31=$d31Carrier" "-DKR_STORAGE_INSPECT_ONLY=$storageInspect" @toolchainArgs
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 & $CMake --build $BuildDirectory --parallel 4
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
@@ -82,7 +84,8 @@ $commit = & git -C $projectRoot rev-parse HEAD
 $dirty = [bool](& git -C $projectRoot status --porcelain -- .)
 $manifest = [ordered]@{
     artifact = 'iot/build/zephyr.uf2'
-    firmwareVersion = "0.9.5-$Carrier"
+    firmwareVersion = "0.9.6-$Carrier"
+    storageInspectOnly = [bool]$StorageInspectOnly
     carrierRevision = if ($Carrier -eq 'd31') { 'SIS D3.1 Y3' } else { 'Tingle Rev G 31x50 Connector' }
     sourceCommit = $commit
     sourceDirty = $dirty

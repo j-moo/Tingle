@@ -869,6 +869,16 @@ static bool poll_usb_commands(bool allow_lab)
 		invalid = false;
 		if (!valid) { continue; }
 		if (allow_lab && !strcmp(line, "LAB ENABLE")) { return true; }
+		if (!strcmp(line, "STORAGE CHECK")) {
+			uint32_t dtr;
+			if (uart_line_ctrl_get(console, UART_LINE_CTRL_DTR, &dtr) || !dtr) { continue; }
+			kr_runtime_owner_lock();
+			int result = kr_board_storage_check();
+			printk("STORAGE CHECK result=%d queues=%u/%u/%u storageError=%u\n", result,
+				kr_count(&engine, KR_MATCH), kr_count(&engine, KR_CONFIRMED), kr_count(&engine, KR_REVIEW), engine.storage_error);
+			kr_runtime_owner_unlock();
+			continue;
+		}
 		if (!strncmp(line, forget, sizeof(forget) - 1)) {
 			const char *argument = line + sizeof(forget) - 1;
 			uint8_t token[4];
@@ -961,6 +971,11 @@ int main(void)
 	if (power_error) { LOG_ERR("Battery measurement unavailable: %d", power_error); }
 	int carrier_error = kr_carrier_init();
 	if (carrier_error) { LOG_ERR("Carrier feedback unavailable: %d", carrier_error); }
+#ifdef KR_STORAGE_INSPECT_ONLY
+	extern void kr_storage_inspect(void);
+	kr_storage_inspect();
+	return 0;
+#endif
 	check_carrier_off(false);
 	check_startup_power();
 	k_work_init_delayable(&boot_report, report_boot);

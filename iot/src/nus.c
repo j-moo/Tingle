@@ -268,7 +268,7 @@ int kr_nus_init(struct k_sem *wake)
 }
 
 bool kr_nus_reset_pending(void) { return atomic_get(&reset_pending) != 0; }
-bool kr_nus_lab_allowed(void) { return !atomic_get(&reset_history) && !atomic_get(&reset_pending); }
+bool kr_nus_lab_allowed(void) { return !core.settings_recovery_required && !atomic_get(&reset_history) && !atomic_get(&reset_pending); }
 
 /* Called by main only after stopping peer radio and disabling the synthetic engine. */
 const char *kr_nus_finish_reset(void)
@@ -328,9 +328,9 @@ void kr_nus_poll_console(bool blink)
 	if (!uart_line_ctrl_get(console, UART_LINE_CTRL_DTR, &dtr)) {
 		if (dtr && !console_open) {
 			k_mutex_lock(&core_lock, K_FOREVER);
-			printk("DIAG %s NUS ready; settingsPolicy=%s; storedVersion=%lld\n",
+			printk("DIAG %s NUS ready; settingsPolicy=%s; storedVersion=%lld; settingsRecoveryRequired=%u\n",
 				KR_FIRMWARE_VERSION, core.platform.issue_settings_nonce ? "DEV_SIGNED_V1" : "UNRESOLVED",
-				(long long)core.current.version);
+				(long long)core.current.version, core.settings_recovery_required);
 			kr_board_print_identity(&core.identity);
 			k_mutex_unlock(&core_lock);
 		}

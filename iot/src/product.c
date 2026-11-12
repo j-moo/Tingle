@@ -184,7 +184,8 @@ bool kr_product_apply(struct kr_product *p, struct kr_peer_runtime *peers, int64
 {
 	p->peers = peers; p->policy_loaded = false;
 	const struct kr_settings *s = &p->core->current;
-	if (!s->magic || p->core->storage_error || p->core->reset.phase == KR_RESETTING || !kr_policy_format(s->format)) { return false; }
+	if (!s->magic || p->core->storage_error || p->core->settings_recovery_required ||
+		p->core->reset.phase == KR_RESETTING || !kr_policy_format(s->format)) { return false; }
 	memcpy(p->settings, s->payload, s->payload_size);
 	if (!kr_policy_decode(p->settings, s->payload_size, &p->policy) ||
 		verified_time <= 0 || !kr_peer_grant(p->policy.grant, p->server_key, (uint64_t)verified_time)) { return false; }
@@ -195,7 +196,7 @@ bool kr_product_apply(struct kr_product *p, struct kr_peer_runtime *peers, int64
 }
 bool kr_product_applied(const struct kr_product *p)
 {
-	return p->policy_loaded && (!p->io.generation || p->applied_generation == p->io.generation(p->io.ctx)) &&
+	return !p->core->settings_recovery_required && p->policy_loaded && (!p->io.generation || p->applied_generation == p->io.generation(p->io.ctx)) &&
 		!p->engine->storage_error && p->policy.complete &&
 		(!(p->policy.profile[195] & 1) || !p->policy.enabled ||
 			(p->engine->config.profile.revision == (uint64_t)p->applied_version &&
@@ -675,7 +676,7 @@ bool kr_product_dispatch(struct kr_product *p, const struct kr_json *j, const ch
 			"\"storedPayloadFormat\":\"%s\",\"storedPayloadBytes\":%u,\"profileStorageCharacteristic\":\"6e400004-b5a3-f393-e0a9-e50e24dcca9e\","
 			"\"profileRequiresEncryption\":true,\"peerExchangeProtocol\":\"tingle-peer-v3\",\"peerOwnerScopeVersion\":1,"
 			"\"accountLockProofVersion\":\"tingle-account-lock-v2\",\"maxPeerSessions\":16,\"recordCursorEpoch\":\"%s\","
-			"\"multiKeyringAccounts\":true,\"applied\":%s,\"timeReady\":%s,\"matchingReady\":%s,\"storageHealthy\":%s}\n",
+			"\"multiKeyringAccounts\":true,\"applied\":%s,\"timeReady\":%s,\"matchingReady\":%s,\"storageHealthy\":%s%s}\n",
 			request, p->core->identity.serial, p->core->identity.key_id, encoded, KR_FIRMWARE_VERSION,
 			KR_PUBLIC_NAME_MAX,
 			KR_DEV_PAYLOAD_FORMAT, KR_PROFILE_STORAGE_FORMAT, KR_POLICY_FORMAT, KR_POLICY_LEGACY_FORMAT, p->core->reset.ownership_epoch,
@@ -683,7 +684,8 @@ bool kr_product_dispatch(struct kr_product *p, const struct kr_json *j, const ch
 			KR_PROOF_VERSION, KR_PROOF_VERSION_2, KR_RESET_VERSION, KR_FRAME_MAX, KR_PAYLOAD_MAX, KR_RESPONSE_MAX,
 			p->core->current.version, p->core->current.hash, p->core->current.format, p->core->current.payload_size, cursor,
 			kr_product_applied(p) ? "true" : "false", p->clock_ready ? "true" : "false", kr_product_ready(p) ? "true" : "false",
-			p->core->storage_error || p->engine->storage_error ? "false" : "true"); return true;
+			p->core->storage_error || p->core->settings_recovery_required || p->engine->storage_error ? "false" : "true",
+			p->core->settings_recovery_required ? ",\"settingsRecoveryRequired\":true" : ""); return true;
 	}
 	if (!strcmp(type, "GET_STATUS")) {
 		char mv[20], battery[12], total[32] = "null", used[32] = "null", pending[16] = "null", review[16] = "null", candidates[16] = "null", missing[16] = "null";
@@ -711,14 +713,15 @@ bool kr_product_dispatch(struct kr_product *p, const struct kr_json *j, const ch
 			"\"batteryPercentSource\":\"%s\",\"batteryPresence\":\"%s\",\"powerSource\":\"%s\",\"charging\":%s,"
 			"\"batteryProtectionState\":\"%s\",\"chargeMonitorState\":\"%s\",\"configuredChargeCurrentMa\":%s,\"usbConnectedSeconds\":%s,\"storageTotalBytes\":%s,"
 			"\"storageUsedBytes\":%s,\"storageState\":\"%s\",\"pendingRecordCount\":%s,\"reviewRecordCount\":%s,\"candidateCount\":%s,"
-			"\"ownerAuthorized\":%s,\"unresolvedAccountLockCount\":%s,\"recordCursorEpoch\":\"%s\",\"applied\":%s,\"timeReady\":%s,\"matchingReady\":%s,\"storedSettingsVersion\":%" PRId64 "}\n",
+			"\"ownerAuthorized\":%s,\"unresolvedAccountLockCount\":%s,\"recordCursorEpoch\":\"%s\",\"applied\":%s,\"timeReady\":%s,\"matchingReady\":%s,\"storedSettingsVersion\":%" PRId64 "%s}\n",
 			request, battery, mv, reading.source, reading.presence, reading.power,
 			status.presence_valid && !status.battery_present ? "false" : status.charging < 0 ? "null" : status.charging ? "true" : "false",
 			status.battery_power_state ? status.battery_power_state : "MEASUREMENT_UNKNOWN",
 			status.charge_monitor_state ? status.charge_monitor_state : "UNKNOWN", charge_current, usb_seconds,
 			total, used, state, pending, review, candidates, authorized(p, KR_OWNER_READ) ? "true" : "false",
 			missing, cursor, kr_product_applied(p) ? "true" : "false",
-			p->clock_ready ? "true" : "false", kr_product_ready(p) ? "true" : "false", p->core->current.version); return true;
+			p->clock_ready ? "true" : "false", kr_product_ready(p) ? "true" : "false", p->core->current.version,
+			p->core->settings_recovery_required ? ",\"settingsRecoveryRequired\":true" : ""); return true;
 	}
 	if (!strcmp(type, "GET_PUBLIC_NAME") || !strcmp(type, "SET_PUBLIC_NAME") || !strcmp(type, "CLEAR_PUBLIC_NAME")) {
 		public_name_command(p, j, type, request, response);

@@ -90,6 +90,7 @@ struct kr_core {
 	struct kr_settings current;
 	struct kr_platform platform;
 	bool storage_error;
+	_Atomic bool settings_recovery_required; /* Shared by NUS and the runtime. Never persisted. */
 	bool profile_transport_protected; /* Per-request RAM state; never part of NVS. */
 	uint32_t connection_epoch;
 	bool stop_peer;

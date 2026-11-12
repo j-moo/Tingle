@@ -9,10 +9,11 @@ endif()
 find_package(Zephyr 4.2.0 REQUIRED HINTS $ENV{ZEPHYR_BASE})
 project(tingle_keyring C)
 option(KR_DIAG_INTERACTIVE_BOOT "Pause boot stages for USB hardware diagnostics" OFF)
+option(KR_STORAGE_INSPECT_ONLY "Read flash metadata without mounting or writing NVS" OFF)
 target_include_directories(app PRIVATE include vendor/monocypher)
 target_sources(app PRIVATE
   src/main.c src/codec.c src/engine.c src/phone.c src/storage.c
-  src/nus.c src/board.c src/proof.c src/settings_auth.c
+  src/nus.c src/board.c src/proof.c src/settings_auth.c src/settings_storage.c
   src/hash.c src/json.c src/request.c src/frame.c src/reset.c src/profile.c
   src/matching.c src/peer.c src/peer_auth.c src/policy.c src/product.c src/battery.c src/service.c
   src/carrier.c src/feedback.c src/power.c
@@ -26,13 +27,17 @@ if(NOT KR_DEV_SETTINGS_PUBLIC_KEY STREQUAL "")
   endif()
   string(SUBSTRING "${KR_DEV_SETTINGS_PUBLIC_KEY}" 0 16 key_prefix)
   target_compile_definitions(app PRIVATE
-    KR_FIRMWARE_VERSION="0.9.5-${KR_CARRIER_VERSION}"
+    KR_FIRMWARE_VERSION="0.9.6-${KR_CARRIER_VERSION}"
     KR_DEV_SERVER_KEY_HEX="${KR_DEV_SETTINGS_PUBLIC_KEY}"
     KR_DEV_SERVER_KEY_ID="dev-ed25519-${key_prefix}")
 else()
-  target_compile_definitions(app PRIVATE KR_FIRMWARE_VERSION="0.9.5-${KR_CARRIER_VERSION}-unified")
+  target_compile_definitions(app PRIVATE KR_FIRMWARE_VERSION="0.9.6-${KR_CARRIER_VERSION}-unified")
 endif()
 target_compile_options(app PRIVATE -Wall -Wextra -Werror -fstack-usage)
 if(KR_DIAG_INTERACTIVE_BOOT)
   target_compile_definitions(app PRIVATE KR_DIAG_INTERACTIVE_BOOT=1)
+endif()
+if(KR_STORAGE_INSPECT_ONLY)
+  target_sources(app PRIVATE src/storage_inspect.c)
+  target_compile_definitions(app PRIVATE KR_STORAGE_INSPECT_ONLY=1)
 endif()
