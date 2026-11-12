@@ -10,7 +10,7 @@ class BleOwnerFlowFixtureTest {
         val bytes = checkNotNull(javaClass.getResourceAsStream("/keyring/status-0.7.json")).use { it.readBytes() }
         val hash = MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
         // iot/tests/data/status-0.7.json 과 같은 bytes. iot verify-app-flow.mjs 가 같은 해시를 고정한다.
-        assertEquals("0b72b1951309a3e410dc1da3e8292e40fd67abddea7c23bcc3987275f2827406", hash)
+        assertEquals("e8809676ee5f40cd75c0769143ccbef19659c20d5e87b436a18f0f4811894bcd", hash)
     }
 
     @Test fun cStatusFixtureIncludesStorageAndIndependentReadiness() {

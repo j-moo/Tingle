@@ -62,7 +62,7 @@
 | UF27 | 관측·보존 중인 더 높은 세대에서 옛 AUTH/같은 epoch 다른 owner로 회귀 금지 | cache_peer + frozen scopes | C 재부팅 후 옛 임시 개인키 보유 replay actor 거부. 서버의 미전파 폐기를 추측하지 않음 |
 | UF28 | 원래 성향·기한·상대 인증서·증명 동결 | product KEV2/TER2 | C 설정 변경/상대 양도/재시작 후 옛 envelope hash 유지, 독립 |
 | UF29 | 앱 소유자 READ/ACK/RELEASE/CONTROL 인증과 연결/세대 경계 | owner session/product/nus | C nonce·기한·권한·단절·현재 소유 변경. NUS 요청 연결 epoch 고정 |
-| UF30 | 실제 저장 용량·미접수/검증/후보 수·FULL/UNKNOWN 표시 | storage_space/product + FE STATUS 수신 | C 집계/미권한, 실제548B C STATUS→Kotlin NUS/파서 회귀. 어댑터 NVS 계측·미측정 잔량 null |
+| UF30 | 실제 저장 용량·미접수/검증/후보 수·FULL/UNKNOWN 표시 | storage_space/product + FE STATUS 수신 | C 집계/미권한, 실제686B C STATUS→Kotlin NUS/파서 회귀. 어댑터 NVS 계측·미측정 잔량 null |
 | UF31 | 기록 번호 영속 예약·조회 epoch·동일 기록의 분할/재전송 | engine sequence/storage/product | C 원본 전부 삭제 후 재부팅·번호 실패·커서 불일치·조각 hash |
 | UF32 | 앱 읽기만으로 삭제하지 않고 서명된 정확한 서버 접수만 반영 | product receipt/export | C 권한·서명·submission/hash·중복 ACK·다른 기록 유지 |
 | UF33 | 억제 먼저 저장 후 원본 삭제·부분 실패 복구 | product_suppression/storage/engine ack | C 원본 삭제 실패 후 재시작/재시도·계정/세대 저널 복원 |
