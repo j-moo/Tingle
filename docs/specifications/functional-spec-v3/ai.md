@@ -26,7 +26,7 @@ CM14로 P0 필수 포함. 허용된 정보로 질문을 제공하고, 공통 주
 | 경계 | 계약 |
 | --- | --- |
 | BE → AI | 기존 `attemptId`, `contextId`, `manifest`를 유지하고 선택 필드 `commonTopicKey`만 추가. 공식 코드 한 개만 전달하며 없음은 필드 생략. `null`·빈 문자열로 보내지 않고 공식 코드 외 값은 거부. 원본 설문·양측 개별 응답·동의 출처는 외부 요청에 포함하지 않음 |
-| AI → BE | 공통 주제 응답은 `source=COMMON_TOPIC_TEMPLATE`, `promptVersion=q040-template-v1`, 기존 형식의 질문 정확히 3개. 주제 없는 요청에 공통 템플릿 응답이 오면 거부. 주제를 보냈어도 `GENERAL_FALLBACK` 응답은 허용. 기존 일반 질문 버전·질문 안전성 검증 유지 |
+| AI → BE | 공통 주제 응답은 `source=COMMON_TOPIC_TEMPLATE`, `promptVersion=q040-template-v1`, 기존 형식의 질문 정확히 3개. 2026-11-12부터 AI가 그 주제로 GMS 생성한 `source=GENERATED`도 허용하되 `promptVersion`이 AI가 승인한 정확한 버전(`icebreakers-gms-ffb273caf96e6059`, 프롬프트 SHA-256 앞 16자)과 같아야 하며, 다른 버전의 `GENERATED`(주제를 무시한 옛 응답)는 거부. 주제 없는 요청에 공통 템플릿 응답이 오면 거부. 주제를 보냈어도 `GENERAL_FALLBACK` 응답은 허용. 기존 일반 질문 버전·질문 안전성 검증 유지 |
 | BE → FE | 질문 조회 응답의 기존 `status`, `questions`, `source`, `promptVersion` 4개 필드 유지. 새 source/version을 구분하며 공통 주제 코드·상대 응답·내부 출처를 공개하지 않음 |
 | 저장 출처 | 내부적으로 양측 사용자, 생성에 사용한 허용 기록 ID/세대, 설문 회차·버전 및 선택 코드 관리. 현재 허용이 같아 보여도 철회 후 재동의로 기록 ID가 달라지면 옛 생성 결과를 재사용하지 않음 |
 
