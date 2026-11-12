@@ -3,12 +3,8 @@
 // MR 은 검사로 끝나고 결과가 GitLab MR 에 파트별로 표시된다. develop · master 에 push(머지)되면 검사 뒤 각 환경에 배포한다 (인프라 계획 6절).
 
 def PARTS = [back: 'back/', ai: 'ai-server/', web: 'front/web/', app: 'front/app/', iot: 'iot/']
-// AI 테스트가 읽는 다른 폴더의 파일(참조 원본 · back 리소스). 바뀌면 ai 도 검사한다.
-def AI_TEST_INPUTS = ['ai-server/reference/survey-20261021/mockup/dist/', 'ai-server/reference/survey-20261021/questionnaire-SIS-Q-1.1-100.json',
-  'back/src/main/resources/icebreakers/', 'back/src/main/resources/survey/questionnaires/SIS-Q-1.1-100.json']
-// back 테스트가 읽는 다른 파트의 파일. 바뀌면 back 도 검사한다.
-def BACK_TEST_INPUTS = ['ai-server/tests/fixtures/mvp-policy-20261026-cases.json', 'ai-server/reference/survey-20261021/questionnaire-SIS-Q-1.1-100.json',
-  'infra/db/prod-changes/']
+// 파트 간 테스트 입력 공유는 금지한다. 공유 계약 데이터는 각 파트가 복사본을 갖고 같은 SHA-256 을 고정한다
+// (back src/test/resources/contracts · ai tests/contracts.py · iot tests/data). 원본 변경 시 복사본과 해시를 함께 갱신한다.
 // 브랜치별 배포: 코드를 dir 에 풀고 services(infra/docker-compose.yml 서비스 이름 → 응답 확인 주소)만 다시 띄운다.
 // bluegreen 은 infra/deploy-bluegreen.sh 로 무중단 전환한다 (운영 back · ai). ai 를 먼저 바꾼다 — 새 ai 가 옛 back 요청도 받아야 한다 (인프라 계획 7절).
 // back 확인은 Actuator — DB 연결까지 정상이면 200, 아니면 503. ai 는 /health.
@@ -50,17 +46,21 @@ pipeline {
             git diff --name-only "$base...HEAD"
           ''').trim().readLines()
           // Jenkinsfile 이 바뀌면 검사 방법이 바뀐 것이므로 전부 돌린다.
-          def matches = { file, paths -> paths.any { path -> path.endsWith('/') ? file.startsWith(path) : file == path } }
           changed = files.contains('Jenkinsfile') ? PARTS.keySet() as List : PARTS.findAll { k, dir ->
             files.any { it.startsWith(dir) }
           }.keySet() as List
-          if (!('ai' in changed) && files.any { matches(it, AI_TEST_INPUTS) }) {
-            changed.add('ai')
-          }
-          if (!('back' in changed) && files.any { matches(it, BACK_TEST_INPUTS) }) {
-            changed.add('back')
-          }
           echo "검사할 파트: ${changed ?: '없음'}"
+          // 공유 계약 복사본 쌍이 갈라지면 어떤 MR 이든 즉시 실패한다. 파트 검사는 각자 복사본만 읽고,
+          // 파이프라인은 여기서 쌍의 byte 일치만 확인한다 (원본·복사본과 양쪽 해시 상수를 함께 갱신해야 통과).
+          sh '''
+            same() { git diff --no-index --quiet "$1" "$2" || { echo "계약 복사본 불일치: $1 != $2" >&2; exit 1; }; }
+            same back/src/test/resources/contracts/mvp-policy-20261026-cases.json ai-server/tests/fixtures/mvp-policy-20261026-cases.json
+            same back/src/test/resources/contracts/prod-changes/247-keyring-server-proofs.sql infra/db/prod-changes/247-keyring-server-proofs.sql
+            same back/src/test/resources/contracts/prod-changes/2026-11-06-member-withdrawal.sql infra/db/prod-changes/2026-11-06-member-withdrawal.sql
+            same back/src/main/resources/survey/questionnaires/SIS-Q-1.1-100.json ai-server/reference/survey-20261021/questionnaire-SIS-Q-1.1-100.json
+            same back/src/main/resources/icebreakers/general-ko-v1.json ai-server/tests/fixtures/icebreakers-general-ko-v1.json
+            same front/app/shared/src/androidHostTest/resources/keyring/status-0.7.json iot/tests/data/status-0.7.json
+          '''
         }
       }
     }

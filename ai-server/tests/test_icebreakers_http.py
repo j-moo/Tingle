@@ -13,6 +13,7 @@ from fastapi.testclient import TestClient
 import jwt
 import pytest
 
+import contracts
 from app.config import Settings
 from app.icebreakers import templates
 from app.match_explanation.releases import ReleaseRegistry
@@ -20,7 +21,6 @@ from security.synthetic_jwt import NOW
 
 
 AI_ROOT = Path(__file__).resolve().parents[1]
-BE_FALLBACK = AI_ROOT.parent / "back/src/main/resources/icebreakers/general-ko-v1.json"
 PATH = "/internal/ai/icebreakers"
 KID = "synthetic-icebreakers"
 
@@ -120,7 +120,7 @@ def test_registered_route_returns_exact_be_fallback(client, make_headers, payloa
     response = client.post(PATH, json=payload, headers={**make_headers(), "X-Request-Id": payload["attemptId"]})
 
     assert response.status_code == 200
-    expected = json.loads(BE_FALLBACK.read_bytes())
+    expected = json.loads(contracts.icebreakers_general_ko_v1())
     assert response.json() == expected
     for question in expected["questions"]:
         assert question.encode("utf-8") in response.content
@@ -140,7 +140,7 @@ def test_registered_route_returns_q040_template(client, make_headers, payload, k
     response = client.post(PATH, json=payload, headers=make_headers())
 
     assert response.status_code == 200
-    general = json.loads(BE_FALLBACK.read_bytes())
+    general = json.loads(contracts.icebreakers_general_ko_v1())
     assert response.json() == {
         "questions": [first_question, *general["questions"][1:]],
         "source": "COMMON_TOPIC_TEMPLATE",
@@ -167,7 +167,7 @@ def test_rejected_q040_question_returns_exact_be_fallback(client, make_headers, 
     response = client.post(PATH, json=payload, headers=make_headers())
 
     assert response.status_code == 200
-    assert response.json() == json.loads(BE_FALLBACK.read_bytes())
+    assert response.json() == json.loads(contracts.icebreakers_general_ko_v1())
 
 
 @pytest.mark.parametrize(("auth", "status", "code"), [

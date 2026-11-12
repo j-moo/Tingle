@@ -1,0 +1,9 @@
+{
+  "questions": [
+    "요즘 즐겁게 하는 취미가 있나요?",
+    "하루 중 가장 좋아하는 시간은 언제인가요?",
+    "이번 주에 기대하는 작은 일이 있나요?"
+  ],
+  "source": "GENERAL_FALLBACK",
+  "promptVersion": "icebreakers-general-ko-v1"
+}
