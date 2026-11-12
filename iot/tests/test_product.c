@@ -656,13 +656,13 @@ static void test_carrier_feedback(void)
 static void test_charge_indicator(void)
 {
 	struct kr_charge_indicator indicator = {0};
-	struct kr_status status = {.usb_valid = true, .usb_present = true, .charging = 1, .battery_mv = 3749};
+	struct kr_status status = {.usb_valid = true, .usb_present = true, .charging = 1, .battery_mv = 3569};
 	for (unsigned i = 0; i < 4; ++i) { assert(kr_charge_indicator_update(&indicator, status) == KR_CHARGE_OFF); }
 	assert(kr_charge_indicator_update(&indicator, status) == KR_CHARGE_LOW);
-	status.battery_mv = 3750;
+	status.battery_mv = 3570; /* 30% in the existing voltage estimate. */
 	for (unsigned i = 0; i < 4; ++i) { assert(kr_charge_indicator_update(&indicator, status) == KR_CHARGE_LOW); }
 	assert(kr_charge_indicator_update(&indicator, status) == KR_CHARGE_MID);
-	status.battery_mv = 4050;
+	status.battery_mv = 3930; /* 70% */
 	for (unsigned i = 0; i < 4; ++i) { assert(kr_charge_indicator_update(&indicator, status) == KR_CHARGE_MID); }
 	assert(kr_charge_indicator_update(&indicator, status) == KR_CHARGE_HIGH);
 	status.charging = 0;
@@ -675,12 +675,58 @@ static void test_charge_indicator(void)
 	status.battery_mv = -1;
 	for (unsigned i = 0; i < 5; ++i) { assert(kr_charge_indicator_update(&indicator, status) == KR_CHARGE_OFF); }
 	status.gauge_ready = status.gauge_percent_valid = true;
-	status.gauge_percent = 75;
+	status.gauge_percent = 70;
 	for (unsigned i = 0; i < 4; ++i) { assert(kr_charge_indicator_update(&indicator, status) == KR_CHARGE_OFF); }
 	assert(kr_charge_indicator_update(&indicator, status) == KR_CHARGE_HIGH);
 	status.usb_present = false;
 	assert(kr_charge_indicator_update(&indicator, status) == KR_CHARGE_OFF);
-	puts("charge LED: level boundaries, stable samples, absent battery and USB removal passed");
+	/* Validate both sides of the 30/70 boundaries using true SOC when present.
+	 * A broken gauge must never silently fall back to a plausible ADC value. */
+	status.usb_present = true;
+	status.battery_mv = 4200;
+	const int percentages[] = {-1, 0, 29, 30, 69, 70, 100, 101};
+	const enum kr_charge_level levels[] = {KR_CHARGE_OFF, KR_CHARGE_LOW, KR_CHARGE_LOW,
+		KR_CHARGE_MID, KR_CHARGE_MID, KR_CHARGE_HIGH, KR_CHARGE_HIGH, KR_CHARGE_OFF};
+	const uint8_t colors[] = {0, 1, 1, 4, 4, 2, 2, 0};
+	for (unsigned n = 0; n < sizeof(percentages) / sizeof(percentages[0]); ++n) {
+		status.gauge_percent = percentages[n];
+		for (unsigned i = 0; i < 5; ++i) { (void)kr_charge_indicator_update(&indicator, status); }
+		assert(indicator.level == levels[n]);
+		assert(kr_charge_indicator_rgb(indicator.level) == colors[n]);
+	}
+	status.gauge_percent = 80;
+	status.gauge_percent_valid = false;
+	for (unsigned i = 0; i < 5; ++i) { assert(kr_charge_indicator_update(&indicator, status) == KR_CHARGE_OFF); }
+	status.gauge_ready = false;
+	status.charging = 1;
+	status.battery_mv = 3929;
+	for (unsigned i = 0; i < 5; ++i) { (void)kr_charge_indicator_update(&indicator, status); }
+	assert(indicator.level == KR_CHARGE_MID);
+	/* Alternating samples do not cause a threshold flicker. */
+	for (unsigned i = 0; i < 10; ++i) {
+		status.battery_mv = i % 2 ? 3929 : 3930;
+		assert(kr_charge_indicator_update(&indicator, status) == KR_CHARGE_MID);
+	}
+	assert(kr_battery_reading(status).percent == -1); /* LED estimate does not change BLE SOC. */
+	status.battery_mv = 4301;
+	assert(kr_charge_indicator_update(&indicator, status) == KR_CHARGE_OFF);
+	status.battery_mv = 2999;
+	assert(kr_charge_indicator_update(&indicator, status) == KR_CHARGE_OFF);
+	status.battery_mv = 3930;
+	status.charging = -1;
+	for (unsigned i = 0; i < 5; ++i) { assert(kr_charge_indicator_update(&indicator, status) == KR_CHARGE_OFF); }
+	status.charging = 1;
+	status.usb_valid = false;
+	assert(kr_charge_indicator_update(&indicator, status) == KR_CHARGE_OFF);
+	/* No mixed boot-green/red or stale blue after a diagnostic ends. */
+	assert(kr_status_led_rgb(KR_CHARGE_LOW, true, false, false) == 1);
+	assert(kr_status_led_rgb(KR_CHARGE_MID, true, false, false) == 4);
+	assert(kr_status_led_rgb(KR_CHARGE_HIGH, true, false, false) == 2);
+	assert(kr_status_led_rgb(KR_CHARGE_OFF, true, false, false) == 0);
+	assert(kr_status_led_rgb(KR_CHARGE_HIGH, true, true, false) == 1);
+	assert(kr_status_led_rgb(KR_CHARGE_LOW, true, false, true) == 4);
+	assert(kr_status_led_rgb(KR_CHARGE_OFF, false, false, false) == 2);
+	puts("charge LED: 30/70% RGB, stability, unknown/absent/unplugged, gauge failures and onboard priority passed");
 }
 
 int main(int argc, char **argv)

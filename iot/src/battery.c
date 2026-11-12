@@ -1,6 +1,11 @@
 #include "battery.h"
 
 #define CHARGE_CONFIRM_SAMPLES 5
+static int voltage_percent(int mv)
+{
+	return mv <= 3300 ? 0 : mv >= 4200 ? 100 : (mv - 3300) * 100 / 900;
+}
+
 struct kr_battery_reading kr_battery_reading(struct kr_status s)
 {
 	struct kr_battery_reading r = {.percent = -1, .source = "UNKNOWN", .presence = "UNCONFIRMED",
@@ -15,8 +20,14 @@ struct kr_battery_reading kr_battery_reading(struct kr_status s)
 	}
 	/* USB/charging voltages can mimic a full battery even with no cell. */
 	if ((s.usb_valid && s.usb_present) || s.charging > 0 || s.battery_mv < 3000 || s.battery_mv > 4300) { return r; }
-	r.percent = s.battery_mv <= 3300 ? 0 : s.battery_mv >= 4200 ? 100 : (s.battery_mv - 3300) * 100 / 900;
+	r.percent = voltage_percent(s.battery_mv);
 	r.source = "VOLTAGE_ESTIMATE"; return r;
+}
+
+static enum kr_charge_level percent_level(int percent)
+{
+	if (percent < 30) { return KR_CHARGE_LOW; }
+	return percent < 70 ? KR_CHARGE_MID : KR_CHARGE_HIGH;
 }
 
 static enum kr_charge_level charge_level(struct kr_status s)
@@ -27,14 +38,33 @@ static enum kr_charge_level charge_level(struct kr_status s)
 	if (s.gauge_ready) {
 		int percent = kr_battery_reading(s).percent;
 		if (!s.presence_valid || percent < 0) { return KR_CHARGE_OFF; }
-		if (percent < 25) { return KR_CHARGE_LOW; }
-		return percent < 75 ? KR_CHARGE_MID : KR_CHARGE_HIGH;
+		return percent_level(percent);
 	}
 	/* The XIAO charger can regulate BAT even when SW1 has disconnected the cell.
 	 * Only use the ADC while CHG is asserted. CHG high does not prove full charge. */
 	if (s.charging != 1 || s.battery_mv < 3000 || s.battery_mv > 4300) { return KR_CHARGE_OFF; }
-	if (s.battery_mv < 3750) { return KR_CHARGE_LOW; }
-	return s.battery_mv < 4050 ? KR_CHARGE_MID : KR_CHARGE_HIGH;
+	/* LED-only estimate: charging raises cell voltage. Do not publish this as
+	 * measured SOC in GET_STATUS, or use it to control charging/protection. */
+	return percent_level(voltage_percent(s.battery_mv));
+}
+
+uint8_t kr_charge_indicator_rgb(enum kr_charge_level level)
+{
+	switch (level) {
+	case KR_CHARGE_LOW: return 1; /* R */
+	case KR_CHARGE_MID: return 4; /* B */
+	case KR_CHARGE_HIGH: return 2; /* G */
+	default: return 0;
+	}
+}
+
+uint8_t kr_status_led_rgb(enum kr_charge_level level, bool usb, bool error, bool diagnostic)
+{
+	if (error) { return 1; }
+	if (diagnostic) { return 4; }
+	/* Idle green means radio ready only on battery power. USB with unknown
+	 * charge state must not look like a high/full battery. */
+	return usb ? kr_charge_indicator_rgb(level) : 2;
 }
 
 enum kr_charge_level kr_charge_indicator_update(struct kr_charge_indicator *indicator, struct kr_status status)

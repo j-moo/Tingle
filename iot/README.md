@@ -6,7 +6,7 @@
 
 ## SIS D3.1 Y3 PCB
 
-`0.9.3-d31`은 제조 파일 `01_SIS_D31_GERBER_CAM_Y3.zip`과 D3.1의 `06_PIN_NET_MAP.csv`를 기준으로 한다. 기본 빌드와 `-Carrier d31`은 같은 설정을 사용한다. [공개 검색 이름 BLE 계약](keyring-app-ble-contract-v1.md#public-scan-name)과 [Fold6 검색·페어링 인계](app-flow-v2-handoff.md#fold6-ble-recovery)를 참조한다.
+`0.9.4-d31`은 제조 파일 `01_SIS_D31_GERBER_CAM_Y3.zip`과 D3.1의 `06_PIN_NET_MAP.csv`를 기준으로 한다. 기본 빌드와 `-Carrier d31`은 같은 설정을 사용한다. [공개 검색 이름 BLE 계약](keyring-app-ble-contract-v1.md#public-scan-name)과 [Fold6 검색·페어링 인계](app-flow-v2-handoff.md#fold6-ble-recovery)를 참조한다.
 
 | 기능 | XIAO 핀 | 제조 기판 연결 |
 | --- | --- | --- |
@@ -21,21 +21,30 @@
 
 ### USB 충전 중 배터리 LED
 
-D3.1 Y3의 배터리를 연결하고 SW1을 ON으로 둔 상태에서 XIAO USB-C에 전원을 공급한다. 내장 충전기의 CHG 신호가 활성이고 배터리 측정 전압이 유효하면 외부 J4 RGB에 아래 전압 구간을 표시한다.
+D3.1 Y3의 배터리를 연결하고 SW1을 ON으로 둔 상태에서 XIAO USB-C에 전원을 공급한다. `0.9.4-d31`부터 **XIAO 보드 내장 RGB와 외부 J4 RGB**에 같은 잔량 구간을 표시한다. 내장 RGB는 외부 LED 하네스를 연결하지 않아도 동작한다. 별도의 작은 충전등은 충전 IC가 제어하며 색을 바꾸는 대상이 아니다.
 
-| 충전 중 측정 전압 | J4 RGB |
-| --- | --- |
-| 3.00V 이상, 3.75V 미만 | 빨강 |
-| 3.75V 이상, 4.05V 미만 | 노랑 |
-| 4.05V 이상, 4.30V 이하 | 초록 |
+| 잔량 구간 | 내장/외부 RGB | 기본 XIAO의 전압 환산 기준 |
+| --- | --- | --- |
+| 30% 미만 | 빨강 | 3.00V 이상, 3.57V 미만 |
+| 30% 이상, 70% 미만 | 파랑 | 3.57V 이상, 3.93V 미만 |
+| 70% 이상 | 초록 | 3.93V 이상, 4.30V 이하 |
 
-같은 구간이 다섯 번 연속 확인되면 색을 바꾼다. USB를 빼거나 충전 신호·전압을 확인할 수 없으면 충전 표시가 꺼진다. 초록은 충전 중 전압이 높은 구간이다. 배터리 잔량 비율은 기존 `GET_STATUS` 규칙대로 표시한다. 기본 XIAO의 CHG가 비활성이면 충전 종료와 배터리 미연결을 구분할 수 없다. 보드 자체 충전등은 내장 충전기가 제어한다. [Seeed XIAO 배터리 안내](https://wiki.seeedstudio.com/XIAO_BLE/#battery-charging-current) · [TI BQ25101 데이터시트](https://www.ti.com/lit/ds/symlink/bq25101.pdf)
+현재 기판에는 별도 잔량계가 없어 기존의 `clamp((mV - 3300) * 100 / 900, 0, 100)` 전압 추정을 LED에만 사용한다. **충전 중 전압은 실제 잔량보다 높게 보일 수 있으며 색은 정확한 SOC나 완충 증명이 아니다.** 기본 보드에서는 USB VBUS·CHG 활성·3.00~4.30V 측정이 모두 확인될 때만 표시한다. CHG가 비활성이면 충전 종료와 배터리 미연결을 구분할 수 없어 충전 색을 끈다. 별도 잔량계를 연결한 빌드에서는 장착 여부와 유효한 잔량 측정값이 있을 때만 USB 잔량 색을 표시한다. `GET_STATUS`의 USB/충전 중 `batteryPercent:null`, `UNKNOWN` 처리 등 기존 계약은 바꾸지 않는다.
 
-만남 LED가 켜지면 해당 색을 우선 표시하고, 종료되면 충전 상태에 따라 다시 표시한다. 실물 시험에서 SW1 ON/OFF와 배터리 미연결, USB 삽입·제거, 저·중·고 구간, 만남 안내 종료 후 복귀를 확인한다.
+같은 구간이 다섯 번 연속 확인되면 색을 바꾼다(측정 간격 약 250ms). USB 제거·알 수 없는 충전 신호·범위 밖 전압·확인된 배터리 미연결은 충전 표시를 해제한다. 내장 RGB는 부팅 오류 빨강과 명시적으로 켠 Lab 진단 파랑을 우선하며, 진단 종료 시 충전 색으로 복귀한다. USB가 연결돼 있으나 충전 상태를 모를 때는 부팅 완료 초록도 표시하지 않는다. USB를 뽑으면 기존 배터리 동작의 준비 완료 초록으로 복귀한다. Rev G 소프트 OFF에서는 내장/외부 RGB를 모두 끈다.
+
+외부 만남 LED가 켜지면 해당 색을 우선 표시하고, 종료되면 충전 상태에 따라 다시 표시한다. 실물 시험에서 SW1 ON/OFF와 배터리 미연결, USB 삽입·제거, 저·중·고 구간, 진단/만남 안내 종료 후 복귀를 확인한다. 30%·70% 경계는 모의 잔량계와 ADC 입력 호스트 검사로 검증하며 실제 배터리 잔량 정확도는 실측으로 별도 검증한다.
+
+### 충전과 배터리 보호 범위
+
+- XIAO USB-C → 내장 BQ25101 충전 IC → BAT 경로로 단일 3.7V 리튬 배터리를 충전한다. D3.1은 SW1 ON이어야 배터리와 XIAO BAT가 연결된다. `kr_board_charge_init()`은 P0.13을 풀 없는 하이임피던스로 유지해 공칭 50mA 정전류 설정을 선택한다. 실제 배터리에 들어가는 전류는 시스템 소비·충전 단계에 따라 달라진다.
+- 충전 전압 조절(공칭 4.2V), 전류 감소 후 종료 및 재충전은 충전 IC의 기능이다. RGB 색이나 `GET_STATUS`가 충전을 켜거나 끄지 않는다. LED 판정에서 쓰는 4.30V는 측정값 허용 범위이며 충전 목표 전압이 아니다. [Seeed 배터리 안내](https://wiki.seeedstudio.com/XIAO_BLE/#battery-charging-current) · [TI BQ25101 데이터시트](https://www.ti.com/lit/ds/symlink/bq25101.pdf)
+- 현재 펌웨어는 배터리 전압 3.30V 미만 또는 4.30V 초과에서 **진동 시작을 차단**한다. 기기 전체의 저전압 자동 종료나 배터리 경로의 물리 차단을 구현한 것은 아니다. Rev G의 System OFF는 사용자가 SW1을 OFF로 옮겼을 때 동작한다.
+- 확인한 D3.1 제조 부품표에는 별도 과충전·과방전 보호 IC/차단 MOSFET이 없다. XIAO의 충전 기능을 배터리팩 보호회로와 동일시하지 않는다. 배터리팩 자체의 보호회로 유무·차단 전압은 사용 배터리 자료로 확인해야 하며, 펌웨어 추정 잔량이나 MCU 절전으로 물리 보호회로를 대체할 수 없다.
 
 ## Rev G PCB와 물리 안내
 
-`-Carrier revg`는 **Tingle Rev G 31x50 Connector** 프로필의 `0.9.3-revg`를 빌드한다. Rev F도 같은 GPIO와 모터 전원을 사용한다. Rev G는 배터리 입력 J1과 XIAO BAT 연결 J2를 구분하고 XIAO 내장 USB-C 충전을 사용한다. 동작 중에는 J6 RGB에 같은 충전 색을 표시한다. [Seeed XIAO 회로도](https://files.seeedstudio.com/wiki/XIAO-BLE/Seeed_Studio_XIAO_nRF52840_PDF.pdf)
+`-Carrier revg`는 **Tingle Rev G 31x50 Connector** 프로필의 `0.9.4-revg`를 빌드한다. Rev F도 같은 GPIO와 모터 전원을 사용한다. Rev G는 배터리 입력 J1과 XIAO BAT 연결 J2를 구분하고 XIAO 내장 USB-C 충전을 사용한다. 동작 중에는 J6 RGB에 같은 충전 색을 표시한다. [Seeed XIAO 회로도](https://files.seeedstudio.com/wiki/XIAO-BLE/Seeed_Studio_XIAO_nRF52840_PDF.pdf)
 
 | 기능 | XIAO 핀 | PCB 연결과 동작 |
 | --- | --- | --- |
@@ -50,7 +59,7 @@ Rev G의 RGB 출력은 HIGH에서 고구동(S0H1)을 사용한다. 각 채널의
 
 만남을 비휘발성 저장한 뒤에 물리 안내를 시작한다. LED는 각자의 설정을 따르고 동일 만남 ID에서 같은 색을 고른다. 계속 근접한 경우 점등 30초 후 종료한다. 진동은 양쪽 설정이 모두 ON일 때 120ms 구동, 150ms 간격, 120ms 구동을 한 묶음으로 실행한다. 진동 묶음과 겹친 추가 만남은 정상 저장하며 현재 물리 출력을 연장하거나 재시작하지 않는다.
 
-SW2와 앱의 `STOP_FEEDBACK`은 현재 만남 LED와 남은 진동을 취소한다. 상대가 서명된 근접 관측 시간 안에 다시 감지되지 않거나 현재 설정·소유 세대·준비 상태가 유효하지 않으면 만남 출력을 종료한다. 매칭 OFF·초기화에서도 만남 안내를 종료한다. 재전송과 재부팅 뒤에도 동일 확정 기록의 안내는 다시 실행하지 않는다. 보드 자체 RGB는 부팅·Lab 진단에 사용한다.
+SW2와 앱의 `STOP_FEEDBACK`은 현재 만남 LED와 남은 진동을 취소한다. 상대가 서명된 근접 관측 시간 안에 다시 감지되지 않거나 현재 설정·소유 세대·준비 상태가 유효하지 않으면 만남 출력을 종료한다. 매칭 OFF·초기화에서도 만남 안내를 종료한다. 재전송과 재부팅 뒤에도 동일 확정 기록의 안내는 다시 실행하지 않는다. 보드 자체 RGB는 부팅·Lab 진단과 위 USB 충전 잔량 표시에 사용한다.
 
 Rev G의 Grove 모터는 XIAO 3V3에서 전원을 받는다. USB가 연결돼도 ON 상태에서 알림을 구동할 수 있다. 배터리 단독에서는 기존 3.30–4.30V 조건을 적용한다. 구동 중 USB 상태가 바뀌면 남은 진동을 취소한다. 내장 충전 전류는 P0.13을 풀 없는 하이임피던스로 설정해 정전류 구간 공칭 50mA를 선택한다. 배터리 잔량은 기존 전압 기반 추정 및 미확인 표시를 유지한다. [Seeed 충전 설정](https://wiki.seeedstudio.com/XIAO_BLE/#battery-charging-current)
 
@@ -166,7 +175,7 @@ Get-Content ./iot/build/firmware-manifest.json
 
 ## 현재 개발 빌드 범위
 
-- 기본 버전은 SIS D3.1 Y3용 `0.9.3-d31`이다. 팀 서버 검증키는 `config/dev-settings-public-key.hex`, 키 ID는 `dev-ed25519-799e2999c648fda3`다.
+- 기본 버전은 SIS D3.1 Y3용 `0.9.4-d31`이다. 팀 서버 검증키는 `config/dev-settings-public-key.hex`, 키 ID는 `dev-ed25519-799e2999c648fda3`다.
 - TSV3 적용 확인은 [`GET_SETTINGS_APPLIED_PROOF`](app-flow-v2-handoff.md#tsv3-설정-적용-증명--073-applied-proof)로 조회한다.
 - 실제 앱의 NUS JSON 기기 정보 조회·등록 challenge 서명·설정 검증/영구 저장·서명된 `STORED` 응답 경로를 포함한다.
 - 기존1바이트 ON/OFF 외에 최신 develop `411fce89`는 FE264·BE257의196B 성향 저장 공급/서명·보호 중계를 포함한다. 펌웨어의 전체 TSV3 성향/개인 조건 설정도 지원하며 해당 grant/기록 연동은 아래 인계대로 추가 연결해야 한다. 정상 저장 후 `LAB ENABLE` 없이 무선을 제어하고 저장 완료와 전체 매칭 준비를 구분한다.

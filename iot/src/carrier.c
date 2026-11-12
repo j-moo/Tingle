@@ -55,10 +55,7 @@ static int drive(uint8_t color, bool vibrate)
 
 static uint8_t charge_color(bool usb)
 {
-	static const uint8_t colors[] = {
-		[KR_CHARGE_LOW] = BIT(0), [KR_CHARGE_MID] = BIT(0) | BIT(1), [KR_CHARGE_HIGH] = BIT(1),
-	};
-	return usb ? colors[charge_indicator.level] : 0;
+	return usb ? kr_charge_indicator_rgb(charge_indicator.level) : 0;
 }
 
 static void stop_locked(void)
@@ -98,11 +95,12 @@ void kr_carrier_poll_charge(void)
 	struct kr_status power = usb ? kr_board_status() : (struct kr_status){0};
 
 	k_mutex_lock(&carrier_lock, K_FOREVER);
-	if (ready) {
-		enum kr_charge_level before = charge_indicator.level;
-		if (kr_charge_indicator_update(&charge_indicator, power) != before) { (void)update_locked(); }
-	}
+	enum kr_charge_level before = charge_indicator.level;
+	enum kr_charge_level level = kr_charge_indicator_update(&charge_indicator, power);
+	if (ready && level != before) { (void)update_locked(); }
 	k_mutex_unlock(&carrier_lock);
+	/* The onboard RGB also works without an external RGB/motor harness. */
+	kr_board_charge_led(level, usb);
 }
 
 static void output_tick(struct k_work *work)

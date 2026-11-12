@@ -226,20 +226,20 @@ static void boot_progress(enum boot_step step)
 static void turn_led_off(struct k_work *work)
 {
 	ARG_UNUSED(work);
-	(void)gpio_pin_set_dt(&led, 0);
+	kr_board_led(false);
 }
 void kr_runtime_stop_feedback(void)
 {
 	kr_carrier_feedback_stop();
 	(void)k_work_cancel_delayable(&led_off);
-	if (gpio_is_ready_dt(&led)) { (void)gpio_pin_set_dt(&led, 0); }
+	kr_board_led(false);
 }
 
 static void feedback(void *ctx, const struct kr_record *record, const struct kr_profile *peer)
 {
 	ARG_UNUSED(ctx);
 	if (atomic_get(&lab_enabled)) {
-		(void)gpio_pin_set_dt(&led, 1);
+		kr_board_led(true);
 		(void)k_work_reschedule(&led_off, K_MSEC(KR_FEEDBACK_LED_MS));
 		LOG_INF("Local test encounter persisted; feedback claimed");
 		return;
@@ -896,8 +896,7 @@ static void check_carrier_off(bool radio_running)
 	k_msleep(20); /* Slide-switch debounce only. */
 	if (!kr_carrier_off_requested()) { return; }
 	kr_runtime_stop_feedback();
-	(void)gpio_pin_set_dt(&boot_red, 0);
-	(void)gpio_pin_set_dt(&boot_green, 0);
+	kr_board_led_off();
 	if (radio_running) {
 		kr_nus_quiesce();
 		int result = bt_disable();
@@ -967,8 +966,8 @@ int main(void)
 		return 0;
 	}
 	boot_progress(BOOT_READY);
-	(void)gpio_pin_set_dt(&boot_red, engine.storage_error ? 1 : 0);
-	(void)gpio_pin_set_dt(&boot_green, 1);
+	int led_error = kr_board_led_ready(engine.storage_error);
+	if (led_error) { LOG_ERR("Board RGB unavailable: %d", led_error); }
 	LOG_INF("NUS ready, registration window=60s. USB LAB ENABLE starts synthetic matching for this boot");
 	bool registration_expired = false;
 	bool service_mode = false, service_update = false;

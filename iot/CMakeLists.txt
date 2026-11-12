@@ -26,11 +26,11 @@ if(NOT KR_DEV_SETTINGS_PUBLIC_KEY STREQUAL "")
   endif()
   string(SUBSTRING "${KR_DEV_SETTINGS_PUBLIC_KEY}" 0 16 key_prefix)
   target_compile_definitions(app PRIVATE
-    KR_FIRMWARE_VERSION="0.9.3-${KR_CARRIER_VERSION}"
+    KR_FIRMWARE_VERSION="0.9.4-${KR_CARRIER_VERSION}"
     KR_DEV_SERVER_KEY_HEX="${KR_DEV_SETTINGS_PUBLIC_KEY}"
     KR_DEV_SERVER_KEY_ID="dev-ed25519-${key_prefix}")
 else()
-  target_compile_definitions(app PRIVATE KR_FIRMWARE_VERSION="0.9.3-${KR_CARRIER_VERSION}-unified")
+  target_compile_definitions(app PRIVATE KR_FIRMWARE_VERSION="0.9.4-${KR_CARRIER_VERSION}-unified")
 endif()
 target_compile_options(app PRIVATE -Wall -Wextra -Werror -fstack-usage)
 if(KR_DIAG_INTERACTIVE_BOOT)

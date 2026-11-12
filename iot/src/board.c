@@ -33,6 +33,14 @@ static struct kr_reset_record reset_readback;
 static const struct device *gpio = DEVICE_DT_GET(DT_NODELABEL(gpio0));
 static const struct device *adc = DEVICE_DT_GET(DT_NODELABEL(adc));
 static const struct gpio_dt_spec led = GPIO_DT_SPEC_GET(DT_ALIAS(led2), gpios);
+static const struct gpio_dt_spec rgb[] = {
+	GPIO_DT_SPEC_GET(DT_ALIAS(led0), gpios),
+	GPIO_DT_SPEC_GET(DT_ALIAS(led1), gpios),
+	GPIO_DT_SPEC_GET(DT_ALIAS(led2), gpios),
+};
+static bool led_ready, led_error, led_diagnostic, led_usb, led_stopped;
+static enum kr_charge_level led_charge;
+K_MUTEX_DEFINE(led_lock);
 static bool battery_ready;
 
 int kr_board_charge_init(void)
@@ -432,7 +440,55 @@ struct kr_status kr_board_status(void)
 	return status;
 }
 
+static void render_led_locked(void)
+{
+	if (!led_ready) { return; }
+	uint8_t color = led_stopped ? 0 : kr_status_led_rgb(led_charge, led_usb, led_error, led_diagnostic);
+	for (size_t i = 0; i < ARRAY_SIZE(rgb); ++i) {
+		(void)gpio_pin_set_dt(&rgb[i], (color & BIT(i)) != 0);
+	}
+}
+
+int kr_board_led_ready(bool error)
+{
+	k_mutex_lock(&led_lock, K_FOREVER);
+	int result = 0;
+	for (size_t i = 0; i < ARRAY_SIZE(rgb); ++i) {
+		result = gpio_is_ready_dt(&rgb[i]) ? gpio_pin_configure_dt(&rgb[i], GPIO_OUTPUT_INACTIVE) : -ENODEV;
+		if (result) { break; }
+	}
+	led_ready = !result;
+	led_error = error;
+	led_usb = kr_board_usb_present();
+	render_led_locked();
+	k_mutex_unlock(&led_lock);
+	return result;
+}
+
 void kr_board_led(bool active)
 {
-	if (gpio_is_ready_dt(&led)) { gpio_pin_set_dt(&led, active); }
+	k_mutex_lock(&led_lock, K_FOREVER);
+	led_diagnostic = active;
+	if (!led_ready && !led_stopped && gpio_is_ready_dt(&led)) { (void)gpio_pin_set_dt(&led, active); }
+	render_led_locked();
+	k_mutex_unlock(&led_lock);
+}
+
+void kr_board_charge_led(enum kr_charge_level level, bool usb)
+{
+	k_mutex_lock(&led_lock, K_FOREVER);
+	led_charge = level;
+	led_usb = usb;
+	render_led_locked();
+	k_mutex_unlock(&led_lock);
+}
+
+void kr_board_led_off(void)
+{
+	k_mutex_lock(&led_lock, K_FOREVER);
+	led_stopped = true;
+	for (size_t i = 0; i < ARRAY_SIZE(rgb); ++i) {
+		if (gpio_is_ready_dt(&rgb[i])) { (void)gpio_pin_set_dt(&rgb[i], 0); }
+	}
+	k_mutex_unlock(&led_lock);
 }
