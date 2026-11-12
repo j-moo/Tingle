@@ -2,15 +2,19 @@
 
 import asyncio
 from collections.abc import Callable
+from typing import TYPE_CHECKING
 
 from fastapi import APIRouter
 
 from app.risk_detection.execution import ExecutionBoundary
 from app.risk_detection.http_api import ReleaseCatalog, RuntimeResources, _error, create_router
 
+if TYPE_CHECKING:
+    from app.risk_detection.gms_runtime import GmsPrimaryConfiguration
+
 
 class DevelopmentRuntime:
-    """Own one worker's HTTP boundary and engine, never a provider configuration.
+    """Own one worker's HTTP boundary and explicitly assembled engine.
 
     The optional Python factory transfers engine ownership only on return. It is
     a test seam, not a setting, HTTP input, plugin loader or model registry.
@@ -19,10 +23,12 @@ class DevelopmentRuntime:
 
     def __init__(self, *, environment: str, enabled: bool = False,
                  descriptor_file: str = "", descriptor_sha256: str = "",
-                 engine_factory: Callable | None = None):
+                 engine_factory: Callable | None = None,
+                 gms_primary: "GmsPrimaryConfiguration | None" = None):
         self.environment, self.enabled = environment, enabled
         self.descriptor_file, self.descriptor_sha256 = descriptor_file, descriptor_sha256
         self._engine_factory = engine_factory
+        self._gms_primary = gms_primary
         self._state = "new"
         self._owned: RuntimeResources | None = None
         self._close_task: asyncio.Task | None = None
@@ -68,8 +74,21 @@ class DevelopmentRuntime:
 
                 catalog = DevelopmentReleaseCatalog(
                     self.descriptor_file, descriptor_sha256=self.descriptor_sha256)
-                factory = self._engine_factory or LocalRuleRiskEngine
-                engine = factory(count_input_tokens=catalog.tokenizer.count)
+                if self._gms_primary is not None:
+                    from app.risk_detection.gms_runtime import (
+                        GmsPrimaryConfiguration, GmsPrimaryEngine, GmsReleaseCatalog,
+                    )
+
+                    if type(self._gms_primary) is not GmsPrimaryConfiguration:
+                        raise DevelopmentReleaseError()
+                    if self._gms_primary.enabled is True:
+                        if self._engine_factory is not None:
+                            raise DevelopmentReleaseError()
+                        catalog = GmsReleaseCatalog(catalog, self._gms_primary)
+                        engine = GmsPrimaryEngine(catalog=catalog, configuration=self._gms_primary)
+                if engine is None:
+                    factory = self._engine_factory or LocalRuleRiskEngine
+                    engine = factory(count_input_tokens=catalog.tokenizer.count)
                 execution = ExecutionBoundary(getattr(engine, "execution_limits", None))
                 # Recheck the catalog's pinned snapshot after dependency assembly.
                 if not catalog.supports(catalog._manifest):

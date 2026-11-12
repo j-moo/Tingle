@@ -1,5 +1,6 @@
 from collections.abc import Callable
 from contextlib import asynccontextmanager
+from typing import TYPE_CHECKING
 
 from fastapi import FastAPI, HTTPException, Request
 
@@ -10,11 +11,16 @@ from app.middleware.request_id import RequestIdMiddleware, install_error_handler
 from app.risk_detection.runtime import DevelopmentRuntime, create_development_router
 from app.security.service_auth import ServiceAuthenticator, ServiceAuthError, ServiceAuthSettings
 
-def create_app(app_settings: Settings | None = None, *, _risk_engine_factory: Callable | None = None) -> FastAPI:
-    """Build the real application; Python-only engine injection is for tests.
+if TYPE_CHECKING:
+    from app.risk_detection.gms_runtime import GmsPrimaryConfiguration
+
+def create_app(app_settings: Settings | None = None, *, _risk_engine_factory: Callable | None = None,
+               _risk_gms_primary: "GmsPrimaryConfiguration | None" = None) -> FastAPI:
+    """Build the real application with explicit Python-only dependency injection.
 
     No setting or HTTP input selects a model. The default application keeps
-    Safety Guard OFF, and explicit development opt-in still uses local rules.
+    Safety Guard OFF. Development opt-in uses local rules unless a separately
+    pinned GMS approval and an explicit internal configuration are supplied.
     """
     configured = app_settings if app_settings is not None else settings
     risk_runtime = DevelopmentRuntime(
@@ -22,6 +28,7 @@ def create_app(app_settings: Settings | None = None, *, _risk_engine_factory: Ca
         descriptor_file=configured.risk_release_descriptor_file,
         descriptor_sha256=configured.risk_local_rules_descriptor_sha256,
         engine_factory=_risk_engine_factory,
+        gms_primary=_risk_gms_primary,
     )
 
     @asynccontextmanager
