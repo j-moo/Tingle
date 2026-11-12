@@ -347,6 +347,9 @@ void kr_nus_poll_console(bool blink)
 		struct kr_status status = kr_board_status();
 		printk("HEALTH uptime=%lld batteryMv=%d charging=%d storageError=%u\n",
 			(long long)(now / 1000), status.battery_mv, status.charging, core.storage_error);
+		printk("POWER protection=%s charge=%s configuredMa=%d usbSeconds=%u\n",
+			status.battery_power_state, status.charge_monitor_state,
+			status.charge_current_ma, status.charge_elapsed_seconds);
 		k_mutex_unlock(&core_lock);
 	}
 }
@@ -400,7 +403,7 @@ static void process_requests(void *a, void *b, void *c)
 		int result = respond(conn, response);
 		struct kr_peer_plan plan;
 		k_mutex_lock(&core_lock, K_FOREVER);
-		bool activate_peer = kr_peer_after_response(&core, result == 0, &plan);
+		bool activate_peer = !atomic_get(&quiescing) && kr_peer_after_response(&core, result == 0, &plan);
 		kr_request_forget_candidate();
 		k_mutex_unlock(&core_lock);
 		if (activate_peer) {
@@ -424,6 +427,7 @@ K_THREAD_DEFINE(nus_worker, 8192, process_requests, NULL, NULL, NULL, 7, 0, 0);
 static int64_t application_uptime(void *ctx) { ARG_UNUSED(ctx); return k_uptime_get(); }
 static int application_random(void *ctx, uint8_t *bytes, size_t length) { ARG_UNUSED(ctx); return sys_csrand_get(bytes, length); }
 static void application_stop(void *ctx) { ARG_UNUSED(ctx); kr_runtime_stop_feedback(); }
+static void application_refresh_phone(void *ctx) { ARG_UNUSED(ctx); kr_runtime_refresh_phone(); }
 static uint32_t application_generation(void *ctx) { ARG_UNUSED(ctx); return kr_runtime_generation(); }
 static int application_record(void *ctx, unsigned slot, const struct kr_record *record)
 {
@@ -451,12 +455,25 @@ void kr_nus_attach_application(struct kr_engine *engine)
 	(void)hex2bin(KR_DEV_SERVER_KEY_HEX, 64, key, sizeof(key));
 #endif
 	struct kr_product_io io = {.uptime_ms = application_uptime, .random = application_random,
-		.blob = kr_storage_blob, .space = kr_storage_space, .stop_feedback = application_stop, .generation = application_generation};
+		.blob = kr_storage_blob, .space = kr_storage_space, .stop_feedback = application_stop,
+		.refresh_phone = application_refresh_phone, .generation = application_generation};
 	kr_product_init(&application, &core, engine, io, key); core.platform.application = application_request;
 	engine->io.record = application_record;
 	engine->io.suppression = application_suppression;
 	engine->io.same_peer = application_same_peer; engine->io.candidate_ready = application_candidate;
 	engine->io.error_key = application_error_key;
+}
+
+size_t kr_nus_copy_public_name(char name[KR_PUBLIC_NAME_MAX + 1])
+{
+	k_mutex_lock(&core_lock, K_FOREVER);
+	kr_runtime_owner_lock();
+	const char *saved = kr_product_public_name(&application);
+	size_t length = strlen(saved);
+	memcpy(name, saved, length + 1);
+	kr_runtime_owner_unlock();
+	k_mutex_unlock(&core_lock);
+	return length;
 }
 int kr_nus_apply_application(const struct kr_peer_plan *plan, struct kr_peer_runtime *peers)
 {

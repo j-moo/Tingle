@@ -1,4 +1,5 @@
 #include "board.h"
+#include "power.h"
 #include "nus.h"
 #include "profile.h"
 #include "policy.h"
@@ -33,13 +34,54 @@ static struct kr_reset_record reset_readback;
 static const struct device *gpio = DEVICE_DT_GET(DT_NODELABEL(gpio0));
 static const struct device *adc = DEVICE_DT_GET(DT_NODELABEL(adc));
 static const struct gpio_dt_spec led = GPIO_DT_SPEC_GET(DT_ALIAS(led2), gpios);
+static const struct gpio_dt_spec rgb[] = {
+	GPIO_DT_SPEC_GET(DT_ALIAS(led0), gpios),
+	GPIO_DT_SPEC_GET(DT_ALIAS(led1), gpios),
+	GPIO_DT_SPEC_GET(DT_ALIAS(led2), gpios),
+};
+static bool led_ready, led_error, led_diagnostic, led_usb, led_stopped;
+static enum kr_charge_level led_charge;
+K_MUTEX_DEFINE(led_lock);
 static bool battery_ready;
+static bool charge_configured;
+static struct kr_power_monitor power_monitor;
+K_MUTEX_DEFINE(power_lock);
 
 int kr_board_charge_init(void)
 {
-	/* Seeed XIAO nRF52840: P0.13 high impedance selects nominal 50 mA.
-	 * No pulls, including while the MCU is in System OFF. */
-	return device_is_ready(gpio) ? gpio_pin_configure(gpio, 13, GPIO_DISCONNECTED) : -ENODEV;
+	/* DTP102050 1000 mAh: 100 mA is below its 200 mA standard/500 mA maximum.
+	 * This does not disable the charger's 10-hour safety timer or sense temperature. */
+	int result = device_is_ready(gpio) ? gpio_pin_configure(gpio, 13, GPIO_OUTPUT_LOW) : -ENODEV;
+	charge_configured = !result;
+	return result;
+}
+
+int kr_board_power_init(void)
+{
+	if (!device_is_ready(gpio) || !device_is_ready(adc)) { return -ENODEV; }
+	/* P0.14 must stay LOW for the divider; HIGH can overdrive AIN7. */
+	struct adc_channel_cfg channel = {.gain = ADC_GAIN_1_6, .reference = ADC_REF_INTERNAL,
+		.acquisition_time = ADC_ACQ_TIME(ADC_ACQ_TIME_MICROSECONDS, 40),
+		.channel_id = 0, .input_positive = NRF_SAADC_INPUT_AIN7};
+	int result = gpio_pin_configure(gpio, 14, GPIO_OUTPUT_LOW);
+	if (!result) { result = gpio_pin_configure(gpio, 17, GPIO_INPUT); }
+	if (!result) { result = adc_channel_setup(adc, &channel); }
+	battery_ready = !result;
+	return result;
+}
+
+void kr_board_cancel_charge_notice(void)
+{
+	k_mutex_lock(&power_lock, K_FOREVER);
+	kr_power_cancel_notice(&power_monitor);
+	k_mutex_unlock(&power_lock);
+}
+
+void kr_board_start_charge_notice(void)
+{
+	k_mutex_lock(&power_lock, K_FOREVER);
+	kr_power_start_notice(&power_monitor, k_uptime_get());
+	k_mutex_unlock(&power_lock);
 }
 
 #ifdef KR_DEV_SERVER_KEY_HEX
@@ -335,16 +377,6 @@ int kr_board_open(struct kr_core *core)
 	core->platform.accept_reset = accept_reset;
 #endif
 	if (gpio_is_ready_dt(&led)) { gpio_pin_configure_dt(&led, GPIO_OUTPUT_INACTIVE); }
-	/* Seeed: P0.14 LOW for VBAT measurement; never drive HIGH while charging.
-	 * P0.17 is charge-status input only. HIGH is not a reliable 'full' signal.
-	 * https://wiki.seeedstudio.com/XIAO_BLE/ */
-	if (device_is_ready(gpio) && device_is_ready(adc)) {
-		struct adc_channel_cfg channel = {.gain = ADC_GAIN_1_6, .reference = ADC_REF_INTERNAL,
-			.acquisition_time = ADC_ACQ_TIME(ADC_ACQ_TIME_MICROSECONDS, 40),
-			.channel_id = 0, .input_positive = NRF_SAADC_INPUT_AIN7};
-		battery_ready = !gpio_pin_configure(gpio, 14, GPIO_OUTPUT_LOW) &&
-			!gpio_pin_configure(gpio, 17, GPIO_INPUT) && !adc_channel_setup(adc, &channel);
-	}
 	const struct device *flash = FIXED_PARTITION_DEVICE(registration_store);
 	int result = device_is_ready(flash) ? 0 : device_init(flash);
 	if (result) { return result; }
@@ -393,7 +425,7 @@ bool kr_board_usb_present(void)
 	return nrf_power_usbregstatus_vbusdet_get(NRF_POWER);
 }
 
-struct kr_status kr_board_status(void)
+static struct kr_status read_power(void)
 {
 	struct kr_status status = {.battery_mv = -1, .charging = -1};
 	status.usb_valid = true;
@@ -432,7 +464,66 @@ struct kr_status kr_board_status(void)
 	return status;
 }
 
+struct kr_status kr_board_status(void)
+{
+	/* NUS, main and the motor worker share SAADC and monitor state. */
+	k_mutex_lock(&power_lock, K_FOREVER);
+	struct kr_status status = read_power();
+	status.charge_current_ma = charge_configured ? KR_CHARGE_CURRENT_MA : -1;
+	kr_power_update(&power_monitor, &status, k_uptime_get());
+	k_mutex_unlock(&power_lock);
+	return status;
+}
+
+static void render_led_locked(void)
+{
+	if (!led_ready) { return; }
+	uint8_t color = led_stopped ? 0 : kr_status_led_rgb(led_charge, led_usb, led_error, led_diagnostic);
+	for (size_t i = 0; i < ARRAY_SIZE(rgb); ++i) {
+		(void)gpio_pin_set_dt(&rgb[i], (color & BIT(i)) != 0);
+	}
+}
+
+int kr_board_led_ready(bool error)
+{
+	k_mutex_lock(&led_lock, K_FOREVER);
+	int result = 0;
+	for (size_t i = 0; i < ARRAY_SIZE(rgb); ++i) {
+		result = gpio_is_ready_dt(&rgb[i]) ? gpio_pin_configure_dt(&rgb[i], GPIO_OUTPUT_INACTIVE) : -ENODEV;
+		if (result) { break; }
+	}
+	led_ready = !result;
+	led_error = error;
+	led_usb = kr_board_usb_present();
+	render_led_locked();
+	k_mutex_unlock(&led_lock);
+	return result;
+}
+
 void kr_board_led(bool active)
 {
-	if (gpio_is_ready_dt(&led)) { gpio_pin_set_dt(&led, active); }
+	k_mutex_lock(&led_lock, K_FOREVER);
+	led_diagnostic = active;
+	if (!led_ready && !led_stopped && gpio_is_ready_dt(&led)) { (void)gpio_pin_set_dt(&led, active); }
+	render_led_locked();
+	k_mutex_unlock(&led_lock);
+}
+
+void kr_board_charge_led(enum kr_charge_level level, bool usb)
+{
+	k_mutex_lock(&led_lock, K_FOREVER);
+	led_charge = level;
+	led_usb = usb;
+	render_led_locked();
+	k_mutex_unlock(&led_lock);
+}
+
+void kr_board_led_off(void)
+{
+	k_mutex_lock(&led_lock, K_FOREVER);
+	led_stopped = true;
+	for (size_t i = 0; i < ARRAY_SIZE(rgb); ++i) {
+		if (gpio_is_ready_dt(&rgb[i])) { (void)gpio_pin_set_dt(&rgb[i], 0); }
+	}
+	k_mutex_unlock(&led_lock);
 }
