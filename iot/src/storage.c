@@ -85,7 +85,8 @@ static int remove_value(uint16_t id)
 int kr_storage_clear_owner(struct kr_engine *e)
 {
 	if (!mounted) { return -EIO; }
-	int result = remove_value(1);
+	int result = remove_value(KR_PUBLIC_NAME_STORAGE_KEY);
+	if (!result) { result = remove_value(1); }
 	for (unsigned i = 0; !result && i < KR_RECORDS; ++i) {
 		result = remove_value((uint16_t)(100 + i));
 	}
@@ -109,7 +110,8 @@ int kr_storage_clear_owner(struct kr_engine *e)
 int kr_storage_blob(void *ctx, uint16_t key, void *data, size_t length, bool write)
 {
 	ARG_UNUSED(ctx);
-	if (!mounted || !((key >= 300 && key < 332) || (key >= 500 && key < 516) || (key >= 800 && key < 864) ||
+	if (!mounted || !(key == KR_PUBLIC_NAME_STORAGE_KEY || (key >= 300 && key < 332) ||
+		(key >= 500 && key < 516) || (key >= 800 && key < 864) ||
 		(key >= 900 && key < 964))) { return -EINVAL; }
 	if (write) { return length ? write_value(key, data, length) : remove_value(key); }
 	ssize_t count = nvs_read(&fs, key, data, length);

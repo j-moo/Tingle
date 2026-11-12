@@ -1,5 +1,6 @@
 #include "product.h"
 #include "battery.h"
+#include "storage.h"
 #include "monocypher.h"
 #include "monocypher-ed25519.h"
 #include <errno.h>
@@ -69,6 +70,84 @@ static bool authorized(const struct kr_product *p, unsigned permission)
 		p->core->current.magic && p->session_device == p->core->current.device_id &&
 		p->session_epoch == p->core->reset.ownership_epoch && !strcmp(p->session_owner, p->core->current.owner_generation);
 }
+
+static const char *public_name_error(const char *name)
+{
+	if (!name || !*name) { return "INVALID_PUBLIC_NAME"; }
+	size_t length = strlen(name);
+	if (length > KR_PUBLIC_NAME_MAX) { return "PUBLIC_NAME_TOO_LONG"; }
+	if (strspn(name, " ") == length) { return "INVALID_PUBLIC_NAME"; }
+	const uint8_t *bytes = (const uint8_t *)name;
+	for (size_t i = 0; i < length; ++i) {
+		if (bytes[i] < 0x20 || bytes[i] == 0x7f ||
+			(bytes[i] == 0xc2 && bytes[i + 1] >= 0x80 && bytes[i + 1] <= 0x9f)) {
+			return "INVALID_PUBLIC_NAME";
+		}
+	}
+	return NULL;
+}
+
+const char *kr_product_public_name(const struct kr_product *p)
+{
+	const struct kr_public_name *saved = &p->public_name;
+	const struct kr_settings *owner = &p->core->current;
+	if (!owner->magic || p->core->reset.phase == KR_RESETTING || p->core->storage_error ||
+		p->engine->storage_error || saved->device_id != owner->device_id ||
+		saved->ownership_epoch != p->core->reset.ownership_epoch ||
+		memcmp(saved->owner_generation, owner->owner_generation, sizeof(saved->owner_generation))) {
+		return "";
+	}
+	return saved->name;
+}
+
+static const char *set_public_name(struct kr_product *p, const char *name)
+{
+	struct kr_public_name next;
+	memset(&next, 0, sizeof(next));
+	if (name) {
+		next.device_id = p->core->current.device_id;
+		next.ownership_epoch = p->core->reset.ownership_epoch;
+		memcpy(next.owner_generation, p->core->current.owner_generation, sizeof(next.owner_generation));
+		strcpy(next.name, name);
+	}
+	int result = p->io.blob(p->io.ctx, KR_PUBLIC_NAME_STORAGE_KEY, &next, name ? sizeof(next) : 0, true);
+	if (result) { memset(&next, 0, sizeof(next)); }
+	p->public_name = next;
+	p->public_name_storage_error = result != 0;
+	if (p->io.refresh_phone) { p->io.refresh_phone(p->io.ctx); }
+	return result ? "STORAGE_ERROR" : NULL;
+}
+
+static void public_name_command(struct kr_product *p, const struct kr_json *j, const char *type,
+	const char *request, char response[KR_RESPONSE_MAX])
+{
+	const char *failure = NULL;
+	if (!p->core->profile_transport_protected) { failure = "SECURE_TRANSPORT_REQUIRED"; }
+	else if (!p->core->current.magic || p->core->reset.phase == KR_RESETTING) { failure = "OWNER_NOT_BOUND"; }
+	else if (!authorized(p, KR_OWNER_CONTROL)) { failure = "OWNER_SESSION_REQUIRED"; }
+	else if (p->core->storage_error || p->engine->storage_error) { failure = "STORAGE_ERROR"; }
+	else if (!strcmp(type, "SET_PUBLIC_NAME")) {
+		const char *name = kr_json_string(j, "name");
+		failure = public_name_error(name);
+		if (!failure) { failure = set_public_name(p, name); }
+	} else if (!strcmp(type, "CLEAR_PUBLIC_NAME")) {
+		failure = set_public_name(p, NULL);
+	} else if (p->public_name_storage_error) {
+		failure = "STORAGE_ERROR";
+	}
+	if (failure) { error(response, request, failure); return; }
+
+	const char *name = kr_product_public_name(p);
+	char quoted[KR_PUBLIC_NAME_MAX * 2 + 10] = "null";
+	if (*name && !kr_json_quote(name, quoted, sizeof(quoted))) {
+		error(response, request, "STORAGE_ERROR");
+		return;
+	}
+	snprintf(response, KR_RESPONSE_MAX,
+		"{\"protocolVersion\":1,\"type\":\"PUBLIC_NAME_RESULT\",\"requestId\":%s,\"enabled\":%s,\"name\":%s}\n",
+		request, *name ? "true" : "false", quoted);
+}
+
 void kr_product_init(struct kr_product *p, struct kr_core *core, struct kr_engine *engine,
 	struct kr_product_io io, const uint8_t key[32])
 {
@@ -77,11 +156,21 @@ void kr_product_init(struct kr_product *p, struct kr_core *core, struct kr_engin
 	p->suppression = engine->io.suppression;
 	if (!has_ref(engine->cursor_epoch) && io.random(io.ctx, engine->cursor_epoch, 16)) { engine->storage_error = true; }
 	load_accounts(p);
+	int result = io.blob(io.ctx, KR_PUBLIC_NAME_STORAGE_KEY, &p->public_name, sizeof(p->public_name), false);
+	if (!result && (!memchr(p->public_name.name, 0, sizeof(p->public_name.name)) || public_name_error(p->public_name.name))) {
+		result = -EILSEQ;
+	}
+	if (result) {
+		memset(&p->public_name, 0, sizeof(p->public_name));
+		p->public_name_storage_error = result != -ENOENT;
+	}
 	p->application_attached = true;
 }
 void kr_product_forget_owner(struct kr_product *p)
 {
 	crypto_wipe(p->settings, sizeof(p->settings)); memset(&p->policy, 0, sizeof(p->policy));
+	memset(&p->public_name, 0, sizeof(p->public_name));
+	p->public_name_storage_error = false;
 	crypto_wipe(evidence, sizeof(evidence)); crypto_wipe(export_bytes, sizeof(export_bytes));
 	memset(p->seen, 0, sizeof(p->seen)); memset(p->owner_nonce, 0, sizeof(p->owner_nonce));
 	memset(p->accounts, 0, sizeof(p->accounts));
@@ -578,7 +667,8 @@ bool kr_product_dispatch(struct kr_product *p, const struct kr_json *j, const ch
 			"\"publicKeySpkiBase64url\":\"%s\",\"firmwareVersion\":\"%s\",\"supportedProtocolVersions\":[1],"
 			"\"supportedFunctions\":[\"GET_DEVICE_INFO\",\"GET_STATUS\",\"GET_REGISTRATION_PROOF\",\"GET_SYNC_CHALLENGE\",\"SYNC_SETTINGS\",\"GET_SETTINGS_APPLIED_PROOF\","
 			"\"GET_OWNER_CHALLENGE\",\"AUTHORIZE_OWNER\",\"GET_RECORD\",\"READ_RECORD_CHUNK\",\"ACK_RECORD\",\"RELEASE_RECORD\","
-			"\"STOP_FEEDBACK\",\"RESTORE_ACCOUNT_LOCK\",\"GET_RESET_CHALLENGE\",\"RESET_DEVICE\",\"GET_RESET_RESULT\"],"
+			"\"STOP_FEEDBACK\",\"RESTORE_ACCOUNT_LOCK\",\"GET_RESET_CHALLENGE\",\"RESET_DEVICE\",\"GET_RESET_RESULT\","
+			"\"GET_PUBLIC_NAME\",\"SET_PUBLIC_NAME\",\"CLEAR_PUBLIC_NAME\"],\"maxPublicNameBytes\":%u,"
 			"\"supportedPayloadFormats\":[\"%s\",\"%s\",\"%s\",\"%s\"],\"ownershipEpoch\":%" PRId64 ","
 			"\"ownerState\":\"%s\",\"supportedProofProtocolVersions\":[\"%s\",\"%s\"],\"resetContractVersion\":\"%s\","
 			"\"maxFrameBytes\":%u,\"maxPayloadBytes\":%u,\"maxResponseBytes\":%u,\"storedSettingsVersion\":%" PRId64 ",\"storedPayloadHash\":\"%s\","
@@ -587,6 +677,7 @@ bool kr_product_dispatch(struct kr_product *p, const struct kr_json *j, const ch
 			"\"accountLockProofVersion\":\"tingle-account-lock-v2\",\"maxPeerSessions\":16,\"recordCursorEpoch\":\"%s\","
 			"\"multiKeyringAccounts\":true,\"applied\":%s,\"timeReady\":%s,\"matchingReady\":%s,\"storageHealthy\":%s}\n",
 			request, p->core->identity.serial, p->core->identity.key_id, encoded, KR_FIRMWARE_VERSION,
+			KR_PUBLIC_NAME_MAX,
 			KR_DEV_PAYLOAD_FORMAT, KR_PROFILE_STORAGE_FORMAT, KR_POLICY_FORMAT, KR_POLICY_LEGACY_FORMAT, p->core->reset.ownership_epoch,
 			p->core->reset.phase == KR_RESETTING ? "RESETTING" : p->core->current.magic ? "BOUND" : "UNOWNED",
 			KR_PROOF_VERSION, KR_PROOF_VERSION_2, KR_RESET_VERSION, KR_FRAME_MAX, KR_PAYLOAD_MAX, KR_RESPONSE_MAX,
@@ -622,6 +713,10 @@ bool kr_product_dispatch(struct kr_product *p, const struct kr_json *j, const ch
 			total, used, state, pending, review, candidates, authorized(p, KR_OWNER_READ) ? "true" : "false",
 			missing, cursor, kr_product_applied(p) ? "true" : "false",
 			p->clock_ready ? "true" : "false", kr_product_ready(p) ? "true" : "false", p->core->current.version); return true;
+	}
+	if (!strcmp(type, "GET_PUBLIC_NAME") || !strcmp(type, "SET_PUBLIC_NAME") || !strcmp(type, "CLEAR_PUBLIC_NAME")) {
+		public_name_command(p, j, type, request, response);
+		return true;
 	}
 	if (!strcmp(type, "GET_OWNER_CHALLENGE")) {
 		uint8_t nonce[32];

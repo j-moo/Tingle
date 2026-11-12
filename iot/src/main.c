@@ -95,7 +95,17 @@ void kr_runtime_pause_matching(void)
 	kr_runtime_stop_feedback();
 	k_sem_give(&wake);
 }
-void kr_runtime_reset_block(void) { kr_runtime_pause_matching(); }
+void kr_runtime_refresh_phone(void)
+{
+	atomic_set(&restart_phone_adv, 1);
+	k_sem_give(&wake);
+}
+
+void kr_runtime_reset_block(void)
+{
+	atomic_set(&restart_phone_adv, 1);
+	kr_runtime_pause_matching();
+}
 uint32_t kr_runtime_generation(void) { return (uint32_t)atomic_get(&settings_generation); }
 
 int kr_runtime_clear_owner_data(void)
@@ -340,8 +350,7 @@ BT_GATT_SERVICE_DEFINE(lab_service,
 static void connected(struct bt_conn *conn, uint8_t err)
 {
 	if (err) {
-		atomic_set(&restart_phone_adv, 1);
-		k_sem_give(&wake);
+		kr_runtime_refresh_phone();
 		return;
 	}
 	k_mutex_lock(&phone_lock, K_FOREVER);
@@ -369,15 +378,13 @@ static void disconnected(struct bt_conn *conn, uint8_t reason)
 		subscribed = false;
 	}
 	k_mutex_unlock(&phone_lock);
-	atomic_set(&restart_phone_adv, 1);
-	k_sem_give(&wake);
+	kr_runtime_refresh_phone();
 }
 
 static void connection_recycled(void)
 {
 	/* A disconnected callback can precede the controller returning its connection slot. */
-	atomic_set(&restart_phone_adv, 1);
-	k_sem_give(&wake);
+	kr_runtime_refresh_phone();
 }
 
 BT_CONN_CB_DEFINE(connection_callbacks) = {
@@ -630,6 +637,7 @@ static int advertise_next(void)
 
 static int phone_advertising_data(bool lab)
 {
+	BUILD_ASSERT(KR_PUBLIC_NAME_MAX + 2 <= BT_GAP_ADV_MAX_ADV_DATA_LEN);
 	const struct bt_data ad[] = {
 		BT_DATA_BYTES(BT_DATA_FLAGS, BT_LE_AD_GENERAL | BT_LE_AD_NO_BREDR),
 		BT_DATA_BYTES(BT_DATA_UUID128_ALL, KR_NUS_UUID(0x6e400001)),
@@ -639,16 +647,31 @@ static int phone_advertising_data(bool lab)
 		BT_DATA(BT_DATA_NAME_COMPLETE, "Tingle-Lab", sizeof("Tingle-Lab") - 1),
 		BT_DATA_BYTES(BT_DATA_UUID128_ALL, LAB_UUID(1)),
 	};
-	return bt_le_ext_adv_set_data(phone_adv, ad, ARRAY_SIZE(ad),
-		lab ? lab_scan_response : NULL, lab ? ARRAY_SIZE(lab_scan_response) : 0);
+	int result;
+	if (lab) {
+		result = bt_le_ext_adv_set_data(phone_adv, ad, ARRAY_SIZE(ad),
+			lab_scan_response, ARRAY_SIZE(lab_scan_response));
+	} else {
+		char name[KR_PUBLIC_NAME_MAX + 1];
+		size_t length = kr_nus_copy_public_name(name);
+		const struct bt_data scan_response = BT_DATA(BT_DATA_NAME_COMPLETE, name, (uint8_t)length);
+		result = bt_le_ext_adv_set_data(phone_adv, ad, ARRAY_SIZE(ad),
+			length ? &scan_response : NULL, length ? 1 : 0);
+	}
+	/* If replacing the scan response fails, stop sending the old one. */
+	if (result) { (void)bt_le_ext_adv_stop(phone_adv); }
+	return result;
 }
 
 static int sync_phone_advertising(void)
 {
-	if (!atomic_get(&lab_enabled) && !kr_nus_can_advertise()) {
+	bool lab = atomic_get(&lab_enabled) != 0;
+	if (!lab && !kr_nus_can_advertise()) {
 		return bt_le_ext_adv_stop(phone_adv);
 	}
-	int result = bt_le_ext_adv_start(phone_adv, BT_LE_EXT_ADV_START_DEFAULT);
+	int result = phone_advertising_data(lab);
+	if (result) { return result; }
+	result = bt_le_ext_adv_start(phone_adv, BT_LE_EXT_ADV_START_DEFAULT);
 	return result == -EALREADY ? 0 : result;
 }
 
@@ -681,7 +704,7 @@ static int radio_start(void)
 	}
 	boot_progress(BOOT_PHONE_START);
 	kr_nus_start_window();
-	return sync_phone_advertising();
+	return bt_le_ext_adv_start(phone_adv, BT_LE_EXT_ADV_START_DEFAULT);
 }
 
 static int prepare_peer_adv(void)
@@ -951,10 +974,12 @@ int main(void)
 	bool service_mode = false, service_update = false;
 	struct kr_peer_plan service_plan;
 	int last_adv_error = 0;
+	int64_t phone_adv_retry_at = 0;
 	const char *last_reset_error = NULL;
 	for (;;) {
 		k_sem_take(&wake, K_MSEC(100));
 		check_carrier_off(true);
+		kr_carrier_poll_charge();
 		kr_nus_poll_console(false);
 		if (kr_nus_take_peer_plan(&service_plan)) {
 			service_mode = service_update = true;
@@ -999,11 +1024,14 @@ int main(void)
 			atomic_set(&restart_phone_adv, 1);
 			LOG_INF("Registration window closed; reboot to reopen");
 		}
-		if (atomic_cas(&restart_phone_adv, 1, 0)) {
+		if (atomic_cas(&restart_phone_adv, 1, 0) ||
+			(phone_adv_retry_at && k_uptime_get() >= phone_adv_retry_at)) {
 			result = sync_phone_advertising();
-			if (result && result != -ENOMEM) {
+			bool retry = result && result != -ENOMEM;
+			if (retry && !phone_adv_retry_at) {
 				LOG_ERR("Phone advertising update failed: %d", result);
 			}
+			phone_adv_retry_at = retry ? k_uptime_get() + 1000 : 0;
 		}
 		if (!atomic_get(&lab_enabled) && !atomic_get(&peer_exchange_enabled)) {
 			continue;

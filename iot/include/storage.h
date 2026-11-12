@@ -1,6 +1,9 @@
 #ifndef TINGLE_STORAGE_H
 #define TINGLE_STORAGE_H
 #include "keyring.h"
+
+#define KR_PUBLIC_NAME_STORAGE_KEY 4
+
 int kr_storage_sequence(void *, uint32_t);
 int kr_storage_open(struct kr_engine *e);
 int kr_storage_config(void *ctx, const struct kr_config *config);

@@ -3,6 +3,7 @@
 #include "battery.h"
 #include "feedback.h"
 #include "service.h"
+#include "storage.h"
 #include "monocypher.h"
 #include "monocypher-ed25519.h"
 #include <assert.h>
@@ -196,6 +197,62 @@ static void owner(struct test_board *b, FILE *vectors)
 	request(b, json, "OWNER_RESULT"); int64_t deadline = b->app.session_deadline; request(b, json, "OWNER_RESULT"); assert(deadline == b->app.session_deadline);
 	if (vectors) { vector(vectors, "ownerTranscript", text, (size_t)n); uint8_t sig[64]; assert(kr_base64_decode(signature, sig, 64) == 64); vector(vectors, "ownerSignature", sig, 64); }
 }
+static void test_public_name(struct test_board *b)
+{
+	const char *get = "{\"type\":\"GET_PUBLIC_NAME\"}";
+	const char *set = "{\"type\":\"SET_PUBLIC_NAME\",\"name\":\"\\uac00\\uac00\\uac00\\uac00\\uac00\\uac00\\uac00\\uac00\\uac00AB\"}";
+	const char *clear = "{\"type\":\"CLEAR_PUBLIC_NAME\"}";
+	assert(!*kr_product_public_name(&b->app));
+	request(b, set, "OWNER_SESSION_REQUIRED");
+	b->core.profile_transport_protected = false;
+	request(b, set, "SECURE_TRANSPORT_REQUIRED");
+	b->core.profile_transport_protected = true;
+	owner(b, NULL);
+	b->app.permissions = KR_OWNER_READ;
+	request(b, set, "OWNER_SESSION_REQUIRED");
+	b->app.permissions = KR_OWNER_CONTROL;
+	request(b, get, "\"enabled\":false,\"name\":null");
+	request(b, "{\"type\":\"SET_PUBLIC_NAME\",\"name\":\" \\n\"}", "INVALID_PUBLIC_NAME");
+	request(b, "{\"type\":\"SET_PUBLIC_NAME\",\"name\":\"\\uac00\\uac00\\uac00\\uac00\\uac00\\uac00\\uac00\\uac00\\uac00\\uac00\"}", "PUBLIC_NAME_TOO_LONG");
+	request(b, "{\"type\":\"SET_PUBLIC_NAME\",\"name\":\"\xc0\xaf\"}", "INVALID_MESSAGE");
+	request(b, "{\"type\":\"SET_PUBLIC_NAME\",\"name\":\"a\\\"b\"}", "\"name\":\"a\\\"b\"");
+	request(b, set, "\"enabled\":true");
+	assert(strlen(kr_product_public_name(&b->app)) == KR_PUBLIC_NAME_MAX);
+
+	struct kr_product restored;
+	kr_product_init(&restored, &b->core, &b->engine, b->app.io, server);
+	assert(!strcmp(kr_product_public_name(&restored), kr_product_public_name(&b->app)));
+	++b->core.reset.ownership_epoch;
+	assert(!*kr_product_public_name(&restored));
+	request(b, clear, "OWNER_SESSION_REQUIRED");
+	--b->core.reset.ownership_epoch;
+	char generation = b->core.current.owner_generation[0];
+	b->core.current.owner_generation[0] = 'f';
+	assert(!*kr_product_public_name(&restored));
+	b->core.current.owner_generation[0] = generation;
+	b->core.reset.phase = KR_RESETTING;
+	assert(!*kr_product_public_name(&restored));
+	request(b, get, "OWNER_NOT_BOUND");
+	b->core.reset.phase = 0;
+	kr_product_forget_owner(&restored);
+	assert(!*kr_product_public_name(&restored));
+
+	b->fail_key = KR_PUBLIC_NAME_STORAGE_KEY;
+	request(b, clear, "STORAGE_ERROR");
+	assert(!*kr_product_public_name(&b->app));
+	request(b, get, "STORAGE_ERROR");
+	b->fail_key = -1;
+	++b->core.connection_epoch;
+	request(b, clear, "OWNER_SESSION_REQUIRED");
+	owner(b, NULL);
+	request(b, clear, "\"enabled\":false,\"name\":null");
+	request(b, clear, "\"enabled\":false,\"name\":null");
+	assert(!b->lengths[KR_PUBLIC_NAME_STORAGE_KEY]);
+	kr_product_init(&restored, &b->core, &b->engine, b->app.io, server);
+	assert(!*kr_product_public_name(&restored));
+	puts("public name: owner scope, UTF-8 limits, persistence, reset blocking and erase retry passed");
+}
+
 static void exchange_pair(unsigned rounds)
 {
 	uint8_t packet[512]; int sent;
@@ -596,16 +653,49 @@ static void test_carrier_feedback(void)
 	puts("carrier feedback: Rev G/D3.1 power policy, bilateral switches, pulse/LED timing and power-change cancellation passed");
 }
 
+static void test_charge_indicator(void)
+{
+	struct kr_charge_indicator indicator = {0};
+	struct kr_status status = {.usb_valid = true, .usb_present = true, .charging = 1, .battery_mv = 3749};
+	for (unsigned i = 0; i < 4; ++i) { assert(kr_charge_indicator_update(&indicator, status) == KR_CHARGE_OFF); }
+	assert(kr_charge_indicator_update(&indicator, status) == KR_CHARGE_LOW);
+	status.battery_mv = 3750;
+	for (unsigned i = 0; i < 4; ++i) { assert(kr_charge_indicator_update(&indicator, status) == KR_CHARGE_LOW); }
+	assert(kr_charge_indicator_update(&indicator, status) == KR_CHARGE_MID);
+	status.battery_mv = 4050;
+	for (unsigned i = 0; i < 4; ++i) { assert(kr_charge_indicator_update(&indicator, status) == KR_CHARGE_MID); }
+	assert(kr_charge_indicator_update(&indicator, status) == KR_CHARGE_HIGH);
+	status.charging = 0;
+	status.battery_mv = 4200;
+	for (unsigned i = 0; i < 5; ++i) { assert(kr_charge_indicator_update(&indicator, status) == KR_CHARGE_OFF); }
+	status.charging = 1;
+	status.presence_valid = true;
+	for (unsigned i = 0; i < 5; ++i) { assert(kr_charge_indicator_update(&indicator, status) == KR_CHARGE_OFF); }
+	status.battery_present = true;
+	status.battery_mv = -1;
+	for (unsigned i = 0; i < 5; ++i) { assert(kr_charge_indicator_update(&indicator, status) == KR_CHARGE_OFF); }
+	status.gauge_ready = status.gauge_percent_valid = true;
+	status.gauge_percent = 75;
+	for (unsigned i = 0; i < 4; ++i) { assert(kr_charge_indicator_update(&indicator, status) == KR_CHARGE_OFF); }
+	assert(kr_charge_indicator_update(&indicator, status) == KR_CHARGE_HIGH);
+	status.usb_present = false;
+	assert(kr_charge_indicator_update(&indicator, status) == KR_CHARGE_OFF);
+	puts("charge LED: level boundaries, stable samples, absent battery and USB removal passed");
+}
+
 int main(int argc, char **argv)
 {
 	assert(argc == 3); FILE *f = fopen(argv[1], "rb"); assert(f && fread(profile, 1, 196, f) == 196 && !fclose(f));
 	test_carrier_feedback();
+	test_charge_indicator();
 	f = fopen(argv[2], "wb"); assert(f); uint8_t seed[32]; for (unsigned i = 0; i < 32; ++i) { seed[i] = (uint8_t)i; }
 	crypto_ed25519_key_pair(server_secret, server, seed); kr_hex(server, 8, server_id + 12); vector(f, "serverPublic", server, 32);
 	boot(0, 1, f); boot(1, 2, f); boot(2, 1, f);
+	test_public_name(&boards[2]);
 	struct test_board *b = &boards[0];
 	request(b, "{\"type\":\"GET_DEVICE_INFO\"}", "tingle-keyring-settings-v3");
 	assert(strstr(response, "\"GET_SETTINGS_APPLIED_PROOF\"") && strlen(response) < KR_RESPONSE_MAX - 1);
+	assert(strstr(response, "\"maxPublicNameBytes\":29") && strstr(response, "\"SET_PUBLIC_NAME\""));
 	request(b, "{\"type\":\"GET_RECORD\",\"afterSequence\":0}", "OWNER_SESSION_REQUIRED");
 	request(b, "{\"type\":\"GET_STATUS\"}", "\"storageTotalBytes\":null");
 	owner(b, f); request(b, "{\"type\":\"GET_STATUS\"}", "\"storageTotalBytes\":262144"); assert(strstr(response, "VOLTAGE_ESTIMATE"));

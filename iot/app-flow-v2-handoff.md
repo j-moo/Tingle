@@ -1,5 +1,11 @@
 # 앱 등록부터 만남 접수까지 — 펌웨어 v2 연동
 
+## 2026-11-12 공개 검색 이름과 충전 표시 (0.9.3)
+
+FE는 `DEVICE_INFO.supportedFunctions`를 확인하고 기존 소유자 세션에 CONTROL(8)을 추가해 공개 이름 조회·설정·해제를 연동한다. BLE JSON 예시·오류·UTF-8 29바이트 기준은 [공개 검색 이름 계약](keyring-app-ble-contract-v1.md#public-scan-name)에 있다. BE는 기존 소유자 허가 발급과 기기 초기화 증명 후 소유 해제 흐름을 사용한다.
+
+Fold6에서 이름이 없는 기본 경로를 유지한다. 공개 ON에서 이름이 들어간 광고는 S20과 Fold6 실물에서 다시 확인한다. USB 충전 전압별 외부 RGB와 배터리 미연결 조건은 [USB 충전 중 배터리 LED](README.md#usb-충전-중-배터리-led)를 따른다.
+
 <a id="fold6-ble-recovery"></a>
 
 ## 2026-11-11 Fold6 검색·페어링 시험 — 0.9.2

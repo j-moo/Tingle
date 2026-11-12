@@ -1,4 +1,5 @@
 #include "carrier.h"
+#include "battery.h"
 #include "board.h"
 
 #include <errno.h>
@@ -14,6 +15,7 @@ LOG_MODULE_REGISTER(keyring_carrier, LOG_LEVEL_INF);
 #define CARRIER DT_PATH(zephyr_user)
 #define STOP_DEBOUNCE_MS 20
 #define OFF_DEBOUNCE_MS 20
+#define CHARGE_SAMPLE_MS 250
 #define REV_G DT_NODE_HAS_PROP(CARRIER, keyring_off_gpios)
 
 static const struct gpio_dt_spec rgb[] = {
@@ -30,6 +32,8 @@ static bool switch_ready;
 
 static struct gpio_callback stop_irq;
 static struct kr_feedback alert;
+static struct kr_charge_indicator charge_indicator;
+static int64_t charge_sample_after;
 static bool ready, motor_on_usb;
 K_MUTEX_DEFINE(carrier_lock);
 
@@ -49,20 +53,31 @@ static int drive(uint8_t color, bool vibrate)
 	return result ? result : error;
 }
 
+static uint8_t charge_color(bool usb)
+{
+	static const uint8_t colors[] = {
+		[KR_CHARGE_LOW] = BIT(0), [KR_CHARGE_MID] = BIT(0) | BIT(1), [KR_CHARGE_HIGH] = BIT(1),
+	};
+	return usb ? colors[charge_indicator.level] : 0;
+}
+
 static void stop_locked(void)
 {
 	kr_feedback_stop(&alert);
 	(void)k_work_cancel_delayable(&output_work);
-	if (ready) { (void)drive(0, false); }
+	if (ready) {
+		bool charge_visible = !kr_carrier_off_requested() && kr_board_usb_present();
+		(void)drive(charge_color(charge_visible), false);
+	}
 }
 
 static bool update_locked(void)
 {
 	if (kr_carrier_off_requested()) { stop_locked(); return false; }
 	/* Cancel the pulse train when the power source changes during an alert. */
-	struct kr_feedback_output out = kr_feedback_step(&alert, k_uptime_get(),
-		kr_board_usb_present() == motor_on_usb);
-	if (drive(out.rgb, out.motor)) {
+	bool usb = kr_board_usb_present();
+	struct kr_feedback_output out = kr_feedback_step(&alert, k_uptime_get(), usb == motor_on_usb);
+	if (drive(out.rgb ? out.rgb : charge_color(usb), out.motor)) {
 		stop_locked();
 		ready = false;
 		LOG_ERR("Carrier feedback GPIO failed");
@@ -72,6 +87,22 @@ static bool update_locked(void)
 		(void)k_work_reschedule(&output_work, K_MSEC(out.wake_ms));
 	}
 	return out.wake_ms != 0;
+}
+
+void kr_carrier_poll_charge(void)
+{
+	bool usb = kr_board_usb_present();
+	int64_t now = k_uptime_get();
+	if (usb ? now < charge_sample_after : !charge_sample_after) { return; }
+	charge_sample_after = usb ? now + CHARGE_SAMPLE_MS : 0;
+	struct kr_status power = usb ? kr_board_status() : (struct kr_status){0};
+
+	k_mutex_lock(&carrier_lock, K_FOREVER);
+	if (ready) {
+		enum kr_charge_level before = charge_indicator.level;
+		if (kr_charge_indicator_update(&charge_indicator, power) != before) { (void)update_locked(); }
+	}
+	k_mutex_unlock(&carrier_lock);
 }
 
 static void output_tick(struct k_work *work)

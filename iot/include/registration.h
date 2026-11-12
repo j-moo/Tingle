@@ -21,6 +21,7 @@
 #define KR_PAYLOAD_MAX 2048
 #define KR_FRAME_MAX 4096
 #define KR_RESPONSE_MAX 2304
+#define KR_PUBLIC_NAME_MAX 29U
 #define KR_RECORD_MAGIC UINT32_C(0x4b525301)
 
 struct kr_identity {
