@@ -20,6 +20,9 @@ public class IcebreakerQuestions {
 		"(?i)(https?://|www\\.|[\\p{L}\\p{N}-]+(?:\\.[\\p{L}\\p{N}-]+)*\\.[\\p{L}]{2,}"
 			+ "|(?<!\\d)(?:\\d{1,3}\\.){3}\\d{1,3}(?!\\d)|[\\w.+-]+@[\\w.-]+|\\d[\\d -]{7,}\\d"
 			+ "|연락처|전화번호|카카오톡|종교|흡연|성희롱|송금|계좌번호)");
+	// AI가 승인한 GMS 프롬프트 버전 = "icebreakers-gms-" + 프롬프트 SHA-256 앞 16자(ai-server/app/icebreakers/prompts.py).
+	// 접두어만 맞는 임의 값은 받지 않는다. AI 프롬프트가 바뀌면 이 값도 같이 바꿔야 한다.
+	static final String GMS_PROMPT_VERSION = "icebreakers-gms-ffb273caf96e6059";
 	private final ResourceLoader resources;
 	private final ObjectMapper mapper;
 	private final IcebreakerProperties properties;
@@ -62,7 +65,9 @@ public class IcebreakerQuestions {
 			&& (commonTopicKey == null || !"q040-template-v1".equals(value.promptVersion()))) {
 			return null;
 		}
-		if (commonTopicKey != null && "GENERATED".equals(value.source())) {
+		// 공통 주제 요청의 GENERATED는 AI가 승인한 GMS 버전만 받는다. 주제를 무시한 옛 응답은 거절한다.
+		if (commonTopicKey != null && "GENERATED".equals(value.source())
+			&& !GMS_PROMPT_VERSION.equals(value.promptVersion())) {
 			return null;
 		}
 		Set<String> normalized = new HashSet<>();
@@ -74,7 +79,9 @@ public class IcebreakerQuestions {
 			int length = trimmed.codePointCount(0, trimmed.length());
 			String canonical = Normalizer.normalize(trimmed, Normalizer.Form.NFKC)
 				.replaceAll("\\s+", " ").toLowerCase(Locale.ROOT);
-			if (length < 1 || length > 200 || trimmed.codePoints().anyMatch(Character::isISOControl)
+			// 폭 0 문자 같은 서식문자(Cf)는 NFKC로도 안 지워져 연락처 사이에 끼워 금지어 검사를 피하므로 함께 거절한다.
+			if (length < 1 || length > 200 || trimmed.codePoints().anyMatch(
+				c -> Character.isISOControl(c) || Character.getType(c) == Character.FORMAT)
 				|| UNSAFE.matcher(canonical).find() || !normalized.add(canonical)) {
 				return null;
 			}

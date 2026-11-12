@@ -178,6 +178,48 @@ class IcebreakerTopicIntegrationTest extends IntegrationTestSupport {
 	}
 
 	@Test
+	void withdrawalAlsoErasesGmsGeneratedCommonQuestions() throws Exception {
+		storeGmsQuestions();
+		// 승인 버전 그대로 저장된 상태에서 바로 동의를 철회한다.
+		consents.update(secondId, false, CONSENT_VERSION);
+		JsonNode stored = state();
+		assertThat(stored.path("source").asString()).isEqualTo("GENERAL_FALLBACK");
+		assertThat(stored.has("topicSelection")).isFalse();
+		assertThat(stored.toString()).doesNotContain("공통 휴식 질문");
+		assertGeneral();
+	}
+
+	@Test
+	void unapprovedStoredGmsVersionBecomesGeneralAndCannotReappear() throws Exception {
+		storeGmsQuestions();
+		// 승인 버전이 바뀐 뒤(또는 롤백 뒤) 옛 버전 저장값은 503 대신 일반 질문으로 보인다.
+		jdbc.update("update chat set icebreakers=jsonb_set(icebreakers,'{promptVersion}','\"icebreakers-gms-old\"') "
+			+ "where id=?", room.getId());
+		assertGeneral();
+		// 조회 때 일반 질문으로 바꿔 저장하므로 옛 버전이 다시 승인돼도 예전 질문이 되살아나지 않는다.
+		JsonNode stored = state();
+		assertThat(stored.path("source").asString()).isEqualTo("GENERAL_FALLBACK");
+		assertThat(stored.has("topicSelection")).isFalse();
+		assertThat(stored.toString()).doesNotContain("공통 휴식 질문", "icebreakers-gms-old");
+		assertGeneral();
+	}
+
+	private void storeGmsQuestions() throws Exception {
+		given(gateway.generate(anyLong(), any(UUID.class), anyMap(), any(Instant.class), anyString()))
+			.willReturn(new IcebreakerGateway.Generated(List.of("공통 휴식 질문", "두 번째 활동 질문", "세 번째 대화 질문"),
+				"GENERATED", IcebreakerQuestions.GMS_PROMPT_VERSION));
+		grantBoth();
+		request(UUID.randomUUID());
+		processor.process(room.getId());
+		// 저장 뒤 조회에서도 질문·출처·버전이 그대로 유지된다.
+		JsonNode saved = result();
+		assertThat(saved.path("source").asString()).isEqualTo("GENERATED");
+		assertThat(saved.path("promptVersion").asString()).isEqualTo(IcebreakerQuestions.GMS_PROMPT_VERSION);
+		assertThat(saved.path("questions").toString())
+			.contains("공통 휴식 질문", "두 번째 활동 질문", "세 번째 대화 질문");
+	}
+
+	@Test
 	void lookupRechecksCurrentConsentEvenWhenEarlierCleanupDidNotRun() throws Exception {
 		grantBoth();
 		request(UUID.randomUUID());
