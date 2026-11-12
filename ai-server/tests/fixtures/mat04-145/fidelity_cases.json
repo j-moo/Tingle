@@ -1,0 +1,1259 @@
+{
+  "provenance": "S15P31E106-145 독립 합성 평가. 사람 기대값이며 실제 사용자·실제 LLM 출력이 아니다. 기존 synthetic_cases.json은 수정하지 않는다. human_safe는 문장의 근거 충실도 평가이며 observed는 현재 구현 재현값이다.",
+  "cases": [
+    {
+      "id": "A01",
+      "category": "A",
+      "label": "상호 선호·경험",
+      "viewer": "B",
+      "records": [
+        {
+          "source_ref": "e1",
+          "evidence": {
+            "id": "e1",
+            "kind": "MUTUAL_PREFERENCE_FIT",
+            "topic": "experience",
+            "fact": "두 사람의 새로운 경험을 찾는 방식이 서로의 선호와 맞는다.",
+            "direction": "BOTH"
+          }
+        }
+      ],
+      "candidate": {
+        "text": "서로의 새로운 경험을 찾는 방식이 각자의 선호와 맞아요.",
+        "evidenceIds": [
+          "e1"
+        ]
+      },
+      "human_safe": true,
+      "baseline": {
+        "text": "서로의 새로운 경험을 찾는 방식이 각자의 선호와 맞아요.",
+        "ids": [
+          "e1"
+        ]
+      },
+      "observed": {
+        "source": "GENERATED",
+        "reason": null,
+        "gate": "accepted",
+        "calls": [
+          1,
+          1
+        ]
+      },
+      "contract_status": "CONFIRMED"
+    },
+    {
+      "id": "A02",
+      "category": "A",
+      "label": "연락·복문 변형",
+      "viewer": "B",
+      "records": [
+        {
+          "source_ref": "e1",
+          "evidence": {
+            "id": "e1",
+            "kind": "SHARED_REPORTED_BEHAVIOR",
+            "topic": "contact",
+            "fact": "두 사람 모두 여유 있게 연락하는 편이다.",
+            "direction": "BOTH"
+          }
+        }
+      ],
+      "candidate": {
+        "text": "두 분 모두 여유 있게 연락해요. 공통점은 바로 이 점이에요.",
+        "evidenceIds": [
+          "e1"
+        ]
+      },
+      "human_safe": true,
+      "baseline": {
+        "text": "두 분은 연락 방식에 공통점이 있어요.",
+        "ids": [
+          "e1"
+        ]
+      },
+      "observed": {
+        "source": "GENERATED",
+        "reason": null,
+        "gate": "accepted",
+        "calls": [
+          1,
+          1
+        ]
+      },
+      "contract_status": "CONFIRMED"
+    },
+    {
+      "id": "A03",
+      "category": "A",
+      "label": "독서 세부 근거",
+      "viewer": "B",
+      "records": [
+        {
+          "source_ref": "e1",
+          "evidence": {
+            "id": "e1",
+            "kind": "SHARED_REPORTED_BEHAVIOR",
+            "topic": "activity",
+            "fact": "두 사람 모두 독서를 즐긴다고 응답했다.",
+            "direction": "BOTH"
+          }
+        }
+      ],
+      "candidate": {
+        "text": "두 분 모두 독서를 즐긴다는 공통점이 있어요.",
+        "evidenceIds": [
+          "e1"
+        ]
+      },
+      "human_safe": true,
+      "baseline": {
+        "text": "두 분은 즐기는 활동에 공통점이 있어요.",
+        "ids": [
+          "e1"
+        ]
+      },
+      "observed": {
+        "source": "GENERATED",
+        "reason": null,
+        "gate": "accepted",
+        "calls": [
+          1,
+          1
+        ]
+      },
+      "contract_status": "CONFIRMED"
+    },
+    {
+      "id": "A04",
+      "category": "A",
+      "label": "공통점과 차이 결합",
+      "viewer": "B",
+      "records": [
+        {
+          "source_ref": "e1",
+          "evidence": {
+            "id": "e1",
+            "kind": "SHARED_REPORTED_BEHAVIOR",
+            "topic": "contact",
+            "fact": "두 사람 모두 여유 있게 연락하는 편이다.",
+            "direction": "BOTH"
+          }
+        },
+        {
+          "source_ref": "e2",
+          "evidence": {
+            "id": "e2",
+            "kind": "DIFFERENCE",
+            "topic": "planning",
+            "fact": "약속을 준비하는 시점에는 차이가 있다.",
+            "direction": "BOTH"
+          }
+        }
+      ],
+      "candidate": {
+        "text": "두 분 모두 여유 있게 연락해요. 공통점은 바로 이 점이에요. 약속을 준비하는 시점에는 차이가 있어요.",
+        "evidenceIds": [
+          "e1",
+          "e2"
+        ]
+      },
+      "human_safe": true,
+      "baseline": {
+        "text": "두 분은 연락 방식에 공통점이 있어요. 약속을 준비하는 방식에는 차이가 있어요.",
+        "ids": [
+          "e1",
+          "e2"
+        ]
+      },
+      "observed": {
+        "source": "GENERATED",
+        "reason": null,
+        "gate": "accepted",
+        "calls": [
+          1,
+          1
+        ]
+      },
+      "contract_status": "CONFIRMED"
+    },
+    {
+      "id": "A05",
+      "category": "A",
+      "label": "한 방향 경험·반대 열람자",
+      "viewer": "B",
+      "records": [
+        {
+          "source_ref": "e1",
+          "evidence": {
+            "id": "e1",
+            "kind": "ONE_WAY_PREFERENCE_FIT",
+            "topic": "experience",
+            "fact": "B의 새로운 경험을 찾는 방식이 A의 선호에 맞는다.",
+            "direction": "A_TO_B"
+          }
+        }
+      ],
+      "candidate": {
+        "text": "당신의 새로운 경험을 찾는 방식이 상대의 선호와 맞아요.",
+        "evidenceIds": [
+          "e1"
+        ]
+      },
+      "human_safe": true,
+      "baseline": {
+        "text": "당신의 새로운 경험을 찾는 방식이 상대의 선호와 맞아요.",
+        "ids": [
+          "e1"
+        ]
+      },
+      "observed": {
+        "source": "GENERATED",
+        "reason": null,
+        "gate": "accepted",
+        "calls": [
+          1,
+          1
+        ]
+      },
+      "contract_status": "CONFIRMED"
+    },
+    {
+      "id": "B01",
+      "category": "B",
+      "label": "동일 원본의 공통점/차이 충돌",
+      "viewer": "B",
+      "records": [
+        {
+          "source_ref": "same",
+          "evidence": {
+            "id": "e1",
+            "kind": "SHARED_REPORTED_BEHAVIOR",
+            "topic": "contact",
+            "fact": "두 사람 모두 여유 있게 연락하는 편이다.",
+            "direction": "BOTH"
+          }
+        },
+        {
+          "source_ref": "same",
+          "evidence": {
+            "id": "e2",
+            "kind": "DIFFERENCE",
+            "topic": "contact",
+            "fact": "연락 방식에는 차이가 있다.",
+            "direction": "BOTH"
+          }
+        }
+      ],
+      "candidate": {
+        "text": "두 분은 연락 방식에 공통점이 있어요.",
+        "evidenceIds": [
+          "e1",
+          "e2"
+        ]
+      },
+      "human_safe": null,
+      "baseline": {
+        "text": null,
+        "ids": []
+      },
+      "observed": {
+        "source": null,
+        "reason": "EVIDENCE_CONFLICT",
+        "gate": "selection",
+        "calls": [
+          0,
+          0
+        ]
+      },
+      "contract_status": "CONFIRMED"
+    },
+    {
+      "id": "B02",
+      "category": "B",
+      "label": "한 방향 선호 불충족",
+      "viewer": "A",
+      "records": [
+        {
+          "source_ref": "e1",
+          "evidence": {
+            "id": "e1",
+            "kind": "ONE_WAY_PREFERENCE_FIT",
+            "topic": "contact",
+            "fact": "B의 연락 방식이 A의 선호에 맞지 않는다.",
+            "direction": "A_TO_B"
+          }
+        }
+      ],
+      "candidate": {
+        "text": "상대의 연락 방식이 당신의 선호와 맞아요.",
+        "evidenceIds": [
+          "e1"
+        ]
+      },
+      "human_safe": null,
+      "baseline": {
+        "text": null,
+        "ids": []
+      },
+      "observed": {
+        "source": null,
+        "reason": "NO_SAFE_EVIDENCE",
+        "gate": "selection",
+        "calls": [
+          0,
+          0
+        ]
+      },
+      "contract_status": "CONFIRMED"
+    },
+    {
+      "id": "B03",
+      "category": "B",
+      "label": "KEYRING_VERDICT 공개 근거 없음",
+      "viewer": "B",
+      "records": [],
+      "candidate": {
+        "text": "두 분은 잘 맞아요.",
+        "evidenceIds": []
+      },
+      "human_safe": null,
+      "baseline": {
+        "text": null,
+        "ids": []
+      },
+      "observed": {
+        "source": null,
+        "reason": "NO_EVIDENCE",
+        "gate": "selection",
+        "calls": [
+          0,
+          0
+        ]
+      },
+      "contract_status": "CONFIRMED"
+    },
+    {
+      "id": "B04",
+      "category": "B",
+      "label": "모델 허용·표시 거부",
+      "viewer": "B",
+      "records": [
+        {
+          "source_ref": "e1",
+          "evidence": {
+            "id": "e1",
+            "kind": "SHARED_REPORTED_BEHAVIOR",
+            "topic": "activity",
+            "fact": "두 사람 모두 독서를 즐긴다고 응답했다.",
+            "direction": "BOTH"
+          }
+        }
+      ],
+      "candidate": {
+        "text": "두 분 모두 독서를 즐긴다는 공통점이 있어요.",
+        "evidenceIds": [
+          "e1"
+        ]
+      },
+      "human_safe": null,
+      "baseline": {
+        "text": null,
+        "ids": []
+      },
+      "observed": {
+        "source": null,
+        "reason": "DISPLAY_SCOPE_NOT_APPROVED",
+        "gate": "selection",
+        "calls": [
+          0,
+          0
+        ]
+      },
+      "display_ids": [],
+      "model_ids": [
+        "e1"
+      ],
+      "contract_status": "CONFIRMED"
+    },
+    {
+      "id": "B05",
+      "category": "B",
+      "label": "표시 허용·모델 거부",
+      "viewer": "B",
+      "records": [
+        {
+          "source_ref": "e1",
+          "evidence": {
+            "id": "e1",
+            "kind": "SHARED_REPORTED_BEHAVIOR",
+            "topic": "activity",
+            "fact": "두 사람 모두 독서를 즐긴다고 응답했다.",
+            "direction": "BOTH"
+          }
+        }
+      ],
+      "candidate": {
+        "text": "두 분 모두 독서를 즐긴다는 공통점이 있어요.",
+        "evidenceIds": [
+          "e1"
+        ]
+      },
+      "human_safe": null,
+      "baseline": {
+        "text": "두 분은 즐기는 활동에 공통점이 있어요.",
+        "ids": [
+          "e1"
+        ]
+      },
+      "observed": {
+        "source": "RULE_FALLBACK",
+        "reason": "MODEL_SCOPE_NOT_APPROVED",
+        "gate": "model_scope",
+        "calls": [
+          0,
+          0
+        ]
+      },
+      "model_ids": [],
+      "contract_status": "CONFIRMED"
+    },
+    {
+      "id": "C01",
+      "category": "C",
+      "label": "유효 절 뒤 허위 성격 추가",
+      "viewer": "B",
+      "records": [
+        {
+          "source_ref": "e1",
+          "evidence": {
+            "id": "e1",
+            "kind": "SHARED_REPORTED_BEHAVIOR",
+            "topic": "activity",
+            "fact": "두 사람 모두 독서를 즐긴다고 응답했다.",
+            "direction": "BOTH"
+          }
+        }
+      ],
+      "candidate": {
+        "text": "두 분 모두 독서를 즐긴다는 공통점이 있어요. 상대는 언제나 배려심이 깊어요.",
+        "evidenceIds": [
+          "e1"
+        ]
+      },
+      "human_safe": false,
+      "baseline": {
+        "text": "두 분은 즐기는 활동에 공통점이 있어요.",
+        "ids": [
+          "e1"
+        ]
+      },
+      "observed": {
+        "source": "RULE_FALLBACK",
+        "reason": "INVALID_OUTPUT",
+        "gate": "grounding",
+        "calls": [
+          1,
+          0
+        ]
+      },
+      "risk": "fabrication",
+      "contract_status": "CONFIRMED"
+    },
+    {
+      "id": "C02",
+      "category": "C",
+      "label": "가상 신원 주장",
+      "viewer": "B",
+      "records": [
+        {
+          "source_ref": "e1",
+          "evidence": {
+            "id": "e1",
+            "kind": "SHARED_REPORTED_BEHAVIOR",
+            "topic": "activity",
+            "fact": "두 사람 모두 독서를 즐긴다고 응답했다.",
+            "direction": "BOTH"
+          }
+        }
+      ],
+      "candidate": {
+        "text": "상대는 가상별씨예요.",
+        "evidenceIds": [
+          "e1"
+        ]
+      },
+      "human_safe": false,
+      "baseline": {
+        "text": "두 분은 즐기는 활동에 공통점이 있어요.",
+        "ids": [
+          "e1"
+        ]
+      },
+      "observed": {
+        "source": "RULE_FALLBACK",
+        "reason": "INVALID_OUTPUT",
+        "gate": "parse",
+        "calls": [
+          1,
+          0
+        ]
+      },
+      "risk": "privacy",
+      "contract_status": "CONFIRMED"
+    },
+    {
+      "id": "C03",
+      "category": "C",
+      "label": "한글 점수 과장",
+      "viewer": "B",
+      "records": [
+        {
+          "source_ref": "e1",
+          "evidence": {
+            "id": "e1",
+            "kind": "SHARED_REPORTED_BEHAVIOR",
+            "topic": "activity",
+            "fact": "두 사람 모두 독서를 즐긴다고 응답했다.",
+            "direction": "BOTH"
+          }
+        }
+      ],
+      "candidate": {
+        "text": "두 분의 궁합은 구십 점이에요.",
+        "evidenceIds": [
+          "e1"
+        ]
+      },
+      "human_safe": false,
+      "baseline": {
+        "text": "두 분은 즐기는 활동에 공통점이 있어요.",
+        "ids": [
+          "e1"
+        ]
+      },
+      "observed": {
+        "source": "RULE_FALLBACK",
+        "reason": "INVALID_OUTPUT",
+        "gate": "parse",
+        "calls": [
+          1,
+          0
+        ]
+      },
+      "risk": "fabrication",
+      "contract_status": "CONFIRMED"
+    },
+    {
+      "id": "C04",
+      "category": "C",
+      "label": "연락 방향 반전",
+      "viewer": "A",
+      "records": [
+        {
+          "source_ref": "e1",
+          "evidence": {
+            "id": "e1",
+            "kind": "ONE_WAY_PREFERENCE_FIT",
+            "topic": "contact",
+            "fact": "A의 연락 방식이 B의 선호에 맞는다.",
+            "direction": "B_TO_A"
+          }
+        }
+      ],
+      "candidate": {
+        "text": "상대의 연락 방식이 당신의 선호와 맞아요.",
+        "evidenceIds": [
+          "e1"
+        ]
+      },
+      "human_safe": false,
+      "baseline": {
+        "text": "당신의 연락 방식이 상대의 선호와 맞아요.",
+        "ids": [
+          "e1"
+        ]
+      },
+      "observed": {
+        "source": "RULE_FALLBACK",
+        "reason": "INVALID_OUTPUT",
+        "gate": "grounding",
+        "calls": [
+          1,
+          0
+        ]
+      },
+      "risk": "fabrication",
+      "contract_status": "CONFIRMED"
+    },
+    {
+      "id": "C05",
+      "category": "C",
+      "label": "등록되지 않은 인용 ID",
+      "viewer": "B",
+      "records": [
+        {
+          "source_ref": "e1",
+          "evidence": {
+            "id": "e1",
+            "kind": "SHARED_REPORTED_BEHAVIOR",
+            "topic": "activity",
+            "fact": "두 사람 모두 독서를 즐긴다고 응답했다.",
+            "direction": "BOTH"
+          }
+        }
+      ],
+      "candidate": {
+        "text": "두 분 모두 독서를 즐긴다는 공통점이 있어요.",
+        "evidenceIds": [
+          "e2"
+        ]
+      },
+      "human_safe": false,
+      "baseline": {
+        "text": "두 분은 즐기는 활동에 공통점이 있어요.",
+        "ids": [
+          "e1"
+        ]
+      },
+      "observed": {
+        "source": "RULE_FALLBACK",
+        "reason": "INVALID_OUTPUT",
+        "gate": "parse",
+        "calls": [
+          1,
+          0
+        ]
+      },
+      "risk": "evidence_id",
+      "contract_status": "CONFIRMED"
+    },
+    {
+      "id": "C06",
+      "category": "C",
+      "label": "공개 근거 없는 생활 정보",
+      "viewer": "B",
+      "records": [
+        {
+          "source_ref": "e1",
+          "evidence": {
+            "id": "e1",
+            "kind": "SHARED_REPORTED_BEHAVIOR",
+            "topic": "activity",
+            "fact": "두 사람 모두 독서를 즐긴다고 응답했다.",
+            "direction": "BOTH"
+          }
+        }
+      ],
+      "candidate": {
+        "text": "상대는 술을 입에 대지 않아요.",
+        "evidenceIds": [
+          "e1"
+        ]
+      },
+      "human_safe": false,
+      "baseline": {
+        "text": "두 분은 즐기는 활동에 공통점이 있어요.",
+        "ids": [
+          "e1"
+        ]
+      },
+      "observed": {
+        "source": "RULE_FALLBACK",
+        "reason": "INVALID_OUTPUT",
+        "gate": "grounding",
+        "calls": [
+          1,
+          0
+        ]
+      },
+      "risk": "privacy",
+      "contract_status": "CONFIRMED"
+    },
+    {
+      "id": "D01",
+      "category": "D",
+      "label": "독서의 정상 의역",
+      "viewer": "B",
+      "records": [
+        {
+          "source_ref": "e1",
+          "evidence": {
+            "id": "e1",
+            "kind": "SHARED_REPORTED_BEHAVIOR",
+            "topic": "activity",
+            "fact": "두 사람 모두 독서를 즐긴다고 응답했다.",
+            "direction": "BOTH"
+          }
+        }
+      ],
+      "candidate": {
+        "text": "두 분 모두 책 읽는 활동을 즐겨요.",
+        "evidenceIds": [
+          "e1"
+        ]
+      },
+      "human_safe": true,
+      "baseline": {
+        "text": "두 분은 즐기는 활동에 공통점이 있어요.",
+        "ids": [
+          "e1"
+        ]
+      },
+      "observed": {
+        "source": "GENERATED",
+        "reason": null,
+        "gate": "accepted",
+        "calls": [
+          1,
+          1
+        ]
+      },
+      "contract_status": "CONFIRMED"
+    },
+    {
+      "id": "D02",
+      "category": "D",
+      "label": "상호 선호의 정상 의역",
+      "viewer": "B",
+      "records": [
+        {
+          "source_ref": "e1",
+          "evidence": {
+            "id": "e1",
+            "kind": "MUTUAL_PREFERENCE_FIT",
+            "topic": "experience",
+            "fact": "두 사람의 새로운 경험을 찾는 방식이 서로의 선호와 맞는다.",
+            "direction": "BOTH"
+          }
+        }
+      ],
+      "candidate": {
+        "text": "새로운 경험을 선택하는 방식이 서로의 취향에 맞아요.",
+        "evidenceIds": [
+          "e1"
+        ]
+      },
+      "human_safe": true,
+      "baseline": {
+        "text": "서로의 새로운 경험을 찾는 방식이 각자의 선호와 맞아요.",
+        "ids": [
+          "e1"
+        ]
+      },
+      "observed": {
+        "source": "RULE_FALLBACK",
+        "reason": "INVALID_OUTPUT",
+        "gate": "grounding",
+        "calls": [
+          1,
+          0
+        ]
+      },
+      "contract_status": "PENDING"
+    },
+    {
+      "id": "D03",
+      "category": "D",
+      "label": "차이의 정상 의역",
+      "viewer": "B",
+      "records": [
+        {
+          "source_ref": "e2",
+          "evidence": {
+            "id": "e1",
+            "kind": "DIFFERENCE",
+            "topic": "planning",
+            "fact": "약속을 준비하는 시점에는 차이가 있다.",
+            "direction": "BOTH"
+          }
+        }
+      ],
+      "candidate": {
+        "text": "약속 준비 시점이 달라요.",
+        "evidenceIds": [
+          "e1"
+        ]
+      },
+      "human_safe": true,
+      "baseline": {
+        "text": "약속을 준비하는 방식에는 차이가 있어요.",
+        "ids": [
+          "e1"
+        ]
+      },
+      "observed": {
+        "source": "GENERATED",
+        "reason": null,
+        "gate": "accepted",
+        "calls": [
+          1,
+          1
+        ]
+      },
+      "contract_status": "CONFIRMED"
+    },
+    {
+      "id": "D04",
+      "category": "D",
+      "label": "허용된 계획 세부 표현",
+      "viewer": "B",
+      "records": [
+        {
+          "source_ref": "e1",
+          "evidence": {
+            "id": "e1",
+            "kind": "SHARED_REPORTED_BEHAVIOR",
+            "topic": "planning",
+            "fact": "두 사람 모두 약속을 미리 정하는 편이다.",
+            "direction": "BOTH"
+          }
+        }
+      ],
+      "candidate": {
+        "text": "두 분은 약속 시간을 미리 정하는 편이라는 공통점이 있어요.",
+        "evidenceIds": [
+          "e1"
+        ]
+      },
+      "human_safe": true,
+      "baseline": {
+        "text": "두 분은 약속을 준비하는 방식에 공통점이 있어요.",
+        "ids": [
+          "e1"
+        ]
+      },
+      "observed": {
+        "source": "GENERATED",
+        "reason": null,
+        "gate": "accepted",
+        "calls": [
+          1,
+          1
+        ]
+      },
+      "contract_status": "CONFIRMED"
+    },
+    {
+      "id": "D05",
+      "category": "D",
+      "label": "동일 의미 요약 문법 차이",
+      "viewer": "B",
+      "records": [
+        {
+          "source_ref": "e1",
+          "evidence": {
+            "id": "e1",
+            "kind": "SHARED_REPORTED_BEHAVIOR",
+            "topic": "activity",
+            "fact": "두 사람은 둘 다 독서를 즐긴다고 응답했다.",
+            "direction": "BOTH"
+          }
+        }
+      ],
+      "candidate": {
+        "text": "두 분 모두 독서를 즐긴다는 공통점이 있어요.",
+        "evidenceIds": [
+          "e1"
+        ]
+      },
+      "human_safe": true,
+      "baseline": {
+        "text": null,
+        "ids": []
+      },
+      "observed": {
+        "source": null,
+        "reason": "NO_SAFE_EVIDENCE",
+        "gate": "selection",
+        "calls": [
+          0,
+          0
+        ]
+      },
+      "contract_status": "PENDING"
+    },
+    {
+      "id": "E01",
+      "category": "E",
+      "label": "생성 모델 예외",
+      "viewer": "B",
+      "records": [
+        {
+          "source_ref": "e1",
+          "evidence": {
+            "id": "e1",
+            "kind": "SHARED_REPORTED_BEHAVIOR",
+            "topic": "contact",
+            "fact": "두 사람 모두 여유 있게 연락하는 편이다.",
+            "direction": "BOTH"
+          }
+        },
+        {
+          "source_ref": "e2",
+          "evidence": {
+            "id": "e2",
+            "kind": "DIFFERENCE",
+            "topic": "planning",
+            "fact": "약속을 준비하는 시점에는 차이가 있다.",
+            "direction": "BOTH"
+          }
+        }
+      ],
+      "candidate": {
+        "text": "두 분 모두 여유 있게 연락해요. 공통점은 바로 이 점이에요. 약속을 준비하는 시점에는 차이가 있어요.",
+        "evidenceIds": [
+          "e1",
+          "e2"
+        ]
+      },
+      "human_safe": null,
+      "baseline": {
+        "text": "두 분은 연락 방식에 공통점이 있어요. 약속을 준비하는 방식에는 차이가 있어요.",
+        "ids": [
+          "e1",
+          "e2"
+        ]
+      },
+      "observed": {
+        "source": "RULE_FALLBACK",
+        "reason": "MODEL_ERROR",
+        "gate": "generation_error",
+        "calls": [
+          1,
+          0
+        ]
+      },
+      "fault": "generator_error",
+      "contract_status": "CONFIRMED"
+    },
+    {
+      "id": "E02",
+      "category": "E",
+      "label": "실제 서비스 deadline",
+      "viewer": "B",
+      "records": [
+        {
+          "source_ref": "e1",
+          "evidence": {
+            "id": "e1",
+            "kind": "SHARED_REPORTED_BEHAVIOR",
+            "topic": "contact",
+            "fact": "두 사람 모두 여유 있게 연락하는 편이다.",
+            "direction": "BOTH"
+          }
+        },
+        {
+          "source_ref": "e2",
+          "evidence": {
+            "id": "e2",
+            "kind": "DIFFERENCE",
+            "topic": "planning",
+            "fact": "약속을 준비하는 시점에는 차이가 있다.",
+            "direction": "BOTH"
+          }
+        }
+      ],
+      "candidate": {
+        "text": "두 분 모두 여유 있게 연락해요. 공통점은 바로 이 점이에요. 약속을 준비하는 시점에는 차이가 있어요.",
+        "evidenceIds": [
+          "e1",
+          "e2"
+        ]
+      },
+      "human_safe": null,
+      "baseline": {
+        "text": "두 분은 연락 방식에 공통점이 있어요. 약속을 준비하는 방식에는 차이가 있어요.",
+        "ids": [
+          "e1",
+          "e2"
+        ]
+      },
+      "observed": {
+        "source": "RULE_FALLBACK",
+        "reason": "MODEL_TIMEOUT",
+        "gate": "generation_timeout",
+        "calls": [
+          1,
+          0
+        ]
+      },
+      "fault": "deadline",
+      "contract_status": "CONFIRMED"
+    },
+    {
+      "id": "E03",
+      "category": "E",
+      "label": "JSON 형식 오류",
+      "viewer": "B",
+      "records": [
+        {
+          "source_ref": "e1",
+          "evidence": {
+            "id": "e1",
+            "kind": "SHARED_REPORTED_BEHAVIOR",
+            "topic": "contact",
+            "fact": "두 사람 모두 여유 있게 연락하는 편이다.",
+            "direction": "BOTH"
+          }
+        },
+        {
+          "source_ref": "e2",
+          "evidence": {
+            "id": "e2",
+            "kind": "DIFFERENCE",
+            "topic": "planning",
+            "fact": "약속을 준비하는 시점에는 차이가 있다.",
+            "direction": "BOTH"
+          }
+        }
+      ],
+      "candidate": {
+        "text": "두 분 모두 여유 있게 연락해요. 공통점은 바로 이 점이에요. 약속을 준비하는 시점에는 차이가 있어요.",
+        "evidenceIds": [
+          "e1",
+          "e2"
+        ]
+      },
+      "human_safe": null,
+      "baseline": {
+        "text": "두 분은 연락 방식에 공통점이 있어요. 약속을 준비하는 방식에는 차이가 있어요.",
+        "ids": [
+          "e1",
+          "e2"
+        ]
+      },
+      "observed": {
+        "source": "RULE_FALLBACK",
+        "reason": "INVALID_OUTPUT",
+        "gate": "parse",
+        "calls": [
+          1,
+          0
+        ]
+      },
+      "fault": "invalid_json",
+      "contract_status": "CONFIRMED"
+    },
+    {
+      "id": "E04",
+      "category": "E",
+      "label": "후보 evidenceIds 누락",
+      "viewer": "B",
+      "records": [
+        {
+          "source_ref": "e1",
+          "evidence": {
+            "id": "e1",
+            "kind": "SHARED_REPORTED_BEHAVIOR",
+            "topic": "contact",
+            "fact": "두 사람 모두 여유 있게 연락하는 편이다.",
+            "direction": "BOTH"
+          }
+        },
+        {
+          "source_ref": "e2",
+          "evidence": {
+            "id": "e2",
+            "kind": "DIFFERENCE",
+            "topic": "planning",
+            "fact": "약속을 준비하는 시점에는 차이가 있다.",
+            "direction": "BOTH"
+          }
+        }
+      ],
+      "candidate": {
+        "text": "두 분 모두 여유 있게 연락해요. 공통점은 바로 이 점이에요. 약속을 준비하는 시점에는 차이가 있어요.",
+        "evidenceIds": [
+          "e1",
+          "e2"
+        ]
+      },
+      "human_safe": null,
+      "baseline": {
+        "text": "두 분은 연락 방식에 공통점이 있어요. 약속을 준비하는 방식에는 차이가 있어요.",
+        "ids": [
+          "e1",
+          "e2"
+        ]
+      },
+      "observed": {
+        "source": "RULE_FALLBACK",
+        "reason": "INVALID_OUTPUT",
+        "gate": "parse",
+        "calls": [
+          1,
+          0
+        ]
+      },
+      "fault": "missing_ids",
+      "contract_status": "CONFIRMED"
+    },
+    {
+      "id": "E05",
+      "category": "E",
+      "label": "검토 ID 불일치",
+      "viewer": "B",
+      "records": [
+        {
+          "source_ref": "e1",
+          "evidence": {
+            "id": "e1",
+            "kind": "SHARED_REPORTED_BEHAVIOR",
+            "topic": "contact",
+            "fact": "두 사람 모두 여유 있게 연락하는 편이다.",
+            "direction": "BOTH"
+          }
+        },
+        {
+          "source_ref": "e2",
+          "evidence": {
+            "id": "e2",
+            "kind": "DIFFERENCE",
+            "topic": "planning",
+            "fact": "약속을 준비하는 시점에는 차이가 있다.",
+            "direction": "BOTH"
+          }
+        }
+      ],
+      "candidate": {
+        "text": "두 분 모두 여유 있게 연락해요. 공통점은 바로 이 점이에요. 약속을 준비하는 시점에는 차이가 있어요.",
+        "evidenceIds": [
+          "e1",
+          "e2"
+        ]
+      },
+      "human_safe": null,
+      "baseline": {
+        "text": "두 분은 연락 방식에 공통점이 있어요. 약속을 준비하는 방식에는 차이가 있어요.",
+        "ids": [
+          "e1",
+          "e2"
+        ]
+      },
+      "observed": {
+        "source": "RULE_FALLBACK",
+        "reason": "INVALID_OUTPUT",
+        "gate": "verdict",
+        "calls": [
+          1,
+          1
+        ]
+      },
+      "fault": "verifier_ids",
+      "contract_status": "CONFIRMED"
+    },
+    {
+      "id": "E06",
+      "category": "E",
+      "label": "검토 모델 예외",
+      "viewer": "B",
+      "records": [
+        {
+          "source_ref": "e1",
+          "evidence": {
+            "id": "e1",
+            "kind": "SHARED_REPORTED_BEHAVIOR",
+            "topic": "contact",
+            "fact": "두 사람 모두 여유 있게 연락하는 편이다.",
+            "direction": "BOTH"
+          }
+        },
+        {
+          "source_ref": "e2",
+          "evidence": {
+            "id": "e2",
+            "kind": "DIFFERENCE",
+            "topic": "planning",
+            "fact": "약속을 준비하는 시점에는 차이가 있다.",
+            "direction": "BOTH"
+          }
+        }
+      ],
+      "candidate": {
+        "text": "두 분 모두 여유 있게 연락해요. 공통점은 바로 이 점이에요. 약속을 준비하는 시점에는 차이가 있어요.",
+        "evidenceIds": [
+          "e1",
+          "e2"
+        ]
+      },
+      "human_safe": null,
+      "baseline": {
+        "text": "두 분은 연락 방식에 공통점이 있어요. 약속을 준비하는 방식에는 차이가 있어요.",
+        "ids": [
+          "e1",
+          "e2"
+        ]
+      },
+      "observed": {
+        "source": "RULE_FALLBACK",
+        "reason": "MODEL_ERROR",
+        "gate": "verification_error",
+        "calls": [
+          1,
+          1
+        ]
+      },
+      "fault": "verifier_error",
+      "contract_status": "CONFIRMED"
+    },
+    {
+      "id": "E07",
+      "category": "E",
+      "label": "검토자가 근거 지지 거부",
+      "viewer": "B",
+      "records": [
+        {
+          "source_ref": "e1",
+          "evidence": {
+            "id": "e1",
+            "kind": "SHARED_REPORTED_BEHAVIOR",
+            "topic": "contact",
+            "fact": "두 사람 모두 여유 있게 연락하는 편이다.",
+            "direction": "BOTH"
+          }
+        },
+        {
+          "source_ref": "e2",
+          "evidence": {
+            "id": "e2",
+            "kind": "DIFFERENCE",
+            "topic": "planning",
+            "fact": "약속을 준비하는 시점에는 차이가 있다.",
+            "direction": "BOTH"
+          }
+        }
+      ],
+      "candidate": {
+        "text": "두 분 모두 여유 있게 연락해요. 공통점은 바로 이 점이에요. 약속을 준비하는 시점에는 차이가 있어요.",
+        "evidenceIds": [
+          "e1",
+          "e2"
+        ]
+      },
+      "human_safe": null,
+      "baseline": {
+        "text": "두 분은 연락 방식에 공통점이 있어요. 약속을 준비하는 방식에는 차이가 있어요.",
+        "ids": [
+          "e1",
+          "e2"
+        ]
+      },
+      "observed": {
+        "source": "RULE_FALLBACK",
+        "reason": "INVALID_OUTPUT",
+        "gate": "verdict",
+        "calls": [
+          1,
+          1
+        ]
+      },
+      "fault": "verifier_reject",
+      "contract_status": "CONFIRMED"
+    }
+  ],
+  "contract_pending": {
+    "D02": "선호와 취향의 공개 의미 계약 미확정",
+    "D05": "BE 근거 요약 문법 계약 미확정"
+  }
+}

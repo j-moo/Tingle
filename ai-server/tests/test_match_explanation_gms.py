@@ -89,7 +89,7 @@ def test_gms_service_generates_and_independently_verifies_minimal_payload(caplog
         assert body["max_output_tokens"] == 2048
         assert "temperature" not in body and "reasoning" not in body
         payload = json.loads(body["input"][1]["content"])
-        assert set(payload) <= {"viewer", "evidence", "candidate"}
+        assert set(payload) <= {"viewer", "evidence", "candidate", "allowedPhrasings"}
         serialized = json.dumps(payload)
         for private in ("synthetic-evaluation", "synthetic-version", "synthetic-source-row",
                         str(reference.encounter_id), "synthetic-secret", "synthetic-scope"):

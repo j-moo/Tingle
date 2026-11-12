@@ -46,6 +46,7 @@ DETAIL_PHRASINGS = {
         (
             r"약속을 준비하는 시점에는 차이가 있다\.",
             ("약속을 준비하는 시점에는 차이가 있어요.",
+             "약속 준비 시점이 달라요.",
              "약속을 준비하는 시점에는 차이가 있어 함께 맞춰 보면 좋겠어요."),
         ),
     ),
@@ -62,6 +63,12 @@ DETAIL_PHRASINGS = {
 def _claim_phrasings(viewer: Viewer, item: Evidence) -> set[str]:
     canonical, _ = rule_fallback(viewer, (item,))
     phrases = {canonical}
+    # D01: this exact public fact entails reading enjoyment, not preference alone.
+    if (item.kind, item.topic, item.direction, item.fact) == (
+        "SHARED_REPORTED_BEHAVIOR", "activity", "BOTH",
+        "두 사람 모두 독서를 즐긴다고 응답했다.",
+    ):
+        phrases.add("두 분 모두 책 읽는 활동을 즐겨요.")
     for pattern, variants in DETAIL_PHRASINGS.get((item.kind, item.topic), ()):
         match = re.fullmatch(pattern, item.fact)
         if match:
