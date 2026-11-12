@@ -16,4 +16,5 @@ int kr_board_led_ready(bool error);
 void kr_board_charge_led(enum kr_charge_level level, bool usb);
 void kr_board_led_off(void);
 void kr_board_print_identity(const struct kr_identity *identity);
+int kr_board_storage_check(void);
 #endif

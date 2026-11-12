@@ -212,6 +212,7 @@ const char *kr_store(struct kr_core *core, const struct kr_settings *next,
 	if (core->reset.phase == KR_RESET_DONE &&
 		!strcmp(next->owner_generation, core->reset.owner_generation)) { return "OWNER_MISMATCH"; }
 	const struct kr_settings *old = &core->current;
+	if (core->settings_recovery_required && next->version <= old->version) { return "SETTINGS_RECOVERY_REQUIRED"; }
 	if (old->magic) {
 		if (old->device_id != next->device_id || strcmp(old->owner_generation, next->owner_generation)) {
 			return "OWNER_MISMATCH";
@@ -240,6 +241,7 @@ const char *kr_store(struct kr_core *core, const struct kr_settings *next,
 			return "STORAGE_ERROR";
 		}
 		core->current = *next;
+		core->settings_recovery_required = false;
 	}
 	char transcript[640];
 	int n = snprintf(transcript, sizeof(transcript),
@@ -281,7 +283,7 @@ bool kr_peer_after_response(struct kr_core *core, bool sent, struct kr_peer_plan
 
 static bool settings_apply_bound(const struct kr_core *core)
 {
-	return core->settings_apply_state != KR_SETTINGS_APPLY_NONE && !core->storage_error &&
+	return core->settings_apply_state != KR_SETTINGS_APPLY_NONE && !core->storage_error && !core->settings_recovery_required &&
 		core->current.magic == KR_RECORD_MAGIC && !strcmp(core->current.format, KR_POLICY_FORMAT) &&
 		core->reset.phase != KR_RESETTING && core->settings_apply_epoch == core->reset.ownership_epoch;
 }

@@ -1,5 +1,6 @@
 #include "board.h"
 #include "power.h"
+#include "settings_storage.h"
 #include "nus.h"
 #include "profile.h"
 #include "policy.h"
@@ -8,12 +9,14 @@
 #include <errno.h>
 #include <string.h>
 #include <stdio.h>
+#include <mbedtls/sha256.h>
 #include <zephyr/device.h>
 #include <zephyr/bluetooth/bluetooth.h>
 #include <zephyr/bluetooth/conn.h>
 #include <zephyr/bluetooth/uuid.h>
 #include <zephyr/drivers/adc.h>
 #include <zephyr/drivers/gpio.h>
+#include <zephyr/drivers/flash.h>
 #include <zephyr/drivers/hwinfo.h>
 #include <zephyr/fs/nvs.h>
 #include <zephyr/kernel.h>
@@ -120,19 +123,28 @@ static int put(uint16_t key, const void *data, size_t length)
 	return result == (ssize_t)length || result == 0 ? 0 : result < 0 ? (int)result : -EIO;
 }
 
-static int save(void *ctx, const struct kr_settings *next)
+static int read_settings(void *ctx, uint16_t key, unsigned history, struct kr_settings *out)
 {
 	(void)ctx;
+	return (int)nvs_read_hist(&fs, key, out, sizeof(*out), history);
+}
+
+static int write_settings(void *ctx, uint16_t key, const struct kr_settings *value)
+{
+	(void)ctx;
+	return put(key, value, sizeof(*value));
+}
+
+static const struct kr_settings_storage settings_io = {.read = read_settings, .write = write_settings};
+
+static int save(void *ctx, const struct kr_settings *next)
+{
+	struct kr_core *core = ctx;
 	/* Serialize the settings commit with encounter processing. Once a verified
 	 * change commits (including OFF), no old snapshot may create new work. */
 	kr_runtime_owner_lock();
 	kr_runtime_pause_matching();
-	int result = put(10, next, sizeof(*next));
-	if (!result) {
-		ssize_t got = nvs_read(&fs, 10, &readback, sizeof(readback));
-		if (got != sizeof(readback) || memcmp(next, &readback, sizeof(readback)) ||
-			!kr_settings_valid(&readback)) { result = -EIO; }
-	}
+	int result = kr_settings_storage_save(&settings_io, &core->current, next, &readback);
 	kr_runtime_owner_unlock();
 	return result;
 }
@@ -250,6 +262,9 @@ static const char *erase_owner(void *ctx)
 	if (result < 0 && result != -ENOENT) { return "STORAGE_ERROR"; }
 	uint8_t byte;
 	if (nvs_read(&fs, 10, &byte, sizeof(byte)) != -ENOENT) { return "STORAGE_ERROR"; }
+	result = nvs_delete(&fs, KR_SETTINGS_BACKUP_KEY);
+	if (result < 0 && result != -ENOENT) { return "STORAGE_ERROR"; }
+	if (nvs_read(&fs, KR_SETTINGS_BACKUP_KEY, &byte, sizeof(byte)) != -ENOENT) { return "STORAGE_ERROR"; }
 	memset(&readback, 0, sizeof(readback));
 #ifdef KR_DEV_SERVER_KEY_HEX
 	memset(&challenge, 0, sizeof(challenge));
@@ -400,9 +415,12 @@ int kr_board_open(struct kr_core *core)
 		kr_board_print_identity(&core->identity);
 		return 0;
 	}
-	ssize_t got = nvs_read(&fs, 10, &core->current, sizeof(core->current));
-	if (got == -ENOENT) { memset(&core->current, 0, sizeof(core->current)); }
-	else if (got != sizeof(core->current) || !kr_settings_valid(&core->current)) { return -EILSEQ; }
+	result = kr_settings_storage_load(core, &settings_io);
+	if (result < 0) { return result; }
+	if (result == 1) {
+		printk("STORAGE recovery-required: retained verified settings v%lld; fresh signed sync required; no rewrite\n",
+			(long long)core->current.version);
+	}
 	kr_board_print_identity(&core->identity);
 	return 0;
 }
@@ -418,6 +436,31 @@ void kr_board_print_identity(const struct kr_identity *id)
 	kr_base64_encode(spki, sizeof(spki), encoded);
 	printk("ENROLL serial=%s keyId=%s publicKeySpkiBase64url=%s\n",
 		id->serial, id->key_id, encoded);
+}
+
+int kr_board_storage_check(void)
+{
+	/* Called with the runtime owner lock, so settings/record writes cannot race.
+	 * USB exposes only whole-partition hashes, never keys or payload bytes. */
+	const struct device *flash = FIXED_PARTITION_DEVICE(registration_store);
+	const uint32_t starts[] = {FIXED_PARTITION_OFFSET(registration_store), FIXED_PARTITION_OFFSET(keyring_store)};
+	const uint32_t sizes[] = {FIXED_PARTITION_SIZE(registration_store), FIXED_PARTITION_SIZE(keyring_store)};
+	uint32_t buffer[64]; uint8_t digest[32]; char hex[65];
+	for (unsigned area = 0; area < ARRAY_SIZE(starts); ++area) {
+		mbedtls_sha256_context hash;
+		mbedtls_sha256_init(&hash);
+		int result = mbedtls_sha256_starts(&hash, 0);
+		for (uint32_t offset = 0; !result && offset < sizes[area]; offset += sizeof(buffer)) {
+			result = flash_read(flash, starts[area] + offset, buffer, sizeof(buffer));
+			if (!result) { result = mbedtls_sha256_update(&hash, (const uint8_t *)buffer, sizeof(buffer)); }
+		}
+		if (!result) { result = mbedtls_sha256_finish(&hash, digest); }
+		mbedtls_sha256_free(&hash); crypto_wipe(buffer, sizeof(buffer));
+		if (result) { return result; }
+		kr_hex(digest, sizeof(digest), hex);
+		printk("STORAGE CHECK area=%x bytes=%u sha256=%s\n", starts[area], sizes[area], hex);
+	}
+	return 0;
 }
 
 bool kr_board_usb_present(void)
@@ -451,7 +494,9 @@ static struct kr_status read_power(void)
 	int16_t raw[8];
 	struct adc_sequence sequence = {.channels = BIT(0), .buffer = &raw,
 		.buffer_size = sizeof(raw), .resolution = 12};
-	const struct adc_sequence_options options = {.extra_samplings = 7, .interval_us = 100};
+	/* Complete each sample before starting the next. A 100 us kernel timer
+	 * overruns SAADC on this board (-EBUSY), discarding otherwise valid voltage. */
+	const struct adc_sequence_options options = {.extra_samplings = 7, .interval_us = 0};
 	sequence.options = &options;
 	if (!adc_read(adc, &sequence)) {
 		int32_t mv = 0; for (unsigned i = 0; i < 8; ++i) { if (raw[i] <= 0) { return status; } mv += raw[i]; }

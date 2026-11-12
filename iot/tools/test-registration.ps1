@@ -16,7 +16,7 @@ $env:KR_PROFILE_FIXTURES = $profileFixtures
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 $env:ZIG_GLOBAL_CACHE_DIR = Join-Path $buildRoot 'zig-cache'
 $testExe = Join-Path $buildRoot 'test-core.exe'
-$sources = @('src/proof.c', 'src/settings_auth.c', 'src/hash.c', 'src/json.c', 'src/request.c', 'src/frame.c', 'src/reset.c', 'src/profile.c', 'src/policy.c', 'src/peer_auth.c', 'src/service.c', 'tests/test_core.c',
+$sources = @('src/proof.c', 'src/settings_auth.c', 'src/settings_storage.c', 'src/hash.c', 'src/json.c', 'src/request.c', 'src/frame.c', 'src/reset.c', 'src/profile.c', 'src/policy.c', 'src/peer_auth.c', 'src/service.c', 'tests/test_core.c',
     'vendor/monocypher/monocypher.c', 'vendor/monocypher/monocypher-ed25519.c') |
     ForEach-Object { Join-Path $projectRoot $_ }
 & $Zig cc -target x86_64-windows-gnu -std=c11 -O0 -g -UNDEBUG -DKR_HOST -Wall -Wextra -Werror `

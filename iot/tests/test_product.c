@@ -749,6 +749,16 @@ int main(int argc, char **argv)
 		strstr(response, "\"configuredChargeCurrentMa\":null") && strlen(response) < 2304);
 	owner(b, f); request(b, "{\"type\":\"GET_STATUS\"}", "\"storageTotalBytes\":262144"); assert(strstr(response, "VOLTAGE_ESTIMATE"));
 	vector(f, "statusResponse", response, strlen(response));
+	bool applied_before_recovery = kr_product_applied(&b->app);
+	b->core.settings_recovery_required = true;
+	assert(!kr_product_applied(&b->app) && !kr_product_ready(&b->app));
+	request(b, "{\"type\":\"GET_DEVICE_INFO\"}", "\"settingsRecoveryRequired\":true");
+	assert(strstr(response, "\"storageHealthy\":false"));
+	request(b, "{\"type\":\"GET_STATUS\"}", "\"settingsRecoveryRequired\":true");
+	assert(strstr(response, "\"applied\":false") && strstr(response, "\"matchingReady\":false"));
+	assert(strstr(response, "\"storageState\":\"AVAILABLE\"")); /* Record storage remains usable. */
+	b->core.settings_recovery_required = false;
+	assert(kr_product_applied(&b->app) == applied_before_recovery);
 	++b->core.connection_epoch; request(b, "{\"type\":\"GET_RECORD\",\"afterSequence\":0}", "OWNER_SESSION_REQUIRED"); owner(b, NULL);
 	++b->core.reset.ownership_epoch; request(b, "{\"type\":\"GET_RECORD\",\"afterSequence\":0}", "OWNER_SESSION_REQUIRED"); --b->core.reset.ownership_epoch;
 	b->core.profile_transport_protected = false; request(b, "{\"type\":\"GET_RECORD\",\"afterSequence\":0}", "OWNER_SESSION_REQUIRED"); b->core.profile_transport_protected = true;

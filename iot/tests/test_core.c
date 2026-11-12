@@ -1,4 +1,6 @@
 #include "registration.h"
+#include "settings_storage.h"
+#include <errno.h>
 #include "monocypher-ed25519.h"
 #include <assert.h>
 #include <stdio.h>
@@ -56,6 +58,88 @@ static struct kr_settings settings(int64_t version)
 	uint8_t hash[32]; kr_hash(s.payload, s.payload_size, hash); kr_hex(hash, sizeof(hash), s.hash);
 	assert(!strcmp(s.hash, "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"));
 	return s;
+}
+
+struct fake_settings_flash {
+	struct kr_settings latest, history, backup;
+	bool latest_present, history_present, backup_present, corrupt_new;
+	int latest_error, fail_key, writes;
+};
+static int settings_read(void *ctx, uint16_t key, unsigned history, struct kr_settings *out)
+{
+	struct fake_settings_flash *f = ctx;
+	if (key == KR_SETTINGS_BACKUP_KEY) {
+		if (!f->backup_present || history) { return -ENOENT; }
+		*out = f->backup; return sizeof(*out);
+	}
+	assert(key == KR_SETTINGS_CURRENT_KEY);
+	if (history) {
+		if (history != 1 || !f->history_present) { return -ENOENT; }
+		*out = f->history; return sizeof(*out);
+	}
+	if (!f->latest_present) { return -ENOENT; }
+	*out = f->latest;
+	return f->latest_error ? f->latest_error : (int)sizeof(*out);
+}
+static int settings_write(void *ctx, uint16_t key, const struct kr_settings *s)
+{
+	struct fake_settings_flash *f = ctx;
+	++f->writes;
+	if (key == f->fail_key) { return -EIO; }
+	if (key == KR_SETTINGS_BACKUP_KEY) { f->backup = *s; f->backup_present = true; }
+	else {
+		assert(key == KR_SETTINGS_CURRENT_KEY);
+		f->latest = *s; f->latest_present = true; f->latest_error = 0;
+		if (f->corrupt_new) { f->latest.payload[0] ^= 1; f->latest_error = -EIO; }
+	}
+	return 0;
+}
+static void storage_recovery_tests(void)
+{
+	struct fake_settings_flash flash = {.latest = settings(9), .history = settings(8),
+		.latest_present = true, .history_present = true, .latest_error = -EIO};
+	flash.latest.payload[0] ^= 1;
+	const struct fake_settings_flash original = flash;
+	const struct kr_settings_storage io = {.ctx = &flash, .read = settings_read, .write = settings_write};
+	struct kr_core core = {0};
+	assert(kr_settings_storage_load(&core, &io) == 1);
+	assert(core.settings_recovery_required && core.current.version == 8 && !core.storage_error);
+	assert(!memcmp(&flash, &original, sizeof(flash))); /* Read-only, damaged v9 retained. */
+	flash.latest_error = 0; /* CRC can pass while payload/schema validation fails. */
+	assert(kr_settings_storage_load(&core, &io) == 1 && core.current.version == 8);
+	flash.history_present = false; flash.backup = settings(8); flash.backup_present = true;
+	assert(kr_settings_storage_load(&core, &io) == 1 && core.current.version == 8);
+	flash.latest_present = false;
+	assert(kr_settings_storage_load(&core, &io) == 0 && !core.current.magic && !core.settings_recovery_required);
+	flash.latest_present = true; core.reset.phase = KR_RESET_DONE;
+	strcpy(core.reset.owner_generation, flash.backup.owner_generation);
+	assert(kr_settings_storage_load(&core, &io) == -EILSEQ); /* No pre-transfer owner resurrection. */
+	core.reset.phase = KR_RESET_NONE; flash = original;
+	struct kr_settings scratch, previous = settings(8), next = settings(10);
+	flash.fail_key = KR_SETTINGS_BACKUP_KEY;
+	assert(kr_settings_storage_save(&io, &previous, &next, &scratch) == -EIO);
+	assert(flash.writes == 1 && flash.latest.version == 9);
+	flash.fail_key = 0; flash.corrupt_new = true;
+	assert(kr_settings_storage_save(&io, &previous, &next, &scratch) == -EIO);
+	assert(flash.backup_present && !memcmp(&flash.backup, &previous, sizeof(previous)));
+	flash.history_present = false;
+	assert(kr_settings_storage_load(&core, &io) == 1 && core.current.version == 8);
+	flash.corrupt_new = false;
+	assert(!kr_settings_storage_save(&io, &previous, &next, &scratch));
+	assert(!kr_settings_storage_load(&core, &io) && core.current.version == 10 && !core.settings_recovery_required);
+
+	memset(&disk, 0, sizeof(disk)); init(&core); core.current = settings(8); core.settings_recovery_required = true;
+	char proof[87]; struct kr_identity key_before = core.identity;
+	authorized = true; fail_at = 0; writes = 0;
+	assert(!strcmp(kr_store(&core, &core.current, NULL, proof), "SETTINGS_RECOVERY_REQUIRED"));
+	assert(core.settings_recovery_required && !writes);
+	authorized = false;
+	assert(!strcmp(kr_store(&core, &next, NULL, proof), "POLICY_UNRESOLVED") && core.settings_recovery_required);
+	authorized = true;
+	assert(!kr_store(&core, &next, NULL, proof) && !core.settings_recovery_required && core.current.version == 10);
+	assert(!memcmp(&key_before, &core.identity, sizeof(key_before)));
+	memset(&disk, 0, sizeof(disk)); writes = 0;
+	puts("PASS: CRC/schema recovery quarantine, no resurrection/write, backup failure, signed resync and key preservation");
 }
 
 static void codecs(void)
@@ -303,7 +387,7 @@ static void server_proof_tests(void)
 int main(int argc, char **argv)
 {
 	assert(argc == 2);
-	codecs(); parser(); framing(); persistence(); request_tests(); server_proof_tests();
+	codecs(); parser(); framing(); storage_recovery_tests(); persistence(); request_tests(); server_proof_tests();
 	memset(&disk, 0, sizeof(disk)); struct kr_core core; init(&core);
 	struct kr_settings s = settings(INT64_MAX); char registration[87], stored[87], key[44];
 	assert(!kr_registration_proof(&core.identity, uuid, nonce, INT64_C(1793577900), registration));
