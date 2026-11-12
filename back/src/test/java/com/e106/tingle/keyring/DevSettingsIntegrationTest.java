@@ -10,8 +10,6 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
 import java.security.Signature;
@@ -36,6 +34,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.ResultActions;
 
+import com.e106.tingle.ContractFixtures;
 import com.e106.tingle.IntegrationTestSupport;
 import com.e106.tingle.TestcontainersConfiguration;
 import com.e106.tingle.keyring.proof.KeyringProofTranscript;
@@ -292,8 +291,7 @@ class DevSettingsIntegrationTest extends IntegrationTestSupport {
 		assertThat(surveyId).isPositive();
 		String session = sessions + "/" + surveyId;
 
-		Path cases = Path.of("../ai-server/tests/fixtures/mvp-policy-20261026-cases.json");
-		JsonNode answers = jsonMapper.readTree(Files.readString(cases)).path("cases").valueStream()
+		JsonNode answers = jsonMapper.readTree(ContractFixtures.mvpPolicyCases()).path("cases").valueStream()
 			.filter(testCase -> "NORMAL".equals(testCase.path("id").asString()))
 			.findFirst().orElseThrow().at("/input/left/answers");
 		for (var entry : answers.properties()) {

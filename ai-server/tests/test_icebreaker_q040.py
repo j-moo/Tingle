@@ -1,12 +1,10 @@
 import json
-from pathlib import Path
 
 import pytest
 
+import contracts
 from app.icebreakers import templates
 
-
-BE_RESOURCES = Path(__file__).resolve().parents[2] / "back/src/main/resources"
 DATE_CASES = (
     ("rest", "DATE_REST", "쉬는 날에는 주로 어떻게 휴식을 취하세요?"),
     ("talk", "DATE_TALK", "식사하면서 가장 즐겁게 이야기하는 주제가 있나요?"),
@@ -18,13 +16,11 @@ DATE_CASES = (
 
 @pytest.fixture(scope="module")
 def be_fallback_questions():
-    path = BE_RESOURCES / "icebreakers/general-ko-v1.json"
-    return tuple(json.loads(path.read_text(encoding="utf-8"))["questions"])
+    return tuple(json.loads(contracts.icebreakers_general_ko_v1())["questions"])
 
 
 def test_date_allowlist_covers_only_the_five_q040_options():
-    path = BE_RESOURCES / "survey/questionnaires/SIS-Q-1.1-100.json"
-    catalog = json.loads(path.read_text(encoding="utf-8"))
+    catalog = json.loads(contracts.questionnaire_sis_q_1_1_100())
     q040 = next(q for q in catalog["questions"] if q["questionId"] == "Q040")
     assert [option["value"] for option in q040["options"]] == [
         code for code, _, _ in DATE_CASES

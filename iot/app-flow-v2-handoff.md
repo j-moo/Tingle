@@ -95,7 +95,7 @@ UTF-8과 LF를 사용하며 마지막 `APPLIED` 뒤에도 LF를 넣는다. 숫�
 
 - 초기화 요청/재부팅 복구에서 무선 중지 계획의 generation을0으로 남겨 현재 세대와 불일치하던 결함을 수정했다. `service.c`의 공통 조정 함수를 실제 main 루프가 호출하며 중지 후 현재 generation을 계획에 넣는다. 무선 중지/휴대폰 광고 적용이 성공한 뒤에만 기존 `kr_reset_resume`으로 삭제·CLEARED를 진행한다.
 - 중지 실패·동시 세대 변경은 원래 초기화 저널을 보존하고 다음 pass에서 재시도한다. 일반 설정 적용 중 새 초기화가 들어오면 다음 pass에서 초기화용 중지를 실제 적용하기 전에는 삭제를 시작하지 않는다. 이 경로를 서명된 RESET_DEVICE·NVS 모의 저장/재부팅과 함께 검사한다. 실제 RF/플래시 관찰은 별도다.
-- FE의 기존 GET_STATUS512B 수신 제한을2304B로 확대했다. 공개 합성 C STATUS548B를 `front/app/shared/src/androidHostTest/resources/keyring/status-0.7.json`으로 보존하고 실제 Kotlin NUS의20B 수신·전체 파싱·연결 유지와 옛512B 실패를 검사한다. `verify-app-flow.mjs`가 C 출력과 이 fixture의 byte 일치를 확인한다.
+- FE의 기존 GET_STATUS512B 수신 제한을2304B로 확대했다. 공개 합성 C STATUS548B를 `front/app/shared/src/androidHostTest/resources/keyring/status-0.7.json`으로 보존하고 실제 Kotlin NUS의20B 수신·전체 파싱·연결 유지와 옛512B 실패를 검사한다. `verify-app-flow.mjs`는 C 출력을 iot 자체 복사본 `iot/tests/data/status-0.7.json`과 비교하고, 앱 fixture와의 일치는 양쪽이 같은 SHA-256 계약 해시를 고정해(app BleOwnerFlowFixtureTest ↔ verify-app-flow.mjs) 보장한다. Jenkins changes 단계가 두 복사본의 byte 일치도 항상 확인한다.
 - 이번 FE 변경은 상태 조회 호환과 해당 회귀에 한정한다. 전체 TSV3 발급·중계/소유 세션/기록 접수의 다른 FE·BE 후속은 그대로 남는다. FE 검토는 기존 MR의 이재준/황순철 담당 경계로 요청한다.
 
 ### 0.7.2 — 소유 메타데이터 복구 후 재개

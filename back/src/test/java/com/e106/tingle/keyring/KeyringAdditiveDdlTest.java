@@ -3,8 +3,6 @@ package com.e106.tingle.keyring;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.sql.Connection;
 import java.sql.Statement;
 import java.util.Map;
@@ -21,6 +19,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.SingleConnectionDataSource;
 import org.springframework.test.context.ActiveProfiles;
 
+import com.e106.tingle.ContractFixtures;
 import com.e106.tingle.TestcontainersConfiguration;
 
 import tools.jackson.databind.json.JsonMapper;
@@ -200,7 +199,7 @@ class KeyringAdditiveDdlTest {
 				+ "'2026-10-28T00:00:00Z','PENDING',?,0)", UUID.randomUUID(), UUID.randomUUID(),
 				new byte[] {0, 1, -1}, "a".repeat(64), "A".repeat(43), UUID.randomUUID());
 			var before = jdbc.queryForMap("select * from keyring_sync_run");
-			jdbc.execute(Files.readString(Path.of("../infra/db/prod-changes/247-keyring-server-proofs.sql")));
+			jdbc.execute(ContractFixtures.keyringServerProofsSql());
 			var after = jdbc.queryForMap("select * from keyring_sync_run");
 			assertThat(after.remove("server_proofs")).isNull();
 			assertThat((byte[])after.remove("payload")).containsExactly((byte[])before.remove("payload"));

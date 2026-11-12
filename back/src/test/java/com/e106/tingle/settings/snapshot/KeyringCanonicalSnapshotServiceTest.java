@@ -8,8 +8,6 @@ import static org.mockito.Mockito.when;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.time.Clock;
 import java.time.Instant;
@@ -22,6 +20,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
 
+import com.e106.tingle.ContractFixtures;
 import com.e106.tingle.global.error.BusinessException;
 import com.e106.tingle.global.error.ErrorCode;
 import com.e106.tingle.keyring.KeyringProfileStorageEncoder;
@@ -61,8 +60,7 @@ class KeyringCanonicalSnapshotServiceTest {
 			.put("contentHash", catalog.current().contentHash());
 		definitionSnapshot = snapshot.toString();
 		service = new KeyringCanonicalSnapshotService(facts, answers, catalog, mapper, json, CLOCK);
-		Path cases = Path.of("../ai-server/tests/fixtures/mvp-policy-20261026-cases.json");
-		JsonNode fixture = mapper.readTree(Files.readString(cases));
+		JsonNode fixture = mapper.readTree(ContractFixtures.mvpPolicyCases());
 		normal = (ObjectNode)fixture.path("cases").valueStream()
 			.filter(testCase -> "NORMAL".equals(testCase.path("id").asString()))
 			.findFirst().orElseThrow().at("/input/left/answers");

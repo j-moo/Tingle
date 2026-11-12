@@ -9,9 +9,10 @@ const values = input.startsWith('{')
   : Object.fromEntries(input.split(/\r?\n/)
     .map(line => { const at = line.indexOf('='); return [line.slice(0, at), Buffer.from(line.slice(at + 1), 'hex')]; }));
 if (values.statusResponse) {
-  // Keep the Android transport regression fixture byte-identical to C output.
-  const fixture = new URL('../../front/app/shared/src/androidHostTest/resources/keyring/status-0.7.json', import.meta.url);
-  assert.deepEqual(readFileSync(fixture), values.statusResponse);
+  // IoT 자체 복사본과 비교한다. 앱 복사본과의 일치는 같은 SHA-256 고정으로 보장한다 (app BleOwnerFlowFixtureTest).
+  const fixture = readFileSync(new URL('../tests/data/status-0.7.json', import.meta.url));
+  assert.equal(createHash('sha256').update(fixture).digest('hex'), '0b72b1951309a3e410dc1da3e8292e40fd67abddea7c23bcc3987275f2827406');
+  assert.deepEqual(fixture, values.statusResponse);
   assert(values.statusResponse.length > 512 && values.statusResponse.length <= 2304);
 }
 const hash = bytes => createHash('sha256').update(bytes).digest();

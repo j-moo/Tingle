@@ -3,15 +3,13 @@ package com.e106.tingle.withdrawal;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import java.nio.file.Files;
-import java.nio.file.Path;
-
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.jdbc.autoconfigure.JdbcConnectionDetails;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
 
+import com.e106.tingle.ContractFixtures;
 import com.e106.tingle.SharedPostgres;
 
 class MemberWithdrawalDdlTest {
@@ -26,7 +24,7 @@ class MemberWithdrawalDdlTest {
 		jdbc.execute("create table rule_audit(id bigint primary key,actor_id bigint not null)");
 		jdbc.update("insert into matching values(1,10,20,'CLOSED')");
 		jdbc.update("insert into rule_audit values(1,10)");
-		String sql = Files.readString(Path.of("../infra/db/prod-changes/2026-11-06-member-withdrawal.sql"));
+		String sql = ContractFixtures.memberWithdrawalSql();
 		jdbc.execute(sql);
 		jdbc.execute(sql);
 		assertThat(jdbc.queryForObject("select count(*) from matching", Long.class)).isEqualTo(1);
