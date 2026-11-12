@@ -61,7 +61,7 @@ class KeyringCanonicalSnapshotServiceTest {
 			.put("contentHash", catalog.current().contentHash());
 		definitionSnapshot = snapshot.toString();
 		service = new KeyringCanonicalSnapshotService(facts, answers, catalog, mapper, json, CLOCK);
-		Path cases = Path.of("../ai-server/docs/contracts/matching/fixtures/mvp-policy-20261026-cases.json");
+		Path cases = Path.of("../ai-server/tests/fixtures/mvp-policy-20261026-cases.json");
 		JsonNode fixture = mapper.readTree(Files.readString(cases));
 		normal = (ObjectNode)fixture.path("cases").valueStream()
 			.filter(testCase -> "NORMAL".equals(testCase.path("id").asString()))

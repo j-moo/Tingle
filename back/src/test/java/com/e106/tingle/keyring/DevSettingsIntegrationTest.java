@@ -292,7 +292,7 @@ class DevSettingsIntegrationTest extends IntegrationTestSupport {
 		assertThat(surveyId).isPositive();
 		String session = sessions + "/" + surveyId;
 
-		Path cases = Path.of("../ai-server/docs/contracts/matching/fixtures/mvp-policy-20261026-cases.json");
+		Path cases = Path.of("../ai-server/tests/fixtures/mvp-policy-20261026-cases.json");
 		JsonNode answers = jsonMapper.readTree(Files.readString(cases)).path("cases").valueStream()
 			.filter(testCase -> "NORMAL".equals(testCase.path("id").asString()))
 			.findFirst().orElseThrow().at("/input/left/answers");
