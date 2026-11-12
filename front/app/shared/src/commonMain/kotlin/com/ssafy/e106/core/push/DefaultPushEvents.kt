@@ -3,8 +3,11 @@ package com.ssafy.e106.core.push
 import com.ssafy.e106.core.auth.Session
 import com.ssafy.e106.core.auth.SessionStore
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
@@ -19,6 +22,18 @@ internal class DefaultPushEvents(private val session: SessionStore, scope: Corou
     private var tap: Tap? = null
     private val _pending = MutableStateFlow<PushTarget?>(null)
     override val pending: StateFlow<PushTarget?> = _pending.asStateFlow()
+    // 목록 전체를 다시 받으므로 짧은 시간에 몰린 알림은 최신 갱신 신호 하나면 충분하다.
+    private val arrivals = MutableSharedFlow<Long>(extraBufferCapacity = 1, onBufferOverflow = BufferOverflow.DROP_OLDEST)
+    override val proposalArrivals = arrivals.asSharedFlow()
+    private val recentProposals = LinkedHashSet<Triple<Long, String, Long>>()
+
+    /** 메인 스레드에서 중복 수신을 거른다. 알림 ID도 제안별로 고정해 재시작 후 같은 알림이 쌓이지 않게 한다. */
+    fun proposalArrived(userId: Long, bindingId: String, proposalId: Long): Boolean {
+        if (!recentProposals.add(Triple(userId, bindingId, proposalId))) return false
+        if (recentProposals.size > 64) recentProposals.remove(recentProposals.first())
+        if ((session.state.value as? Session.SignedIn)?.userId == userId) arrivals.tryEmit(userId)
+        return true
+    }
 
     init {
         scope.launch { session.state.collect { s -> tap?.let { if (stale(it, s)) set(null) } } }

@@ -185,6 +185,15 @@ class ProposalViewModel(
         cancelReads()
         if (!started) resume() else work { _, stamp -> readList(null, stamp) }
     }
+    /** 푸시가 상세 화면을 닫거나 확인 중인 결정을 덮어쓰지 않도록 목록에서만 다시 조회한다. */
+    internal fun refreshAfterProposalPush(owner: Session.SignedIn): Boolean {
+        val current = mutable.value
+        if (hidden || current.session != owner || sessions.state.value != owner || current.page != ProposalPageMode.List ||
+            writing || current.pending != null || current.storageIssue || current.openChat != null) return false
+        // 첫 조회가 로컬의 미확인 결정을 복구 중이면 중단하지 않는다.
+        if (started || !current.busy) refresh()
+        return true
+    }
     fun more() {
         val cursor = nextCursor ?: return
         work { _, stamp -> readList(cursor, stamp) }
