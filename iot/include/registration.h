@@ -21,6 +21,7 @@
 #define KR_PAYLOAD_MAX 2048
 #define KR_FRAME_MAX 4096
 #define KR_RESPONSE_MAX 2304
+#define KR_PUBLIC_NAME_MAX 29U
 #define KR_RECORD_MAGIC UINT32_C(0x4b525301)
 
 struct kr_identity {
@@ -140,6 +141,11 @@ struct kr_status {
 	int gauge_percent;
 	bool gauge_ready, gauge_percent_valid, presence_valid, battery_present;
 	bool usb_valid, usb_present;
+	/* Volatile diagnostics only; never serialized into owner/key NVS records. */
+	const char *battery_power_state, *charge_monitor_state;
+	uint32_t charge_elapsed_seconds;
+	int charge_current_ma;
+	bool power_off_requested, usb_charge_notice;
 };
 struct kr_frame { char bytes[KR_FRAME_MAX + 1]; size_t size; };
 /* 0: incomplete, 1: complete, -1: malformed (caller disconnects).

@@ -1,7 +1,7 @@
 #ifndef TINGLE_REGISTRATION_NUS_H
 #define TINGLE_REGISTRATION_NUS_H
 
-#include "peer_plan.h"
+#include "registration.h"
 #include <stdbool.h>
 #include <zephyr/bluetooth/uuid.h>
 
@@ -14,6 +14,7 @@ int kr_nus_init(struct k_sem *peer_wake);
 bool kr_nus_take_peer_plan(struct kr_peer_plan *out);
 void kr_nus_start_window(void);
 bool kr_nus_can_advertise(void);
+size_t kr_nus_copy_public_name(char name[KR_PUBLIC_NAME_MAX + 1]);
 void kr_nus_poll_console(bool blink);
 int kr_nus_forget_failed_bond(uint32_t token);
 bool kr_nus_reset_pending(void);
@@ -27,6 +28,7 @@ void kr_runtime_reset_block(void);
 void kr_runtime_pause_matching(void);
 uint32_t kr_runtime_generation(void);
 void kr_runtime_stop_feedback(void);
+void kr_runtime_refresh_phone(void);
 void kr_nus_attach_application(struct kr_engine *engine);
 int kr_nus_apply_application(const struct kr_peer_plan *plan, struct kr_peer_runtime *peers);
 void kr_nus_application_result(const struct kr_peer_plan *plan, int error);

@@ -1,6 +1,7 @@
 #include "keyring.h"
 #include "carrier.h"
 #include "board.h"
+#include "power.h"
 #include "nus.h"
 #include "phone.h"
 #include "storage.h"
@@ -26,6 +27,8 @@
 #include <zephyr/storage/flash_map.h>
 #include <zephyr/sys/byteorder.h>
 #include <zephyr/sys/util.h>
+#include <zephyr/sys/poweroff.h>
+#include <zephyr/sys/reboot.h>
 
 LOG_MODULE_REGISTER(keyring, LOG_LEVEL_INF);
 
@@ -95,7 +98,17 @@ void kr_runtime_pause_matching(void)
 	kr_runtime_stop_feedback();
 	k_sem_give(&wake);
 }
-void kr_runtime_reset_block(void) { kr_runtime_pause_matching(); }
+void kr_runtime_refresh_phone(void)
+{
+	atomic_set(&restart_phone_adv, 1);
+	k_sem_give(&wake);
+}
+
+void kr_runtime_reset_block(void)
+{
+	atomic_set(&restart_phone_adv, 1);
+	kr_runtime_pause_matching();
+}
 uint32_t kr_runtime_generation(void) { return (uint32_t)atomic_get(&settings_generation); }
 
 int kr_runtime_clear_owner_data(void)
@@ -216,20 +229,20 @@ static void boot_progress(enum boot_step step)
 static void turn_led_off(struct k_work *work)
 {
 	ARG_UNUSED(work);
-	(void)gpio_pin_set_dt(&led, 0);
+	kr_board_led(false);
 }
 void kr_runtime_stop_feedback(void)
 {
 	kr_carrier_feedback_stop();
 	(void)k_work_cancel_delayable(&led_off);
-	if (gpio_is_ready_dt(&led)) { (void)gpio_pin_set_dt(&led, 0); }
+	kr_board_led(false);
 }
 
 static void feedback(void *ctx, const struct kr_record *record, const struct kr_profile *peer)
 {
 	ARG_UNUSED(ctx);
 	if (atomic_get(&lab_enabled)) {
-		(void)gpio_pin_set_dt(&led, 1);
+		kr_board_led(true);
 		(void)k_work_reschedule(&led_off, K_MSEC(KR_FEEDBACK_LED_MS));
 		LOG_INF("Local test encounter persisted; feedback claimed");
 		return;
@@ -340,8 +353,7 @@ BT_GATT_SERVICE_DEFINE(lab_service,
 static void connected(struct bt_conn *conn, uint8_t err)
 {
 	if (err) {
-		atomic_set(&restart_phone_adv, 1);
-		k_sem_give(&wake);
+		kr_runtime_refresh_phone();
 		return;
 	}
 	k_mutex_lock(&phone_lock, K_FOREVER);
@@ -369,15 +381,13 @@ static void disconnected(struct bt_conn *conn, uint8_t reason)
 		subscribed = false;
 	}
 	k_mutex_unlock(&phone_lock);
-	atomic_set(&restart_phone_adv, 1);
-	k_sem_give(&wake);
+	kr_runtime_refresh_phone();
 }
 
 static void connection_recycled(void)
 {
 	/* A disconnected callback can precede the controller returning its connection slot. */
-	atomic_set(&restart_phone_adv, 1);
-	k_sem_give(&wake);
+	kr_runtime_refresh_phone();
 }
 
 BT_CONN_CB_DEFINE(connection_callbacks) = {
@@ -630,6 +640,7 @@ static int advertise_next(void)
 
 static int phone_advertising_data(bool lab)
 {
+	BUILD_ASSERT(KR_PUBLIC_NAME_MAX + 2 <= BT_GAP_ADV_MAX_ADV_DATA_LEN);
 	const struct bt_data ad[] = {
 		BT_DATA_BYTES(BT_DATA_FLAGS, BT_LE_AD_GENERAL | BT_LE_AD_NO_BREDR),
 		BT_DATA_BYTES(BT_DATA_UUID128_ALL, KR_NUS_UUID(0x6e400001)),
@@ -639,16 +650,31 @@ static int phone_advertising_data(bool lab)
 		BT_DATA(BT_DATA_NAME_COMPLETE, "Tingle-Lab", sizeof("Tingle-Lab") - 1),
 		BT_DATA_BYTES(BT_DATA_UUID128_ALL, LAB_UUID(1)),
 	};
-	return bt_le_ext_adv_set_data(phone_adv, ad, ARRAY_SIZE(ad),
-		lab ? lab_scan_response : NULL, lab ? ARRAY_SIZE(lab_scan_response) : 0);
+	int result;
+	if (lab) {
+		result = bt_le_ext_adv_set_data(phone_adv, ad, ARRAY_SIZE(ad),
+			lab_scan_response, ARRAY_SIZE(lab_scan_response));
+	} else {
+		char name[KR_PUBLIC_NAME_MAX + 1];
+		size_t length = kr_nus_copy_public_name(name);
+		const struct bt_data scan_response = BT_DATA(BT_DATA_NAME_COMPLETE, name, (uint8_t)length);
+		result = bt_le_ext_adv_set_data(phone_adv, ad, ARRAY_SIZE(ad),
+			length ? &scan_response : NULL, length ? 1 : 0);
+	}
+	/* If replacing the scan response fails, stop sending the old one. */
+	if (result) { (void)bt_le_ext_adv_stop(phone_adv); }
+	return result;
 }
 
 static int sync_phone_advertising(void)
 {
-	if (!atomic_get(&lab_enabled) && !kr_nus_can_advertise()) {
+	bool lab = atomic_get(&lab_enabled) != 0;
+	if (!lab && !kr_nus_can_advertise()) {
 		return bt_le_ext_adv_stop(phone_adv);
 	}
-	int result = bt_le_ext_adv_start(phone_adv, BT_LE_EXT_ADV_START_DEFAULT);
+	int result = phone_advertising_data(lab);
+	if (result) { return result; }
+	result = bt_le_ext_adv_start(phone_adv, BT_LE_EXT_ADV_START_DEFAULT);
 	return result == -EALREADY ? 0 : result;
 }
 
@@ -681,7 +707,7 @@ static int radio_start(void)
 	}
 	boot_progress(BOOT_PHONE_START);
 	kr_nus_start_window();
-	return sync_phone_advertising();
+	return bt_le_ext_adv_start(phone_adv, BT_LE_EXT_ADV_START_DEFAULT);
 }
 
 static int prepare_peer_adv(void)
@@ -867,16 +893,15 @@ static bool poll_usb_commands(bool allow_lab)
 	return false;
 }
 
-static void check_carrier_off(bool radio_running)
+static void prepare_poweroff(bool radio_running)
 {
-	if (!kr_carrier_off_requested()) { return; }
-	k_msleep(20); /* Slide-switch debounce only. */
-	if (!kr_carrier_off_requested()) { return; }
-	kr_runtime_stop_feedback();
-	(void)gpio_pin_set_dt(&boot_red, 0);
-	(void)gpio_pin_set_dt(&boot_green, 0);
+	kr_nus_quiesce();
+	kr_runtime_owner_lock();
+	kr_runtime_pause_matching();
+	kr_carrier_shutdown();
+	kr_board_led_off();
+	kr_runtime_owner_unlock();
 	if (radio_running) {
-		kr_nus_quiesce();
 		int result = bt_disable();
 		if (result) { LOG_WRN("BLE shutdown returned %d", result); }
 	}
@@ -889,16 +914,55 @@ static void check_carrier_off(bool radio_running)
 		} while (result == -EBUSY);
 		if (result && result != -EALREADY) { LOG_WRN("Flash standby returned %d", result); }
 	}
+}
+
+static void check_carrier_off(bool radio_running)
+{
+	if (!kr_carrier_off_requested()) { return; }
+	k_msleep(20); /* Slide-switch debounce only. */
+	if (!kr_carrier_off_requested()) { return; }
+	prepare_poweroff(radio_running);
 	kr_carrier_enter_off();
+}
+
+static void battery_poweroff(bool radio_running)
+{
+	struct kr_status power = kr_board_status();
+	if (!power.power_off_requested || power.usb_present) { return; }
+	LOG_WRN("Battery standby: %s, %d mV; owner/key/records retained",
+		power.battery_power_state, power.battery_mv);
+	prepare_poweroff(radio_running);
+	/* VBUS rising wakes nRF52840 System OFF into a cold boot. If USB arrived
+	 * while draining writes, restart now instead of waiting for another edge. */
+	unsigned int key = irq_lock();
+	if (!kr_board_usb_present()) { sys_poweroff(); }
+	irq_unlock(key);
+	sys_reboot(SYS_REBOOT_COLD);
+}
+
+static void check_startup_power(void)
+{
+	/* Check before NVS mounts/identity writes and before starting the radio.
+	 * This is measurement debounce, not a delay in any matching/record queue. */
+	for (unsigned i = 0; i < 20; ++i) {
+		struct kr_status power = kr_board_status();
+		if (power.usb_present) { return; }
+		if (power.power_off_requested) { battery_poweroff(false); }
+		if (power.battery_mv > KR_POWER_STOP_MV && power.battery_mv <= KR_POWER_MAX_MV) { return; }
+		k_msleep(KR_POWER_SAMPLE_MS);
+	}
 }
 
 int main(void)
 {
 	int charge_error = kr_board_charge_init();
-	if (charge_error) { LOG_ERR("50 mA charge pin unavailable: %d", charge_error); }
+	if (charge_error) { LOG_ERR("100 mA charge pin unavailable: %d", charge_error); }
+	int power_error = kr_board_power_init();
+	if (power_error) { LOG_ERR("Battery measurement unavailable: %d", power_error); }
 	int carrier_error = kr_carrier_init();
 	if (carrier_error) { LOG_ERR("Carrier feedback unavailable: %d", carrier_error); }
 	check_carrier_off(false);
+	check_startup_power();
 	k_work_init_delayable(&boot_report, report_boot);
 	(void)k_work_schedule(&boot_report, K_NO_WAIT);
 	LOG_INF("Bootloader address: 0x%08x", NRF_UICR->NRFFW[0]);
@@ -944,17 +1008,19 @@ int main(void)
 		return 0;
 	}
 	boot_progress(BOOT_READY);
-	(void)gpio_pin_set_dt(&boot_red, engine.storage_error ? 1 : 0);
-	(void)gpio_pin_set_dt(&boot_green, 1);
+	int led_error = kr_board_led_ready(engine.storage_error);
+	if (led_error) { LOG_ERR("Board RGB unavailable: %d", led_error); }
 	LOG_INF("NUS ready, registration window=60s. USB LAB ENABLE starts synthetic matching for this boot");
 	bool registration_expired = false;
 	bool service_mode = false, service_update = false;
 	struct kr_peer_plan service_plan;
 	int last_adv_error = 0;
+	int64_t phone_adv_retry_at = 0;
 	const char *last_reset_error = NULL;
 	for (;;) {
 		k_sem_take(&wake, K_MSEC(100));
 		check_carrier_off(true);
+		if (kr_carrier_poll_charge()) { battery_poweroff(true); }
 		kr_nus_poll_console(false);
 		if (kr_nus_take_peer_plan(&service_plan)) {
 			service_mode = service_update = true;
@@ -999,11 +1065,14 @@ int main(void)
 			atomic_set(&restart_phone_adv, 1);
 			LOG_INF("Registration window closed; reboot to reopen");
 		}
-		if (atomic_cas(&restart_phone_adv, 1, 0)) {
+		if (atomic_cas(&restart_phone_adv, 1, 0) ||
+			(phone_adv_retry_at && k_uptime_get() >= phone_adv_retry_at)) {
 			result = sync_phone_advertising();
-			if (result && result != -ENOMEM) {
+			bool retry = result && result != -ENOMEM;
+			if (retry && !phone_adv_retry_at) {
 				LOG_ERR("Phone advertising update failed: %d", result);
 			}
+			phone_adv_retry_at = retry ? k_uptime_get() + 1000 : 0;
 		}
 		if (!atomic_get(&lab_enabled) && !atomic_get(&peer_exchange_enabled)) {
 			continue;

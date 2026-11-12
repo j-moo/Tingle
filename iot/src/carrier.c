@@ -1,5 +1,7 @@
 #include "carrier.h"
+#include "battery.h"
 #include "board.h"
+#include "power.h"
 
 #include <errno.h>
 #include <zephyr/drivers/gpio.h>
@@ -14,6 +16,8 @@ LOG_MODULE_REGISTER(keyring_carrier, LOG_LEVEL_INF);
 #define CARRIER DT_PATH(zephyr_user)
 #define STOP_DEBOUNCE_MS 20
 #define OFF_DEBOUNCE_MS 20
+#define CHARGE_SAMPLE_MS 250
+#define NOTICE_POLL_MS 50
 #define REV_G DT_NODE_HAS_PROP(CARRIER, keyring_off_gpios)
 
 static const struct gpio_dt_spec rgb[] = {
@@ -30,7 +34,10 @@ static bool switch_ready;
 
 static struct gpio_callback stop_irq;
 static struct kr_feedback alert;
+static struct kr_charge_indicator charge_indicator;
+static int64_t charge_sample_after;
 static bool ready, motor_on_usb;
+static bool power_off_requested;
 K_MUTEX_DEFINE(carrier_lock);
 
 static void output_tick(struct k_work *work);
@@ -49,29 +56,78 @@ static int drive(uint8_t color, bool vibrate)
 	return result ? result : error;
 }
 
+static uint8_t charge_color(bool usb)
+{
+	return usb ? kr_charge_indicator_rgb(charge_indicator.level) : 0;
+}
+
 static void stop_locked(void)
 {
+	kr_board_cancel_charge_notice();
 	kr_feedback_stop(&alert);
 	(void)k_work_cancel_delayable(&output_work);
-	if (ready) { (void)drive(0, false); }
+	if (ready) {
+		bool charge_visible = !kr_carrier_off_requested() && kr_board_usb_present();
+		(void)drive(charge_color(charge_visible), false);
+	}
 }
 
 static bool update_locked(void)
 {
 	if (kr_carrier_off_requested()) { stop_locked(); return false; }
 	/* Cancel the pulse train when the power source changes during an alert. */
-	struct kr_feedback_output out = kr_feedback_step(&alert, k_uptime_get(),
-		kr_board_usb_present() == motor_on_usb);
-	if (drive(out.rgb, out.motor)) {
+	struct kr_status power = kr_board_status();
+	bool usb = power.usb_present;
+	bool notice = power.usb_charge_notice;
+	if (notice && gpio_pin_get_dt(&stop_button) != 0) {
+		kr_board_cancel_charge_notice();
+		notice = false;
+	}
+	if (notice) { alert.options.vibrate = false; }
+	/* Recheck loaded voltage during every motor pulse, not just before starting. */
+	bool motor_power = usb == motor_on_usb && kr_feedback_motor_can_start(&power, REV_G);
+	struct kr_feedback_output out = kr_feedback_step(&alert, k_uptime_get(), motor_power);
+	if (notice && (!out.wake_ms || out.wake_ms > NOTICE_POLL_MS)) { out.wake_ms = NOTICE_POLL_MS; }
+	if (drive(out.rgb ? out.rgb : charge_color(usb), out.motor || notice)) {
 		stop_locked();
 		ready = false;
 		LOG_ERR("Carrier feedback GPIO failed");
 		return false;
 	}
+	if (notice) { kr_board_start_charge_notice(); }
 	if (out.wake_ms) {
 		(void)k_work_reschedule(&output_work, K_MSEC(out.wake_ms));
 	}
 	return out.wake_ms != 0;
+}
+
+bool kr_carrier_poll_charge(void)
+{
+	int64_t now = k_uptime_get();
+	if (now < charge_sample_after) { return power_off_requested; }
+	charge_sample_after = now + CHARGE_SAMPLE_MS;
+	struct kr_status power = kr_board_status();
+	bool usb = power.usb_present;
+	power_off_requested = power.power_off_requested;
+
+	k_mutex_lock(&carrier_lock, K_FOREVER);
+	enum kr_charge_level before = charge_indicator.level;
+	enum kr_charge_level level = kr_charge_indicator_update(&charge_indicator, power);
+	if (ready && (level != before || power.usb_charge_notice)) { (void)update_locked(); }
+	k_mutex_unlock(&carrier_lock);
+	/* The onboard RGB also works without an external RGB/motor harness. */
+	kr_board_charge_led(level, usb);
+	return power_off_requested;
+}
+
+void kr_carrier_shutdown(void)
+{
+	k_mutex_lock(&carrier_lock, K_FOREVER);
+	stop_locked();
+	if (ready) { (void)drive(0, false); }
+	ready = false;
+	k_mutex_unlock(&carrier_lock);
+	(void)gpio_pin_interrupt_configure_dt(&stop_button, GPIO_INT_DISABLE);
 }
 
 static void output_tick(struct k_work *work)

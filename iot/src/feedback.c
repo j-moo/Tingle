@@ -2,6 +2,7 @@
 #include "keyring.h"
 #include "profile.h"
 #include "registration.h"
+#include "power.h"
 
 #define MATCHING_ON 1U
 #define VIBRATION_ON 2U
@@ -29,9 +30,7 @@ bool kr_feedback_motor_can_start(const struct kr_status *power, bool usb_motor_s
 	if (!power->usb_valid) { return false; }
 	if (power->usb_present) { return usb_motor_supply; }
 	/* Leave battery margin for starting the motor and keeping the XIAO up. */
-	return power->charging == 0 &&
-		(!power->presence_valid || power->battery_present) &&
-		power->battery_mv >= 3300 && power->battery_mv <= 4300;
+	return power->charging == 0 && kr_power_motor_voltage_ok(power);
 }
 
 bool kr_feedback_start(struct kr_feedback *state, int64_t now, struct kr_feedback_options options)
