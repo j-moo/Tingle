@@ -8,6 +8,7 @@ from uuid import UUID
 from pydantic import AfterValidator, BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from . import templates
+from .prompts import GMS_PROMPT_VERSION
 
 
 # Java String.strip()/isBlank() use Character.isWhitespace, excluding NBSPs.
@@ -87,12 +88,14 @@ class IcebreakerRequest(StrictModel):
 
 class IcebreakerResponse(StrictModel):
     questions: list[str] = Field(min_length=3, max_length=3)
-    source: Literal["COMMON_TOPIC_TEMPLATE", "GENERAL_FALLBACK"]
+    source: Literal["COMMON_TOPIC_TEMPLATE", "GENERAL_FALLBACK", "GENERATED"]
     promptVersion: VersionText
 
     @model_validator(mode="after")
     def check_source_version(self) -> Self:
-        expected = templates.Q040_VERSION if self.source == "COMMON_TOPIC_TEMPLATE" else templates.GENERAL_VERSION
+        expected = {"COMMON_TOPIC_TEMPLATE": templates.Q040_VERSION,
+                    "GENERAL_FALLBACK": templates.GENERAL_VERSION,
+                    "GENERATED": GMS_PROMPT_VERSION}[self.source]
         if self.promptVersion != expected:
             raise ValueError("Unexpected icebreaker prompt version")
         return self

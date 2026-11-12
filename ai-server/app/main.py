@@ -10,8 +10,9 @@ from app.middleware.request_id import RequestIdMiddleware, install_error_handler
 from app.risk_detection.runtime import DevelopmentRuntime, create_development_router
 from app.security.service_auth import ServiceAuthenticator, ServiceAuthError, ServiceAuthSettings
 
-def create_app(app_settings: Settings | None = None, *, _risk_engine_factory: Callable | None = None) -> FastAPI:
-    """Build the real application; Python-only engine injection is for tests.
+def create_app(app_settings: Settings | None = None, *, _risk_engine_factory: Callable | None = None,
+               _gms_client=None) -> FastAPI:
+    """Build the application with explicit Python-only development injection.
 
     No setting or HTTP input selects a model. The default application keeps
     Safety Guard OFF, and explicit development opt-in still uses local rules.
@@ -44,6 +45,7 @@ def create_app(app_settings: Settings | None = None, *, _risk_engine_factory: Ca
     application.state.risk_runtime = risk_runtime
     application.include_router(create_icebreaker_router(
         service_auth, configured.icebreaker_release_descriptor_file, dev_enabled=configured.icebreaker_dev_enabled,
+        gms_client=_gms_client if configured.app_env in {"local", "test", "dev"} else None,
     ))
     application.include_router(create_development_router(
         authenticate=service_auth, environment=configured.app_env, runtime=risk_runtime,
