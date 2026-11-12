@@ -6,10 +6,8 @@ def PARTS = [back: 'back/', ai: 'ai-server/', web: 'front/web/', app: 'front/app
 // AI 테스트가 읽는 다른 폴더의 파일(참조 원본 · back 리소스). 바뀌면 ai 도 검사한다.
 def AI_TEST_INPUTS = ['ai-server/reference/survey-20261021/mockup/dist/', 'ai-server/reference/survey-20261021/questionnaire-SIS-Q-1.1-100.json',
   'back/src/main/resources/icebreakers/', 'back/src/main/resources/survey/questionnaires/SIS-Q-1.1-100.json']
-// 파트 폴더 안이어도 그 파트 검사가 읽지 않는 파일. ai-server/docs 는 팀 공용 설계 문서라 AI 테스트가 읽지 않는다.
-def PART_IGNORES = [ai: ['ai-server/docs/']]
 // back 테스트가 읽는 다른 파트의 파일. 바뀌면 back 도 검사한다.
-def BACK_TEST_INPUTS = ['ai-server/docs/contracts/matching/fixtures/', 'ai-server/reference/survey-20261021/questionnaire-SIS-Q-1.1-100.json',
+def BACK_TEST_INPUTS = ['ai-server/tests/fixtures/mvp-policy-20261026-cases.json', 'ai-server/reference/survey-20261021/questionnaire-SIS-Q-1.1-100.json',
   'infra/db/prod-changes/']
 // 브랜치별 배포: 코드를 dir 에 풀고 services(infra/docker-compose.yml 서비스 이름 → 응답 확인 주소)만 다시 띄운다.
 // bluegreen 은 infra/deploy-bluegreen.sh 로 무중단 전환한다 (운영 back · ai). ai 를 먼저 바꾼다 — 새 ai 가 옛 back 요청도 받아야 한다 (인프라 계획 7절).
@@ -54,7 +52,7 @@ pipeline {
           // Jenkinsfile 이 바뀌면 검사 방법이 바뀐 것이므로 전부 돌린다.
           def matches = { file, paths -> paths.any { path -> path.endsWith('/') ? file.startsWith(path) : file == path } }
           changed = files.contains('Jenkinsfile') ? PARTS.keySet() as List : PARTS.findAll { k, dir ->
-            files.any { it.startsWith(dir) && !matches(it, PART_IGNORES[k] ?: []) }
+            files.any { it.startsWith(dir) }
           }.keySet() as List
           if (!('ai' in changed) && files.any { matches(it, AI_TEST_INPUTS) }) {
             changed.add('ai')
