@@ -13,6 +13,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
@@ -41,20 +42,29 @@ private val WarnInk = Color(0xFF7A4B00)
  * 가입 완료 회원의 홈(시안 02 큰 매칭 버튼). 가운데 큰 원 하나가 새 매칭 상태, 그 문구 바로 아래 내 키링 요약 한 장(모두 화면 가운데).
  * 받은 제안 · 대화방은 아래 탭(제안 · 채팅)으로 보고 홈에는 두지 않는다. 저장/통신/실제 화면 이동은 호출부에서 처리한다.
  */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen(state: HomeState, onMatchingChange: (Boolean) -> Unit, onAction: (HomeAction) -> Unit,
     modifier: Modifier = Modifier, onOpenMatchingSettings: (() -> Unit)? = null,
     onSaveKeyringAlias: (suspend (Long, String) -> Boolean)? = null,
-    keyringStatus: @Composable () -> OwnedKeyringLiveStatus? = { null }) {
+    keyringStatus: @Composable () -> OwnedKeyringLiveStatus? = { null },
+    connectedKeyringId: Long? = null, checkingKeyringStatus: Boolean = false) {
+    val refreshing = state.refreshing || checkingKeyringStatus
+    val refreshLabel = stringResource(Res.string.home_refresh)
+    val refresh = {
+        if (state.load != HomeLoadState.Loading && !refreshing && !state.savingMatching) onAction(HomeAction.Refresh)
+    }
     Surface(modifier.fillMaxSize(), color = AppColors.Background) {
         Column(Modifier.fillMaxSize().safeDrawingPadding()) {
             // 오른쪽 위 "키링 설정" = 키링 화면(내 키링 목록 · 초기화)
             AppTopBar(stringResource(Res.string.home_brand), actionText = stringResource(Res.string.home_keyring_settings),
                 onAction = { onAction(HomeAction.Keyring) })
             // 가운데: 큰 매칭 원 · 문구 · 내 키링 한 장을 한 덩어리로(길어지면 스크롤)
-            Column(Modifier.weight(1f).fillMaxWidth().widthIn(max = 640.dp).align(Alignment.CenterHorizontally)
-                .padding(horizontal = screenGutter())) {
-                BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
+            // 내용이 짧아도 화면 가운데에서 당길 수 있게 스크롤 영역을 채운다.
+            PullToRefreshBox(refreshing, refresh, Modifier.weight(1f).fillMaxWidth()
+                .semantics { customActions = listOf(CustomAccessibilityAction(refreshLabel) { refresh(); true }) },
+                contentAlignment = Alignment.TopCenter) {
+                BoxWithConstraints(Modifier.widthIn(max = 640.dp).fillMaxSize().padding(horizontal = screenGutter())) {
                     Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).heightIn(min = maxHeight),
                         verticalArrangement = Arrangement.spacedBy(AppSpacing.Large, Alignment.CenterVertically),
                         horizontalAlignment = Alignment.CenterHorizontally) {
@@ -67,11 +77,11 @@ fun HomeScreen(state: HomeState, onMatchingChange: (Boolean) -> Unit, onAction: 
                                 Text(stringResource(Res.string.home_failed), style = MaterialTheme.typography.titleLarge, textAlign = TextAlign.Center)
                                 Text(stringResource(Res.string.home_failed_help), style = MaterialTheme.typography.bodyMedium,
                                     color = AppColors.TextSecondary, textAlign = TextAlign.Center)
-                                AppButton(stringResource(Res.string.home_retry), Modifier.fillMaxWidth(), onClick = { onAction(HomeAction.Refresh) })
+                                AppButton(stringResource(Res.string.home_retry), Modifier.fillMaxWidth(), onClick = refresh)
                             }
                             HomeLoadState.Ready -> {
                                 MatchingPower(state, onMatchingChange, onOpenMatchingSettings)
-                                KeyringSummary(state, keyringStatus, onSaveKeyringAlias)
+                                KeyringSummary(state, connectedKeyringId, keyringStatus, onSaveKeyringAlias)
                             }
                         }
                     }
@@ -121,7 +131,7 @@ private fun MatchingPower(state: HomeState, onMatchingChange: (Boolean) -> Unit,
  * 손볼 일이 있으면 노란 바탕과 할 일 한 줄은 접혀 있어도 보인다. 키링 설정 화면은 오른쪽 위 "키링 설정"으로 간다
  */
 @Composable
-private fun KeyringSummary(state: HomeState, keyringStatus: @Composable () -> OwnedKeyringLiveStatus?,
+private fun KeyringSummary(state: HomeState, connectedKeyringId: Long?, keyringStatus: @Composable () -> OwnedKeyringLiveStatus?,
     onSaveKeyringAlias: (suspend (Long, String) -> Boolean)?) {
     var open by rememberSaveable { mutableStateOf(false) }
     var editing by rememberSaveable { mutableStateOf<Long?>(null) }
@@ -131,15 +141,20 @@ private fun KeyringSummary(state: HomeState, keyringStatus: @Composable () -> Ow
     val turn by animateFloatAsState(if (open) 90f else -90f)
     val expanded = stringResource(Res.string.profile_section_expanded)
     val collapsed = stringResource(Res.string.profile_section_collapsed)
+    // 등록 목록에 포함된 현재 블루투스 연결만 색과 문구로 알린다.
+    val connected = state.keyrings.any { it.deviceId == connectedKeyringId }
+    val connectedLabel = stringResource(Res.string.home_keyring_connected)
+    val disconnectedLabel = stringResource(Res.string.home_keyring_disconnected)
     Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp))
         .then(if (todo == null) Modifier.border(1.5.dp, AppColors.BorderSubtle, RoundedCornerShape(16.dp)) else Modifier.background(WarnBackground))) {
         Column(Modifier.fillMaxWidth().clickable(role = Role.Button) { open = !open }.padding(AppSpacing.Medium)
             .semantics(mergeDescendants = true) { stateDescription = if (open) expanded else collapsed },
             verticalArrangement = Arrangement.spacedBy(AppSpacing.ExtraSmall)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(AppSpacing.Small)) {
-                Box(Modifier.size(8.dp).background(if (todo == null) AppColors.SelectionBorder else Color(0xFFD08A00), CircleShape))
+                Box(Modifier.size(8.dp).background(if (connected) AppColors.SelectionBorder else AppColors.Error, CircleShape))
                 Text(stringResource(Res.string.home_keyring_title), Modifier.weight(1f), style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.Bold, color = ink)
+                Text(if (connected) connectedLabel else disconnectedLabel, style = MaterialTheme.typography.bodySmall, color = sub)
                 Icon(painterResource(Res.drawable.ic_arrow_back), null, Modifier.size(16.dp).rotate(turn), tint = sub)
             }
             todo?.let { Text(stringResource(it), style = MaterialTheme.typography.bodySmall, color = sub) }
@@ -162,6 +177,8 @@ private fun KeyringSummary(state: HomeState, keyringStatus: @Composable () -> Ow
                                     Text(label, style = MaterialTheme.typography.bodyMedium,
                                         fontWeight = FontWeight.Bold, color = ink)
                                     Text(stringResource(Res.string.owned_keyrings_battery, battery),
+                                        style = MaterialTheme.typography.bodySmall, color = sub)
+                                    Text(if (device.deviceId == connectedKeyringId) connectedLabel else disconnectedLabel,
                                         style = MaterialTheme.typography.bodySmall, color = sub)
                                 }
                                 if (onSaveKeyringAlias != null) TextButton(onClick = { editing = device.deviceId }) {
@@ -232,7 +249,7 @@ private fun KeyringAliasDialog(initial: String, save: suspend (String) -> Boolea
     )
 }
 
-/** 손볼 일이 있는 상태만 한 줄 안내(그 밖의 확인 중 · 등록됨 · 연결됨 · 연결 안 됨 · 미확인은 상태 글자 없이) */
+/** 현재 연결 표시 아래에 키링에 필요한 조치가 있을 때만 추가 안내를 붙인다. */
 private fun keyringTodo(state: HomeKeyringState): StringResource? = when (state) {
     HomeKeyringState.DisconnectedPending -> Res.string.home_device_pending_help
     HomeKeyringState.SyncFailed -> Res.string.home_device_failed_help

@@ -60,8 +60,11 @@ class OwnedKeyringsTestActivity : ComponentActivity() {
                 ) {}
             } else if (intent.getBooleanExtra("metrics", false)) {
                 val (id, snapshot) = metricFixture.collectAsStateWithLifecycle().value
-                OwnedKeyringsScreen(OwnedKeyringsState(session, listOf(OwnedKeyring(7, "READY", "1.0"))),
-                    {}, {}, {}, connectedDeviceId = id, liveStatus = snapshot, onRefreshStatus = {})
+                OwnedKeyringsScreen(OwnedKeyringsState(session, listOf(
+                    OwnedKeyring(7, "READY", "0.1.0-registration"),
+                    OwnedKeyring(8, "READY", "0.1.0-registration"),
+                )), {}, {}, {}, connectedDeviceId = id, liveStatus = snapshot, onRefreshStatus = {},
+                    connectedFirmwareVersion = "0.9.6-d31")
             } else ConnectedOwnedKeyringsRoute(session, {}, model, onReset = {},
                 recoveryLinks = {}, onConnectForRecords = { recordEntries.incrementAndGet() },
                 onRegister = { registrationEntries.incrementAndGet() },
@@ -77,7 +80,8 @@ class OwnedKeyringsDeviceTest {
         OwnedKeyringsTestActivity.reads.set(0)
         ActivityScenario.launch<OwnedKeyringsTestActivity>(Intent(InstrumentationRegistry.getInstrumentation().context,
             OwnedKeyringsTestActivity::class.java)).use { scenario ->
-            compose.onNodeWithText("펌웨어 1.0").assertExists()
+            compose.onNodeWithText("펌웨어 미확인").assertExists()
+            compose.onNodeWithText("펌웨어 1.0").assertDoesNotExist()
             assertEquals(1, OwnedKeyringsTestActivity.reads.get())
             scenario.recreate(); compose.waitForIdle()
             assertEquals(2, OwnedKeyringsTestActivity.reads.get())
@@ -145,6 +149,10 @@ class OwnedKeyringsDeviceTest {
         val intent = Intent(InstrumentationRegistry.getInstrumentation().context, OwnedKeyringsTestActivity::class.java)
             .putExtra("metrics", true)
         ActivityScenario.launch<OwnedKeyringsTestActivity>(intent).use {
+            // 다른 키링은 서버에 같은 예전 버전이 있어도 연결된 기기의 버전을 이어받지 않는다.
+            compose.onAllNodesWithText("펌웨어 0.9.6-d31").assertCountEquals(1)
+            compose.onAllNodesWithText("펌웨어 미확인").assertCountEquals(1)
+            compose.onNodeWithText("펌웨어 0.1.0-registration").assertDoesNotExist()
             compose.onNodeWithText("배터리 0%").assertExists()
             compose.onNodeWithText("미전송 기록 0건").assertExists()
             OwnedKeyringsTestActivity.metricFixture.value = 7L to status.copy(metrics = null)
@@ -153,7 +161,9 @@ class OwnedKeyringsDeviceTest {
             OwnedKeyringsTestActivity.metricFixture.value = 7L to status.copy(metrics = null, failed = true)
             compose.onNodeWithText("키링 상태를 불러오지 못했어요.").assertExists()
             OwnedKeyringsTestActivity.metricFixture.value = null to status
-            compose.onNodeWithText("연결하면 상태를 확인할 수 있어요.").assertExists()
+            compose.onAllNodesWithText("연결하면 상태를 확인할 수 있어요.").assertCountEquals(2)
+            compose.onAllNodesWithText("펌웨어 미확인").assertCountEquals(2)
+            compose.onNodeWithText("펌웨어 0.9.6-d31").assertDoesNotExist()
             compose.onNodeWithText("배터리 0%").assertDoesNotExist()
         }
     }

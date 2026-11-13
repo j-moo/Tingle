@@ -47,7 +47,8 @@ import org.koin.compose.viewmodel.koinViewModel
     if (state.owner != session) return
     val connection = if (ble != null) observeOwnedKeyringConnection(session, state.items.orEmpty(), ble) else null
     OwnedKeyringsScreen(state, model::load, onBack, onReset, onConnectForRecords,
-        connection?.deviceId, connection?.liveStatus, connection?.refresh, onRegister = onRegister, onSync = onSync) {
+        connection?.deviceId, connection?.liveStatus, connection?.refresh, onRegister = onRegister, onSync = onSync,
+        connectedFirmwareVersion = connection?.firmwareVersion) {
         if (recoveryLinks != null) recoveryLinks()
         else {
             // 목록이 아직 없으면(불러오는 중 · 실패) 중복 여부를 모르므로 띄우지 않는다
@@ -61,6 +62,7 @@ internal data class OwnedKeyringConnection(
     val deviceId: Long?,
     val liveStatus: OwnedKeyringLiveStatus?,
     val refresh: (() -> Unit)?,
+    val firmwareVersion: String?,
 )
 
 /** 홈과 관리 화면은 같은 BLE 연결의 소유 기기만 읽고, 동기화·기록 전송이 끝난 뒤 조회한다. */
@@ -72,8 +74,9 @@ internal data class OwnedKeyringConnection(
     val syncing by koinViewModel<KeyringSyncViewModel>().state.collectAsStateWithLifecycle()
     val store = koinInject<KeyringSyncStore>()
     val authorizer = koinInject<KeyringOwnerAuthorizer>()
-    val serial = link.info?.serial?.takeIf { link.connected }
-    val device = serial?.let { value -> devices.singleOrNull { it.deviceSerial == value } }
+    // 현재 연결에서 읽은 기기 정보가 서버 소유 목록의 일련번호와 일치할 때만 버전을 표시한다.
+    val connectedInfo = link.info?.takeIf { link.connected && link.connectionGeneration != null }
+    val device = connectedInfo?.let { info -> devices.singleOrNull { it.deviceSerial == info.serial } }
     val working = transfer == EncounterTransferState.Sending || syncing.busy
     val liveStatus = link.ownedStatus?.takeIf { !working && it.owner == session.userId &&
         it.deviceId == device?.deviceId && it.connectionGeneration == link.connectionGeneration }
@@ -84,7 +87,7 @@ internal data class OwnedKeyringConnection(
     LaunchedEffect(session.userId, device?.deviceId, link.connectionGeneration, working) {
         if (device != null && !working) ble.readOwnedStatus(session.userId, device, store, authorizer)
     }
-    return OwnedKeyringConnection(device?.deviceId, liveStatus, refresh)
+    return OwnedKeyringConnection(device?.deviceId, liveStatus, refresh, connectedInfo?.firmware?.takeIf { device != null })
 }
 
 /**
@@ -96,6 +99,7 @@ internal data class OwnedKeyringConnection(
     liveStatus: OwnedKeyringLiveStatus? = null, onRefreshStatus: (() -> Unit)? = null,
     onRegister: (() -> Unit)? = null,
     onSync: (() -> Unit)? = null,
+    connectedFirmwareVersion: String? = null,
     recoveryLinks: @Composable () -> Unit = {}) {
     Surface(Modifier.fillMaxSize(), color = AppColors.Background) {
         Column(Modifier.fillMaxSize().safeDrawingPadding(), horizontalAlignment = Alignment.CenterHorizontally) {
@@ -127,8 +131,14 @@ internal data class OwnedKeyringConnection(
                             KeyringCard(title, selected = false, onClick = null,
                                 trailing = { AppButton(stringResource(Res.string.owned_keyrings_reset), Modifier.semantics { contentDescription = label },
                                     variant = AppButtonVariant.Secondary, onClick = { onReset(item.deviceId) }) }) {
-                                Text(stringResource(Res.string.sync_pick_firmware, item.firmwareVersion), style = MaterialTheme.typography.bodySmall,
-                                    color = AppColors.TextSecondary)
+                                // 서버의 초기 등록 버전은 이후 업데이트를 반영하지 않는다. 끊긴 기기는 현재 버전을 확인할 수 없다.
+                                val firmware = connectedFirmwareVersion?.takeIf { item.deviceId == connectedDeviceId }
+                                Text(
+                                    firmware?.let { stringResource(Res.string.sync_pick_firmware, it) }
+                                        ?: stringResource(Res.string.owned_keyrings_firmware_unknown),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = AppColors.TextSecondary,
+                                )
                                 if (item.deviceId == connectedDeviceId) {
                                     OwnedKeyringMetrics(liveStatus?.takeIf { it.deviceId == item.deviceId })
                                 } else {
