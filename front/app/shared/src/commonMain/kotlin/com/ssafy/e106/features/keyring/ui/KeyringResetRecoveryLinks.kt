@@ -28,7 +28,10 @@ import org.koin.compose.koinInject
     LifecycleResumeEffect(owner) { resumed = true; onPauseOrDispose { resumed = false } }
     LaunchedEffect(owner, revision, resumed) {
         ids = emptyList(); failed = false
-        if (resumed) try { ids = store.read(owner).map { it.deviceId } }
+        if (resumed) try {
+            // 완료 영수증은 복구용 저장소에 남아 있어도 진행 중인 작업으로 표시하지 않는다.
+            ids = store.read(owner).filter { it.run?.state != "COMPLETED" }.map { it.deviceId }
+        }
         catch (cancelled: CancellationException) { throw cancelled }
         catch (_: Exception) { failed = true }
     }
