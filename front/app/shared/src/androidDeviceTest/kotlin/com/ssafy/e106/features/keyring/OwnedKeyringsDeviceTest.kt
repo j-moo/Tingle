@@ -27,6 +27,7 @@ class OwnedKeyringsTestActivity : ComponentActivity() {
     companion object {
         val reads = AtomicInteger()
         val recordEntries = AtomicInteger()
+        val registrationEntries = AtomicInteger()
         val metricFixture = MutableStateFlow<Pair<Long?, OwnedKeyringLiveStatus?>>(null to null)
     }
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -37,7 +38,8 @@ class OwnedKeyringsTestActivity : ComponentActivity() {
                 object : OwnedKeyringRepository {
                     override suspend fun list(): ApiResult<List<OwnedKeyring>> {
                         reads.incrementAndGet()
-                        return ApiResult.Ok(listOf(OwnedKeyring(7, "READY", "1.0")))
+                        return ApiResult.Ok(if (intent.getBooleanExtra("empty", false)) emptyList()
+                            else listOf(OwnedKeyring(7, "READY", "1.0")))
                     }
                 }, TestSession(OnboardingStatus.READY)) as T
         })[OwnedKeyringsViewModel::class.java]
@@ -48,7 +50,8 @@ class OwnedKeyringsTestActivity : ComponentActivity() {
                 OwnedKeyringsScreen(OwnedKeyringsState(session, listOf(OwnedKeyring(7, "READY", "1.0"))),
                     {}, {}, {}, connectedDeviceId = id, liveStatus = snapshot, onRefreshStatus = {})
             } else ConnectedOwnedKeyringsRoute(session, {}, model, onReset = {},
-                recoveryLinks = {}, onConnectForRecords = { recordEntries.incrementAndGet() })
+                recoveryLinks = {}, onConnectForRecords = { recordEntries.incrementAndGet() },
+                onRegister = { registrationEntries.incrementAndGet() })
         } }
     }
 }
@@ -80,6 +83,19 @@ class OwnedKeyringsDeviceTest {
             assertEquals(0, OwnedKeyringsTestActivity.recordEntries.get())
             compose.onNodeWithText("만남 기록 전송을 위해 키링 연결").performClick()
             assertEquals(1, OwnedKeyringsTestActivity.recordEntries.get())
+        }
+    }
+
+    /** 마지막 키링을 초기화한 뒤 빈 목록에서도 새 등록 화면으로 들어갈 수 있다. */
+    @Test fun emptyOwnedListOffersRegistration() {
+        OwnedKeyringsTestActivity.registrationEntries.set(0)
+        val intent = Intent(InstrumentationRegistry.getInstrumentation().context, OwnedKeyringsTestActivity::class.java)
+            .putExtra("empty", true)
+        ActivityScenario.launch<OwnedKeyringsTestActivity>(intent).use {
+            compose.onNodeWithText("등록된 키링이 없어요.").assertExists()
+            compose.onNodeWithText("만남 기록 전송을 위해 키링 연결").assertDoesNotExist()
+            compose.onNodeWithText("키링 등록하기").performClick()
+            assertEquals(1, OwnedKeyringsTestActivity.registrationEntries.get())
         }
     }
 

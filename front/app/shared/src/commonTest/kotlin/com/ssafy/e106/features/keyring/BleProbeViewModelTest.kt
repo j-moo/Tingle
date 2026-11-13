@@ -671,6 +671,27 @@ class BleProbeViewModelTest {
         assertEquals(BleLinkState.Closed, port.linkState.value)
     }
 
+    /** 가입 완료 계정도 명시적으로 미귀속인 보드를 등록할 수 있고 일반 연결에는 예외를 적용하지 않는다. */
+    @Test fun readyAccountCanConnectAnUnownedBoardForRegistration() = runTest(dispatcher) {
+        val port = ownerPort().apply {
+            extraInfo = extraInfo + mapOf(
+                "ownerState" to JsonPrimitive("UNOWNED"),
+                "supportedFunctions" to JsonArray(listOf(JsonPrimitive("GET_REGISTRATION_PROOF"))),
+            )
+        }
+        val vm = model(port, TestSession(OnboardingStatus.READY)) { ApiResult.Ok(emptyList()) }
+
+        vm.scan(); runCurrent()
+        vm.connect(port.currentId, registrationMode = true); runCurrent()
+
+        assertTrue(vm.state.value.connected)
+        vm.leave()
+        vm.scan(); runCurrent()
+        vm.connect(port.currentId); runCurrent()
+        assertEquals(BleFailure.NotOwned, vm.state.value.error)
+        assertFalse(vm.state.value.connected)
+    }
+
     @Test fun scanStopsBeforeConnectAndDoubleClickIsIgnored() = runTest(dispatcher) {
         val port = ProbeFixture(); val vm = model(port)
         vm.scan(); runCurrent(); vm.connect("a"); vm.connect("a"); runCurrent()
