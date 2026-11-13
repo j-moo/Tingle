@@ -60,7 +60,8 @@ class JpaHistoricalExplanationSourceTest {
 			.doesNotContain("synthetic contact summary A").doesNotContain("source-a");
 		assertThat(leftBundle.at("/context/evidence/0/source_ref").asString()).isEqualTo("source-a");
 		assertThat(leftBundle.at("/context/conflicting_source_refs/0").asString()).isEqualTo("source-a");
-		assertThat(leftBundle.at("/scope/model_evidence_ids").isEmpty()).isTrue();
+		assertThat(leftBundle.at("/scope/model_evidence_ids"))
+			.isEqualTo(leftBundle.at("/scope/display_evidence_ids"));
 		assertThat(leftBundle.at("/scope/display_evidence_ids/0").asString()).isEqualTo("e1");
 		assertThat(left.manifest()).containsEntry("releaseId", fixture.evidence().manifest().get("releaseId"));
 		assertThat(leftBundle.at("/scope/reference")).isEqualTo(leftBundle.at("/context/reference"));

@@ -107,7 +107,8 @@ class HistoricalExplanationSourceIntegrationTest extends IntegrationTestSupport 
 		assertThat(rightBundle.at("/context/evidence/0/evidence/id").asString()).isEqualTo("e2");
 		assertThat(leftBundle.toString()).doesNotContain("약속을 준비하는 시점");
 		assertThat(rightBundle.toString()).doesNotContain("연락 빈도");
-		assertThat(leftBundle.at("/scope/model_evidence_ids").isEmpty()).isTrue();
+		assertThat(leftBundle.at("/scope/model_evidence_ids"))
+			.isEqualTo(leftBundle.at("/scope/display_evidence_ids"));
 		assertThat(leftBundle.at("/context/reference/evaluation_ref").asString()).isEqualTo(left.inputFingerprint());
 	}
 
