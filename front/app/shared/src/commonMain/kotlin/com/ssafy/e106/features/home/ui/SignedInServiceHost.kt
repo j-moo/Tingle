@@ -24,13 +24,12 @@ import com.ssafy.e106.features.proposals.ui.ConnectedProposalRoute
 import com.ssafy.e106.features.settings.ui.ConnectedSettingsRoute
 import com.ssafy.e106.features.survey.ui.SurveyRoute
 import com.ssafy.e106.features.keyring.ui.ConnectedOwnedKeyringsRoute
+import com.ssafy.e106.features.keyring.ui.ConnectedOwnedKeyringSyncRoute
 import com.ssafy.e106.features.keyring.ui.ConnectedKeyringSetupRoute
 import com.ssafy.e106.features.keyring.ui.ConnectedKeyringEncounterRoute
 import com.ssafy.e106.features.keyring.ui.KeyringForegroundSync
 import com.ssafy.e106.features.keyring.ui.ConnectedKeyringResetRoute
 import com.ssafy.e106.features.keyring.ui.BleProbeViewModel
-import com.ssafy.e106.features.keyring.ui.ConnectedBleProbeRoute
-import com.ssafy.e106.features.keyring.ui.KeyringSyncViewModel
 import com.ssafy.e106.features.keyring.ui.observeOwnedKeyringConnection
 import com.ssafy.e106.resources.*
 import org.jetbrains.compose.resources.stringResource
@@ -163,9 +162,7 @@ internal enum class ServicePage { Home, Proposals, Menu, Chats, Safety, Report, 
                     onRegister = if (session.isReady) ({ go(ServicePage.KeyringRegistration) }) else null,
                     onSync = if (session.isReady) ({ go(ServicePage.KeyringSync) }) else null)
                 ServicePage.KeyringSync -> if (session.isReady) {
-                    // 초기화와 기록 화면에 들어가지 않고 같은 소유 기기 탐색·설정 전송을 사용한다.
-                    ConnectedBleProbeRoute({ go(ServicePage.Keyrings) }, sync = koinViewModel<KeyringSyncViewModel>(),
-                        managedConnection = true, autoScan = true, manualSettings = true)
+                    ConnectedOwnedKeyringSyncRoute(session, model::readKeyringAliases, onBack = { go(ServicePage.Keyrings) })
                 } else LaunchedEffect(session) { go(ServicePage.Keyrings) }
                 ServicePage.KeyringRegistration -> if (session.isReady) {
                     // 서버 소유 목록으로 등록을 확인한 뒤 관리 화면으로 복귀해 새 목록을 읽는다.

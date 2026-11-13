@@ -10,6 +10,7 @@ import androidx.lifecycle.*
 import androidx.test.core.app.ActivityScenario
 import androidx.test.platform.app.InstrumentationRegistry
 import com.ssafy.e106.core.auth.*
+import com.ssafy.e106.core.ble.BleAvailability
 import com.ssafy.e106.core.network.ApiResult
 import com.ssafy.e106.core.ui.theme.AppTheme
 import com.ssafy.e106.features.keyring.data.*
@@ -29,6 +30,7 @@ class OwnedKeyringsTestActivity : ComponentActivity() {
         val recordEntries = AtomicInteger()
         val registrationEntries = AtomicInteger()
         val syncEntries = AtomicInteger()
+        val selectedDevice = AtomicInteger()
         val metricFixture = MutableStateFlow<Pair<Long?, OwnedKeyringLiveStatus?>>(null to null)
     }
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -46,7 +48,17 @@ class OwnedKeyringsTestActivity : ComponentActivity() {
         })[OwnedKeyringsViewModel::class.java]
         setContent { AppTheme {
             val session = Session.SignedIn(1, OnboardingStatus.READY, false)
-            if (intent.getBooleanExtra("metrics", false)) {
+            if (intent.getBooleanExtra("syncPicker", false)) {
+                OwnedKeyringSyncScreen(
+                    OwnedKeyringsState(session, listOf(
+                        OwnedKeyring(7, "READY", "1.0", "XIAO-first"),
+                        OwnedKeyring(13, "READY", "1.0", "XIAO-second"),
+                    )),
+                    selectedId = null, aliases = mapOf(13L to "시험 키링"), availability = BleAvailability.Ready,
+                    link = BleProbeState(), syncing = false, onBack = {}, onRefresh = {},
+                    onSelect = { selectedDevice.set(it.deviceId.toInt()) },
+                ) {}
+            } else if (intent.getBooleanExtra("metrics", false)) {
                 val (id, snapshot) = metricFixture.collectAsStateWithLifecycle().value
                 OwnedKeyringsScreen(OwnedKeyringsState(session, listOf(OwnedKeyring(7, "READY", "1.0"))),
                     {}, {}, {}, connectedDeviceId = id, liveStatus = snapshot, onRefreshStatus = {})
@@ -109,6 +121,20 @@ class OwnedKeyringsDeviceTest {
             OwnedKeyringsTestActivity::class.java)).use {
             compose.onNodeWithText("키링 설정 동기화").performClick()
             assertEquals(1, OwnedKeyringsTestActivity.syncEntries.get())
+        }
+    }
+
+    @Test fun settingsSyncShowsRegisteredDevicesAndPassesSelectedId() {
+        OwnedKeyringsTestActivity.selectedDevice.set(0)
+        val intent = Intent(InstrumentationRegistry.getInstrumentation().context, OwnedKeyringsTestActivity::class.java)
+            .putExtra("syncPicker", true)
+        ActivityScenario.launch<OwnedKeyringsTestActivity>(intent).use {
+            compose.onNodeWithText("내 키링 1").assertExists()
+            compose.onNodeWithText("시험 키링").assertExists()
+            compose.onNodeWithText("주변 키링을 찾고 있어요").assertDoesNotExist()
+            assertEquals(0, OwnedKeyringsTestActivity.selectedDevice.get())
+            compose.onNodeWithText("시험 키링").performClick()
+            assertEquals(13, OwnedKeyringsTestActivity.selectedDevice.get())
         }
     }
 

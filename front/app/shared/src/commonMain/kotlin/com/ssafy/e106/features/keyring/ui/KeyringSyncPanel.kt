@@ -11,8 +11,13 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawingPadding
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -22,16 +27,119 @@ import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withTimeoutOrNull
 import com.ssafy.e106.core.ui.components.*
+import com.ssafy.e106.core.auth.Session
+import com.ssafy.e106.core.ble.BleAvailability
+import com.ssafy.e106.core.ble.BleFailure
+import com.ssafy.e106.core.ble.rememberBlePermission
 import com.ssafy.e106.core.ui.theme.AppColors
 import com.ssafy.e106.core.ui.theme.AppSpacing
 import com.ssafy.e106.core.ui.theme.screenGutter
+import com.ssafy.e106.features.keyring.data.OwnedKeyring
+import com.ssafy.e106.features.profile.ui.ProfileBackHandler
 import com.ssafy.e106.resources.*
 import org.jetbrains.compose.resources.StringResource
 import org.jetbrains.compose.resources.stringResource
+import org.koin.compose.viewmodel.koinViewModel
+
+/** 목록부터 보여주고 선택한 실물만 연결한다. 화면이 바뀌어도 계정의 목록을 새로 확인한다. */
+@Composable internal fun ConnectedOwnedKeyringSyncRoute(session: Session.SignedIn,
+    readAliases: suspend (Long, List<OwnedKeyring>) -> Map<Long, String>, onBack: () -> Unit,
+    owned: OwnedKeyringsViewModel = koinViewModel(), ble: BleProbeViewModel = koinViewModel(),
+    sync: KeyringSyncViewModel = koinViewModel()) {
+    val list by owned.state.collectAsStateWithLifecycle()
+    val link by ble.state.collectAsStateWithLifecycle()
+    val state by sync.state.collectAsStateWithLifecycle()
+    val availability = rememberBlePermission().availability
+    var selectedId by rememberSaveable(session.userId) { mutableStateOf<Long?>(null) }
+    val items = list.items.takeIf { list.owner == session }
+    val selected = items?.singleOrNull { it.deviceId == selectedId }
+    val aliases by produceState(emptyMap<Long, String>(), session.userId, items) {
+        value = readAliases(session.userId, items.orEmpty())
+    }
+    LifecycleResumeEffect(session, list.owner) {
+        if (list.owner == session) owned.load()
+        onPauseOrDispose { owned.leave() }
+    }
+    DisposableEffect(ble) {
+        onDispose {
+            // 선택 화면에서 시작한 탐색은 이탈 시 취소한다. 연결된 기기는 전경 호스트가 관리한다.
+            if (selectedId != null && !ble.state.value.connected) ble.leave()
+        }
+    }
+    ProfileBackHandler(true, onBack)
+    OwnedKeyringSyncScreen(list.takeIf { it.owner == session } ?: OwnedKeyringsState(loading = true),
+        selected?.deviceId, aliases, availability, link, state.busy, onBack = onBack, onRefresh = owned::load,
+        onSelect = { item ->
+            selectedId = item.deviceId
+            if (availability == BleAvailability.Ready) ble.connectOwned(item)
+        }) {
+        if (selected != null && link.connected && link.info?.serial == selected.deviceSerial) {
+            KeyringSyncPanel(sync, ble, link, registrationBusy = false, owned = owned,
+                managedConnection = true, pickExisting = true, manualSettings = true)
+        }
+    }
+}
+
+/** 실물 탐색 후보 대신 서버 소유 목록을 그린다. 재시도도 같은 카드에서 시작한다. */
+@Composable internal fun OwnedKeyringSyncScreen(list: OwnedKeyringsState, selectedId: Long?, aliases: Map<Long, String>,
+    availability: BleAvailability, link: BleProbeState, syncing: Boolean, onBack: () -> Unit, onRefresh: () -> Unit,
+    onSelect: (OwnedKeyring) -> Unit, result: @Composable () -> Unit) {
+    Surface(Modifier.fillMaxSize(), color = AppColors.Background) {
+        Column(Modifier.fillMaxSize().safeDrawingPadding(), horizontalAlignment = Alignment.CenterHorizontally) {
+            BackArrowBar(onBack)
+            Column(Modifier.widthIn(max = 640.dp).fillMaxWidth().verticalScroll(rememberScrollState())
+                .padding(horizontal = screenGutter(), vertical = AppSpacing.Large),
+                verticalArrangement = Arrangement.spacedBy(AppSpacing.Medium)) {
+                Text(stringResource(Res.string.sync_pick_title), style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.Bold, modifier = Modifier.semantics { heading() })
+                when {
+                    list.loading || (list.items == null && list.error == null) ->
+                        Text(stringResource(Res.string.sync_pick_loading))
+                    list.error != null -> {
+                        Text(list.error.message, color = MaterialTheme.colorScheme.error)
+                        AppButton(stringResource(Res.string.sync_pick_reload), Modifier.fillMaxWidth(), onClick = onRefresh)
+                    }
+                    list.items.isNullOrEmpty() -> Text(stringResource(Res.string.owned_keyrings_empty))
+                    else -> list.items.orEmpty().forEachIndexed { index, item ->
+                        KeyringCard(aliases[item.deviceId]?.takeIf { it.isNotBlank() }
+                            ?: stringResource(Res.string.sync_live_device, (index + 1).toString()),
+                            selected = item.deviceId == selectedId,
+                            enabled = !syncing && !link.busy && !link.scanning && !item.deviceSerial.isNullOrBlank(),
+                            onClick = { onSelect(item) }) {
+                            Text(if (item.deviceSerial.isNullOrBlank()) stringResource(Res.string.sync_manual_missing_serial)
+                                else stringResource(Res.string.sync_manual_device_number, item.deviceId.toString()),
+                                style = MaterialTheme.typography.bodySmall, color = AppColors.TextSecondary)
+                        }
+                    }
+                }
+                if (selectedId != null) {
+                    val hint = when {
+                        availability != BleAvailability.Ready -> when (availability) {
+                            BleAvailability.Unsupported -> Res.string.ble_unsupported
+                            BleAvailability.PermissionRequired -> Res.string.ble_permission
+                            BleAvailability.LocationOff -> Res.string.ble_location_off
+                            else -> Res.string.ble_bluetooth_off
+                        }
+                        link.scanning -> Res.string.sync_manual_searching
+                        link.busy && !link.connected -> Res.string.probe_connecting
+                        link.error == BleFailure.NotFound -> Res.string.sync_manual_not_found
+                        link.error == BleFailure.NotOwned -> Res.string.ble_not_owned
+                        link.error != null -> Res.string.sync_manual_connection_failed
+                        else -> null
+                    }
+                    if (hint != null) Text(stringResource(hint), color = AppColors.TextSecondary)
+                }
+                result()
+            }
+        }
+    }
+}
 
 /**
  * 설정은 연결되면 알아서 보내고, 실패만 하단 시트로 알린다. 이 화면이 READY를 만들어 내지 않는다.

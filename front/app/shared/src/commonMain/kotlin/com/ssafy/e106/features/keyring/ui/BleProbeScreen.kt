@@ -59,7 +59,7 @@ import org.koin.compose.viewmodel.koinViewModel
 @Composable fun ConnectedBleProbeRoute(onBack: () -> Unit, model: BleProbeViewModel = koinViewModel(),
     registration: KeyringRegistrationViewModel? = null, sync: KeyringSyncViewModel? = null,
     managedConnection: Boolean = false, autoScan: Boolean = false, allowEncounterTransfer: Boolean = false,
-    onRegistrationDone: (() -> Unit)? = null, manualSettings: Boolean = false) {
+    onRegistrationDone: (() -> Unit)? = null) {
     val permission = rememberBlePermission()
     val state by model.state.collectAsStateWithLifecycle()
     val registrationState = registration?.state?.collectAsStateWithLifecycle()?.value
@@ -97,7 +97,7 @@ import org.koin.compose.viewmodel.koinViewModel
     }
     ProfileBackHandler(true) { release(); onBack() }
     // 이미 등록된 키링(BOUND)을 연결했고 내 등록 요청이 진행 중이 아니면 "연결됐어요" 대신 내 키링 목록에서 고르게 한다
-    val pickExisting = sync != null && state.connected && (manualSettings || state.info?.ownerState == "BOUND") &&
+    val pickExisting = sync != null && state.connected && state.info?.ownerState == "BOUND" &&
         (registration == null || registrationState?.loaded == true) &&       // 저장된 등록 요청을 다 읽은 뒤에만 판단한다
         registrationState?.pending == null && registrationState?.confirmed == null
     // 내 키링 목록은 동기화가 있을 때만 쓴다(패널과 같은 인스턴스를 넘긴다)
@@ -115,7 +115,7 @@ import org.koin.compose.viewmodel.koinViewModel
         // 저장된 등록 요청 복구 · 미전송 동기화도 연결 전에 보여야 해서 단계와 상관없이 아래에 둔다.
         if (!pickExisting) registration?.let { KeyringRegistrationPanel(it, model, state, syncBusy, onRegistrationDone) }
         sync?.let { KeyringSyncPanel(it, model, state, registrationBusy, ownedModel!!, managedConnection = managedConnection,
-            pickExisting = pickExisting, manualSettings = manualSettings) }
+            pickExisting = pickExisting) }
         // 소유 확인은 화면에 보인 이름이 아니라 서버가 확인한 동기화 기록으로 수행한다.
         val info = state.info
         if (allowEncounterTransfer && sync != null && state.connected && info != null) {
