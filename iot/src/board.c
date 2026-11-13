@@ -1,6 +1,7 @@
 #include "board.h"
 #include "power.h"
 #include "settings_storage.h"
+#include "flash_guard.h"
 #include "nus.h"
 #include "profile.h"
 #include "policy.h"
@@ -24,6 +25,7 @@
 #include <zephyr/settings/settings.h>
 #include <zephyr/storage/flash_map.h>
 #include <zephyr/sys/util.h>
+#include <zephyr/sys/crc.h>
 #include <hal/nrf_saadc.h>
 #include <hal/nrf_power.h>
 #if DT_NODE_EXISTS(DT_ALIAS(keyring_fuel_gauge))
@@ -126,16 +128,51 @@ static int put(uint16_t key, const void *data, size_t length)
 static int read_settings(void *ctx, uint16_t key, unsigned history, struct kr_settings *out)
 {
 	(void)ctx;
-	return (int)nvs_read_hist(&fs, key, out, sizeof(*out), history);
+	memset(out, 0, sizeof(*out));
+	int got = (int)nvs_read_hist(&fs, key, out, sizeof(*out), history);
+	if (got != -ENOENT && (got != sizeof(*out) || !kr_settings_valid(out))) {
+		unsigned zero = 0, erased = 0, other = 0;
+		if (out->payload_size <= KR_PAYLOAD_MAX) {
+			for (unsigned i = out->payload_size; i < KR_PAYLOAD_MAX; ++i) {
+				if (out->payload[i] == 0) { ++zero; }
+				else if (out->payload[i] == 0xff) { ++erased; }
+				else { ++other; }
+			}
+		}
+		printk("SETTINGS READ key=%u history=%u result=%d schema=%u dataCrc=%08x unusedZero=%u unusedFF=%u unusedOther=%u\n",
+			key, history, got, kr_settings_valid(out), crc32_ieee((const uint8_t *)out, sizeof(*out)), zero, erased, other);
+	}
+	return got;
 }
 
 static int write_settings(void *ctx, uint16_t key, const struct kr_settings *value)
 {
 	(void)ctx;
-	return put(key, value, sizeof(*value));
+	struct kr_status power = kr_board_status();
+	uint32_t before = crc32_ieee((const uint8_t *)value, sizeof(*value));
+	printk("SETTINGS WRITE begin key=%u version=%lld bytes=%u crc=%08x mv=%d usb=%u\n",
+		key, (long long)value->version, (unsigned)sizeof(*value), before, power.battery_mv, power.usb_present);
+	ssize_t result = nvs_write(&fs, key, value, sizeof(*value));
+	uint32_t after = crc32_ieee((const uint8_t *)value, sizeof(*value));
+	printk("SETTINGS WRITE end key=%u result=%d ramStable=%u\n", key, (int)result, before == after);
+	if (before != after) { return -EIO; }
+	return result == sizeof(*value) || result == 0 ? 0 : result < 0 ? (int)result : -EIO;
 }
 
-static const struct kr_settings_storage settings_io = {.read = read_settings, .write = write_settings};
+static bool recover_settings_owner(void *ctx, const struct kr_core *core, const struct kr_settings *value)
+{
+	(void)ctx;
+#ifdef KR_DEV_SERVER_KEY_HEX
+	return kr_settings_recovery_owner(core, value, server_key);
+#else
+	(void)core; (void)value;
+	return false;
+#endif
+}
+
+static const struct kr_settings_storage settings_io = {
+	.read = read_settings, .write = write_settings, .recover_owner = recover_settings_owner,
+};
 
 static int save(void *ctx, const struct kr_settings *next)
 {
@@ -144,7 +181,9 @@ static int save(void *ctx, const struct kr_settings *next)
 	 * change commits (including OFF), no old snapshot may create new work. */
 	kr_runtime_owner_lock();
 	kr_runtime_pause_matching();
-	int result = kr_settings_storage_save(&settings_io, &core->current, next, &readback);
+	int result = kr_settings_storage_save(&settings_io,
+		core->settings_owner_only ? NULL : &core->current, next, &readback);
+	printk("SETTINGS COMMIT version=%lld result=%d verified=%u\n", (long long)next->version, result, result == 0);
 	kr_runtime_owner_unlock();
 	return result;
 }
@@ -258,6 +297,12 @@ static const char *erase_owner(void *ctx)
 	int result = kr_runtime_clear_owner_data();
 	kr_runtime_owner_unlock();
 	if (result) { return "STORAGE_ERROR"; }
+	/* Clear both committed slots while RESETTING is durable. Only then may a
+	 * tombstone represent an unowned board or RESET_DONE be acknowledged. */
+	result = nvs_delete(&fs, KR_SETTINGS_REPAIR_KEY);
+	if (result < 0 && result != -ENOENT) { return "STORAGE_ERROR"; }
+	uint8_t repair_byte;
+	if (nvs_read(&fs, KR_SETTINGS_REPAIR_KEY, &repair_byte, sizeof(repair_byte)) != -ENOENT) { return "STORAGE_ERROR"; }
 	result = nvs_delete(&fs, 10);
 	if (result < 0 && result != -ENOENT) { return "STORAGE_ERROR"; }
 	uint8_t byte;
@@ -398,7 +443,7 @@ int kr_board_open(struct kr_core *core)
 	const struct flash_area *area;
 	result = flash_area_open(FIXED_PARTITION_ID(registration_store), &area);
 	if (result) { return result; }
-	fs.flash_device = area->fa_dev;
+	fs.flash_device = kr_flash_guard_device();
 	fs.offset = area->fa_off;
 	fs.sector_size = 4096;
 	fs.sector_count = area->fa_size / fs.sector_size;
@@ -416,10 +461,19 @@ int kr_board_open(struct kr_core *core)
 		return 0;
 	}
 	result = kr_settings_storage_load(core, &settings_io);
-	if (result < 0) { return result; }
+	if (result < 0) {
+		/* Identity and reset epoch were verified above. Keep diagnostic BLE, but
+		 * never pretend an unknown owner is unowned or allow registration/sync. */
+		core->storage_error = true;
+		printk("STORAGE owner-unresolved: settings preserved; diagnostic BLE only, no registration/sync\n");
+	}
 	if (result == 1) {
 		printk("STORAGE recovery-required: retained verified settings v%lld; fresh signed sync required; no rewrite\n",
 			(long long)core->current.version);
+	}
+	if (result == 2) {
+		printk("STORAGE signed-owner-only: version=%lld epoch=%lld; no settings rewrite/apply; fresh signed sync required\n",
+			(long long)core->current.version, (long long)core->reset.ownership_epoch);
 	}
 	kr_board_print_identity(&core->identity);
 	return 0;
@@ -524,6 +578,7 @@ static void render_led_locked(void)
 {
 	if (!led_ready) { return; }
 	uint8_t color = led_stopped ? 0 : kr_status_led_rgb(led_charge, led_usb, led_error, led_diagnostic);
+	if (led_error && (k_uptime_get() / 500) % 2) { color = 0; }
 	for (size_t i = 0; i < ARRAY_SIZE(rgb); ++i) {
 		(void)gpio_pin_set_dt(&rgb[i], (color & BIT(i)) != 0);
 	}
@@ -550,6 +605,14 @@ void kr_board_led(bool active)
 	k_mutex_lock(&led_lock, K_FOREVER);
 	led_diagnostic = active;
 	if (!led_ready && !led_stopped && gpio_is_ready_dt(&led)) { (void)gpio_pin_set_dt(&led, active); }
+	render_led_locked();
+	k_mutex_unlock(&led_lock);
+}
+
+void kr_board_led_error(bool error)
+{
+	k_mutex_lock(&led_lock, K_FOREVER);
+	led_error = error;
 	render_led_locked();
 	k_mutex_unlock(&led_lock);
 }

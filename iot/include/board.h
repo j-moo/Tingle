@@ -13,6 +13,7 @@ bool kr_board_usb_present(void);
 struct kr_status kr_board_status(void);
 void kr_board_led(bool active);
 int kr_board_led_ready(bool error);
+void kr_board_led_error(bool error);
 void kr_board_charge_led(enum kr_charge_level level, bool usb);
 void kr_board_led_off(void);
 void kr_board_print_identity(const struct kr_identity *identity);

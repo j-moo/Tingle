@@ -259,7 +259,7 @@ int kr_nus_init(struct k_sem *wake)
 	peer_wake = wake;
 	printk("BOOT %s stage=storage\n", KR_FIRMWARE_VERSION);
 	int result = kr_board_open(&core);
-	atomic_set(&has_settings, core.current.magic != 0);
+	atomic_set(&has_settings, core.current.magic != 0 || core.settings_recovery_required || core.storage_error);
 	atomic_set(&reset_pending, core.reset.phase == KR_RESETTING);
 	atomic_set(&reset_history, core.reset.ownership_epoch != 0);
 	atomic_set(&reset_recovery, core.reset.ownership_epoch && !core.current.magic);
@@ -268,6 +268,13 @@ int kr_nus_init(struct k_sem *wake)
 }
 
 bool kr_nus_reset_pending(void) { return atomic_get(&reset_pending) != 0; }
+bool kr_nus_storage_fault(void)
+{
+	k_mutex_lock(&core_lock, K_FOREVER);
+	bool fault = core.storage_error || core.settings_recovery_required;
+	k_mutex_unlock(&core_lock);
+	return fault;
+}
 bool kr_nus_lab_allowed(void) { return !core.settings_recovery_required && !atomic_get(&reset_history) && !atomic_get(&reset_pending); }
 
 /* Called by main only after stopping peer radio and disabling the synthetic engine. */
@@ -276,7 +283,7 @@ const char *kr_nus_finish_reset(void)
 	k_mutex_lock(&core_lock, K_FOREVER);
 	const char *error = kr_reset_resume(&core);
 	atomic_set(&reset_pending, core.reset.phase == KR_RESETTING);
-	atomic_set(&has_settings, core.current.magic != 0);
+	atomic_set(&has_settings, core.current.magic != 0 || core.settings_recovery_required || core.storage_error);
 	atomic_set(&reset_recovery, core.reset.ownership_epoch && !core.current.magic);
 	if (!error) { kr_nus_start_window(); }
 	k_mutex_unlock(&core_lock);
@@ -388,8 +395,14 @@ static void process_requests(void *a, void *b, void *c)
 		core.connection_epoch = request_epoch;
 		kr_request(&core, frame, kr_board_status(), !core.current.magic &&
 			k_uptime_get() < window_deadline, response);
+		const char *error_code = strstr(response, "\"code\":\"");
+		if (error_code) {
+			error_code += strlen("\"code\":\"");
+			printk("NUS error=%.*s storedVersion=%lld recovery=%u\n",
+				(int)strcspn(error_code, "\""), error_code, (long long)core.current.version, core.settings_recovery_required);
+		}
 		core.profile_transport_protected = false;
-		atomic_set(&has_settings, core.current.magic != 0);
+		atomic_set(&has_settings, core.current.magic != 0 || core.settings_recovery_required || core.storage_error);
 		atomic_set(&reset_pending, core.reset.phase == KR_RESETTING);
 		atomic_set(&reset_history, core.reset.ownership_epoch != 0);
 		atomic_set(&reset_recovery, core.reset.ownership_epoch && !core.current.magic);

@@ -18,6 +18,7 @@ size_t kr_nus_copy_public_name(char name[KR_PUBLIC_NAME_MAX + 1]);
 void kr_nus_poll_console(bool blink);
 int kr_nus_forget_failed_bond(uint32_t token);
 bool kr_nus_reset_pending(void);
+bool kr_nus_storage_fault(void);
 bool kr_nus_lab_allowed(void);
 const char *kr_nus_finish_reset(void);
 /* Main engine mutations and reset policy checks share this lock. */

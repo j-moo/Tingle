@@ -91,7 +91,7 @@ const char *kr_product_public_name(const struct kr_product *p)
 {
 	const struct kr_public_name *saved = &p->public_name;
 	const struct kr_settings *owner = &p->core->current;
-	if (!owner->magic || p->core->reset.phase == KR_RESETTING || p->core->storage_error ||
+	if (!owner->magic || p->core->reset.phase == KR_RESETTING || p->core->storage_error || p->core->settings_recovery_required ||
 		p->engine->storage_error || saved->device_id != owner->device_id ||
 		saved->ownership_epoch != p->core->reset.ownership_epoch ||
 		memcmp(saved->owner_generation, owner->owner_generation, sizeof(saved->owner_generation))) {
@@ -680,7 +680,7 @@ bool kr_product_dispatch(struct kr_product *p, const struct kr_json *j, const ch
 			request, p->core->identity.serial, p->core->identity.key_id, encoded, KR_FIRMWARE_VERSION,
 			KR_PUBLIC_NAME_MAX,
 			KR_DEV_PAYLOAD_FORMAT, KR_PROFILE_STORAGE_FORMAT, KR_POLICY_FORMAT, KR_POLICY_LEGACY_FORMAT, p->core->reset.ownership_epoch,
-			p->core->reset.phase == KR_RESETTING ? "RESETTING" : p->core->current.magic ? "BOUND" : "UNOWNED",
+			p->core->storage_error ? "UNKNOWN" : p->core->reset.phase == KR_RESETTING ? "RESETTING" : p->core->current.magic ? "BOUND" : "UNOWNED",
 			KR_PROOF_VERSION, KR_PROOF_VERSION_2, KR_RESET_VERSION, KR_FRAME_MAX, KR_PAYLOAD_MAX, KR_RESPONSE_MAX,
 			p->core->current.version, p->core->current.hash, p->core->current.format, p->core->current.payload_size, cursor,
 			kr_product_applied(p) ? "true" : "false", p->clock_ready ? "true" : "false", kr_product_ready(p) ? "true" : "false",

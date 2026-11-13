@@ -61,13 +61,17 @@ static struct kr_settings settings(int64_t version)
 }
 
 struct fake_settings_flash {
-	struct kr_settings latest, history, backup;
-	bool latest_present, history_present, backup_present, corrupt_new;
-	int latest_error, fail_key, writes;
+	struct kr_settings latest, history, backup, repair;
+	bool latest_present, history_present, backup_present, repair_present, corrupt_new, corrupt_primary_only;
+	int latest_error, repair_error, fail_key, writes;
 };
 static int settings_read(void *ctx, uint16_t key, unsigned history, struct kr_settings *out)
 {
 	struct fake_settings_flash *f = ctx;
+	if (key == KR_SETTINGS_REPAIR_KEY) {
+		if (!f->repair_present || history) { return -ENOENT; }
+		*out = f->repair; return f->repair_error ? f->repair_error : (int)sizeof(*out);
+	}
 	if (key == KR_SETTINGS_BACKUP_KEY) {
 		if (!f->backup_present || history) { return -ENOENT; }
 		*out = f->backup; return sizeof(*out);
@@ -87,10 +91,13 @@ static int settings_write(void *ctx, uint16_t key, const struct kr_settings *s)
 	++f->writes;
 	if (key == f->fail_key) { return -EIO; }
 	if (key == KR_SETTINGS_BACKUP_KEY) { f->backup = *s; f->backup_present = true; }
+	else if (key == KR_SETTINGS_REPAIR_KEY) {
+		f->repair = *s; f->repair_present = true; f->repair_error = f->corrupt_new ? -EIO : 0;
+	}
 	else {
 		assert(key == KR_SETTINGS_CURRENT_KEY);
 		f->latest = *s; f->latest_present = true; f->latest_error = 0;
-		if (f->corrupt_new) { f->latest.payload[0] ^= 1; f->latest_error = -EIO; }
+		if (f->corrupt_new || f->corrupt_primary_only) { f->latest.payload[0] ^= 1; f->latest_error = -EIO; }
 	}
 	return 0;
 }
@@ -127,6 +134,31 @@ static void storage_recovery_tests(void)
 	flash.corrupt_new = false;
 	assert(!kr_settings_storage_save(&io, &previous, &next, &scratch));
 	assert(!kr_settings_storage_load(&core, &io) && core.current.version == 10 && !core.settings_recovery_required);
+	/* A first sync must leave a verified backup even when current is corrupt.
+	 * A cut before publishing current still cannot resurrect a tombstone. */
+	memset(&flash, 0, sizeof(flash)); flash.corrupt_new = true;
+	assert(kr_settings_storage_save(&io, NULL, &next, &scratch) == -EIO);
+	assert(flash.backup_present && flash.backup.version == next.version);
+	assert(kr_settings_storage_load(&core, &io) == 1 && core.current.version == next.version);
+	flash.latest_present = false; flash.repair_present = false;
+	assert(!kr_settings_storage_load(&core, &io) && !core.current.magic);
+	memset(&flash, 0, sizeof(flash)); flash.fail_key = KR_SETTINGS_BACKUP_KEY;
+	assert(kr_settings_storage_save(&io, NULL, &next, &scratch) == -EIO && !flash.latest_present);
+	memset(&flash, 0, sizeof(flash)); flash.corrupt_primary_only = true;
+	assert(!kr_settings_storage_save(&io, NULL, &next, &scratch));
+	assert(flash.latest_error && flash.repair_present && !flash.repair_error);
+	assert(!kr_settings_storage_load(&core, &io) && core.current.version == next.version);
+	flash.latest_present = false; /* Cut before ID 10 commits, ID 12 is a verified commit. */
+	assert(!kr_settings_storage_load(&core, &io) && core.current.version == next.version);
+	core.reset.phase = KR_RESET_DONE; strcpy(core.reset.owner_generation, next.owner_generation);
+	assert(kr_settings_storage_load(&core, &io) == -EILSEQ); /* No pre-reset slot resurrection. */
+	memset(&core.reset, 0, sizeof(core.reset));
+	flash.latest = settings(11); flash.latest_present = true; flash.latest_error = 0;
+	assert(!kr_settings_storage_load(&core, &io) && core.current.version == 11);
+	flash.latest = settings(9);
+	assert(!kr_settings_storage_load(&core, &io) && core.current.version == 10);
+	flash.latest = settings(10); flash.latest.owner_generation[0] = '4';
+	assert(kr_settings_storage_load(&core, &io) == -EILSEQ); /* Conflicting valid owners fail closed. */
 
 	memset(&disk, 0, sizeof(disk)); init(&core); core.current = settings(8); core.settings_recovery_required = true;
 	char proof[87]; struct kr_identity key_before = core.identity;

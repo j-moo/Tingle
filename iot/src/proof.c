@@ -212,7 +212,11 @@ const char *kr_store(struct kr_core *core, const struct kr_settings *next,
 	if (core->reset.phase == KR_RESET_DONE &&
 		!strcmp(next->owner_generation, core->reset.owner_generation)) { return "OWNER_MISMATCH"; }
 	const struct kr_settings *old = &core->current;
-	if (core->settings_recovery_required && next->version <= old->version) { return "SETTINGS_RECOVERY_REQUIRED"; }
+	if (core->settings_recovery_required && next->version <= old->version &&
+		!(core->settings_owner_only && next->version == old->version &&
+		!strcmp(next->sync_run, old->sync_run) && !strcmp(next->nonce, old->nonce))) {
+		return "SETTINGS_RECOVERY_REQUIRED";
+	}
 	if (old->magic) {
 		if (old->device_id != next->device_id || strcmp(old->owner_generation, next->owner_generation)) {
 			return "OWNER_MISMATCH";
@@ -232,16 +236,18 @@ const char *kr_store(struct kr_core *core, const struct kr_settings *next,
 	/* Stop advertising the old state even if the new setting's reply is lost. */
 	core->stop_peer = next->version != old->version || (plan.verified_time && !plan.length);
 	core->settings_apply_state = KR_SETTINGS_APPLY_NONE;
-	if (memcmp(old, next, sizeof(*next))) {
+	if (memcmp(old, next, sizeof(*next)) || core->settings_owner_only) {
 		if (!core->platform.save || core->platform.save(core->platform.ctx, next)) {
 			/* An uncertain write may have committed. Stop serving mutable requests
 			 * until a reboot/readback resolves the authoritative state. */
 			core->storage_error = true;
+			core->settings_recovery_required = true;
 			core->stop_peer = true;
 			return "STORAGE_ERROR";
 		}
 		core->current = *next;
 		core->settings_recovery_required = false;
+		core->settings_owner_only = false;
 	}
 	char transcript[640];
 	int n = snprintf(transcript, sizeof(transcript),

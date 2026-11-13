@@ -5,7 +5,7 @@ if (!$TinyCrypt) { $TinyCrypt = Join-Path $projectRoot 'build/toolchain/modules/
 $testRoot = Join-Path $projectRoot 'build/tests/product'
 New-Item -ItemType Directory -Force -Path $testRoot | Out-Null
 $env:ZIG_GLOBAL_CACHE_DIR = Join-Path $testRoot 'zig-cache'
-$sources = @('src/codec.c', 'src/engine.c', 'src/hash.c', 'src/proof.c', 'src/profile.c', 'src/settings_auth.c',
+$sources = @('src/codec.c', 'src/engine.c', 'src/hash.c', 'src/proof.c', 'src/profile.c', 'src/settings_auth.c', 'src/settings_storage.c',
     'src/json.c', 'src/request.c', 'src/reset.c', 'src/matching.c', 'src/peer.c', 'src/peer_auth.c', 'src/policy.c', 'src/product.c', 'src/battery.c', 'src/power.c', 'src/feedback.c', 'src/service.c',
     'tests/test_product.c', 'tests/test_power.c', 'vendor/monocypher/monocypher.c', 'vendor/monocypher/monocypher-ed25519.c') |
     ForEach-Object { Join-Path $projectRoot $_ }

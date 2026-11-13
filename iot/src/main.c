@@ -848,7 +848,7 @@ static int enable_lab(void)
 	return 0;
 }
 
-static bool poll_usb_commands(bool allow_lab)
+static bool poll_usb_commands(bool allow_lab, bool radio_ready)
 {
 	static const char forget[] = "BLE FORGET ";
 	static char line[sizeof("BLE FORGET 01234567\r")];
@@ -874,12 +874,17 @@ static bool poll_usb_commands(bool allow_lab)
 			if (uart_line_ctrl_get(console, UART_LINE_CTRL_DTR, &dtr) || !dtr) { continue; }
 			kr_runtime_owner_lock();
 			int result = kr_board_storage_check();
-			printk("STORAGE CHECK result=%d queues=%u/%u/%u storageError=%u\n", result,
-				kr_count(&engine, KR_MATCH), kr_count(&engine, KR_CONFIRMED), kr_count(&engine, KR_REVIEW), engine.storage_error);
+			if (radio_ready) {
+				printk("STORAGE CHECK result=%d queues=%u/%u/%u storageError=%u\n", result,
+					kr_count(&engine, KR_MATCH), kr_count(&engine, KR_CONFIRMED),
+					kr_count(&engine, KR_REVIEW), engine.storage_error);
+			} else {
+				printk("STORAGE CHECK result=%d queues=unavailable storageError=1\n", result);
+			}
 			kr_runtime_owner_unlock();
 			continue;
 		}
-		if (!strncmp(line, forget, sizeof(forget) - 1)) {
+		if (radio_ready && !strncmp(line, forget, sizeof(forget) - 1)) {
 			const char *argument = line + sizeof(forget) - 1;
 			uint8_t token[4];
 			uint32_t dtr;
@@ -963,6 +968,27 @@ static void check_startup_power(void)
 	}
 }
 
+static void run_charge_only(void)
+{
+	int error = kr_board_led_ready(true);
+	if (error) { LOG_ERR("Board RGB unavailable: %d", error); }
+	LOG_INF("BOOT %s charge-only: registration storage unavailable", KR_FIRMWARE_VERSION);
+	int64_t next_report = 0;
+	for (;;) {
+		check_carrier_off(false);
+		if (kr_carrier_poll_charge()) { battery_poweroff(false); }
+		(void)poll_usb_commands(false, false);
+		int64_t now = k_uptime_get();
+		if (now >= next_report) {
+			struct kr_status power = kr_board_status();
+			LOG_INF("CHARGE ONLY batteryMv=%d usb=%u charging=%d state=%s",
+				power.battery_mv, power.usb_present, power.charging, power.charge_monitor_state);
+			next_report = now + 5000;
+		}
+		k_msleep(50);
+	}
+}
+
 int main(void)
 {
 	int charge_error = kr_board_charge_init();
@@ -1001,6 +1027,7 @@ int main(void)
 	if (result) {
 		atomic_set(&boot_errno, result);
 		LOG_ERR("Registration storage unavailable: %d", result);
+		run_charge_only();
 		return 0;
 	}
 	result = kr_storage_open(&engine);
@@ -1023,7 +1050,7 @@ int main(void)
 		return 0;
 	}
 	boot_progress(BOOT_READY);
-	int led_error = kr_board_led_ready(engine.storage_error);
+	int led_error = kr_board_led_ready(engine.storage_error || kr_nus_storage_fault());
 	if (led_error) { LOG_ERR("Board RGB unavailable: %d", led_error); }
 	LOG_INF("NUS ready, registration window=60s. USB LAB ENABLE starts synthetic matching for this boot");
 	bool registration_expired = false;
@@ -1037,6 +1064,7 @@ int main(void)
 		check_carrier_off(true);
 		if (kr_carrier_poll_charge()) { battery_poweroff(true); }
 		kr_nus_poll_console(false);
+		kr_board_led_error(engine.storage_error || kr_nus_storage_fault());
 		if (kr_nus_take_peer_plan(&service_plan)) {
 			service_mode = service_update = true;
 			atomic_clear(&service_scan_enabled);
@@ -1063,7 +1091,7 @@ int main(void)
 			last_reset_error = error;
 			atomic_set(&restart_phone_adv, 1);
 		}
-		bool start_lab = poll_usb_commands(!service_mode && kr_nus_lab_allowed() && !atomic_get(&lab_enabled));
+		bool start_lab = poll_usb_commands(!service_mode && kr_nus_lab_allowed() && !atomic_get(&lab_enabled), true);
 		kr_runtime_owner_lock();
 		kr_nus_application_tick();
 		if (start_lab && kr_nus_lab_allowed()) {
