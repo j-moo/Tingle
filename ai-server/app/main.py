@@ -52,6 +52,7 @@ def create_app(app_settings: Settings | None = None, *, _risk_engine_factory: Ca
     application.state.risk_runtime = risk_runtime
     application.include_router(create_icebreaker_router(
         service_auth, configured.icebreaker_release_descriptor_file, dev_enabled=configured.icebreaker_dev_enabled,
+        gms_client=_icebreaker_gms_client if configured.app_env in {"local", "test", "dev"} else None,
     ))
     application.include_router(create_development_router(
         authenticate=service_auth, environment=configured.app_env, runtime=risk_runtime,
