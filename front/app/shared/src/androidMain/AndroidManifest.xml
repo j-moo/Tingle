@@ -9,9 +9,16 @@
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" android:maxSdkVersion="30" />
     <uses-permission android:name="android.permission.BLUETOOTH_SCAN" android:usesPermissionFlags="neverForLocation" />
     <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
     <!-- Android 13+ 알림 권한. 요청 시점 · 안내 화면은 화면 쪽이 rememberNotificationPermission() 으로 -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <application>
+        <!-- 사용자가 연결된 키링에서 자동 연결을 켰을 때만 시작한다. -->
+        <service
+            android:name="com.ssafy.e106.features.keyring.ui.KeyringAutoConnectionService"
+            android:exported="false"
+            android:foregroundServiceType="connectedDevice" />
         <!-- 카카오 로그인(카카오계정 웹)이 끝나면 kakao{앱 키}://oauth 로 돌아온다. kakaoScheme 은 androidApp 이 manifestPlaceholders 로 채운다 -->
         <activity
             android:name="com.kakao.sdk.auth.AuthCodeHandlerActivity"

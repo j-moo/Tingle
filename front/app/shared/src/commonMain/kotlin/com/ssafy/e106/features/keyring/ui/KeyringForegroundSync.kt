@@ -10,16 +10,18 @@ import org.koin.compose.viewmodel.koinViewModel
 import org.koin.compose.koinInject
 import com.ssafy.e106.features.keyring.data.KeyringResetStore
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 
 /**
  * 로그인한 서비스 전체가 연결을 소유한다. BLE 화면 → 설정 화면 이동으로 전송을 끊지 않는다.
- * 앱 중지·회전·로그아웃에서는 닫고, 동기화 모델의 내구 ACK 기록만 남긴다.
- * 운영 앱의 백그라운드 서비스/다중 기기 연결을 대신하는 구현은 아니다.
+ * 앱이 중지되면 화면의 작업을 정리하고, 사용자가 선택한 Android 키링 연결은 서비스가 이어받는다.
  */
-@Composable internal fun KeyringForegroundSync(ble: BleProbeViewModel = koinViewModel(),
+@Composable internal fun KeyringForegroundSync(ble: BleProbeViewModel = keyringBleModel(),
     sync: KeyringSyncViewModel = koinViewModel(), suspendSync: Boolean = false,
     resets: KeyringResetStore = koinInject(), allowEncounter: Boolean = false,
-    encounters: KeyringEncounterViewModel = koinViewModel()) {
+    encounters: KeyringEncounterViewModel = keyringEncounterModel()) {
+    KeyringAutoConnectionHost(suspendSync || !allowEncounter)
     val permission = rememberBlePermission()
     val link by ble.state.collectAsStateWithLifecycle()
     val state by sync.state.collectAsStateWithLifecycle()
@@ -43,11 +45,24 @@ import kotlinx.coroutines.CancellationException
     }
     LifecycleEventEffect(Lifecycle.Event.ON_START) { foreground = true }
     LifecycleEventEffect(Lifecycle.Event.ON_STOP) {
-        foreground = false; encounters.cancel(); sync.pause(); ble.setForeground(false)
+        foreground = false
+        sync.pause()
+        val keep = retainKeyringAutoConnection(ble.state.value)
+        if (!keep) encounters.cancel()
+        ble.setForeground(false, keepConnection = keep)
     }
-    DisposableEffect(ble, sync, encounters) { onDispose { encounters.cancel(); sync.pause(); ble.setForeground(false) } }
+    DisposableEffect(ble, sync, encounters) {
+        onDispose {
+            sync.pause()
+            val keep = retainKeyringAutoConnection(ble.state.value)
+            if (!keep) encounters.cancel()
+            ble.setForeground(false, keepConnection = keep)
+        }
+    }
     val allowed = foreground && permission.availability == BleAvailability.Ready
-    LaunchedEffect(allowed) { ble.setForeground(allowed) }
+    LaunchedEffect(allowed, foreground) {
+        if (foreground) ble.setForeground(allowed)
+    }
     // 계정/저장 기록이 바뀐 첫 프레임에도 이전 계정의 허용 결과를 재사용하지 않는다.
     val canSync = allowed && !suspendSync && !resetBlocked && checkedOwner == state.owner && checkedRevision == revision
     LaunchedEffect(canSync) { if (canSync) sync.resume() else sync.pause() }
@@ -69,6 +84,15 @@ import kotlinx.coroutines.CancellationException
     val confirmedRun = state.items.singleOrNull { it.serial == encounterTarget?.serial }?.confirmedSyncRunId
     // 화면과 무관하게 연결 세대와 동기화 완료를 감시한다. BLE busy는 기록 조회 자체에서도 바뀐다.
     LaunchedEffect(encounterTarget, state.busy, confirmedRun) {
-        encounters.update(encounterTarget, state.busy, confirmedRun, ble)
+        if (foreground) encounters.update(encounterTarget, state.busy, confirmedRun, ble)
+    }
+    // 화면을 켜 둔 동안에도 최초 전송 이후에 생긴 기록을 처리한다. 사용자가 자동 연결을 켠 링크만 재조회한다.
+    val scanForRecords = encounterTarget != null && !state.busy && retainKeyringAutoConnection(link)
+    LaunchedEffect(encounterTarget, scanForRecords) {
+        if (!scanForRecords || encounterTarget == null) return@LaunchedEffect
+        while (isActive) {
+            delay(KEYRING_RECORD_CHECK_INTERVAL_MILLIS)
+            if (retainKeyringAutoConnection(ble.state.value)) encounters.checkForNewRecords(ble)
+        }
     }
 }

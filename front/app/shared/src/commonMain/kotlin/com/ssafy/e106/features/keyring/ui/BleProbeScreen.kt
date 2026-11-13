@@ -56,7 +56,7 @@ import org.koin.compose.viewmodel.koinViewModel
  * 키링 연결 화면. [registration] 을 받으면 등록 패널을 붙여 실제 귀속까지 진행한다.
  * [autoScan] 이면 들어오자마자(블루투스가 켜지면 그때) 주변 키링을 찾는다. 탐색은 등록이 아니다.
  */
-@Composable fun ConnectedBleProbeRoute(onBack: () -> Unit, model: BleProbeViewModel = koinViewModel(),
+@Composable fun ConnectedBleProbeRoute(onBack: () -> Unit, model: BleProbeViewModel = keyringBleModel(),
     registration: KeyringRegistrationViewModel? = null, sync: KeyringSyncViewModel? = null,
     managedConnection: Boolean = false, autoScan: Boolean = false, allowEncounterTransfer: Boolean = false,
     onRegistrationDone: (() -> Unit)? = null) {
@@ -139,7 +139,7 @@ import org.koin.compose.viewmodel.koinViewModel
 
 /** 화면은 전경 호스트의 전송 상태를 표시하며 사용자가 누른 재시도도 같은 모델로 보낸다. */
 @Composable private fun KeyringEncounterTransfer(ble: BleProbeViewModel, enabled: Boolean,
-    model: KeyringEncounterViewModel = koinViewModel()) {
+    model: KeyringEncounterViewModel = keyringEncounterModel()) {
     val transfer by model.state.collectAsStateWithLifecycle()
     KeyringEncounterTransferContent(transfer, enabled, onSend = { model.retry(ble) })
 }

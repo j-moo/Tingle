@@ -24,7 +24,7 @@ internal object NusUuid {
 
 /**
  * Android 전용 NUS 운반 계층. 모든 가변 상태/콜백은 메인 스레드에서 순서대로 처리한다.
- * 호출 직전 권한을 검사하고, 검사 이후 권한 철회도 예외로 정리한다. MAC/본문은 로그나 저장소에 남기지 않는다.
+ * 호출 직전 권한을 검사하고, 검사 이후 권한 철회도 예외로 정리한다. 주소와 본문은 로그에 남기지 않는다.
  */
 @SuppressLint("MissingPermission")
 class AndroidKeyringBle(context: Context) : KeyringBle {
@@ -34,7 +34,7 @@ class AndroidKeyringBle(context: Context) : KeyringBle {
     private var scanning = false
     private val candidates = mutableMapOf<String, BluetoothDevice>()
     private var active: AndroidNusLink? = null
-    // 재탐색 ID는 폐기하되 마지막 성공 기기는 RAM에서만 대조한다. MAC을 공통 계층/로그/디스크로 전달하지 않는다.
+    // 재탐색 ID는 폐기한다. 자동 연결 설정은 검증 후 사용자가 고른 페어링 주소만 Android 내부에서 보관한다.
     private var previousDevice: BluetoothDevice? = null
 
     override fun isPreviousDevice(candidateId: String): Boolean =
@@ -112,20 +112,36 @@ class AndroidKeyringBle(context: Context) : KeyringBle {
         }
     }
 
-    override suspend fun connect(candidateId: String): BleConnection {
+    override suspend fun connect(candidateId: String): BleConnection =
+        connect(autoConnect = false) { candidates[candidateId] }
+
+    /** 검증된 연결을 사용자가 선택했을 때만 이 주소를 Android 전용 복구 설정에 기록한다. */
+    internal fun activeBondedAddress(): String? = try {
+        previousDevice?.takeIf { active?.state?.value == BleLinkState.Ready &&
+            it.bondState == BluetoothDevice.BOND_BONDED }?.address
+    } catch (_: SecurityException) { null }
+
+    /** Bluetooth 스택이 특정 페어링 기기를 기다린다. 전체 탐색을 주기적으로 실행하지 않는다. */
+    internal suspend fun connectBondedAddress(address: String): BleConnection =
+        connect(autoConnect = true) { adapter?.bondedDevices?.firstOrNull { it.address == address } }
+
+    private suspend fun connect(autoConnect: Boolean, findDevice: () -> BluetoothDevice?): BleConnection {
         var opened: AndroidNusLink? = null
         try {
             return withContext(Dispatchers.Main.immediate) {
                 checkAvailable()
                 if (scanning || active != null) throw BleException(BleFailure.Busy)
-                val device = candidates[candidateId] ?: throw BleException(BleFailure.NotFound)
+                val device = findDevice() ?: throw BleException(BleFailure.NotFound)
                 val link = AndroidNusLink(context, handler) { closed -> if (active === closed) active = null }
                 opened = link
                 active = link
-                link.open(device)
+                link.open(device, autoConnect)
                 previousDevice = device
                 NusBleConnection(link)
             }
+        } catch (_: SecurityException) {
+            opened?.close()
+            throw BleException(BleFailure.PermissionRequired)
         } catch (failure: Throwable) {
             // 다른 디스패처의 호출자에게 반환하는 순간 취소돼도 이미 연 GATT를 유실하지 않는다.
             opened?.close()
@@ -149,18 +165,21 @@ internal class AndroidNusLink(private val context: Context, private val handler:
     private var profile: BluetoothGattCharacteristic? = null
     private var ended = false
     private val ready = CompletableDeferred<Unit>()
+    private var discoveryDeadline: Job? = null
+    private val linkScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var writeAck: CompletableDeferred<Unit>? = null
     private var writeTarget: UUID? = null
     private var protectionRead: CompletableDeferred<ByteArray>? = null
     // bond 여부를 암호화 증명으로 쓰지 않는다. 이 GATT 연결에서 보호 Read가 성공해야 한다.
     private var protectionVerified = false
 
-    suspend fun open(device: BluetoothDevice) {
+    suspend fun open(device: BluetoothDevice, autoConnect: Boolean) {
         try {
-            // autoConnect=false: 호출자가 정한 연결만 수행한다. 전경 조정자의 제한 재시도와 OS의 숨은 재연결을 섞지 않는다.
-            gatt = device.connectGatt(context, false, callback, BluetoothDevice.TRANSPORT_LE)
+            gatt = device.connectGatt(context, autoConnect, callback, BluetoothDevice.TRANSPORT_LE)
                 ?: throw BleException(BleFailure.ConnectFailed)
-            if (withTimeoutOrNull(15_000) { ready.await(); true } != true) throw BleException(BleFailure.Timeout)
+            // 거리 밖에서 기다리는 시간은 무제한이지만, 실물 연결 뒤 서비스/Notify 설정은 유한하다.
+            if (autoConnect) ready.await()
+            else if (withTimeoutOrNull(15_000) { ready.await(); true } != true) throw BleException(BleFailure.Timeout)
         } catch (_: SecurityException) { throw BleException(BleFailure.PermissionRequired) }
     }
 
@@ -234,7 +253,14 @@ internal class AndroidNusLink(private val context: Context, private val handler:
             when {
                 status != BluetoothGatt.GATT_SUCCESS -> fail(BleFailure.ConnectFailed)
                 newState == BluetoothProfile.STATE_DISCONNECTED -> fail(BleFailure.Disconnected)
-                newState == BluetoothProfile.STATE_CONNECTED -> if (!connection.discoverServices()) fail(BleFailure.ServiceMissing)
+                newState == BluetoothProfile.STATE_CONNECTED -> {
+                    discoveryDeadline?.cancel()
+                    discoveryDeadline = linkScope.launch {
+                        delay(15_000)
+                        if (!ready.isCompleted) fail(BleFailure.Timeout)
+                    }
+                    if (!connection.discoverServices()) fail(BleFailure.ServiceMissing)
+                }
             }
         }
 
@@ -273,6 +299,7 @@ internal class AndroidNusLink(private val context: Context, private val handler:
             if (status != BluetoothGatt.GATT_SUCCESS) { fail(BleFailure.SubscribeFailed); return@handle }
             // 로컬 Notify 설정만 성공한 시점이 아니라 원격 CCCD 쓰기 응답까지 확인한다.
             mutableState.value = BleLinkState.Ready
+            discoveryDeadline?.cancel()
             ready.complete(Unit)
         }
 
@@ -327,6 +354,7 @@ internal class AndroidNusLink(private val context: Context, private val handler:
     private fun fail(reason: BleFailure) {
         if (ended) return
         ended = true
+        linkScope.cancel()
         mutableState.value = BleLinkState.Closed
         val failure = BleException(reason)
         ready.completeExceptionally(failure)
