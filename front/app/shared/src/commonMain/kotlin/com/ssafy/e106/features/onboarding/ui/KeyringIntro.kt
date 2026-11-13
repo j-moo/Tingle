@@ -37,8 +37,12 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import com.ssafy.e106.core.ui.components.AppButton
-import com.ssafy.e106.core.ui.components.AppButtonVariant
+import com.ssafy.e106.core.ui.components.InlineError
 import com.ssafy.e106.core.ui.components.KeyringPebbleColors
+import com.ssafy.e106.core.ui.components.NoticeBar
+import com.ssafy.e106.core.ui.components.PullDownRefreshBox
+import com.ssafy.e106.core.ui.components.SkeletonBone
+import com.ssafy.e106.core.ui.components.SkeletonGroup
 import com.ssafy.e106.core.ui.components.drawKeyringPebble
 import com.ssafy.e106.core.ui.theme.AppColors
 import com.ssafy.e106.core.ui.theme.AppSpacing
@@ -52,12 +56,12 @@ import com.ssafy.e106.resources.onboarding_keyring_title
 import com.ssafy.e106.resources.onboarding_link_failed
 import com.ssafy.e106.resources.onboarding_logout
 import com.ssafy.e106.resources.onboarding_refresh
-import com.ssafy.e106.resources.onboarding_retry
 import org.jetbrains.compose.resources.stringResource
 
 /**
  * 가입 키링 단계 첫 화면(시안 02): 가운데 조약돌 키링에서 신호가 퍼지고, 그 아래 제목 · 안내, 맨 아래 키링 찾기 · 구매 안내.
  * [onFind] 는 키링 연결 화면을 연다(운영 앱 · 개발 앱 같음). 없으면(Preview 등) 버튼만 막는다.
+ * 구매 안내를 받는 중([busy])엔 그 자리만 뼈대로 두고, 못 받아도([error]) 키링 등록은 할 수 있게 화면은 그대로 둔 채 아래 띠로 알린다.
  */
 @Composable
 internal fun KeyringIntro(
@@ -72,46 +76,54 @@ internal fun KeyringIntro(
     onLogout: () -> Unit,
 ) {
     Surface(Modifier.fillMaxSize(), color = AppColors.Background) {
-        BoxWithConstraints(Modifier.fillMaxSize().safeDrawingPadding(), contentAlignment = Alignment.TopCenter) {
-            val viewport = maxHeight
-            Column(
-                Modifier.widthIn(max = 640.dp).fillMaxWidth().verticalScroll(rememberScrollState())
-                    .heightIn(min = viewport).padding(screenPaddingValues()),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(AppSpacing.Medium),
-            ) {
-                Spacer(Modifier.weight(1f))
-                SignalPebble(Modifier.size(220.dp))
-                Text(stringResource(Res.string.onboarding_keyring_title), style = MaterialTheme.typography.headlineSmall,
-                    fontWeight = FontWeight.Bold, textAlign = TextAlign.Center, color = AppColors.TextPrimary,
-                    modifier = Modifier.semantics { heading() })
-                Text(stringResource(Res.string.onboarding_keyring_body), style = MaterialTheme.typography.bodyLarge,
-                    textAlign = TextAlign.Center, color = AppColors.TextSecondary)
-                error?.let { OnboardingError(it) }
-                if (linkFailed) OnboardingError(stringResource(Res.string.onboarding_link_failed))
-                Spacer(Modifier.weight(1f))
-                AppButton(stringResource(Res.string.onboarding_keyring_find), Modifier.fillMaxWidth(), enabled = onFind != null && !busy,
-                    onClick = { onFind?.invoke() })
-                purchaseUrl?.let { url ->
-                    // 큰 글자에서 "구매하기"가 쪼개지지 않게 넘치면 다음 줄로
-                    FlowRow(horizontalArrangement = Arrangement.Center, itemVerticalAlignment = Alignment.CenterVertically) {
-                        Text(stringResource(Res.string.onboarding_keyring_no), style = MaterialTheme.typography.bodyMedium, color = AppColors.TextSecondary)
-                        TextButton(onClick = { onOpen(url) }) {
-                            Text(stringResource(Res.string.onboarding_keyring_buy), style = MaterialTheme.typography.bodyMedium,
-                                color = AppColors.TextPrimary, textDecoration = TextDecoration.Underline)
+        Column(Modifier.fillMaxSize().safeDrawingPadding(), horizontalAlignment = Alignment.CenterHorizontally) {
+            val (refreshing, pull) = pullRefresh(busy, onReload)
+            PullDownRefreshBox(refreshing, pull, Modifier.weight(1f).fillMaxWidth()) {
+                BoxWithConstraints(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
+                    val viewport = maxHeight
+                    Column(
+                        Modifier.widthIn(max = 640.dp).fillMaxWidth().verticalScroll(rememberScrollState())
+                            .heightIn(min = viewport).padding(screenPaddingValues()),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(AppSpacing.Medium),
+                    ) {
+                        Spacer(Modifier.weight(1f))
+                        SignalPebble(Modifier.size(220.dp))
+                        Text(stringResource(Res.string.onboarding_keyring_title), style = MaterialTheme.typography.headlineSmall,
+                            fontWeight = FontWeight.Bold, textAlign = TextAlign.Center, color = AppColors.TextPrimary,
+                            modifier = Modifier.semantics { heading() })
+                        Text(stringResource(Res.string.onboarding_keyring_body), style = MaterialTheme.typography.bodyLarge,
+                            textAlign = TextAlign.Center, color = AppColors.TextSecondary)
+                        Spacer(Modifier.weight(1f))
+                        if (linkFailed) InlineError(stringResource(Res.string.onboarding_link_failed))
+                        AppButton(stringResource(Res.string.onboarding_keyring_find), Modifier.fillMaxWidth(), enabled = onFind != null && !busy,
+                            onClick = { onFind?.invoke() })
+                        purchaseUrl?.let { url ->
+                            // 큰 글자에서 "구매하기"가 쪼개지지 않게 넘치면 다음 줄로
+                            FlowRow(horizontalArrangement = Arrangement.Center, itemVerticalAlignment = Alignment.CenterVertically) {
+                                Text(stringResource(Res.string.onboarding_keyring_no), style = MaterialTheme.typography.bodyMedium, color = AppColors.TextSecondary)
+                                TextButton(onClick = { onOpen(url) }) {
+                                    Text(stringResource(Res.string.onboarding_keyring_buy), style = MaterialTheme.typography.bodyMedium,
+                                        color = AppColors.TextPrimary, textDecoration = TextDecoration.Underline)
+                                }
+                            }
+                        }
+                        // 구매 안내를 받는 중: 그 자리만 뼈대
+                        if (purchaseUrl == null && busy) SkeletonGroup(Modifier.padding(vertical = AppSpacing.Large)) {
+                            SkeletonBone(Modifier.align(Alignment.CenterHorizontally), width = 160.dp, height = 14.dp)
+                        }
+                        // 서버에서 가입 단계가 바뀌었는지 다시 확인(운영 앱은 키링 찾기가 막혀 있어 이것 말고는 갱신할 방법이 없다)
+                        TextButton(onClick = onRefresh, enabled = !busy) {
+                            Text(stringResource(Res.string.onboarding_refresh), style = MaterialTheme.typography.bodySmall, color = AppColors.TextSecondary)
+                        }
+                        TextButton(onClick = onLogout) {   // 불러오는 중에도 나갈 수 있어야 한다(로그아웃은 진행 중 작업을 취소한다)
+                            Text(stringResource(Res.string.onboarding_logout), style = MaterialTheme.typography.bodySmall, color = AppColors.TextSecondary)
                         }
                     }
                 }
-                if (error != null) AppButton(stringResource(Res.string.onboarding_retry), Modifier.fillMaxWidth(),
-                    variant = AppButtonVariant.Secondary, enabled = !busy, onClick = onReload)
-                // 서버에서 가입 단계가 바뀌었는지 다시 확인(운영 앱은 키링 찾기가 막혀 있어 이것 말고는 갱신할 방법이 없다)
-                TextButton(onClick = onRefresh, enabled = !busy) {
-                    Text(stringResource(Res.string.onboarding_refresh), style = MaterialTheme.typography.bodySmall, color = AppColors.TextSecondary)
-                }
-                TextButton(onClick = onLogout) {   // 불러오는 중에도 나갈 수 있어야 한다(로그아웃은 진행 중 작업을 취소한다)
-                    Text(stringResource(Res.string.onboarding_logout), style = MaterialTheme.typography.bodySmall, color = AppColors.TextSecondary)
-                }
             }
+            // 구매 안내 · 가입 상태를 못 받음: 화면은 그대로 두고 아래 띠로 알린다
+            if (error != null) NoticeBar(error, Modifier.widthIn(max = 640.dp), actionEnabled = !busy, onAction = onReload)
         }
     }
 }

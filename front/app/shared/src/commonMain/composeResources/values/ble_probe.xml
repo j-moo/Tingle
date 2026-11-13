@@ -29,4 +29,8 @@
     <string name="probe_selected_body">선택한 키링이 연결됐어요. 맞는지 확인하고 등록해 주세요.</string>
     <string name="probe_selected_body_plain">선택한 키링이 연결됐어요.</string>
     <string name="probe_device_meta">%1$s · 펌웨어 %2$s</string>
+    <string name="probe_recent">최근 연결</string>
+    <string name="ble_connect_failed">키링에 연결하지 못했어요. 키링을 휴대폰 가까이 두고 다시 눌러 주세요. 다른 휴대폰에 연결돼 있으면 연결되지 않아요.</string>
+    <string name="probe_card_connecting">연결하고 있어요</string>
+    <string name="probe_card_mine">연결하던 키링</string>
 </resources>

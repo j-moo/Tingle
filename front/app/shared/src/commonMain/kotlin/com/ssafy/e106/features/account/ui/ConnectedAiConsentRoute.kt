@@ -1,6 +1,5 @@
 package com.ssafy.e106.features.account.ui
 
-import androidx.compose.foundation.layout.Column
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -25,23 +24,20 @@ import org.koin.compose.viewmodel.koinViewModel
     }
     ProfileBackHandler(true) { if(!state.ui.busy) onBack() }
     if(state.owner != session) return
-    Column {
-        state.error?.let { Text(it.message, color = MaterialTheme.colorScheme.error) }
-        if(openFailed) Text(stringResource(Res.string.chat_extras_document_failed))
-        AiConsentScreen(state.ui, model::check, { action -> when(action) {
-            AiConsentAction.Back, AiConsentAction.Login -> onBack()
-            AiConsentAction.Reload, AiConsentAction.CheckResult -> model.load()
-            AiConsentAction.OpenNotice -> state.ui.notice?.contentUrl?.let { url ->
-                // 열기 성공은 읽음/동의가 아니다. 복귀 후 사용자가 확인 버튼을 눌러야 한다.
-                runCatching { uri.openUri(url) }.onSuccess { openedVersion = state.ui.notice?.version; openFailed = false }
-                    .onFailure { openFailed = true }
-            }
-            AiConsentAction.Grant -> model.save(true)
-            AiConsentAction.Withdraw -> model.withdraw()
-            AiConsentAction.CancelWithdrawal -> model.cancel()
-            AiConsentAction.ConfirmWithdrawal -> model.save(false)
-        } })
-    }
+    // 오류 종류와 전문 열기 실패는 화면 안(상태 화면 · 버튼 근처 빨간 줄)에서 보인다. 화면 밖 위쪽에 글을 따로 얹지 않는다
+    AiConsentScreen(state.ui, model::check, { action -> when(action) {
+        AiConsentAction.Back, AiConsentAction.Login -> onBack()
+        AiConsentAction.Reload, AiConsentAction.CheckResult -> model.load()
+        AiConsentAction.OpenNotice -> state.ui.notice?.contentUrl?.let { url ->
+            // 열기 성공은 읽음/동의가 아니다. 복귀 후 사용자가 확인 버튼을 눌러야 한다.
+            runCatching { uri.openUri(url) }.onSuccess { openedVersion = state.ui.notice?.version; openFailed = false }
+                .onFailure { openFailed = true }
+        }
+        AiConsentAction.Grant -> model.save(true)
+        AiConsentAction.Withdraw -> model.withdraw()
+        AiConsentAction.CancelWithdrawal -> model.cancel()
+        AiConsentAction.ConfirmWithdrawal -> model.save(false)
+    } }, error = state.error, noticeOpenFailed = openFailed)
     if(openedVersion != null && openedVersion == state.ui.notice?.version) AlertDialog(
         onDismissRequest = { openedVersion = null }, title = { Text(stringResource(Res.string.ai_consent_notice_title)) },
         text = { Text(stringResource(Res.string.chat_extras_document_review)) },

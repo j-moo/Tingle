@@ -2,10 +2,8 @@
     <string name="survey_change_retest">재검사하기</string>
     <string name="survey_change_version">최신 설문 확인</string>
     <string name="survey_change_previous">직전 회차 확인</string>
-    <string name="survey_change_recover">전환 요청 다시 확인하기</string>
     <string name="survey_change_begin">재검사 시작하거나 이어하기</string>
     <string name="survey_change_move">확인하고 새 설문으로 옮기기</string>
-    <string name="survey_change_reload">다시 확인하기</string>
     <string name="survey_change_retest_body">새로 시작하면 이전 답변을 복사하지 않고 1번부터 응답해요. 이미 작성 중인 재검사가 있으면 해당 답변을 유지하고 이어서 진행해요. 기존 제출 회차와 분석 결과는 보존돼요.</string>
     <string name="survey_change_migration_body">새 설문이 있어요. 아래 내용을 확인한 뒤 옮길 수 있어요. 기존 회차와 분석 결과는 그대로 보존돼요. 대상 설문을 이미 작성 중이라면 그 회차의 답변을 그대로 이어가요.</string>
     <string name="survey_change_counts">옮길 수 있는 답변 %1$d개 · 다시 확인할 문항 %2$d개 · 옮길 수 없는 답변 %3$d개</string>

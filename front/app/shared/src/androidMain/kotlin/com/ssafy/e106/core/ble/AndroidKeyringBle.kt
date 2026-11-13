@@ -37,6 +37,7 @@ class AndroidKeyringBle(context: Context) : KeyringBle {
     // 재탐색 ID는 폐기한다. 자동 연결 설정은 검증 후 사용자가 고른 페어링 주소만 Android 내부에서 보관한다.
     private var previousDevice: BluetoothDevice? = null
 
+    override fun forgetPreviousDevice() { previousDevice = null }
     override fun isPreviousDevice(candidateId: String): Boolean =
         candidates[candidateId]?.let { it == previousDevice } == true
 
@@ -70,7 +71,7 @@ class AndroidKeyringBle(context: Context) : KeyringBle {
                         val id = existing ?: UUID.randomUUID().toString()
                         if (existing == null && candidates.size >= 32) return@post
                         candidates[id] = result.device
-                        observations[id] = BleCandidate(id, result.scanRecord?.deviceName?.take(80), result.rssi)
+                        observations[id] = BleCandidate(id, result.scanRecord?.deviceName?.take(80), result.rssi, recent = result.device == previousDevice)
                         // 최신 목록 전체를 보내므로 빠른 RSSI 갱신이 합쳐져도 발견한 기기가 유실되지 않는다.
                         trySend(observations.values.toList())
                     } catch (_: SecurityException) { close(BleException(BleFailure.PermissionRequired)) }

@@ -14,6 +14,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
@@ -43,7 +45,6 @@ import com.ssafy.e106.core.ui.theme.screenGutter
 import com.ssafy.e106.features.keyring.data.OwnedKeyring
 import com.ssafy.e106.features.profile.ui.ProfileBackHandler
 import com.ssafy.e106.resources.*
-import org.jetbrains.compose.resources.StringResource
 import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.viewmodel.koinViewModel
 
@@ -100,12 +101,11 @@ import org.koin.compose.viewmodel.koinViewModel
                 Text(stringResource(Res.string.sync_pick_title), style = MaterialTheme.typography.headlineSmall,
                     fontWeight = FontWeight.Bold, modifier = Modifier.semantics { heading() })
                 when {
-                    list.loading || (list.items == null && list.error == null) ->
-                        Text(stringResource(Res.string.sync_pick_loading))
-                    list.error != null -> {
-                        Text(list.error.message, color = MaterialTheme.colorScheme.error)
-                        AppButton(stringResource(Res.string.sync_pick_reload), Modifier.fillMaxWidth(), onClick = onRefresh)
+                    // 불러오는 중: 카드 자리만 회색으로. 실패: 짧은 제목 한 줄 + 작은 "다시 시도"(다른 화면과 같은 상태 표시)
+                    list.loading || (list.items == null && list.error == null) -> SkeletonGroup(spacing = AppSpacing.Medium) {
+                        repeat(2) { SkeletonBone(height = 72.dp, shape = RoundedCornerShape(16.dp)) }
                     }
+                    list.error != null -> StateView(list.error.stateKind(), list.error.stateTitle(), onRetry = onRefresh)
                     list.items.isNullOrEmpty() -> Text(stringResource(Res.string.owned_keyrings_empty))
                     else -> list.items.orEmpty().forEachIndexed { index, item ->
                         KeyringCard(aliases[item.deviceId]?.takeIf { it.isNotBlank() }
@@ -167,7 +167,7 @@ import org.koin.compose.viewmodel.koinViewModel
     KeyringSyncPanelContent(state, bleState, list, registrationBusy, pickExisting, onRetry = model::retry, onLatest = model::latest,
         onRetryRecovery = model::retryRecovery, onRefreshOwned = owned::load,
         onUseExisting = { deviceId, serial -> model.useExisting(deviceId, serial) },
-        onReadStatus = ble::readStatus, manualSettings = manualSettings,
+        manualSettings = manualSettings,
         onCheckSettings = { deviceId, serial -> model.useExisting(deviceId, serial, checkLatest = true) })
 }
 
@@ -184,7 +184,6 @@ import org.koin.compose.viewmodel.koinViewModel
     onRetryRecovery: () -> Unit = {},
     onRefreshOwned: () -> Unit = {},
     onUseExisting: (deviceId: Long, serial: String) -> Unit = { _, _ -> },
-    onReadStatus: () -> Unit = {},
     manualSettings: Boolean = false,
     onCheckSettings: (deviceId: Long, serial: String) -> Unit = { _, _ -> },
 ) {
@@ -247,36 +246,9 @@ import org.koin.compose.viewmodel.koinViewModel
         if (application.isNotEmpty()) KeyringSyncProgressList(
             state.copy(items = application, recoveryFailed = false), onRetry, onLatest)
     }
-    // ACK는 저장만 확인한다. 현재 연결된 키링이 같은 설정 버전을 보고할 때만 준비 상태를 표시한다.
-    val confirmed = state.items.singleOrNull { it.serial == serial && it.confirmedTsv3Version != null }
-    if (serial != null && bleState.info?.supportsStatus == true && confirmed != null) {
-        val observation = bleState.status?.ownerFlow?.takeIf {
-            it.storedSettingsVersion == confirmed.confirmedTsv3Version
-        }
-        Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(AppSpacing.Small)) {
-            SyncReadinessLine(Res.string.sync_live_applied, observation?.applied)
-            SyncReadinessLine(Res.string.sync_live_time_ready, observation?.timeReady)
-            val matching = observation?.takeUnless {
-                it.matchingReady == true && (it.readinessConflict || it.applied != true || it.timeReady != true)
-            }?.matchingReady
-            SyncReadinessLine(Res.string.sync_live_matching_ready, matching)
-            AppButton(stringResource(Res.string.sync_live_read_status), Modifier.fillMaxWidth(), AppButtonVariant.Secondary,
-                enabled = !locked && !registrationBusy && !bleState.busy, onClick = onReadStatus)
-        }
-    }
     // ✕로 닫은 뒤에도 같은 실패를 다시 시도할 길을 남긴다. 고르기 화면에서 키링 실패는 "선택한 키링으로 맞추기"가 그 역할
     if (failed && closed && (!pickExisting || stuck.isEmpty())) AppButton(stringResource(Res.string.sync_live_retry), Modifier.fillMaxWidth(),
         enabled = !locked, onClick = { closedFor = null; retrying = true; retryAll() })   // 다시 하면 결과 시트를 다시 띄운다
-}
-
-@Composable private fun SyncReadinessLine(label: StringResource, value: Boolean?) {
-    val display = stringResource(when (value) {
-        true -> Res.string.sync_live_ready_yes
-        false -> Res.string.sync_live_ready_no
-        null -> Res.string.sync_live_ready_unknown
-    })
-    Text(stringResource(label, display), color = AppColors.TextSecondary, textAlign = TextAlign.Center)
 }
 
 /** 설정 전송 실패 시트 안쪽. 화면 높이의 70%를 채우고 ✕로 닫는다 */
@@ -308,10 +280,17 @@ import org.koin.compose.viewmodel.koinViewModel
     Text(stringResource(Res.string.sync_pick_title), style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold,
         textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().semantics { heading() })
     when {
-        list.loading -> Text(stringResource(Res.string.sync_pick_loading), color = AppColors.TextSecondary, textAlign = TextAlign.Center)
-        list.error != null -> Text(list.error.message, color = MaterialTheme.colorScheme.error, textAlign = TextAlign.Center)
-        list.items != null && items.isEmpty() -> Text(stringResource(Res.string.sync_pick_empty), color = AppColors.TextSecondary,
-            textAlign = TextAlign.Center)
+        // 불러오는 중(아직 안 불러온 첫 화면 포함): 문구 대신 카드 자리만 회색으로
+        list.loading || (list.items == null && list.error == null) -> SkeletonGroup(spacing = AppSpacing.Medium) {
+            repeat(2) { SkeletonBone(height = 72.dp, shape = RoundedCornerShape(16.dp)) }
+        }
+        // 실패 · 비어 있음: 짧은 제목 한 줄 + 작은 "다시 시도"(아래 큰 다시 불러오기 버튼을 대신한다)
+        list.error != null -> StateView(list.error.stateKind(), list.error.stateTitle(), onRetry = onRefresh, retryEnabled = enabled)
+        items.isEmpty() -> {
+            StateView(StateKind.Empty, stringResource(Res.string.sync_pick_empty), onRetry = onRefresh, retryEnabled = enabled)
+            // 남의 키링일 수 있다는 안내는 다음 행동에 필요해 남긴다
+            Text(stringResource(Res.string.sync_pick_empty_help), color = AppColors.TextSecondary, textAlign = TextAlign.Center)
+        }
     }
     items.forEachIndexed { index, item ->
         // 누르면 고른 카드만 초록 테두리 · 체크. 확정은 아래 버튼으로
@@ -323,13 +302,14 @@ import org.koin.compose.viewmodel.koinViewModel
                 color = AppColors.TextSecondary)
         }
     }
+    // 받아 둔 목록에 지금 연결한 키링이 없으면 모든 카드가 꺼진다. 목록이 낡았을 수 있어 다시 불러올 길을 남긴다
+    if (items.isNotEmpty() && items.none { it.deviceSerial == serial } && !list.loading)
+        TextAction(stringResource(Res.string.state_retry), onRefresh, enabled = enabled)
     val chosen = items.firstOrNull { it.deviceId == tapped && it.deviceSerial == serial }
-    // 고른 키링으로 이미 보내는 중(보냄)이면 확정 · 다시 불러오기 버튼은 숨기고 아래 진행 상태만 둔다
+    // 고른 키링으로 이미 보내는 중(보냄)이면 확정 버튼은 숨기고 아래 진행 상태만 둔다
     if (chosen != null && chosen.deviceId in syncing) return
     if (items.isNotEmpty()) AppButton(stringResource(Res.string.sync_pick_confirm), Modifier.fillMaxWidth(),
         enabled = enabled && chosen != null, onClick = { chosen?.let { onUseExisting(it.deviceId, serial) } })
-    if (!list.loading && (list.error != null || list.items != null)) AppButton(stringResource(Res.string.sync_pick_reload), Modifier.fillMaxWidth(),
-        AppButtonVariant.Secondary, enabled = enabled, onClick = onRefresh)
 }
 
 /** Preview에서는 이 순수 함수에 상태만 넣는다. 가짜 Repository/서버 완료 상태는 연결하지 않는다. */

@@ -1,6 +1,7 @@
 package com.ssafy.e106.features.survey.ui
 
 import com.ssafy.e106.core.network.AppError
+import com.ssafy.e106.core.ui.components.StateKind
 import com.ssafy.e106.features.survey.data.*
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -29,5 +30,24 @@ class SurveyStepTest {
         assertEquals(SurveyStep.Loading, SurveyUiState(page = SurveyPage.Loading).step())
         assertEquals(SurveyStep.Loading, SurveyUiState(page = SurveyPage.Resume, busy = true).step())
         assertEquals(SurveyStep.Loading, SurveyUiState(page = SurveyPage.Question, busy = true).step())
+    }
+
+    // 불러오기 실패는 오류에 맞는 상태 화면, 오류 없이 답 저장 결과만 모르면 "결과 확인 필요"
+    @Test fun errorStepPicksStateKindFromErrorOrUnconfirmed() {
+        assertEquals(StateKind.Offline, SurveyUiState(page = SurveyPage.Review, error = AppError.Offline).stepKind())
+        assertEquals(StateKind.Session, SurveyUiState(page = SurveyPage.Intro, error = AppError.SessionExpired).stepKind())
+        assertEquals(StateKind.Unconfirmed, SurveyUiState(page = SurveyPage.Question, recoveryRequired = true).stepKind())
+        assertEquals(StateKind.Offline, SurveyUiState(page = SurveyPage.Question, recoveryRequired = true, error = AppError.Offline).stepKind())
+    }
+
+    // 분석 실패 · 답 부족 · 완료만 상태 화면 모양이고, 안내 · 제출 · 분석 중 · 불러오는 중은 보통 단계다
+    @Test fun onlyResultStepsUseStateKind() {
+        assertEquals(StateKind.Server, completed(AnalysisStatus.FAILED).stepKind())
+        assertEquals(StateKind.Unknown, completed(AnalysisStatus.INSUFFICIENT).stepKind())
+        assertEquals(StateKind.Done, completed(AnalysisStatus.SUCCEEDED).stepKind())
+        assertEquals(null, completed(AnalysisStatus.PENDING).stepKind())
+        assertEquals(null, SurveyUiState(page = SurveyPage.Intro).stepKind())
+        assertEquals(null, SurveyUiState(page = SurveyPage.Review).stepKind())
+        assertEquals(null, SurveyUiState(page = SurveyPage.Loading).stepKind())
     }
 }

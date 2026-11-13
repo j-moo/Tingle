@@ -1,5 +1,7 @@
 package com.ssafy.e106.features.profile.ui
 
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -44,6 +46,8 @@ fun ProfileDetailsScreen(
     footer: @Composable () -> Unit = {},
     continueEnabled: Boolean = state.canContinue,
     continueLabel: String? = null,
+    refreshing: Boolean = false,
+    onRefresh: (() -> Unit)? = null,
 ) {
     // 저장 동작은 동일하게 유지하고 배치만 바꾼다. 키보드로 짧아진 창에서는 본문 끝까지 스크롤한다.
     val submit: @Composable () -> Unit = {
@@ -60,7 +64,8 @@ fun ProfileDetailsScreen(
             val compactHeight = maxHeight < 320.dp
             Column(Modifier.fillMaxSize()) {
                 if (!compactHeight) AppTopBar(stringResource(Res.string.profile_details_title), onBack = onBack)
-                Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.TopCenter) {
+                // 당겨서 새로고침은 호출부가 줄 때만 붙는다. 화면이 떠 있는 동안 바뀌지 않는 값이라 입력 칸의 자리는 그대로다
+                val body: @Composable BoxScope.() -> Unit = {
                     Column(
                         Modifier.widthIn(max = 640.dp).fillMaxWidth()
                             .verticalScroll(rememberScrollState()).padding(screenPaddingValues()),
@@ -85,6 +90,8 @@ fun ProfileDetailsScreen(
                         if (compactHeight) submit()
                     }
                 }
+                if (onRefresh != null) PullDownRefreshBox(refreshing, onRefresh, Modifier.weight(1f).fillMaxWidth(), content = body)
+                else Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.TopCenter, content = body)
                 if (!compactHeight) submit()
             }
         }
@@ -98,28 +105,36 @@ internal fun ProfilePhotoBlock(
     photoContent: @Composable () -> Unit, consentInfo: @Composable (OptionalConsentType) -> Unit = {},
     canChangeConsent: (OptionalConsentType) -> Boolean = { true },
 ) {
+    val uploading = stringResource(Res.string.profile_photo_uploading)
     Column(verticalArrangement = Arrangement.spacedBy(AppSpacing.Small)) {
         DetailTitle(Res.string.profile_photo_title)
-        Box(Modifier.size(144.dp).align(Alignment.CenterHorizontally).clip(AppShapes.Card), contentAlignment = Alignment.Center) {
+        // 사진 칸 자체가 버튼이다: 누르면 사진을 고른다(등록된 사진이 있으면 바꾼다). 따로 "사진 선택" 버튼은 두지 않는다
+        val canPick = state.editable && state.photoConsent && !state.photoBusy
+        val pickLabel = stringResource(if (state.hasPhoto) Res.string.profile_photo_replace else Res.string.profile_photo_add)
+        // 사진 칸은 좌우를 꽉 채운 정사각형(너무 넓은 화면에서는 360까지만)
+        Box(Modifier.widthIn(max = 360.dp).fillMaxWidth().aspectRatio(1f).align(Alignment.CenterHorizontally).clip(AppShapes.Card)
+            .background(AppColors.SurfaceMuted)
+            .clickable(enabled = canPick, onClickLabel = pickLabel, role = Role.Button, onClick = onChoosePhoto),
+            contentAlignment = Alignment.Center) {
             if (state.hasPhoto) photoContent()
-            else ProfilePlaceholder(stringResource(Res.string.profile_photo_empty))
+            else Text(stringResource(if (canPick) Res.string.profile_photo_empty_tap else Res.string.profile_photo_empty),
+                Modifier.padding(AppSpacing.Section), style = MaterialTheme.typography.bodyMedium, color = AppColors.TextSecondary, textAlign = TextAlign.Center)
+            // 올리는 중에는 칸 위에 옅은 막과 고리
+            if (state.photoBusy) Box(Modifier.matchParentSize().background(AppColors.Background.copy(alpha = 0.7f))
+                .semantics { contentDescription = uploading; liveRegion = LiveRegionMode.Polite }, contentAlignment = Alignment.Center) {
+                CircularProgressIndicator(Modifier.size(24.dp), color = AppColors.TextPrimary, strokeWidth = 2.5.dp)
+            }
         }
+        if (state.hasPhoto && canPick) DetailHelp(Res.string.profile_photo_tap_replace)
         if (onConsentChange != null) {
             AppCheckbox(state.photoConsent, onCheckedChange = { if (state.editable) onConsentChange(it) },
                 label = stringResource(Res.string.profile_photo_consent), enabled = state.editable && canChangeConsent(OptionalConsentType.PROFILE_PHOTO))
             consentInfo(OptionalConsentType.PROFILE_PHOTO)
         }
-        AppButton(
-            stringResource(if (state.hasPhoto) Res.string.profile_photo_replace else Res.string.profile_photo_add),
-            modifier = Modifier.fillMaxWidth(), variant = AppButtonVariant.Secondary,
-            enabled = state.editable && state.photoConsent, loading = state.photoBusy,
-            loadingText = stringResource(Res.string.profile_photo_uploading), onClick = onChoosePhoto,
-        )
         if (state.hasPhoto) AppButton(stringResource(Res.string.profile_photo_delete),
             modifier = Modifier.fillMaxWidth(), variant = AppButtonVariant.Secondary, enabled = state.editable, onClick = onDeletePhoto)
         if (state.photoStatus == ProfilePhotoStatus.Replacing) DetailHelp(Res.string.profile_photo_replacing)
         state.photoError?.let { DetailError(it) }
-        DetailHelp(Res.string.profile_photo_matching)
     }
 }
 
@@ -162,7 +177,7 @@ internal fun ProfileIntroductionBlock(
             modifier = Modifier.fillMaxWidth()
                 .bringIntoViewRequester(introductionIntoView)
                 .onFocusChanged { introductionFocused = it.isFocused },
-            label = { Text(stringResource(Res.string.profile_intro_title)) },
+            label = { Text(stringResource(Res.string.profile_intro_title).withoutTag()) },
             placeholder = { Text(stringResource(Res.string.profile_intro_placeholder)) },
             minLines = 4, maxLines = 6, shape = AppShapes.Control,
             isError = introductionError != null,
@@ -185,10 +200,18 @@ internal fun ProfileIntroductionBlock(
 internal fun ProfileReligionBlock(
     state: ProfileDetailsState, onReligionChange: (ProfileReligion) -> Unit, onConsentChange: ((Boolean) -> Unit)?,
     consentInfo: @Composable (OptionalConsentType) -> Unit = {}, canChangeConsent: (OptionalConsentType) -> Boolean = { true },
+    consentMissing: Boolean = false, onRequestConsent: (() -> Unit)? = null,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(AppSpacing.Small)) {
         DetailTitle(Res.string.profile_religion_title)
         DetailHelp(Res.string.profile_religion_private_help)
+        // 가입할 때 종교 동의를 하지 않았으면 선택지 대신 안내 상자를 보여 주고 여기서 한 번 동의받는다
+        if (consentMissing && onRequestConsent != null) {
+            ReligionConsentAsk(state.editable && canChangeConsent(OptionalConsentType.PROFILE_RELIGION), onRequestConsent)
+            if (!canChangeConsent(OptionalConsentType.PROFILE_RELIGION)) consentInfo(OptionalConsentType.PROFILE_RELIGION)   // 전문이 없어 동의할 수 없는 이유
+            return@Column
+        }
+        if (consentMissing) DetailHelp(Res.string.profile_consent_missing)
         if (onConsentChange != null) {
             AppCheckbox(state.religionConsent, onCheckedChange = { if (state.editable) onConsentChange(it) },
                 label = stringResource(Res.string.profile_religion_consent), enabled = state.editable && canChangeConsent(OptionalConsentType.PROFILE_RELIGION))
@@ -206,8 +229,7 @@ internal fun ProfileReligionBlock(
 }
 
 @Composable private fun DetailTitle(text: StringResource) {
-    Text(stringResource(text), style = MaterialTheme.typography.titleMedium,
-        modifier = Modifier.semantics { heading() })
+    TagLabel(stringResource(text), style = MaterialTheme.typography.titleMedium, heading = true)
 }
 @Composable private fun DetailHelp(text: StringResource) {
     Text(stringResource(text), style = MaterialTheme.typography.bodyMedium, color = AppColors.TextSecondary)

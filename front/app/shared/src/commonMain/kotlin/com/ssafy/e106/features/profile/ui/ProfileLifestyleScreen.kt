@@ -1,5 +1,6 @@
 package com.ssafy.e106.features.profile.ui
 
+import com.ssafy.e106.core.ui.components.TagLabel
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -113,9 +114,8 @@ private fun <T> LifestyleChoices(
     error: String?,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(AppSpacing.Small)) {
-        Text(stringResource(title), style = MaterialTheme.typography.titleMedium,
-            color = if (enabled) AppColors.TextPrimary else AppColors.TextDisabled,
-            modifier = Modifier.semantics { heading() })
+        TagLabel(stringResource(title), style = MaterialTheme.typography.titleMedium,
+            color = if (enabled) AppColors.TextPrimary else AppColors.TextDisabled, heading = true)
         Column(Modifier.selectableGroup(), verticalArrangement = Arrangement.spacedBy(AppSpacing.Small)) {
             options.forEach { option ->
                 val isSelected = selected == option

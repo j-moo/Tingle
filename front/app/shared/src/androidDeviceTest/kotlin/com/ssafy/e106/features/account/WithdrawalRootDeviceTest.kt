@@ -87,7 +87,7 @@ class WithdrawalRootDeviceTest {
             compose.onNodeWithText("탈퇴 준비 취소").performScrollTo().performClick()
             compose.onNodeWithText("탈퇴 준비 취소를 확인해 주세요").assertExists()
             scenario.onActivity { WithdrawalRootTestActivity.server.cancelFails=false }
-            compose.onNodeWithText("취소 결과 다시 확인").performScrollTo().performClick()
+            compose.onNodeWithText("다시 확인").performScrollTo().performClick()
             compose.onNodeWithText("탈퇴 전 확인해 주세요").assertExists()
             assertEquals(2,WithdrawalRootTestActivity.server.cancels)
             assertEquals(1,WithdrawalRootTestActivity.server.keys.size)
@@ -107,7 +107,7 @@ class WithdrawalRootDeviceTest {
         ActivityScenario.launch<WithdrawalRootTestActivity>(Intent(context,WithdrawalRootTestActivity::class.java)).use { scenario ->
             scenario.onActivity { WithdrawalRootTestActivity.controller.open(75) }
             compose.onNodeWithText("회원탈퇴가 완료됐어요").assertExists()
-            compose.onNodeWithText("기존 탈퇴 결과 확인").performScrollTo().performClick()
+            compose.onNodeWithText("다시 확인").performScrollTo().performClick()
             compose.onNodeWithText("회원탈퇴가 완료됐어요").assertExists()
             scenario.recreate()
             compose.onNodeWithText("회원탈퇴가 완료됐어요").assertExists()

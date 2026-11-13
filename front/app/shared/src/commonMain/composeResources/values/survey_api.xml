@@ -2,8 +2,6 @@
     <string name="survey_api_server_draft">작성 중인 설문 이어하기</string>
     <string name="survey_api_application_pending">분석은 완료됐지만 이 결과는 아직 매칭에 적용되지 않았어요. 필요한 답변 확인이나 재검사가 남아 있을 수 있어요.</string>
     <string name="survey_api_entry">성향테스트</string>
-    <string name="survey_api_loading">설문 정보를 확인하고 있어요.</string>
-    <string name="survey_api_error">설문 정보를 확인하지 못했어요.</string>
     <string name="survey_api_recovery">저장 여부가 확인되기 전에는 다음 답변을 보내지 않아요. 서버에 저장된 답변을 다시 불러와 주세요.</string>
     <string name="survey_api_back">돌아가기</string>
     <string name="survey_api_leaving">처리 중이에요. 요청이 끝나면 이전 화면으로 돌아갈게요.</string>

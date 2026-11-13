@@ -8,7 +8,6 @@ import androidx.compose.material3.*
 import androidx.compose.foundation.background
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.draw.alpha
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -58,34 +57,42 @@ fun KeyringResetScreen(state: KeyringResetState, onAccepted: (Boolean) -> Unit, 
                     // 안내와 확인이 한 화면이다. 초기화 자체의 동의와 아직 업로드하지 않은 기록의 삭제 동의를 묶지 않는다.
                     AppCheckbox(state.accepted, onAccepted, stringResource(Res.string.reset_accept))
                 }
+            } else if (phase == KeyringResetStage.Loading) {
+                // 불러오는 중(아직 초기화 전)은 확인 화면과 같은 자리에 회색 뼈대만 — "초기화하고 있어요"로 오해하지 않게
+                SkeletonGroup(Modifier.weight(1f).padding(screenPaddingValues()), label = stringResource(Res.string.reset_loading_label)) {
+                    SkeletonBone(width = 120.dp, height = 24.dp, shape = RoundedCornerShape(50))
+                    SkeletonBone(Modifier.fillMaxWidth(0.7f), height = 28.dp)
+                    SkeletonBone(height = 40.dp)
+                    SkeletonBone(height = 64.dp, shape = RoundedCornerShape(14.dp))
+                    SkeletonBone(height = 40.dp)
+                    SkeletonBone(height = AppSpacing.ControlMinHeight)
+                }
             } else {
                 // 시작 화면 말고는 진행 중 · 완료 · 실패(· 연결 필요) 하나만 가운데에 보여준다
                 Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()).padding(screenPaddingValues()),
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.spacedBy(AppSpacing.Medium, Alignment.CenterVertically)) {
-                    // 불러오는 중(아직 초기화 전)은 로딩 원만 — "초기화하고 있어요"로 오해하지 않게
-                    val copy = when {
-                        phase == KeyringResetStage.Loading -> null
-                        state.busy -> Res.string.reset_running to Res.string.reset_running_help
-                        phase == KeyringResetStage.Complete -> Res.string.reset_done to Res.string.reset_done_help
-                        phase == KeyringResetStage.Disconnected && state.stage != KeyringResetStage.Failed ->
-                            Res.string.reset_disconnected to Res.string.reset_disconnected_help
-                        phase == KeyringResetStage.Unavailable -> Res.string.reset_unavailable to Res.string.reset_unavailable_help
-                        else -> Res.string.reset_failed to Res.string.reset_failed_help
-                    }
                     when {
+                        // 초기화 진행은 기기 작업이라 로딩 원과 안내를 그대로 둔다
                         state.busy -> {
-                            // 문구가 없는 불러오는 중에도 TalkBack 이 무엇을 기다리는지 읽게 한다
-                            val label = stringResource(if (phase == KeyringResetStage.Loading) Res.string.reset_loading_label else Res.string.reset_running)
+                            val label = stringResource(Res.string.reset_running)
                             CircularProgressIndicator(Modifier.size(48.dp).semantics { contentDescription = label }, color = AppColors.TextPrimary)
+                            ResetHeadline(label, stringResource(Res.string.reset_running_help))
                         }
-                        phase == KeyringResetStage.Complete -> Image(painterResource(Res.drawable.ic_check_done), null, Modifier.size(56.dp))
-                        phase == KeyringResetStage.Disconnected && state.stage != KeyringResetStage.Failed -> KeyringPebble(Modifier.size(96.dp).alpha(0.45f))
-                        else -> Icon(painterResource(Res.drawable.ic_warning), null, Modifier.size(48.dp), tint = AppColors.Error)
+                        // 완료: 상태 화면(제목 한 줄) + 아래 "확인"
+                        phase == KeyringResetStage.Complete -> StateView(StateKind.Done, stringResource(Res.string.reset_done))
+                        phase == KeyringResetStage.Disconnected && state.stage != KeyringResetStage.Failed -> {
+                            KeyringPebble(Modifier.size(96.dp).alpha(0.45f))
+                            ResetHeadline(stringResource(Res.string.reset_disconnected), stringResource(Res.string.reset_disconnected_help))
+                        }
+                        // 확인 불가 · 실패: 상태 화면 모양으로 통일하되, 되돌릴 수 없는 작업이라 다음 행동 안내는 지우지 않는다
+                        else -> {
+                            val unavailable = phase == KeyringResetStage.Unavailable
+                            StateView(StateKind.Unknown, stringResource(if (unavailable) Res.string.reset_unavailable else Res.string.reset_failed))
+                            Text(stringResource(if (unavailable) Res.string.reset_unavailable_help else Res.string.reset_failed_help),
+                                color = AppColors.TextSecondary, textAlign = TextAlign.Center)
+                        }
                     }
-                    if (copy != null) Text(stringResource(copy.first), style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold,
-                        textAlign = TextAlign.Center, modifier = Modifier.semantics { heading() })
-                    if (copy != null) Text(stringResource(copy.second), color = AppColors.TextSecondary, textAlign = TextAlign.Center)
                     if (!state.busy) state.errorMessage?.let { Text(it, color = AppColors.Error, textAlign = TextAlign.Center) }
                 }
             }
@@ -105,8 +112,8 @@ fun KeyringResetScreen(state: KeyringResetState, onAccepted: (Boolean) -> Unit, 
                     KeyringResetAction.UploadRecords -> if (state.recordUploadAvailable) Res.string.reset_records_upload
                         else Res.string.reset_records_preparing
                     KeyringResetAction.CheckConnection -> Res.string.reset_connect
-                    KeyringResetAction.CheckResult, KeyringResetAction.Retry -> Res.string.reset_retry
-                    KeyringResetAction.Refresh -> Res.string.reset_refresh
+                    // 다시 하는 동작의 이름은 모두 "다시 시도", 완료는 "확인"
+                    KeyringResetAction.CheckResult, KeyringResetAction.Retry, KeyringResetAction.Refresh -> Res.string.reset_retry
                     else -> Res.string.reset_close
                 }
                 // 선업로드 계약·펌웨어가 준비되기 전에는 클릭 콜백도 실행하지 않는다.
@@ -120,11 +127,21 @@ fun KeyringResetScreen(state: KeyringResetState, onAccepted: (Boolean) -> Unit, 
                     variant = if (action == KeyringResetAction.StartReset) AppButtonVariant.Danger else AppButtonVariant.Primary,
                     enabled = enabled,
                     onClick = { if (enabled) onAction(action) })
+                // 불러오는 중에는 실제 화면의 버튼 자리를 잠근 채로 둔다
+                else if (phase == KeyringResetStage.Loading) AppButton(stringResource(Res.string.reset_start), Modifier.fillMaxWidth(), enabled = false, onClick = {})
                 if (phase == KeyringResetStage.Ready || phase == KeyringResetStage.Confirm) AppButton(stringResource(Res.string.reset_cancel), Modifier.fillMaxWidth(),
                     variant = AppButtonVariant.Secondary, onClick = { onAction(KeyringResetAction.Cancel) })
             }
         }
     }
+}
+
+/** 진행 중 · 연결 필요의 제목 + 안내 한 줄 */
+@Composable
+private fun ResetHeadline(title: String, help: String) {
+    Text(title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold,
+        textAlign = TextAlign.Center, modifier = Modifier.semantics { heading() })
+    Text(help, color = AppColors.TextSecondary, textAlign = TextAlign.Center)
 }
 
 /** 미전송 기록은 실제 조회 전까지 미확인으로 남긴다. Preview의 개수는 서버 결과가 아니다. */

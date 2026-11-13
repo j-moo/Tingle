@@ -3,17 +3,8 @@
     <string name="chat_list_title">채팅</string>
     <string name="chat_list_heading">인연을 대화로\n이어가 보세요</string>
     <string name="chat_list_intro">채팅방은 7일 뒤 종료돼요.\n종료되면 대화를 다시 볼 수 없어요.</string>
-    <string name="chat_list_loading">대화 목록을 불러오고 있어요</string>
-    <string name="chat_list_loading_help">이용할 수 있는 대화방을\n확인하고 있어요.</string>
-    <string name="chat_list_failed">대화 목록을 불러오지 못했어요</string>
-    <string name="chat_list_failed_help">화면을 아래로 당겨\n다시 불러와 주세요.</string>
-    <string name="chat_list_refresh">새로고침</string>
-    <string name="chat_list_refresh_failed">최신 목록을 확인하지 못했어요.\n아래로 당겨 다시 불러와 주세요.</string>
-    <string name="chat_list_no_verified">확인할 수 있는 목록이 없어요</string>
-    <string name="chat_list_no_verified_help">화면을 아래로 당겨\n다시 불러와 주세요.</string>
+    <string name="chat_list_refresh_failed">최신 목록을 확인하지 못했어요</string>
     <string name="chat_list_empty">진행 중인 대화가 없어요</string>
-    <string name="chat_list_empty_help">서로 제안을 수락하면\n대화를 시작할 수 있어요.</string>
-    <string name="chat_list_more_retry">추가 대화 다시 불러오기</string>
     <string name="chat_list_home">홈</string>
     <string name="chat_list_proposals">제안</string>
     <string name="chat_list_profile">마이</string>
@@ -23,6 +14,4 @@
     <string name="chat_list_new">새 메시지</string>
     <string name="chat_list_message_unknown">마지막 메시지를 확인할 수 없어요.</string>
     <string name="chat_list_first_message">첫 인사를 건네 보세요</string>
-    <string name="chat_list_partial_empty">불러온 목록에 대화가 없어요</string>
-    <string name="chat_list_partial_empty_help">다음 대화를 확인하고 있어요.</string>
 </resources>

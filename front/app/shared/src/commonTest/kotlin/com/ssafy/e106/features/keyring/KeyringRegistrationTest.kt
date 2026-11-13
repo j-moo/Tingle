@@ -236,14 +236,15 @@ class KeyringRegistrationTest {
         gate.complete(Unit); runCurrent()
         assertEquals(2L, m.state.value.owner); assertNull(m.state.value.pending); assertNull(m.state.value.confirmed)
     }
-    @Test fun serverFiveHundredKeepsRequestButExplicitProofRejectionAllowsRestart() = runTest(dispatcher) {
+    @Test fun serverFiveHundredKeepsRequestButExplicitProofRejectionClearsIt() = runTest(dispatcher) {
         val server = RegistrationServer(); val m = model(server); runCurrent()
         server.onSend = { ApiResult.Fail(AppError.Server(503, "SERVICE_UNAVAILABLE", "retry")) }
         m.start("XIAO-test") { proofBody(it) }; runCurrent(); m.restart(); runCurrent()
         assertNotNull(m.state.value.pending); assertFalse(m.state.value.canRestart)
         server.onSend = { ApiResult.Fail(AppError.Server(422, "INVALID_DEVICE_PROOF", "proof")) }
-        m.retry { error("No new proof") }; runCurrent(); assertTrue(m.state.value.canRestart)
-        m.restart(); runCurrent(); assertNull(m.state.value.pending)
+        // 증명 거절은 다시 보내도 같다. "다시 시작"을 누르지 않아도 기록을 지워 다음 시도가 새 요청으로 시작된다
+        m.retry { error("No new proof") }; runCurrent()
+        assertNull(m.state.value.pending); assertFalse(m.state.value.canRestart); assertNotNull(m.state.value.error)
     }
     @Test fun boundDeviceRejectionAllowsExplicitRestartWithAnotherBoard() = runTest(dispatcher) {
         val server = RegistrationServer(); val prefs = RegistrationPrefs(); val m = model(server, prefs); runCurrent()

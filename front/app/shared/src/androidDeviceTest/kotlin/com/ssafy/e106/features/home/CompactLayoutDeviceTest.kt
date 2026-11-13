@@ -87,7 +87,7 @@ class CompactLayoutTestActivity : ComponentActivity() {
                                 "작은 화면에서도 긴 질문과 마지막 응답을 확인할 수 있나요?",
                                 (1..6).map { SurveyOption("$it", "검증 선택지 $it") },
                                 answer = selected, saveState = SurveySaveState.Saved),
-                                { selected = it }, {}, {}, {})
+                                { selected = it }, {}, {})
                             else -> ChatConversationScreen(ChatConversationState(ConversationLoad.Active,
                                 nickname = "긴 이름을 사용하는 상대방", canRead = true, canSend = true, draft = draft,
                                 messages = listOf(ConversationMessage("1", false, "확인할 최근 메시지"))),

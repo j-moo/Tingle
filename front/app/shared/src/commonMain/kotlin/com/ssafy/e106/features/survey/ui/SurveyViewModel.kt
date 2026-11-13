@@ -34,6 +34,8 @@ data class SurveyUiState(
     val serverDraftId: Long? = null,
     // null은 적용 여부 미확인이다. 분석 성공만 보고 매칭에 적용됐다고 표시하지 않는다.
     val analysisApplied: Boolean? = null,
+    /** 아직 서버에 저장되지 않은 답(문항 → 보낼 값). 넣은 순서대로 뒤에서 보내고, 저장되면 뺀다 */
+    val pending: Map<String, PendingAnswer> = emptyMap(),
 
 ) {
     val inputBlocked get() = busy || changingSession || exitRequested
@@ -41,12 +43,19 @@ data class SurveyUiState(
     val questionScreen get() = question?.screen(definition!!.questionCount, draft, saveState)
 }
 
+/** 보낼 답 하나. [value] 가 null 이면 답을 지우는 요청이다. 다른 회차로 바뀌면 [sessionId] 가 달라 버린다 */
+data class PendingAnswer(val sessionId: Long, val value: JsonElement?)
+
 class SurveyAccess(private val development: Boolean = false) {
     fun allowed(s: Session.SignedIn) = s.isReady || s.status == OnboardingStatus.SURVEY_REQUIRED ||
         (development && s.status == OnboardingStatus.KEYRING_REQUIRED)
 }
 
-/** 한 화면에서 저장 요청은 한 개씩 처리한다. 응답/지연 작업은 로그인 세대와 화면 수명에 묶는다. */
+/**
+ * 답 저장은 화면을 막지 않는다: 고른 답을 줄 세워 두고 뒤에서 한 개씩 보내며, 실패하면 간격을 늘려 가며 계속 다시 보낸다.
+ * 사용자는 저장을 기다리지 않고 다음 문항으로 넘어갈 수 있다. 제출은 줄이 다 비워진 뒤에만 한다.
+ * 그 밖의 요청(불러오기 · 제출 · 분석)은 한 개씩 처리한다. 응답/지연 작업은 로그인 세대와 화면 수명에 묶는다.
+ */
 class SurveyViewModel(
     private val repository: SurveyRepository,
     private val sessions: SessionStore,
@@ -56,11 +65,13 @@ class SurveyViewModel(
     private val mutable = MutableStateFlow(SurveyUiState())
     val state = mutable.asStateFlow()
     private var work: Job? = null
+    private var sender: Job? = null
+    private var poller: Job? = null
     private var generation = 0
     init {
         viewModelScope.launch(start = CoroutineStart.UNDISPATCHED) {
             sessions.state.collect { value ->
-                work?.cancel(); generation++
+                work?.cancel(); sender?.cancel(); poller?.cancel(); generation++
                 mutable.value = SurveyUiState(owner = value as? Session.SignedIn)
             }
         }
@@ -79,16 +90,18 @@ class SurveyViewModel(
         }
     }
     fun leave() {
-        // 진행 중인 쓰기를 화면 이탈로 취소하면 서버의 늦은 저장과 다음 입력이 겹칠 수 있다.
+        // 제출 · 회차 전환 같은 쓰기(busy)는 화면 이탈로 취소하지 않는다. 서버의 늦은 처리와 다음 입력이 겹칠 수 있다.
+        // 답 저장 대기열은 busy 가 아니다: 나가면 못 보낸 답은 버리고(화면에 "저장 대기 N개"로 알린다) 늦은 응답은 generation 으로 무시한다
         if (mutable.value.busy) return
         // 실제 화면 이탈에서만 초기화한다. 재생성·ON_STOP에서는 호출하지 않는다.
-        work?.cancel(); generation++
+        work?.cancel(); sender?.cancel(); poller?.cancel(); generation++
         mutable.value = SurveyUiState(owner = mutable.value.owner)
     }
     fun requestLeave() { mutable.update { it.copy(exitRequested = true) } }
     fun beginChange(): Boolean {
         val s = mutable.value
-        if (s.busy || s.changingSession || s.exitRequested || s.owner != sessions.state.value) return false
+        // 보내지 못한 답이 남아 있는 동안에는 회차를 바꾸지 않는다(바꾸면 그 답을 버리게 된다)
+        if (s.busy || s.changingSession || s.exitRequested || s.pending.isNotEmpty() || s.owner != sessions.state.value) return false
         // 두 ViewModel 사이의 화면 인계 동안 기존 모델의 새 조회·쓰기를 차단한다.
         generation++
         mutable.update { it.copy(changingSession = true) }
@@ -264,7 +277,9 @@ class SurveyViewModel(
     }
     private fun select(index: Int) {
         val s = mutable.value; val q = s.definition?.questions?.getOrNull(index) ?: return
-        val value = s.session?.answers?.find { it.questionId == q.questionId }?.value
+        // 아직 보내지 못한 답이 있으면 그것이 최신이다
+        val queued = s.pending[q.questionId]
+        val value = if (queued != null) queued.value else s.session?.answers?.find { it.questionId == q.questionId }?.value
         mutable.update { it.copy(page = SurveyPage.Question, index = index, draft = q.answer(value),
             saveState = if (value == null) SurveySaveState.Unanswered else SurveySaveState.Saved, error = null,
             returnedToMissing = false) }
@@ -276,19 +291,19 @@ class SurveyViewModel(
     fun next() {
         val s = mutable.value
         if (s.inputBlocked || s.recoveryRequired || s.page != SurveyPage.Question || s.questionScreen?.canContinue != true) return
-        if (s.index + 1 < s.definition!!.questionCount) select(s.index + 1)
-        else if (s.session?.nextQuestionId == null && s.session?.answeredCount == s.definition.questionCount)
-            mutable.update { it.copy(page = SurveyPage.Review) }
-        else {
-            // 다른 기기에서 앞 답변이 삭제될 수 있다. 최신 저장 응답의 첫 미응답으로 돌아간다.
-            val missing = s.definition.questions.indexOfFirst { it.questionId == s.session?.nextQuestionId }
-            if (missing >= 0) { select(missing); mutable.update { it.copy(returnedToMissing = true) } }
-        }
+        if (s.index + 1 < s.definition!!.questionCount) { select(s.index + 1); return }
+        // 마지막 문항: 저장된 답 + 보내려고 줄 세운 답으로 빠진 문항을 찾는다(다른 기기에서 앞 답변이 삭제될 수 있다)
+        fun answered(id: String) = s.pending[id]?.let { it.value != null } ?: (s.session?.answers?.any { it.questionId == id } == true)
+        val missing = s.definition.questions.indexOfFirst { !answered(it.questionId) }
+        if (missing < 0) mutable.update { it.copy(page = SurveyPage.Review) }
+        else { select(missing); mutable.update { it.copy(returnedToMissing = true) } }
     }
 
     /** 완료 응답을 검증한 다음 분석을 요청한다. 제출 응답 유실은 GET 복구 후 사용자가 다시 진행한다. */
     fun submit() {
         val s = mutable.value
+        // 보내지 못한 답이 남아 있으면 제출하지 않는다(답이 빠진 채 제출되면 분석이 "답 부족"으로 끝난다)
+        if (s.pending.isNotEmpty()) return
         if (s.page != SurveyPage.Review || s.recoveryRequired || s.session?.status != "DRAFT" ||
             s.session.nextQuestionId != null || s.session.answeredCount != s.definition?.questionCount) return
         launch { userId, stamp ->
@@ -345,8 +360,31 @@ class SurveyViewModel(
                     result.missingQuestionIds.all { id -> s.definition!!.questions.any { it.questionId == id } })
                 mutable.update { it.copy(analysisResult = result, recoveryRequired = false, error = null) }
                 if (result.status == AnalysisStatus.SUCCEEDED) refreshStageInside(stamp)
+                else if (result.status == AnalysisStatus.PENDING) watchAnalysis(ref, stamp)
             }
             is ApiResult.Fail -> fail(response.error, stamp)
+        }
+    }
+    /**
+     * 분석은 서버에서 몇 초 뒤에 끝난다. 결과가 PENDING 인 동안 뒤에서 다시 조회해, 끝나면 버튼을 누르지 않아도 화면이 넘어가게 한다.
+     * 1분이 지나도 안 끝나면 멈추고 "분석 상태 확인" 버튼에 맡긴다. 화면을 나가거나 계정 · 회차가 바뀌면 멈춘다.
+     */
+    private fun watchAnalysis(ref: AnalysisReference, stamp: Int) {
+        if (poller?.isActive == true) return
+        poller = viewModelScope.launch {
+            repeat(POLL_LIMIT) {
+                delay(POLL_EVERY)
+                val s = mutable.value
+                if (!valid(stamp) || s.page != SurveyPage.Completed || s.analysisReference != ref ||
+                    s.analysisResult?.status != AnalysisStatus.PENDING) return@launch
+                if (s.busy) return@repeat                      // 사용자가 누른 조회 등 다른 작업이 도는 중이면 이번 차례는 건너뛴다
+                // 조회 실패는 화면에 올리지 않고 다음 차례에 다시 본다(결과 조회는 여러 번 불러도 안전하다)
+                val status = (repository.analysis(ref.resultId) as? ApiResult.Ok)?.value
+                    ?.takeIf { it.resultId == ref.resultId && it.sessionId == ref.sessionId }?.status
+                if (!valid(stamp)) return@launch
+                // 끝난 결과는 버튼과 같은 경로로 반영한다(응답 검증 · 가입 단계 재조회 포함)
+                if (status != null && status != AnalysisStatus.PENDING) { refreshAnalysis(); return@launch }
+            }
         }
     }
     /** 성공한 분석도 가입 완료를 뜻하지 않는다. 실제 서버의 다음 단계를 다시 읽는다. */
@@ -412,26 +450,51 @@ class SurveyViewModel(
         // 마지막 복수 선택 해제는 빈 배열을 보내지 않고 DELETE로 미응답을 만든다.
         val delete = answer is SurveyAnswer.Choices && answer.keys.isEmpty()
         val value = if (delete) null else q.wire(answer) ?: return
-        mutable.update { it.copy(draft = if (delete) null else answer, saveState = SurveySaveState.Saving) }
-        save(q.questionId, value)
+        // 고르는 즉시 화면에는 답한 것으로 보이고("다음"이 켜진다) 저장은 뒤에서 한다
+        mutable.update { it.copy(draft = if (delete) null else answer,
+            saveState = if (delete) SurveySaveState.Unanswered else SurveySaveState.Saved,
+            pending = it.pending - q.questionId + (q.questionId to PendingAnswer(s.session.sessionId, value))) }
+        flush()
     }
-    private fun save(questionId: String, value: JsonElement?) = launch { _, stamp ->
-        val s = mutable.value; val id = s.session!!.sessionId; val definition = s.definition!!
-        val result = if (value == null) repository.delete(id, questionId) else repository.save(id, questionId, value)
-        when (result) {
-            is ApiResult.Ok -> if (valid(stamp)) {
-                require(result.value.sessionId == id)
-                val received = result.value.checked(definition)
-                require(received.status == "DRAFT")
-                val stored = received.answers.find { it.questionId == questionId }?.value
-                require(if (value == null) stored == null else stored != null && sameAnswer(stored, value))
-                mutable.update { it.copy(session = received, draft = it.question!!.answer(stored),
-                    saveState = if (stored == null) SurveySaveState.Unanswered else SurveySaveState.Saved) }
-            }
-            is ApiResult.Fail -> if (valid(stamp)) mutable.update {
-                // 응답 유실도 실패 표시 후 GET으로 확인한다. 쓰기를 자동 반복하지 않는다.
-                it.copy(error = result.error, saveState = SurveySaveState.Failed, recoveryRequired = true)
+    /** 줄 세운 답을 한 개씩 보낸다. 실패하면 간격을 늘려 가며(1초 → 최대 15초) 계속 다시 보낸다. 같은 답을 다시 보내도 결과는 같다 */
+    private fun flush() {
+        if (sender?.isActive == true) return
+        val stamp = generation
+        sender = viewModelScope.launch {
+            var wait = FIRST_RETRY
+            while (valid(stamp)) {
+                val s = mutable.value
+                val (questionId, item) = s.pending.entries.firstOrNull()?.toPair() ?: break
+                val session = s.session; val definition = s.definition
+                // 회차가 바뀌었으면 예전 회차의 답은 보내지 않는다
+                if (session == null || definition == null || session.sessionId != item.sessionId || session.status != "DRAFT") {
+                    mutable.update { it.copy(pending = it.pending - questionId) }; continue
+                }
+                val result: ApiResult<SurveySession> = try {
+                    if (item.value == null) repository.delete(item.sessionId, questionId) else repository.save(item.sessionId, questionId, item.value)
+                } catch (e: CancellationException) { throw e } catch (e: Exception) { ApiResult.Fail(AppError.Unknown(e)) }
+                if (!valid(stamp)) break
+                val received = (result as? ApiResult.Ok)?.value?.takeIf { it.sessionId == item.sessionId }
+                    ?.let { runCatching { it.checked(definition) }.getOrNull() }?.takeIf { it.status == "DRAFT" }
+                if (received != null) {
+                    wait = FIRST_RETRY
+                    // 보내는 사이 같은 문항의 답을 바꿨으면 줄에 남겨 두고 새 값을 다시 보낸다
+                    mutable.update { now -> now.copy(session = received,
+                        pending = if (now.pending[questionId] == item) now.pending - questionId else now.pending) }
+                } else {
+                    val error = (result as? ApiResult.Fail)?.error
+                    // 다시 보내도 소용없는 거절(회차가 이미 제출됨 · 값이 맞지 않음 등)은 반복하지 않고 서버 상태를 다시 불러오게 한다
+                    // 성공 응답인데 이 회차의 작성 중 상태가 아니면(다른 기기에서 제출됨 등) 같은 요청을 반복해도 같다
+                    if (result is ApiResult.Ok || error == AppError.SessionExpired ||
+                        (error is AppError.Server && error.status in 400..499 && error.status != 408 && error.status != 429)) {
+                        mutable.update { it.copy(pending = emptyMap(), error = error ?: AppError.Unknown(IllegalStateException("survey save response mismatch")), saveState = SurveySaveState.Failed, recoveryRequired = true) }
+                        break
+                    }
+                    delay(wait); wait = (wait * 2).coerceAtMost(LAST_RETRY)
+                }
             }
         }
     }
+    private companion object { const val FIRST_RETRY = 1_000L; const val LAST_RETRY = 15_000L
+        const val POLL_EVERY = 2_500L; const val POLL_LIMIT = 24 }
 }

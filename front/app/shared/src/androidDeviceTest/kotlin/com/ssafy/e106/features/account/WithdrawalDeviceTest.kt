@@ -30,6 +30,8 @@ class WithdrawalTestActivity : ComponentActivity() {
         val op = WithdrawalOperation("11111111-1111-4111-8111-111111111111", "PREPARED",
             "2026-11-06T00:00:00Z", "2026-11-06T00:30:00Z", externalCleanupStatus = "NOT_STARTED", devicePermanentlyBlocked = false)
         val example = when (intent.getStringExtra("mode")) {
+            "loading" -> WithdrawalState()
+            "unavailable" -> WithdrawalState(stage = WithdrawalStage.Unavailable)
             "unknown" -> WithdrawalState().prepared(op).resultUnknown()
             "blocked" -> WithdrawalState().checked(WithdrawalEligibility(false, 1, 1,
                 listOf("WITHDRAWAL_KEYRING_REGISTERED", "WITHDRAWAL_RESET_PENDING"), "2026-11-06T00:00:00Z"))
@@ -72,7 +74,9 @@ class WithdrawalDeviceTest {
     }
     @Test fun unknownResultOffersOnlyRecoveryAndBlockedHasNoLostMvpAction() {
         open("unknown").use {
-            compose.onNodeWithText("기존 탈퇴 결과 확인").performScrollTo().assertIsDisplayed()
+            // 결과를 모를 때는 새로 보내지 않고 "다시 확인"만 둔다. 기존 요청 결과부터 확인한다는 안내 글도 남아 있어야 한다
+            compose.onNodeWithText("다시 확인").performScrollTo().assertIsDisplayed()
+            compose.onNodeWithText("기존 요청의 결과를 먼저 확인해요", substring = true).performScrollTo().assertIsDisplayed()
             compose.onNodeWithText("동의하고 회원탈퇴").assertDoesNotExist()
         }
         open("blocked").use {
@@ -85,8 +89,20 @@ class WithdrawalDeviceTest {
         open("complete", 640, 320).use {
             compose.onNodeWithText("사진 파일 삭제는 아직 처리 중", substring = true).performScrollTo().assertIsDisplayed()
             compose.onNodeWithText("2026-11-09T00:01:00Z", substring = true).performScrollTo().assertIsDisplayed()
-            compose.onNodeWithText("시작 화면으로").performScrollTo().assertIsDisplayed()
+            compose.onNodeWithText("확인").performScrollTo().assertIsDisplayed()
             compose.onNodeWithText("추가 파일 정리가 완료됐어요.").assertDoesNotExist()
+        }
+    }
+    @Test fun loadingShowsDisabledButtonAndFailedCheckOffersRetryWithoutSpinnerText() {
+        open("loading").use {
+            // 확인 중에는 "…하고 있어요" 글 대신 뼈대를 두고, 버튼은 실제 자리에 막아 둔다
+            compose.onNodeWithText("탈퇴 안내 확인하기").performScrollTo().assertIsNotEnabled()
+            compose.onNodeWithText("확인하고 있어요", substring = true).assertDoesNotExist()
+        }
+        open("unavailable").use {
+            compose.onNodeWithText("탈퇴 가능 여부를 확인하지 못했어요").performScrollTo().assertIsDisplayed()
+            compose.onNodeWithText("다시 시도").performScrollTo().assertIsDisplayed().assertIsEnabled()
+            compose.onNodeWithText("탈퇴 안내 확인하기").assertDoesNotExist()
         }
     }
 }

@@ -15,7 +15,6 @@
     <string name="survey_saving">답변 저장 중…</string>
     <string name="survey_saved">답변을 저장했어요.</string>
     <string name="survey_save_failed">답변을 저장하지 못했어요. 선택한 답변으로 다시 시도해 주세요.</string>
-    <string name="survey_retry_save">저장 다시 시도</string>
     <string name="survey_previous">이전 문항</string>
     <string name="survey_next">다음</string>
     <string name="survey_review_submit">제출 단계로</string>
@@ -44,4 +43,6 @@
     <string name="survey_complete_body">답변을 바탕으로 매칭에 사용할 결과를 준비했어요. 이 결과가 매칭에 반영돼요. 키링에 반영되었는지는 연결·동기화 상태에서 확인할 수 있어요.</string>
     <string name="survey_previous_result">새 결과가 준비될 때까지 기존 검사 결과로 매칭을 유지해요.</string>
     <string name="survey_continue">계속하기</string>
+    <string name="survey_pending">저장 대기 %1$d개</string>
+    <string name="survey_pending_submit">아직 저장되지 않은 답이 %1$d개 있어요. 저장을 다시 시도하고 있어요.</string>
 </resources>

@@ -2,14 +2,8 @@
 <resources>
     <string name="chat_conversation_title">대화</string>
     <string name="chat_conversation_menu">더보기</string>
-    <string name="chat_conversation_loading">대화를 불러오고 있어요</string>
-    <string name="chat_conversation_loading_help">대화방과 메시지를\n확인하고 있어요.</string>
     <string name="chat_conversation_closed">종료된 대화방이에요</string>
-    <string name="chat_conversation_closed_help">이 대화방의 메시지는\n더 이상 확인할 수 없어요.</string>
-    <string name="chat_conversation_failed">대화를 불러오지 못했어요</string>
-    <string name="chat_conversation_failed_help">연결 상태를 확인하고\n다시 시도해 주세요.</string>
     <string name="chat_conversation_back">채팅 목록으로</string>
-    <string name="chat_conversation_retry">대화 다시 불러오기</string>
     <string name="chat_conversation_empty">첫 인사를 건네 보세요</string>
     <string name="chat_conversation_empty_help">먼저 인사를 건네 보세요.</string>
     <string name="chat_conversation_me">나</string>

@@ -21,10 +21,18 @@ fun HelpGuideScreen(state: HelpGuideState, onAction: (HelpGuideAction) -> Unit, 
         HelpGuideKind.Support -> Res.string.account_support
         HelpGuideKind.Correction -> Res.string.account_correction
     })
+    // 처음 불러오기 실패: 화면 전체를 상태 화면으로(당기거나 작은 "다시 시도"). 화면이 오류 종류를 받지 않아 "알 수 없는 오류" 모양이다
+    if (state.stage == HelpGuideStage.LoadFailed) {
+        StateScreen(StateKind.Unknown, stringResource(Res.string.help_failed), modifier, barTitle = title,
+            onBack = { onAction(HelpGuideAction.Back) }, onRefresh = { onAction(HelpGuideAction.Reload) })
+        return
+    }
+    val openLabel = stringResource(if (state.isInquiry) Res.string.help_open_channel else Res.string.help_open_document)
     Surface(modifier.fillMaxSize(), color = AppColors.Background) {
         Column(Modifier.fillMaxSize().safeDrawingPadding()) {
             AppTopBar(title, onBack = { onAction(HelpGuideAction.Back) })
-            Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.TopCenter) {
+            // 다시 받는 동안은 주소 자리가 뼈대로 바뀌어 알리므로 고리는 따로 돌리지 않는다
+            PullDownRefreshBox(false, { onAction(HelpGuideAction.Reload) }, Modifier.weight(1f).fillMaxWidth()) {
                 Column(Modifier.widthIn(max = 640.dp).fillMaxWidth().verticalScroll(rememberScrollState()).padding(screenPaddingValues()),
                     verticalArrangement = Arrangement.spacedBy(AppSpacing.Large)) {
                     Text(stringResource(when (state.kind) {
@@ -45,25 +53,25 @@ fun HelpGuideScreen(state: HelpGuideState, onAction: (HelpGuideAction) -> Unit, 
                     }
                     when {
                         state.stage == HelpGuideStage.Loading -> {
-                            CircularProgressIndicator()
-                            Text(stringResource(Res.string.help_loading))
+                            // 문서 제목 · 버전 · 주소 자리만 뼈대. 여는 버튼은 실제 자리에 막아 둔다
+                            SkeletonGroup(spacing = AppSpacing.Medium) {
+                                SkeletonBone(Modifier.fillMaxWidth(0.5f), height = 20.dp)
+                                SkeletonBone(Modifier.fillMaxWidth(0.3f), height = 12.dp)
+                                SkeletonBone(Modifier.fillMaxWidth(0.8f), height = 12.dp)
+                            }
+                            AppButton(openLabel, Modifier.fillMaxWidth(), enabled = false, onClick = {})
                         }
-                        state.stage == HelpGuideStage.LoadFailed -> {
-                            StatusCard(stringResource(Res.string.help_failed), stringResource(Res.string.help_failed_body))
-                            AppButton(stringResource(Res.string.help_reload), Modifier.fillMaxWidth(), onClick = { onAction(HelpGuideAction.Reload) })
-                        }
-                        state.openUrl == null -> {
-                            StatusCard(stringResource(if (state.isInquiry) Res.string.help_channel_missing else Res.string.help_document_missing),
-                                stringResource(Res.string.help_missing_body))
-                        }
+                        // 연결할 주소가 아직 없음(내용 없음): 안내 글은 그대로 두고 짧은 제목 한 줄
+                        state.openUrl == null -> StateView(StateKind.Empty,
+                            stringResource(if (state.isInquiry) Res.string.help_channel_missing else Res.string.help_document_missing))
                         else -> {
                             state.documentTitle?.takeIf { it.isNotBlank() }?.let { Text(it, style = MaterialTheme.typography.titleMedium) }
                             state.version?.takeIf { it.isNotBlank() }?.let { Text(stringResource(Res.string.help_version, it), style = MaterialTheme.typography.bodySmall) }
                             Text(state.openUrl.orEmpty(), style = MaterialTheme.typography.bodySmall)
-                            if (state.stage == HelpGuideStage.OpenFailed) {
-                                StatusCard(stringResource(Res.string.help_open_failed), stringResource(Res.string.help_open_failed_body))
-                            }
-                            AppButton(stringResource(if (state.isInquiry) Res.string.help_open_channel else Res.string.help_open_document),
+                            // 열기 실패: 버튼 바로 위에 빨간 한 줄, 버튼 이름은 "다시 시도"
+                            val openFailed = state.stage == HelpGuideStage.OpenFailed
+                            if (openFailed) InlineError(stringResource(Res.string.help_open_failed))
+                            AppButton(if (openFailed) stringResource(Res.string.state_retry) else openLabel,
                                 Modifier.fillMaxWidth(), onClick = { if (state.openUrl != null) onAction(HelpGuideAction.Open) })
                             Text(stringResource(if (state.isInquiry) Res.string.help_external_inquiry else Res.string.help_external_document),
                                 style = MaterialTheme.typography.bodySmall, color = AppColors.TextSecondary)

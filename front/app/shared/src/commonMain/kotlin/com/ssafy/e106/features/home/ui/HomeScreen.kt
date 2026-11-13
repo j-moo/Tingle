@@ -26,6 +26,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
+import com.ssafy.e106.core.network.AppError
 import com.ssafy.e106.core.ui.components.*
 import com.ssafy.e106.core.ui.theme.*
 import com.ssafy.e106.features.keyring.ui.OwnedKeyringLiveStatus
@@ -49,7 +50,7 @@ fun HomeScreen(state: HomeState, onMatchingChange: (Boolean) -> Unit, onAction: 
     onSaveKeyringAlias: (suspend (Long, String) -> Boolean)? = null,
     keyringStatus: @Composable () -> OwnedKeyringLiveStatus? = { null },
     connectedKeyringId: Long? = null, checkingKeyringStatus: Boolean = false,
-    keyringPublicName: (@Composable (Long, String) -> Unit)? = null) {
+    keyringPublicName: (@Composable (Long, String) -> Unit)? = null, error: AppError? = null) {
     val refreshing = state.refreshing || checkingKeyringStatus
     val refreshLabel = stringResource(Res.string.home_refresh)
     val refresh = {
@@ -70,16 +71,13 @@ fun HomeScreen(state: HomeState, onMatchingChange: (Boolean) -> Unit, onAction: 
                         verticalArrangement = Arrangement.spacedBy(AppSpacing.Large, Alignment.CenterVertically),
                         horizontalAlignment = Alignment.CenterHorizontally) {
                         when (state.load) {
-                            HomeLoadState.Loading -> {
-                                CircularProgressIndicator(color = AppColors.SelectionBorder)
-                                Text(stringResource(Res.string.home_loading), style = MaterialTheme.typography.titleMedium, textAlign = TextAlign.Center)
+                            // 뼈대: 큰 원 · 문구 한 줄 · 내 키링 한 장 자리
+                            HomeLoadState.Loading -> SkeletonGroup {
+                                SkeletonBone(Modifier.align(Alignment.CenterHorizontally), width = 180.dp, height = 180.dp, shape = CircleShape)
+                                SkeletonBone(Modifier.align(Alignment.CenterHorizontally), width = 200.dp, height = 28.dp)
+                                SkeletonBone(height = AppSpacing.InputMinHeight, shape = RoundedCornerShape(16.dp))
                             }
-                            HomeLoadState.Failed -> {
-                                Text(stringResource(Res.string.home_failed), style = MaterialTheme.typography.titleLarge, textAlign = TextAlign.Center)
-                                Text(stringResource(Res.string.home_failed_help), style = MaterialTheme.typography.bodyMedium,
-                                    color = AppColors.TextSecondary, textAlign = TextAlign.Center)
-                                AppButton(stringResource(Res.string.home_retry), Modifier.fillMaxWidth(), onClick = refresh)
-                            }
+                            HomeLoadState.Failed -> StateView(error.stateKind(), error.stateTitle(), onRetry = refresh)
                             HomeLoadState.Ready -> {
                                 MatchingPower(state, onMatchingChange, onOpenMatchingSettings)
                                 KeyringSummary(state, connectedKeyringId, keyringStatus, onSaveKeyringAlias, keyringPublicName)

@@ -1,9 +1,6 @@
 <resources>
     <string name="account_title">내 정보</string>
-    <string name="account_loading">내 정보를 불러오고 있어요</string>
     <string name="account_failed">내 정보를 불러오지 못했어요</string>
-    <string name="account_failed_help">잠시 후 다시 시도해 주세요.\n아래 메뉴는 계속 이용할 수 있어요.</string>
-    <string name="account_retry">다시 불러오기</string>
     <string name="account_name_unknown">닉네임 확인 필요</string>
     <string name="account_survey">성향테스트</string>
     <string name="account_matching">매칭 설정</string>

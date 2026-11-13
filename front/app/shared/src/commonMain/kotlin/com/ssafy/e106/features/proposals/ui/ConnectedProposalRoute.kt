@@ -1,23 +1,21 @@
 package com.ssafy.e106.features.proposals.ui
 
-import androidx.compose.foundation.layout.*
-import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.ui.Modifier
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.repeatOnLifecycle
 import com.ssafy.e106.core.auth.Session
-import com.ssafy.e106.core.network.AppError
 import com.ssafy.e106.core.push.PushEvents
 import com.ssafy.e106.core.push.PushTarget
-import com.ssafy.e106.core.ui.components.AppButton
-import com.ssafy.e106.core.ui.theme.AppSpacing
+import com.ssafy.e106.core.ui.components.NoticeBar
+import com.ssafy.e106.core.ui.components.StateAction
+import com.ssafy.e106.core.ui.components.StateKind
 import com.ssafy.e106.features.profile.ui.ProfileBackHandler
 import com.ssafy.e106.features.proposals.reason.MatchReasonViewModel
+import com.ssafy.e106.features.safety.ui.StateNoteScreen
 import com.ssafy.e106.resources.*
 import org.jetbrains.compose.resources.StringResource
 import org.jetbrains.compose.resources.stringResource
@@ -74,64 +72,57 @@ fun ConnectedProposalRoute(session: Session.SignedIn, onHome: () -> Unit, onProf
     }
     // 저장소 복구 전에는 목록/푸시가 새 결정을 열지 않는다. 나가기는 허용하고 재조회만 제공한다.
     if (state.storageIssue) {
-        Column(Modifier.fillMaxSize().statusBarsPadding().padding(AppSpacing.Medium)) {
-            Text(stringResource(Res.string.proposals_storage_unavailable))
-            AppButton(stringResource(Res.string.proposals_storage_retry), enabled = !state.busy, onClick = model::resume)
-            TextButton(enabled = !state.busy, onClick = { leave(onHome) }) { Text(stringResource(Res.string.proposals_storage_back)) }
-        }
+        StateNoteScreen(StateKind.Unknown, stringResource(Res.string.proposals_storage_unavailable), stringResource(Res.string.proposals_storage_note),
+            primary = StateAction(stringResource(Res.string.state_retry), enabled = !state.busy, onClick = model::resume),
+            secondary = StateAction(stringResource(Res.string.proposals_storage_back), enabled = !state.busy) { leave(onHome) })
         return
     }
-    Column(Modifier.fillMaxSize()) {
-        state.error?.let { error ->
-            Text(if (error is AppError.OnboardingRequired) stringResource(Res.string.proposals_stage_required) else error.message,
-                Modifier.statusBarsPadding().padding(AppSpacing.Medium), color = MaterialTheme.colorScheme.error)
-        }
-        if (state.pending != null && state.page != ProposalPageMode.Result)
-            AppButton(stringResource(Res.string.proposals_recover_pending), enabled = !state.busy, onClick = model::recover)
-        Box(Modifier.weight(1f)) {
-            when (state.page) {
-                // 채팅으로 넘어가는 순간엔 비어 있는 목록을 그리지 않는다
-                ProposalPageMode.List -> if (state.openChat == null) ProposalListScreen(state.list, model::open, onAction = { action ->
-                    when (action) {
-                        ProposalListAction.Refresh -> model.refresh()
-                        ProposalListAction.LoadMore -> model.more()
-                        ProposalListAction.Home -> leave(onHome)
-                        ProposalListAction.Profile -> leave(onProfile)
-                        ProposalListAction.Chats -> leave(onChats)
-                    }
-                }, tab = listTab, onTab = { listTab = it })
-                ProposalPageMode.Profile -> state.review?.let { review ->
-                    // 코드값을 번역 리소스로 바꾸되, 수락은 원래 서버 버전/스냅샷으로 수행한다.
-                    val translated = review.latest?.let { snapshot -> snapshot.copy(profile = snapshot.profile.copy(
-                        reason = if (reason.context == snapshot.context) reason.view else MatchReasonState(),
-                        profile = snapshot.profile.profile?.localized())) }
-                    ProposalReviewScreen(review.copy(latest = translated, confirmation = review.confirmation?.let {
-                        it.copy(snapshot = translated ?: it.snapshot)
-                    }), canLeave = !navigationBlocked) { action -> when (action) {
-                        ProposalReviewAction.Reload -> model.reloadProfile()
-                        ProposalReviewAction.Back -> if (!navigationBlocked) model.refresh()
-                        ProposalReviewAction.CheckResult -> model.checkResult()
-                        ProposalReviewAction.Dismiss -> model.dismiss()
-                        is ProposalReviewAction.Ask -> model.ask(action.confirmation.choice, action.confirmation.snapshot.context)
-                        is ProposalReviewAction.Submit -> model.submit(action.confirmation.snapshot.context)
-                        is ProposalReviewAction.ProfileAction -> when (action.action) {
-                            ProposalProfileAction.RetryPhoto, ProposalProfileAction.Reload -> model.reloadProfile()
-                            ProposalProfileAction.CheckReason -> reasonModel.check()
-                            ProposalProfileAction.RetryReason -> reasonModel.check(retry = true)
-                            else -> Unit
-                        }
-                    } }
-                }
-                ProposalPageMode.Result -> state.result?.let { result ->
-                    // 자동 갱신 중에도 목록 복귀는 허용한다. 결과 재조회와 결정 관련 동작만 중복 요청을 막는다.
-                    ProposalDecisionScreen(if (state.busy && !state.refreshingResult) result.copy(stage = ProposalDecisionStage.Checking) else result, onAction = { action ->
-                        when (action) {
-                            ProposalDecisionAction.CheckResult -> if (!state.busy) model.checkResult()
-                            ProposalDecisionAction.ProposalList -> if (!navigationBlocked) model.refresh()
-                        }
-                    }, canLeave = !navigationBlocked)
-                }
+    // 오류는 화면 위 빨간 글 대신 각 화면의 상태 화면 · 아래 띠가 알린다
+    when (state.page) {
+        // 채팅으로 넘어가는 순간엔 비어 있는 목록을 그리지 않는다
+        ProposalPageMode.List -> if (state.openChat == null) ProposalListScreen(state.list, model::open, onAction = { action ->
+            when (action) {
+                ProposalListAction.Refresh -> model.refresh()
+                ProposalListAction.LoadMore -> model.more()
+                ProposalListAction.Home -> leave(onHome)
+                ProposalListAction.Profile -> leave(onProfile)
+                ProposalListAction.Chats -> leave(onChats)
             }
+        }, tab = listTab, onTab = { listTab = it }, error = state.error, notice = {
+            // 이전에 보낸 선택의 결과를 모르면 새 제안을 열지 않는다. 결과 확인은 아래 띠에서 한다
+            if (state.pending != null) NoticeBar(stringResource(Res.string.proposals_recover_pending),
+                actionText = stringResource(Res.string.proposal_decision_check), actionEnabled = !state.busy, onAction = model::recover)
+        })
+        ProposalPageMode.Profile -> state.review?.let { review ->
+            // 코드값을 번역 리소스로 바꾸되, 수락은 원래 서버 버전/스냅샷으로 수행한다.
+            val translated = review.latest?.let { snapshot -> snapshot.copy(profile = snapshot.profile.copy(
+                reason = if (reason.context == snapshot.context) reason.view else MatchReasonState(),
+                profile = snapshot.profile.profile?.localized())) }
+            ProposalReviewScreen(review.copy(latest = translated, confirmation = review.confirmation?.let {
+                it.copy(snapshot = translated ?: it.snapshot)
+            }), canLeave = !navigationBlocked, error = state.error) { action -> when (action) {
+                ProposalReviewAction.Reload -> model.reloadProfile()
+                ProposalReviewAction.Back -> if (!navigationBlocked) model.refresh()
+                ProposalReviewAction.CheckResult -> model.checkResult()
+                ProposalReviewAction.Dismiss -> model.dismiss()
+                is ProposalReviewAction.Ask -> model.ask(action.confirmation.choice, action.confirmation.snapshot.context)
+                is ProposalReviewAction.Submit -> model.submit(action.confirmation.snapshot.context)
+                is ProposalReviewAction.ProfileAction -> when (action.action) {
+                    ProposalProfileAction.RetryPhoto, ProposalProfileAction.Reload -> model.reloadProfile()
+                    ProposalProfileAction.CheckReason -> reasonModel.check()
+                    ProposalProfileAction.RetryReason -> reasonModel.check(retry = true)
+                    else -> Unit
+                }
+            } }
+        }
+        ProposalPageMode.Result -> state.result?.let { result ->
+            // 자동 갱신 중에도 목록 복귀는 허용한다. 결과 재조회와 결정 관련 동작만 중복 요청을 막는다.
+            ProposalDecisionScreen(if (state.busy && !state.refreshingResult) result.copy(stage = ProposalDecisionStage.Checking) else result, onAction = { action ->
+                when (action) {
+                    ProposalDecisionAction.CheckResult -> if (!state.busy) model.checkResult()
+                    ProposalDecisionAction.ProposalList -> if (!navigationBlocked) model.refresh()
+                }
+            }, canLeave = !navigationBlocked)
         }
     }
 }

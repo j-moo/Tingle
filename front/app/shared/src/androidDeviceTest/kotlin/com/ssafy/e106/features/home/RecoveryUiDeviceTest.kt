@@ -126,35 +126,81 @@ class RecoveryUiDeviceTest {
     @Test fun emptyProposalPageFailureOffersRetryAndFinalEmptyIsDistinct() {
         launch("proposals").use { scenario ->
             scenario.onActivity { it.proposal = ProposalListState(ProposalListLoad.Ready, page = ProposalPageState.Failed) }
-            tap("추가 제안 다시 불러오기")
+            // 목록 끝 한 줄: "더 불러오지 못했어요 · 다시 시도". 다음 쪽이 남았으면 비었다고 단정하지 않는다
+            compose.onNodeWithText("더 불러오지 못했어요").assertExists()
+            compose.onNodeWithText("아직 받은 제안이 없어요").assertDoesNotExist()
+            tap("다시 시도")
             scenario.onActivity {
                 assertEquals(listOf(ProposalListAction.LoadMore), it.actions)
                 it.proposal = ProposalListState(ProposalListLoad.Ready)
             }
             compose.onNodeWithText("아직 받은 제안이 없어요").assertExists()
-            compose.onNodeWithText("추가 제안 다시 불러오기").assertDoesNotExist()
+            compose.onNodeWithText("더 불러오지 못했어요").assertDoesNotExist()
+        }
+    }
+    // 보던 목록에서 새로고침이 실패하면 목록은 그대로 두고 아래 띠의 "다시 시도"로 첫 쪽부터 다시 받는다
+    @Test fun proposalRefreshFailureKeepsListAndOffersRetryInNoticeBar() {
+        launch("proposals").use { scenario ->
+            scenario.onActivity { it.proposal = ProposalListState(ProposalListLoad.Ready, listOf(ProposalListItem(1, "하늘", 27)), refreshFailed = true) }
+            compose.onNodeWithText("하늘").assertExists()
+            compose.onNodeWithText("최신 목록을 확인하지 못했어요").assertIsDisplayed()
+            tap("다시 시도")
+            scenario.onActivity { assertEquals(listOf(ProposalListAction.Refresh), it.actions) }
+        }
+    }
+    // 다 받은 목록의 끝에는 작은 글 한 줄, 받는 중에는 뼈대(화면 리더에는 한 문장)
+    @Test fun proposalListShowsEndLineOnlyWhenFullyLoaded() {
+        launch("proposals").use { scenario ->
+            val item = ProposalListItem(1, "하늘", 27)
+            scenario.onActivity { it.proposal = ProposalListState(ProposalListLoad.Ready, listOf(item), ProposalPageState.Loading) }
+            compose.onNodeWithText("마지막이에요").assertDoesNotExist()
+            compose.onNodeWithContentDescription("불러오고 있어요").assertExists()
+            scenario.onActivity { it.proposal = ProposalListState(ProposalListLoad.Ready, listOf(item)) }
+            compose.onNodeWithText("마지막이에요").assertExists()
+            scenario.onActivity { assertTrue(it.actions.isEmpty()) }
         }
     }
     @Test fun initialProposalFailureRetriesWithoutShowingEmptySuccess() {
         launch("proposals").use { scenario ->
             scenario.onActivity { it.proposal = ProposalListState(ProposalListLoad.Failed) }
             compose.onNodeWithText("아직 받은 제안이 없어요").assertDoesNotExist()
-            tap("다시 불러오기")
-            compose.onNodeWithText("제안을 불러오고 있어요").assertExists()
-            compose.onNodeWithText("다시 불러오기").assertDoesNotExist()
+            // 오류 정보가 없으면 "문제가 생겼어요" + 작은 글자 버튼 "다시 시도". 다시 받는 동안은 뼈대
+            compose.onNodeWithText("문제가 생겼어요").assertExists()
+            tap("다시 시도")
+            compose.onNodeWithContentDescription("불러오고 있어요").assertExists()
+            compose.onNodeWithText("다시 시도").assertDoesNotExist()
             scenario.onActivity { assertEquals(listOf(ProposalListAction.Refresh), it.actions) }
         }
     }
     @Test fun chatListFailureRetriesWithoutEmptySuccess() {
         launch("chatList").use { scenario ->
-            // 다시 불러오기 버튼은 없다. 실패 화면에서 아래로 당기면 새로고침
-            compose.onNodeWithText("대화 목록 다시 불러오기").assertDoesNotExist()
-            compose.onNodeWithText("대화 목록을 불러오지 못했어요").performTouchInput { swipeDown(startY = centerY, endY = centerY + 240 * density) }
+            // 실패 화면에서 아래로 당기면 새로고침(당길 수 없는 사용자는 제목 아래 "다시 시도")
+            compose.onNodeWithText("다시 시도").assertExists()
+            compose.onNodeWithText("문제가 생겼어요").performTouchInput { swipeDown(startY = centerY, endY = centerY + 240 * density) }
             compose.waitForIdle()
             scenario.onActivity { assertEquals(listOf(ChatListAction.Refresh), it.actions) }
             // 다시 받는 동안 빈 목록(성공)으로 보이지 않는다
-            compose.onNodeWithText("대화 목록을 불러오고 있어요").assertExists()
+            compose.onNodeWithContentDescription("불러오고 있어요").assertExists()
             compose.onNodeWithText("진행 중인 대화가 없어요").assertDoesNotExist()
+        }
+    }
+    // 7일 뒤 종료 안내는 불러오기 실패 · 비어 있음에서도 지우지 않는다
+    @Test fun chatListKeepsExpiryNoticeInFailureAndEmptyStates() {
+        launch("chatList").use { scenario ->
+            compose.onNodeWithText("채팅방은 7일 뒤 종료돼요.", substring = true).assertExists()
+            scenario.onActivity { it.chatList = ChatListState(ChatListLoad.Ready) }
+            compose.onNodeWithText("진행 중인 대화가 없어요").assertExists()
+            compose.onNodeWithText("채팅방은 7일 뒤 종료돼요.", substring = true).assertExists()
+        }
+    }
+    // 보던 목록에서 새로고침이 실패하면 목록은 그대로 두고 아래 띠로 알린다
+    @Test fun chatListRefreshFailureKeepsRoomsAndShowsNoticeBar() {
+        launch("chatList").use { scenario ->
+            scenario.onActivity { it.chatList = ChatListState(ChatListLoad.Ready, listOf(ChatListItem(1, "하늘", ChatRoomAccess.Allowed)), refreshFailed = true) }
+            compose.onNodeWithText("하늘").assertExists()
+            compose.onNodeWithText("최신 목록을 확인하지 못했어요").assertIsDisplayed()
+            tap("다시 시도")
+            scenario.onActivity { assertEquals(listOf(ChatListAction.Refresh), it.actions) }
         }
     }
     // 더 보기 버튼 없이: 끝이 보이면 다음 쪽을 한 번 요청하고, 새로고침 중엔 요청하지 않는다

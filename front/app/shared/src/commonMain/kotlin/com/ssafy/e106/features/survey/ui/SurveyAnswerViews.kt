@@ -1,5 +1,7 @@
 package com.ssafy.e106.features.survey.ui
 
+import com.ssafy.e106.core.ui.theme.AppSizes
+import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -185,11 +187,11 @@ internal fun LevelSlider(options: List<SurveyOption>, chosen: Set<String>, enabl
     }
 }
 
-/** 모르겠어요 · 상관없어요 — 보기와 섞지 않고 아래 글자 버튼으로 */
+/** 모르겠어요 · 상관없어요 — 보기와 섞지 않고 아래에 알약 모양 버튼으로 */
 @Composable
 internal fun SpecialAnswers(state: SurveyQuestionState, enabled: Boolean, onAnswerChange: (SurveyAnswer) -> Unit) {
     if (!state.allowUnknown && !state.allowAny) return
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(AppSpacing.Small, Alignment.CenterHorizontally)) {
         if (state.allowUnknown) SpecialButton(stringResource(Res.string.survey_unknown), state.answer == SurveyAnswer.Unknown, enabled) { onAnswerChange(SurveyAnswer.Unknown) }
         if (state.allowAny) SpecialButton(stringResource(Res.string.survey_any), state.answer == SurveyAnswer.Any, enabled) { onAnswerChange(SurveyAnswer.Any) }
     }
@@ -197,10 +199,13 @@ internal fun SpecialAnswers(state: SurveyQuestionState, enabled: Boolean, onAnsw
 
 @Composable
 private fun SpecialButton(label: String, selected: Boolean, enabled: Boolean, onClick: () -> Unit) {
-    TextButton(onClick, Modifier.semantics { this.selected = selected }, enabled = enabled) {
-        Text(label, style = MaterialTheme.typography.bodyMedium, fontWeight = if (selected) FontWeight.Bold else null,
-            color = if (selected) AppColors.OnSelection else AppColors.TextSecondary,
-            textDecoration = if (selected) TextDecoration.Underline else null)
+    // 고르면 검정으로 채운다. 터치 영역은 48dp
+    Box(Modifier.heightIn(min = AppSizes.TouchTarget).clip(RoundedCornerShape(50))
+        .selectable(selected, enabled = enabled, role = Role.RadioButton, onClick = onClick), contentAlignment = Alignment.Center) {
+        Text(label, style = MaterialTheme.typography.labelLarge, color = if (selected) AppColors.OnPrimary else AppColors.TextPrimary,
+            modifier = Modifier.background(if (selected) AppColors.ActionPrimary else AppColors.Background, RoundedCornerShape(50))
+                .border(1.dp, if (selected) AppColors.ActionPrimary else AppColors.BorderControl, RoundedCornerShape(50))
+                .padding(horizontal = AppSpacing.Large, vertical = AppSpacing.Small))
     }
 }
 

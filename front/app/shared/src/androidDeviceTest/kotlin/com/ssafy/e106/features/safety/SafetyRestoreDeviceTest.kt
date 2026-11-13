@@ -50,12 +50,14 @@ class SafetyRestoreDeviceTest {
     @Test fun failedRestoreOffersRetryWithoutSendingCommand() {
         ActivityScenario.launch<SafetyRestoreTestActivity>(Intent(
             InstrumentationRegistry.getInstrumentation().context, SafetyRestoreTestActivity::class.java)).use { scenario ->
-            compose.onNodeWithText("이전 요청을 안전하게 읽거나 저장하지 못했어요. 중복 요청을 막기 위해 새 작업을 시작하지 않았어요.").assertIsDisplayed()
-            compose.onNodeWithText("이전 요청 다시 확인").assertIsDisplayed().assertIsEnabled()
+            // 상태 화면 제목 + 지우면 안 되는 중복 요청 방지 안내
+            compose.onNodeWithText("이전 요청을 확인하지 못했어요").assertIsDisplayed()
+            compose.onNodeWithText("중복 요청을 막기 위해 새 작업을 시작하지 않았어요.").assertIsDisplayed()
+            compose.onNodeWithText("다시 확인").assertIsDisplayed().assertIsEnabled()
             compose.onNodeWithText("돌아가기").assertIsDisplayed().assertIsEnabled()
             scenario.onActivity { assertEquals(0, it.calls); it.prefs.fault = null }
-            compose.onNodeWithText("이전 요청 다시 확인").performClick()
-            compose.onNodeWithText("이전 요청 다시 확인").assertDoesNotExist()
+            compose.onNodeWithText("다시 확인").performClick()
+            compose.onNodeWithText("다시 확인").assertDoesNotExist()
             scenario.onActivity { assertEquals(0, it.calls) }
         }
     }

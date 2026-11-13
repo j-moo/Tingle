@@ -27,8 +27,9 @@ class SettingsLifecycleServer : MatchingSettingsRepository {
     val entered = AtomicBoolean(false)
     val cancelled = AtomicBoolean(false)
     val gate = CompletableDeferred<Unit>()
-    override suspend fun get(userId: Long, kind: SettingsKind) = ApiResult.Ok(
-        SettingsDocument(ConflictValues.Matching(true,false), "\"1\""))
+    @Volatile var loadError: AppError? = null
+    override suspend fun get(userId: Long, kind: SettingsKind): ApiResult<SettingsDocument> = loadError?.let { ApiResult.Fail(it) }
+        ?: ApiResult.Ok(SettingsDocument(ConflictValues.Matching(true,false), "\"1\""))
     override suspend fun save(userId: Long, kind: SettingsKind, values: ConflictValues, etag: String): ApiResult<SettingsDocument> {
         entered.set(true)
         try { gate.await() } catch(e: CancellationException) { cancelled.set(true); throw e }
@@ -105,9 +106,37 @@ class SettingsLifecycleDeviceTest {
         launch(SettingsLifecycleServer()).use { scenario ->
             compose.onNodeWithText("매칭 설정").performClick(); compose.waitForIdle()
             scenario.onActivity { it.model.editMatching(photoRequired = true) }
-            compose.onNodeWithText("돌아가기").performClick(); compose.waitForIdle()
+            compose.onNodeWithText("이전").performClick(); compose.waitForIdle()
             compose.onNodeWithText("희망 나이 · 매칭 설정").assertExists()
             scenario.onActivity { assertNull(it.model.state.value.matching) }
+        }
+    }
+    /** 처음 불러오기 실패는 화면 전체가 상태 화면(짧은 제목 + 작은 "다시 시도")이고, 다시 시도하면 설정이 열린다 */
+    @Test fun firstLoadFailureShowsStateScreenAndRetryLoads() {
+        val server = SettingsLifecycleServer().apply { loadError = AppError.Offline }
+        launch(server).use { scenario ->
+            compose.onNodeWithText("매칭 설정").performClick(); compose.waitForIdle()
+            compose.onNodeWithText("인터넷 연결을 확인해 주세요").assertExists()
+            compose.onNodeWithText("변경 내용 저장").assertDoesNotExist()
+            server.loadError = null
+            compose.onNodeWithText("다시 시도").performClick(); compose.waitForIdle()
+            compose.onNodeWithText("새 매칭 받기").assertExists()
+            compose.onNodeWithText("변경 내용 저장").assertIsNotEnabled()
+            scenario.onActivity { assertNotNull(it.model.state.value.document) }
+        }
+    }
+    /** 보던 화면에서 새로고침만 실패하면 내용은 그대로 두고 아래 띠로 알린다 */
+    @Test fun refreshFailureKeepsContentAndShowsNoticeBar() {
+        val server = SettingsLifecycleServer()
+        launch(server).use { scenario ->
+            compose.onNodeWithText("매칭 설정").performClick(); compose.waitForIdle()
+            server.loadError = AppError.Offline
+            scenario.onActivity { it.model.load() }; compose.waitForIdle()
+            compose.onNodeWithText("새 매칭 받기").assertExists()
+            compose.onNodeWithText("인터넷 연결을 확인해 주세요").assertExists()
+            server.loadError = null
+            compose.onNodeWithText("다시 시도").performClick(); compose.waitForIdle()
+            compose.onNodeWithText("인터넷 연결을 확인해 주세요").assertDoesNotExist()
         }
     }
 }

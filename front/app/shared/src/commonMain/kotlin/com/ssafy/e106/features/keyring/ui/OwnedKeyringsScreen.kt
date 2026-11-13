@@ -2,6 +2,7 @@ package com.ssafy.e106.features.keyring.ui
 
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -92,7 +93,7 @@ internal data class OwnedKeyringConnection(
 
 /**
  * 순수 표시 함수(Preview 용). 키링 고르기 화면과 같은 카드("내 키링 N" · 펌웨어)에 오른쪽 "초기화" 버튼을 둔다. 서버 번호는 보여주지 않는다.
- * 목록은 들어올 때 · 돌아올 때 자동으로 불러오므로, 다시 불러오기 버튼은 실패했을 때만 둔다.
+ * 목록은 들어올 때 · 돌아올 때 자동으로 불러오고, 당겨서 새로고침할 수 있다. 불러오는 중은 카드 자리 뼈대, 실패 · 비어 있음은 상태 화면(작은 "다시 시도").
  */
 @Composable fun OwnedKeyringsScreen(state: OwnedKeyringsState, onRefresh: () -> Unit, onBack: () -> Unit,
     onReset: (Long) -> Unit, onConnectForRecords: (() -> Unit)? = null, connectedDeviceId: Long? = null,
@@ -101,30 +102,31 @@ internal data class OwnedKeyringConnection(
     onSync: (() -> Unit)? = null,
     connectedFirmwareVersion: String? = null,
     recoveryLinks: @Composable () -> Unit = {}) {
+    // 당겨서 새로고침한 동안만 고리를 돌린다(처음 들어올 때 · 돌아올 때는 뼈대만 보인다)
+    var pulled by remember { mutableStateOf(false) }
+    LaunchedEffect(state.loading) { if (!state.loading) pulled = false }
+    val items = state.items
     Surface(Modifier.fillMaxSize(), color = AppColors.Background) {
         Column(Modifier.fillMaxSize().safeDrawingPadding(), horizontalAlignment = Alignment.CenterHorizontally) {
             BackArrowBar(onBack)
-            BoxWithConstraints(Modifier.weight(1f).widthIn(max = 640.dp).fillMaxWidth()) {
+            PullDownRefreshBox(pulled && state.loading, { pulled = true; onRefresh() }, Modifier.weight(1f).widthIn(max = 640.dp).fillMaxWidth()) {
+            BoxWithConstraints(Modifier.fillMaxSize()) {
                 Column(Modifier.fillMaxWidth().heightIn(min = maxHeight).verticalScroll(rememberScrollState())
                     .padding(horizontal = screenGutter(), vertical = AppSpacing.Large),
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.spacedBy(AppSpacing.Medium, Alignment.CenterVertically)) {
-                    Text(stringResource(Res.string.owned_keyrings_title), style = MaterialTheme.typography.headlineSmall,
-                        fontWeight = FontWeight.Bold, textAlign = TextAlign.Center, modifier = Modifier.semantics { heading() })
+                    // 실패 · 비어 있음은 상태 화면이 제목을 대신한다
+                    if (state.error == null && items?.isEmpty() != true) Text(stringResource(Res.string.owned_keyrings_title),
+                        style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center,
+                        modifier = Modifier.semantics { heading() })
                     when {
-                        state.loading -> {
-                            CircularProgressIndicator()
-                            Text(stringResource(Res.string.owned_keyrings_loading), color = AppColors.TextSecondary, textAlign = TextAlign.Center)
+                        // VM 은 다시 읽는 동안 예전 목록을 지운다(지난 소유 정보를 현재처럼 보이지 않게). 그래서 새로고침 중에도 뼈대다
+                        state.loading || (items == null && state.error == null) -> SkeletonGroup(spacing = AppSpacing.Medium) {
+                            repeat(2) { SkeletonBone(height = 72.dp, shape = RoundedCornerShape(16.dp)) }
                         }
-                        state.error != null -> {
-                            Text(stringResource(if (state.error is AppError.OnboardingRequired)
-                                Res.string.owned_keyrings_blocked else Res.string.owned_keyrings_failed), textAlign = TextAlign.Center)
-                            Text(state.error.message, color = MaterialTheme.colorScheme.error, textAlign = TextAlign.Center)
-                            AppButton(stringResource(Res.string.sync_live_retry), Modifier.fillMaxWidth(), onClick = onRefresh)
-                        }
-                        state.items?.isEmpty() == true -> Text(stringResource(Res.string.owned_keyrings_empty),
-                            color = AppColors.TextSecondary, textAlign = TextAlign.Center)
-                        state.items != null -> state.items.forEachIndexed { index, item ->
+                        state.error != null -> StateView(state.error.stateKind(), state.error.stateTitle(), onRetry = onRefresh)
+                        items.isNullOrEmpty() -> StateView(StateKind.Empty, stringResource(Res.string.owned_keyrings_empty), onRetry = onRefresh)
+                        else -> items.orEmpty().forEachIndexed { index, item ->
                             val title = stringResource(Res.string.sync_live_device, (index + 1).toString())
                             // TalkBack 이 어느 키링의 초기화인지 읽게 한다
                             val label = stringResource(Res.string.owned_keyrings_reset_for, title)
@@ -168,6 +170,7 @@ internal data class OwnedKeyringConnection(
                     // 서버 소유 해제 후에도 원 계정의 로컬 실행 기록으로 초기화 결과를 다시 찾을 수 있다
                     recoveryLinks()
                 }
+            }
             }
         }
     }

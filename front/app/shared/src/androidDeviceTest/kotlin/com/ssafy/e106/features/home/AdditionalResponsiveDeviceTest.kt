@@ -130,7 +130,7 @@ class AdditionalResponsiveDeviceTest(private val screen: String, private val wid
                 .putExtra("fontScale", scale).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)).use {
             val labels = when (screen) {
                 "login" -> listOf("네이버 로그인")
-                "agreements" -> listOf("이용약관 전체동의", "다음")
+                "agreements" -> listOf("전체 동의 (선택 항목 포함)", "다음")
                 "lifestyle" -> listOf("주 4회 이상", "다음")
                 "details" -> listOf("공개하지 않음", "다음")
                 "age" -> listOf("범위 정하기", "저장하고 계속하기")

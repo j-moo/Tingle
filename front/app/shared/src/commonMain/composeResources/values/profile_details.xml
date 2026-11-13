@@ -5,6 +5,8 @@
     <string name="profile_details_public">등록한 정보는 매칭 제안을 받은 상대가 채팅 수락 전에도 확인할 수 있어요.</string>
     <string name="profile_photo_title">프로필 사진 · 선택</string>
     <string name="profile_photo_empty">아직 등록한 사진이 없어요</string>
+    <string name="profile_photo_empty_tap">아직 등록한 사진이 없어요\n눌러서 사진 선택</string>
+    <string name="profile_photo_tap_replace">사진을 누르면 다른 사진으로 바꿀 수 있어요.</string>
     <string name="profile_photo_consent">[선택] 사진 수집·이용 및 상대 공개에 동의</string>
     <string name="profile_photo_add">사진 선택</string>
     <string name="profile_photo_replace">사진 바꾸기</string>
@@ -12,7 +14,7 @@
     <string name="profile_photo_uploading">사진을 등록하고 있어요…</string>
     <string name="profile_photo_replacing">새 사진을 등록하고 있어요. 완료 전까지 기존 사진을 유지해요.</string>
 <!--    <string name="profile_photo_rule">1장 · 최대 10MB · JPG/JPEG, PNG, WebP, HEIC\n선택 후 정사각형으로 자를 수 있어요.</string>-->
-    <string name="profile_photo_matching">사진이 없으면 ‘사진이 있는 상대만 매칭’을 켠 사용자와 새 매칭이 되지 않을 수 있어요.</string>
+    <string name="profile_consent_missing">가입할 때 동의하지 않은 항목이라 지금은 입력할 수 없어요.</string>
     <string name="profile_intro_title">자기소개 · 선택</string>
     <string name="profile_intro_consent">[선택] 자기소개 수집·이용 및 상대 공개에 동의</string>
     <string name="profile_intro_placeholder">좋아하는 일이나 함께하고 싶은 시간을 소개해 주세요.</string>
@@ -29,5 +31,14 @@
     <string name="profile_religion_buddhist">불교</string>
     <string name="profile_religion_other">기타</string>
     <string name="profile_religion_private">공개하지 않음</string>
+    <string name="religion_ask_title">가입할 때 종교 정보 동의를 하지 않았어요</string>
+    <string name="religion_ask_help">동의하면 종교를 고를 수 있어요. 하지 않아도 다음으로 넘어갈 수 있어요.</string>
+    <string name="religion_ask_button">동의하고 종교 입력하기</string>
+    <string name="religion_sheet_title">종교 정보 동의</string>
+    <string name="religion_sheet_use">• 고른 종교를 저장하고, 매칭 제안을 받은 상대에게 보여 줘요.</string>
+    <string name="religion_sheet_free">• 동의하지 않아도 가입과 매칭에는 불이익이 없어요. 상대에게는 ‘종교 정보 비공개’로 보여요.</string>
+    <string name="religion_sheet_withdraw">• 나중에 내 정보에서 동의를 철회할 수 있고, 철회하면 저장된 종교가 삭제돼요.</string>
+    <string name="religion_sheet_agree">동의하고 입력하기</string>
+    <string name="religion_sheet_decline">동의하지 않기</string>
 </resources>
 

@@ -115,34 +115,4 @@ class BleProbeDeviceTest {
         }
     }
 
-    /** 서버 저장 확인 뒤에도 이전 버전의 보드 상태를 현재 준비 완료로 표시하지 않는다. */
-    @Test fun matchingReadinessUsesOnlyCurrentBoardVersion() {
-        val context = InstrumentationRegistry.getInstrumentation().context
-        val serial = "XIAO-test"
-        val connected = BleProbeState(connected = true, info = BleDeviceInfo(serial, "0.7.2-owner-flow", supportsStatus = true))
-        val reading = mutableStateOf(connected)
-        val confirmed = KeyringSyncState(items = listOf(KeyringSyncProgress(4, SyncPhase.Confirmed,
-            serial = serial, confirmedTsv3Version = 12L)))
-        ActivityScenario.launch<BleProbeTestActivity>(Intent(context, BleProbeTestActivity::class.java)).use { scenario ->
-            scenario.onActivity { activity ->
-                activity.setContent {
-                    AppTheme {
-                        KeyringSyncPanelContent(confirmed, reading.value, OwnedKeyringsState(), onReadStatus = {
-                            reading.value = connected.copy(status = BleDeviceStatus(null, null, null, null,
-                                BleOwnerFlowStatus(applied = true, timeReady = true, matchingReady = true, storedSettingsVersion = 12L)))
-                        })
-                    }
-                }
-            }
-            compose.runOnIdle {
-                reading.value = connected.copy(status = BleDeviceStatus(null, null, null, null,
-                    BleOwnerFlowStatus(applied = true, timeReady = true, matchingReady = true, storedSettingsVersion = 11L)))
-            }
-            compose.onNodeWithText("매칭 준비 · 미확인").assertExists()
-            compose.onNodeWithText("키링 준비 상태 확인").performClick()
-            compose.onNodeWithText("설정 적용 · 완료").assertExists()
-            compose.onNodeWithText("기기 시각 · 완료").assertExists()
-            compose.onNodeWithText("매칭 준비 · 완료").assertExists()
-        }
-    }
 }

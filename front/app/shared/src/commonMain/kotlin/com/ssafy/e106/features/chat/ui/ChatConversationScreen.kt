@@ -28,6 +28,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
+import com.ssafy.e106.core.network.AppError
 import com.ssafy.e106.core.ui.components.*
 import com.ssafy.e106.core.ui.theme.*
 import com.ssafy.e106.resources.*
@@ -45,6 +46,8 @@ fun ChatConversationScreen(
     onMessageRecovery: (String, MessageRecoveryAction) -> Unit = { _, _ -> },
     conversationSupport: (@Composable () -> Unit)? = null,
     onMessagesDisplayed: (List<Long>) -> Unit = {},
+    error: AppError? = null,   // 불러오기 실패 화면의 종류(연결 · 서버)를 고르는 데만 쓴다
+    notices: (@Composable () -> Unit)? = null,   // 입력창 위(추천 위)에 붙는 아래 띠 자리. 전송 결과 확인 · 읽음 실패처럼 연결부가 아는 알림
 ) {
     val listState = rememberLazyListState()
     val latestDisplayed by rememberUpdatedState(onMessagesDisplayed)
@@ -64,35 +67,29 @@ fun ChatConversationScreen(
             Column(Modifier.fillMaxSize()) {
                 if (!compactInput || !state.readable) ConversationTopBar(state, onAction)
                 if (!state.readable) {
-                    LazyColumn(Modifier.weight(1f).fillMaxWidth(), contentPadding = screenPaddingValues(),
-                        verticalArrangement = Arrangement.spacedBy(AppSpacing.Large)) {
-                        item {
-                            StatusCard(stringResource(when (state.load) {
-                                ConversationLoad.Loading -> Res.string.chat_conversation_loading
-                                ConversationLoad.Closed -> Res.string.chat_conversation_closed
-                                ConversationLoad.ConsentRequired -> Res.string.chat_access_consent
-                                ConversationLoad.Active, ConversationLoad.Unavailable -> Res.string.chat_access_unavailable
-                                else -> Res.string.chat_conversation_failed
-                            }), stringResource(when (state.load) {
-                                ConversationLoad.Loading -> Res.string.chat_conversation_loading_help
-                                ConversationLoad.Closed -> Res.string.chat_conversation_closed_help
-                                ConversationLoad.ConsentRequired -> Res.string.chat_access_consent_help
-                                ConversationLoad.Active, ConversationLoad.Unavailable -> Res.string.chat_access_unavailable_help
-                                else -> Res.string.chat_conversation_failed_help
-                            }))
-                        }
-                        item {
-                            if (state.load == ConversationLoad.Loading)
-                                Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = AppColors.SelectionBorder) }
-                            else if (state.load == ConversationLoad.ConsentRequired) {
-                                AppButton(stringResource(Res.string.chat_access_open_consent), Modifier.fillMaxWidth(),
-                                    onClick = { onAction(ConversationAction.OpenConsent) })
-                            } else AppButton(stringResource(if (state.load == ConversationLoad.Closed || state.load == ConversationLoad.Unavailable)
-                                Res.string.chat_conversation_back else Res.string.chat_conversation_retry),
-                                Modifier.fillMaxWidth(), onClick = { onAction(if (state.load == ConversationLoad.Closed || state.load == ConversationLoad.Unavailable)
-                                    ConversationAction.Back else ConversationAction.Reload) })
+                    val leaving = state.load == ConversationLoad.Closed || state.load == ConversationLoad.Unavailable
+                    val consent = state.load == ConversationLoad.ConsentRequired
+                    // 다시 받을 수 있는 상태(불러오기 실패 · 권한 미확인)에서만 당기기와 작은 "다시 시도"를 둔다
+                    val reload = { if (!leaving && !consent) onAction(ConversationAction.Reload) }
+                    if (state.load == ConversationLoad.Loading) ConversationSkeleton(Modifier.weight(1f))
+                    else PullDownRefreshBox(false, reload, Modifier.weight(1f).fillMaxWidth()) {
+                        Column(Modifier.widthIn(max = 640.dp).fillMaxSize().verticalScroll(rememberScrollState()).padding(screenPaddingValues()),
+                            verticalArrangement = Arrangement.Center) {
+                            when (state.load) {
+                                ConversationLoad.Closed -> StateView(StateKind.Locked, stringResource(Res.string.chat_conversation_closed))
+                                ConversationLoad.ConsentRequired -> StateView(StateKind.Locked, stringResource(Res.string.chat_access_consent))
+                                ConversationLoad.Unavailable -> StateView(StateKind.Locked, stringResource(Res.string.chat_access_unavailable))
+                                ConversationLoad.Active -> StateView(StateKind.Locked, stringResource(Res.string.chat_access_unavailable), onRetry = reload)
+                                else -> StateView(error.stateKind(), error.stateTitle(), onRetry = reload)
+                            }
                         }
                     }
+                    notices?.invoke()
+                    // 갈 곳이 있는 상태는 아래 큰 버튼: 채팅 목록으로 / 동의 내용 확인하기
+                    if (leaving || consent) AppButton(stringResource(if (consent) Res.string.chat_access_open_consent else Res.string.chat_conversation_back),
+                        Modifier.widthIn(max = 640.dp).fillMaxWidth().align(Alignment.CenterHorizontally)
+                            .padding(horizontal = AppSpacing.Large).padding(top = AppSpacing.Small, bottom = AppSpacing.Large),
+                        onClick = { onAction(if (consent) ConversationAction.OpenConsent else ConversationAction.Back) })
                 } else {
                     // 입력창을 먼저 측정하고 남은 높이를 안내/대화에 나눈다. 큰 글자나 IME 때문에
                     // 안내가 길어져도 전송 버튼을 화면 밖으로 밀지 않고 안내 영역에서 스크롤한다.
@@ -101,9 +98,6 @@ fun ChatConversationScreen(
                         val noticeHeight = maxHeight * 0.35f
                         val supportHeight = minOf(240.dp, maxHeight * 0.5f)
                         Column(Modifier.fillMaxSize()) {
-                            Column(Modifier.heightIn(max = noticeHeight).fillMaxWidth().verticalScroll(rememberScrollState())) {
-                                ConversationNotice(state, onAction)
-                            }
                             Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.TopCenter) {
                                 val messages = remember(state.messages) { state.messages.distinctBy { it.id } }
                                 // 그날의 첫 메시지 id → (월, 일). 더 받을 이전 메시지가 남아 있으면 가장 오래된 메시지 위엔 두지 않는다
@@ -112,9 +106,7 @@ fun ChatConversationScreen(
                                 if (messages.isEmpty() && state.nextCursor.isNullOrBlank()) FirstConversation(state, onAction)
                                 else LazyColumn(Modifier.widthIn(max = 640.dp).fillMaxWidth(), state = listState, reverseLayout = true,
                                     contentPadding = screenPaddingValues(), verticalArrangement = Arrangement.spacedBy(AppSpacing.Small)) {
-                                    if (messages.isEmpty()) item(key = "empty") {
-                                        StatusCard(stringResource(Res.string.chat_history_empty), stringResource(Res.string.chat_history_empty_help))
-                                    }
+                                    if (messages.isEmpty()) item(key = "empty") { StateView(StateKind.Empty, stringResource(Res.string.chat_history_empty)) }
                                     // 아래(최신)부터 그린다. 날짜가 바뀌는 자리(그날의 첫 메시지 위)에 날짜 구분
                                     messages.asReversed().forEach { message ->
                                         item(key = "message-${message.id}") {
@@ -124,16 +116,23 @@ fun ChatConversationScreen(
                                     }
                                     // 대화 맨 위(더 받을 이전 메시지가 없을 때): 종료 안내 · AI 분석 안내
                                     if (state.nextCursor.isNullOrBlank()) item(key = "head") { ConversationHead(onAction) }
+                                    // 이전 메시지 이어 받기: 받는 중 = 말풍선 뼈대, 실패 = 한 줄 + 다시 시도, 그 밖엔 "이전 메시지 더 보기"(누를 때만 받는다)
                                     if (!state.nextCursor.isNullOrBlank()) item(key = "older-messages") {
-                                        if (state.historyLoad == HistoryLoad.Failed) Text(stringResource(Res.string.chat_history_failed),
-                                            style = MaterialTheme.typography.bodySmall, color = AppColors.Error)
-                                        AppButton(stringResource(if (state.historyLoad == HistoryLoad.Failed) Res.string.chat_history_retry else Res.string.chat_history_more),
-                                            Modifier.fillMaxWidth(), variant = AppButtonVariant.Secondary,
-                                            enabled = state.canLoadOlder, loading = state.historyLoad == HistoryLoad.Loading,
-                                            loadingText = stringResource(Res.string.chat_history_loading),
-                                            onClick = { if (state.canLoadOlder) onAction(ConversationAction.LoadOlder) })
+                                        val older = { if (state.canLoadOlder) onAction(ConversationAction.LoadOlder) }
+                                        when (state.historyLoad) {
+                                            HistoryLoad.Loading -> ListTail(ListTailState.Loading) { BubbleBone(0.55f, false); BubbleBone(0.4f, true) }
+                                            HistoryLoad.Failed -> ListTail(ListTailState.Failed, onRetry = older, retryEnabled = state.canLoadOlder)
+                                            HistoryLoad.Idle -> Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                                                TextAction(stringResource(Res.string.chat_history_more), older, enabled = state.canLoadOlder, icon = false)
+                                            }
+                                        }
                                     }
                                 }
+                            }
+                            // 아래 띠(연결 끊김 · 전송 결과 확인 등)는 대화 아래, 추천 위에 둔다. 길어져도 대화 영역을 다 가리지 않게 높이를 제한한다
+                            Column(Modifier.heightIn(max = noticeHeight).fillMaxWidth().verticalScroll(rememberScrollState())) {
+                                RealtimeNotice(state, onAction)
+                                notices?.invoke()
                             }
                             // 추천은 말풍선 목록과 분리해 입력창 바로 위에 둔다. 작은 화면/키보드에서도
                             // 입력창 높이를 먼저 확보하고, 펼친 추천은 남은 영역 안에서 스크롤한다.
@@ -257,17 +256,28 @@ private fun FirstConversation(state: ChatConversationState, onAction: (Conversat
     }
 }
 
-/** 수신 연결에 문제가 있을 때만 한 줄(연결 중 · 연결됨은 표시하지 않는다). 멈췄으면 다시 연결 */
+/** 수신 연결에 문제가 있을 때만 아래 띠 한 줄(연결 중 · 연결됨은 표시하지 않는다). 멈췄으면 "다시 시도"로 다시 연결 */
 @Composable
-private fun ConversationNotice(state: ChatConversationState, onAction: (ConversationAction) -> Unit) {
-    val status = state.realtime?.takeIf { it == ChatRealtimeStatus.Reconnecting || it == ChatRealtimeStatus.Stopped } ?: return
-    Column(Modifier.fillMaxWidth().background(AppColors.SurfaceMuted).padding(horizontal = AppSpacing.Large, vertical = AppSpacing.Small),
-        horizontalAlignment = Alignment.CenterHorizontally) {
-        Text(stringResource(if (status == ChatRealtimeStatus.Reconnecting) Res.string.chat_realtime_reconnecting else Res.string.chat_realtime_stopped),
-            style = MaterialTheme.typography.bodySmall, color = AppColors.TextSecondary, textAlign = TextAlign.Center)
-        if (status == ChatRealtimeStatus.Stopped) TextButton(onClick = { onAction(ConversationAction.Reload) }) {
-            Text(stringResource(Res.string.chat_realtime_retry))
-        }
+private fun RealtimeNotice(state: ChatConversationState, onAction: (ConversationAction) -> Unit) {
+    when (state.realtime) {
+        ChatRealtimeStatus.Reconnecting -> NoticeBar(stringResource(Res.string.chat_realtime_reconnecting), actionText = null)
+        ChatRealtimeStatus.Stopped -> NoticeBar(stringResource(Res.string.chat_realtime_stopped), onAction = { onAction(ConversationAction.Reload) })
+        else -> Unit
+    }
+}
+
+/** 뼈대: 대화를 받는 동안 말풍선 자리(상대는 왼쪽, 나는 오른쪽) */
+@Composable
+private fun ConversationSkeleton(modifier: Modifier = Modifier) {
+    SkeletonGroup(modifier.padding(screenPaddingValues()), spacing = AppSpacing.Medium) {
+        listOf(0.6f to false, 0.4f to true, 0.7f to false, 0.5f to true, 0.35f to true).forEach { (width, mine) -> BubbleBone(width, mine) }
+    }
+}
+
+@Composable
+private fun BubbleBone(fraction: Float, mine: Boolean) {
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = if (mine) Arrangement.End else Arrangement.Start) {
+        SkeletonBone(Modifier.fillMaxWidth(fraction), height = 44.dp, shape = RoundedCornerShape(16.dp))
     }
 }
 

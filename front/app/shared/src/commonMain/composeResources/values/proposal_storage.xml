@@ -1,5 +1,5 @@
 <resources>
-    <string name="proposals_storage_unavailable">이전 선택 기록을 확인하지 못했어요. 기록을 확인한 뒤 수락하거나 거절할 수 있어요.</string>
-    <string name="proposals_storage_retry">기록 다시 확인</string>
+    <string name="proposals_storage_unavailable">이전 선택 기록을 확인하지 못했어요</string>
+    <string name="proposals_storage_note">기록을 확인한 뒤 수락하거나 거절할 수 있어요.</string>
     <string name="proposals_storage_back">홈으로</string>
 </resources>

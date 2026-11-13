@@ -1,10 +1,12 @@
 package com.ssafy.e106.features.survey.ui
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.style.TextAlign
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -12,6 +14,7 @@ import com.ssafy.e106.features.survey.data.AnalysisStatus
 import com.ssafy.e106.features.survey.data.SurveyChangeKind
 import com.ssafy.e106.core.auth.Session
 import com.ssafy.e106.core.ui.components.*
+import com.ssafy.e106.core.ui.theme.AppColors
 import com.ssafy.e106.features.profile.ui.ProfileBackHandler
 import com.ssafy.e106.resources.*
 import org.jetbrains.compose.resources.stringResource
@@ -61,27 +64,28 @@ import org.koin.compose.viewmodel.koinViewModel
     onServerDraft: () -> Unit = {},
 ) {
     if (state.pendingChange && !state.busy) {
-        SurveyFrame(footer = {
-            AppButton(stringResource(Res.string.survey_change_recover), onClick = onRetest)
-            AppButton(stringResource(Res.string.survey_api_back), onClick = onBack)
-        }) { Text(stringResource(Res.string.survey_change_unknown)) }
+        // 전환 결과 미확인: 새로 보내기 전에 결과부터 확인한다. 설명은 같은 대상으로 다시 요청한다는 안내라 줄이지 않는다. 나가기는 왼쪽 위 <
+        SurveyFrame(onBack = onBack, centered = true, footer = {
+            AppButton(stringResource(Res.string.survey_step_recheck), Modifier.fillMaxWidth(), onClick = onRetest)
+        }) {
+            StateView(StateKind.Unconfirmed, stringResource(Res.string.survey_migration_unknown_title))
+            Text(stringResource(Res.string.survey_change_unknown), style = MaterialTheme.typography.bodyMedium, color = AppColors.TextSecondary, textAlign = TextAlign.Center)
+        }
         return
     }
     if (state.page == SurveyPage.Question && !state.recoveryRequired && state.error == null) {
-        state.questionScreen?.let { SurveyQuestionScreen(it, onAnswer, onPrevious, onNext, onReload,
-            busy = state.busy || state.changingSession || state.exitRequested,
+        state.questionScreen?.let { SurveyQuestionScreen(it, onAnswer, onPrevious, onNext,
+            busy = state.busy || state.changingSession || state.exitRequested, pendingCount = state.pending.size,
             notice = when {
                 state.exitRequested -> stringResource(Res.string.survey_api_leaving)
                 state.returnedToMissing -> stringResource(Res.string.survey_api_returned_missing)
                 else -> null
-            },
-            onCheckVersion = onVersion, onPreviousSession = onPreviousSession.takeIf { state.previousBookmark != null }) }
+            }) }
         return
     }
     if (state.page == SurveyPage.Resume && !state.busy && state.error == null) {
         SurveyFlowScreen(SurveyFlowState(SurveyFlowStage.Resume, state.session!!.answeredCount, state.session.questionCount),
-            onResume, onBack, {}, onCheckVersion = onVersion,
-            onPreviousSession = onPreviousSession.takeIf { state.previousBookmark != null })
+            onResume, onBack, {})
         return
     }
     SurveyStepScreen(state, onReload, onStart, onBack, onSubmit, onRequestAnalysis, onRefreshAnalysis, onRefreshStage,

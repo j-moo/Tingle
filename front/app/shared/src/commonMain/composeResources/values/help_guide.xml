@@ -12,19 +12,14 @@
     <string name="help_correction_prepare">수정이 필요한 항목과 사유를 준비해 주세요. 신분증 등 증빙은 서비스팀의 제출 방법을 안내받은 후 보내 주세요.</string>
     <string name="help_hub_document">전문을 확인해요.</string>
     <string name="help_hub_caution">문의할 때 비밀번호나 인증번호는\n보내지 마세요.</string>
-    <string name="help_loading">안내 정보를 불러오고 있어요.</string>
     <string name="help_failed">안내 정보를 불러오지 못했어요</string>
-    <string name="help_failed_body">연결 상태를 확인하고 다시 시도해 주세요.</string>
-    <string name="help_reload">다시 불러오기</string>
     <string name="help_document_missing">전문을 준비하고 있어요</string>
     <string name="help_channel_missing">문의 채널을 준비하고 있어요</string>
-    <string name="help_missing_body">아직 연결할 주소가 등록되지 않았어요. 준비되면 이곳에서 확인할 수 있어요.</string>
     <string name="help_version">문서 버전 %1$s</string>
     <string name="help_open_document">브라우저에서 전문 보기</string>
     <string name="help_open_channel">문의 채널 열기</string>
     <string name="help_external_document">외부 브라우저로 이동해요. 확인 후 앱으로 돌아올 수 있어요.</string>
     <string name="help_external_inquiry">외부 문의 채널로 이동해요. 채널을 여는 것만으로 문의가 접수되지는 않아요.</string>
     <string name="help_open_failed">연결 화면을 열지 못했어요</string>
-    <string name="help_open_failed_body">다시 열어 보거나 이전 화면으로 돌아가 주세요.</string>
     <string name="help_back">이전 화면으로</string>
 </resources>

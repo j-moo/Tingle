@@ -12,6 +12,7 @@ import androidx.test.platform.app.InstrumentationRegistry
 import com.ssafy.e106.core.auth.*
 import com.ssafy.e106.core.ble.BleAvailability
 import com.ssafy.e106.core.network.ApiResult
+import com.ssafy.e106.core.network.AppError
 import com.ssafy.e106.core.ui.theme.AppTheme
 import com.ssafy.e106.features.keyring.data.*
 import com.ssafy.e106.features.keyring.ui.*
@@ -32,6 +33,9 @@ class OwnedKeyringsTestActivity : ComponentActivity() {
         val syncEntries = AtomicInteger()
         val selectedDevice = AtomicInteger()
         val metricFixture = MutableStateFlow<Pair<Long?, OwnedKeyringLiveStatus?>>(null to null)
+        // 상태 화면 시험용: 조회 실패와 빈 목록을 만든다
+        @Volatile var failure: AppError? = null
+        @Volatile var owned = listOf(OwnedKeyring(7, "READY", "1.0"))
     }
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -41,8 +45,8 @@ class OwnedKeyringsTestActivity : ComponentActivity() {
                 object : OwnedKeyringRepository {
                     override suspend fun list(): ApiResult<List<OwnedKeyring>> {
                         reads.incrementAndGet()
-                        return ApiResult.Ok(if (intent.getBooleanExtra("empty", false)) emptyList()
-                            else listOf(OwnedKeyring(7, "READY", "1.0")))
+                        return failure?.let { ApiResult.Fail(it) }
+                            ?: ApiResult.Ok(if (intent.getBooleanExtra("empty", false)) emptyList() else owned)
                     }
                 }, TestSession(OnboardingStatus.READY)) as T
         })[OwnedKeyringsViewModel::class.java]
@@ -101,6 +105,26 @@ class OwnedKeyringsDeviceTest {
             assertEquals(0, OwnedKeyringsTestActivity.recordEntries.get())
             compose.onNodeWithText("만남 기록 전송을 위해 키링 연결").performClick()
             assertEquals(1, OwnedKeyringsTestActivity.recordEntries.get())
+        }
+    }
+
+    /** 처음 불러오기 실패는 짧은 제목 한 줄 + 작은 "다시 시도", 목록이 비면 빈 상태 화면이다. */
+    @Test fun loadFailureShowsRetryStateThenEmptyState() {
+        OwnedKeyringsTestActivity.failure = AppError.Offline
+        try {
+            ActivityScenario.launch<OwnedKeyringsTestActivity>(Intent(InstrumentationRegistry.getInstrumentation().context,
+                OwnedKeyringsTestActivity::class.java)).use {
+                compose.onNodeWithText("인터넷 연결을 확인해 주세요").assertExists()
+                compose.onNodeWithText("내 키링 1").assertDoesNotExist()
+                compose.onNodeWithText("만남 기록 전송을 위해 키링 연결").assertDoesNotExist()
+                OwnedKeyringsTestActivity.failure = null
+                OwnedKeyringsTestActivity.owned = emptyList()
+                compose.onNodeWithText("다시 시도").performClick()
+                compose.onNodeWithText("등록된 키링이 없어요").assertExists()
+            }
+        } finally {
+            OwnedKeyringsTestActivity.failure = null
+            OwnedKeyringsTestActivity.owned = listOf(OwnedKeyring(7, "READY", "1.0"))
         }
     }
 

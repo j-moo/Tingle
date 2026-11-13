@@ -6,6 +6,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
@@ -101,26 +102,40 @@ private fun EvidencePage(state: ReportState, onEvidence: (Long, Boolean) -> Unit
             val compactHeight = maxHeight < 320.dp
             Column(Modifier.fillMaxSize()) {
                 if (!compactHeight) AppTopBar(stringResource(Res.string.report_title), onBack = { onAction(ReportAction.Back) })
-                LazyColumn(Modifier.weight(1f).fillMaxWidth(), contentPadding = screenPaddingValues(),
+                val reload = { if (state.evidenceLoad != EvidenceLoad.Loading) onAction(ReportAction.ReloadEvidence) }
+                val list: @Composable (Modifier) -> Unit = { box -> LazyColumn(box, contentPadding = screenPaddingValues(),
                     verticalArrangement = Arrangement.spacedBy(AppSpacing.Medium)) {
                     if (compactHeight) item(key = "header") { AppTopBar(stringResource(Res.string.report_title), onBack = { onAction(ReportAction.Back) }) }
                     if (state.step == ReportStep.Evidence) {
                         item { Text(stringResource(Res.string.report_evidence_help))
                             Text(stringResource(Res.string.report_evidence_count, state.selectedIds.size)) }
-                        when (state.evidenceLoad) {
-                            EvidenceLoad.Loading -> item { Text(stringResource(Res.string.report_evidence_loading)) }
-                            EvidenceLoad.Failed -> item { StatusCard(stringResource(Res.string.report_evidence_failed), stringResource(Res.string.report_input_kept))
-                                AppButton(stringResource(Res.string.report_reload), onClick = { onAction(ReportAction.ReloadEvidence) }) }
-                            EvidenceLoad.Ready -> {
-                                if (state.visibleEvidence.isEmpty()) item { Text(stringResource(Res.string.report_evidence_empty)) }
-                                items(state.visibleEvidence, key = { it.id }) { message ->
+                        val evidence = state.visibleEvidence
+                        when {
+                            // 처음 받는 중 = 뼈대 줄, 처음부터 실패 = 상태 화면, 받았는데 없음 = 비어 있음
+                            evidence.isEmpty() && state.evidenceLoad == EvidenceLoad.Loading -> item {
+                                SkeletonGroup(label = stringResource(Res.string.report_evidence_loading), spacing = AppSpacing.Medium) { repeat(4) { SkeletonRow(avatar = AppSizes.Icon) } }
+                            }
+                            evidence.isEmpty() && state.evidenceLoad == EvidenceLoad.Failed -> item {
+                                StateView(StateKind.Unknown, stringResource(Res.string.report_evidence_failed), onRetry = reload)
+                            }
+                            evidence.isEmpty() -> item { StateView(StateKind.Empty, stringResource(Res.string.report_evidence_empty), onRetry = reload) }
+                            else -> {
+                                items(evidence, key = { it.id }) { message ->
                                     AppCheckbox(message.id in state.selectedIds, { checked -> onEvidence(message.id, checked) },
                                         stringResource(Res.string.report_evidence_label,
                                             stringResource(if (message.mine) Res.string.report_me else Res.string.report_other), message.timeLabel, message.text),
                                         enabled = true)
                                 }
-                                if (state.hasMoreEvidence) item { AppButton(stringResource(Res.string.report_more), variant = AppButtonVariant.Secondary,
-                                    onClick = { onAction(ReportAction.LoadMoreEvidence) }) }
+                                // 이어 받기: 받는 중 = 뼈대 줄, 실패 = 한 줄 + 다시 시도, 더 있으면 "이전 메시지 더 보기"(누를 때만 받는다), 끝 = 작은 글
+                                item { when {
+                                    state.evidenceLoad == EvidenceLoad.Loading -> ListTail(ListTailState.Loading) { repeat(2) { SkeletonRow(avatar = AppSizes.Icon) } }
+                                    state.evidenceLoad == EvidenceLoad.Failed -> ListTail(ListTailState.Failed,
+                                        onRetry = { onAction(if (state.hasMoreEvidence) ReportAction.LoadMoreEvidence else ReportAction.ReloadEvidence) })
+                                    state.hasMoreEvidence -> Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                                        TextAction(stringResource(Res.string.report_more), { onAction(ReportAction.LoadMoreEvidence) }, icon = false)
+                                    }
+                                    else -> ListTail(ListTailState.End)
+                                } }
                             }
                         }
                         if (state.selectedIds.isNotEmpty()) item {
@@ -137,7 +152,10 @@ private fun EvidencePage(state: ReportState, onEvidence: (Long, Boolean) -> Unit
                             if (!state.validSubmission) Text(stringResource(Res.string.report_selection_invalid), color = AppColors.Error) }
                     }
                     if (compactHeight) item(key = "actions") { EvidenceActions(state, onAction) }
-                }
+                } }
+                // 메시지를 고르는 단계에서만 당겨서 다시 받는다(확인 단계는 받아 둔 내용만 보여 준다)
+                if (state.step == ReportStep.Evidence) PullDownRefreshBox(false, reload, Modifier.weight(1f).fillMaxWidth()) { list(Modifier.fillMaxSize()) }
+                else list(Modifier.weight(1f).fillMaxWidth())
                 if (!compactHeight) EvidenceActions(state, onAction)
             }
         }

@@ -4,6 +4,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
@@ -17,6 +18,7 @@ import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import com.ssafy.e106.core.network.AppError
 import com.ssafy.e106.core.ui.components.*
 import com.ssafy.e106.core.ui.theme.*
 import com.ssafy.e106.resources.*
@@ -29,8 +31,11 @@ fun ProposalProfileScreen(
     state: ProposalProfileState,
     onAction: (ProposalProfileAction) -> Unit,
     modifier: Modifier = Modifier,
+    error: AppError? = null,   // 불러오기 실패 화면의 종류(연결 · 서버)를 고르는 데만 쓴다
 ) {
     val ready = state.load == ProposalProfileLoad.Ready && state.profile != null && state.profile.photoState != ProposalPhotoState.Unavailable
+    val loading = state.load == ProposalProfileLoad.Loading
+    val unavailable = !loading && (state.load == ProposalProfileLoad.Unavailable || state.profile?.photoState == ProposalPhotoState.Unavailable)
     Surface(modifier.fillMaxSize(), color = AppColors.Background) {
         Column(Modifier.fillMaxSize().safeDrawingPadding()) {
             Box(Modifier.fillMaxWidth().heightIn(min = AppSizes.TopBarMinHeight).padding(horizontal = AppSpacing.Small),
@@ -41,35 +46,50 @@ fun ProposalProfileScreen(
                     Icon(painterResource(Res.drawable.ic_arrow_back), stringResource(Res.string.proposal_profile_back), tint = AppColors.TextPrimary)
                 }
             }
-            Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.TopCenter) {
+            // 당기면 프로필을 다시 받는다(받는 중 · 볼 수 없는 제안에서는 받지 않는다)
+            val reload = { if (!loading && !unavailable) onAction(ProposalProfileAction.Reload) }
+            PullDownRefreshBox(false, reload, Modifier.weight(1f).fillMaxWidth()) {
                 Column(
-                    Modifier.widthIn(max = 640.dp).fillMaxWidth().verticalScroll(rememberScrollState()).padding(screenPaddingValues()),
-                    verticalArrangement = Arrangement.spacedBy(AppSpacing.Large),
+                    Modifier.widthIn(max = 640.dp).fillMaxSize().verticalScroll(rememberScrollState()).padding(screenPaddingValues()),
+                    verticalArrangement = if (ready || loading) Arrangement.spacedBy(AppSpacing.Large) else Arrangement.Center,
                 ) {
                     when {
-                        state.load == ProposalProfileLoad.Loading -> {
-                            StatusCard(stringResource(Res.string.proposal_profile_loading),
-                                stringResource(Res.string.proposal_profile_loading_help))
-                            CircularProgressIndicator(Modifier.align(Alignment.CenterHorizontally), color = AppColors.SelectionBorder)
-                        }
-                        state.load == ProposalProfileLoad.Unavailable || state.profile?.photoState == ProposalPhotoState.Unavailable -> {
-                            StatusCard(stringResource(Res.string.proposal_profile_unavailable),
-                                stringResource(Res.string.proposal_profile_unavailable_help))
-                            AppButton(stringResource(Res.string.proposal_profile_back), Modifier.fillMaxWidth(),
-                                onClick = { onAction(ProposalProfileAction.Back) })
-                        }
-                        !ready -> {
-                            StatusCard(stringResource(Res.string.proposal_profile_failed),
-                                stringResource(Res.string.proposal_profile_failed_help))
-                            AppButton(stringResource(Res.string.proposal_profile_retry), Modifier.fillMaxWidth(),
-                                onClick = { onAction(ProposalProfileAction.Reload) })
-                        }
+                        loading -> ProfileSkeleton()
+                        unavailable -> StateView(StateKind.Locked, stringResource(Res.string.proposal_profile_unavailable))
+                        !ready -> StateView(error.stateKind(), error.stateTitle(), onRetry = reload)
                         else -> ProfileContent(state, state.profile!!, onAction)
                     }
                 }
             }
-            if (ready) DecisionBar(state, onAction)
+            when {
+                ready -> DecisionBar(state, onAction)
+                // 받는 동안에도 아래 버튼 자리는 실제와 같게 둔다(누를 수 없음)
+                loading -> DecisionBar(ProposalProfileState(), onAction, hint = false)
+                unavailable -> AppButton(stringResource(Res.string.proposal_profile_back), Modifier.widthIn(max = 640.dp).fillMaxWidth()
+                    .align(Alignment.CenterHorizontally).padding(horizontal = AppSpacing.Large).padding(top = AppSpacing.Small, bottom = AppSpacing.Large),
+                    onClick = { onAction(ProposalProfileAction.Back) })
+            }
         }
+    }
+}
+
+/** 뼈대: 사진 · 이름 · 항목 표(항목 이름은 실제와 같게) · 소개 · 매칭 이유 자리 */
+@Composable
+private fun ProfileSkeleton() {
+    SkeletonGroup {
+        SkeletonBone(Modifier.align(Alignment.CenterHorizontally), width = 120.dp, height = 120.dp, shape = CircleShape)
+        SkeletonBone(Modifier.align(Alignment.CenterHorizontally), width = 160.dp, height = 28.dp)
+        Column(verticalArrangement = Arrangement.spacedBy(AppSpacing.Medium)) {
+            listOf(Res.string.proposal_profile_gender, Res.string.proposal_profile_smoking, Res.string.proposal_profile_drinking,
+                Res.string.proposal_profile_religion).forEach { label ->
+                Row(horizontalArrangement = Arrangement.spacedBy(AppSpacing.Medium), verticalAlignment = Alignment.CenterVertically) {
+                    Text(stringResource(label), Modifier.width(64.dp), style = MaterialTheme.typography.bodyMedium, color = AppColors.TextSecondary)
+                    SkeletonBone(width = 96.dp)
+                }
+            }
+        }
+        HorizontalDivider(color = AppColors.BorderSubtle)
+        repeat(2) { SkeletonBone(height = 96.dp, shape = AppShapes.Card) }
     }
 }
 
@@ -104,7 +124,7 @@ private fun ColumnScope.ProfileContent(state: ProposalProfileState, profile: Pub
 
 /** 아래 고정: 응답 전엔 거절 | 수락, 수락했으면 기다림 안내(글자만) */
 @Composable
-private fun DecisionBar(state: ProposalProfileState, onAction: (ProposalProfileAction) -> Unit) {
+private fun DecisionBar(state: ProposalProfileState, onAction: (ProposalProfileAction) -> Unit, hint: Boolean = true) {
     Column(Modifier.fillMaxWidth()
         .drawBehind { drawLine(AppColors.BorderSubtle, Offset(0f, 0f), Offset(size.width, 0f), AppSpacing.Stroke.toPx()) }
         .padding(horizontal = AppSpacing.Section, vertical = AppSpacing.Large),
@@ -118,7 +138,7 @@ private fun DecisionBar(state: ProposalProfileState, onAction: (ProposalProfileA
                     color = AppColors.TextSecondary, textAlign = TextAlign.Center)
             }
         } else {
-            if (!state.canRespond) Text(stringResource(Res.string.proposal_profile_permission_unknown),
+            if (!state.canRespond && hint) Text(stringResource(Res.string.proposal_profile_permission_unknown),
                 style = MaterialTheme.typography.bodySmall, color = AppColors.TextSecondary)
             Row(horizontalArrangement = Arrangement.spacedBy(AppSpacing.Small)) {
                 AppButton(stringResource(Res.string.proposal_profile_reject), Modifier.weight(1f),
