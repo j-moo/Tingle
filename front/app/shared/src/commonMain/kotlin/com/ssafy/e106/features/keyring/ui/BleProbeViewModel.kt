@@ -117,8 +117,15 @@ class BleProbeViewModel(
                 previous?.join()
                 previousReconnect?.join()
                 var nearby = emptyList<BleCandidate>()
+                var scanFailure: BleException? = null
                 // 플랫폼이 스캔을 정리한 뒤에만 후보를 확인한다. 목록에는 계정에서 고른 기기만 표시한다.
-                withTimeoutOrNull(15_000) { ble.scan().collect { nearby = it } }
+                try {
+                    withTimeoutOrNull(15_000) { ble.scan().collect { nearby = it } }
+                } catch (failure: BleException) {
+                    if (failure.reason != BleFailure.ScanFailed) throw failure
+                    // 스캔 자체가 실패해도 OS가 기억하는 등록 키링에는 연결할 수 있다.
+                    scanFailure = failure
+                }
                 mutable.update { it.copy(scanning = false, busy = true) }
                 withTimeoutOrNull(32_000) {
                     for (candidate in nearby.sortedByDescending { it.rssi }) {
@@ -126,7 +133,16 @@ class BleProbeViewModel(
                         if (matched != null) break
                     }
                 }
-                val (channel, info) = matched ?: throw BleException(BleFailure.NotFound)
+                if (matched == null) {
+                    // 새 검색 결과가 없는 Fold6에서도 서버 목록에서 선택한 실물만 연결한다.
+                    withTimeoutOrNull(16_000) {
+                        for (id in ble.bondedKeyringCandidates()) {
+                            withTimeoutOrNull(8_000) { matched = probeOwnedCandidate(id, serial) }
+                            if (matched != null) break
+                        }
+                    }
+                }
+                val (channel, info) = matched ?: throw (scanFailure ?: BleException(BleFailure.NotFound))
                 verifyOwnership(info, owner, registrationMode = false, expectedDeviceId = target.deviceId)
                 if (stamp != generation) return@launch
                 if (channel.state.value == BleLinkState.Closed) throw BleException(BleFailure.Disconnected)

@@ -37,6 +37,8 @@ private class ProbeFixture : KeyringBle {
     var currentId = "a"
     var otherSerial: String? = null
     var finiteScan = false
+    var bondedCandidates = emptyList<String>()
+    var scanFailure: BleFailure? = null
     // v2 검사에서 연결 이후 기기 정보가 바뀌는 상황과 실제 쓰기 전 재조회를 관찰한다.
     var extraInfo = emptyMap<String, JsonElement>()
     var commandReply: ((JsonObject) -> JsonObject)? = null
@@ -76,12 +78,17 @@ private class ProbeFixture : KeyringBle {
         // 실물 Android처럼 두 번째 탐색부터 ID가 바뀐다. 이전 ID 비교로는 재연결 시험을 통과할 수 없다.
         currentId = if (scans == 1) "a" else "scan-$scans"
         try {
+            scanFailure?.let { throw BleException(it) }
             emit(if (visible) listOfNotNull(
                 otherSerial?.let { BleCandidate("other", "Test", -30) }, BleCandidate(currentId, "Test", -50),
             ) else emptyList())
             if (!finiteScan) awaitCancellation()
         }
         finally { scanning = false }
+    }
+    override suspend fun bondedKeyringCandidates(): List<String> {
+        assertFalse(scanning, "스캔을 끝낸 뒤 페어링된 후보를 받아야 한다")
+        return bondedCandidates
     }
     override suspend fun connect(candidateId: String): BleConnection {
         assertFalse(scanning, "스캔 정리를 기다린 뒤 연결해야 한다")
@@ -95,7 +102,7 @@ private class ProbeFixture : KeyringBle {
                 }
             }
         }
-        assertEquals(currentId, candidateId, "이전 탐색의 ID를 재사용하면 안 된다")
+        assertTrue(candidateId == currentId || candidateId in bondedCandidates, "이전 탐색의 ID를 재사용하면 안 된다")
         connections++
         linkState.value = BleLinkState.Ready
         return link
@@ -676,6 +683,39 @@ class BleProbeViewModelTest {
         assertFalse(vm.state.value.connected)
         assertEquals(BleFailure.OwnershipUnverified, vm.state.value.error)
         assertEquals(BleLinkState.Closed, port.linkState.value)
+    }
+
+    @Test fun ownedSelectionUsesBondedKeyringWhenScanReturnsNothing() = runTest(dispatcher) {
+        val port = ProbeFixture().apply {
+            visible = false
+            otherSerial = "XIAO-other"
+            bondedCandidates = listOf("other", "bonded")
+        }
+        val vm = model(port)
+
+        vm.connectOwned(OwnedKeyring(4, "READY", "test", port.serial))
+        advanceTimeBy(15_000)
+        runCurrent()
+
+        assertTrue(vm.state.value.connected)
+        assertEquals(port.serial, vm.state.value.info?.serial)
+        assertEquals(listOf("GET_DEVICE_INFO", "GET_DEVICE_INFO"), port.commands)
+    }
+
+    @Test fun ownedSelectionRejectsBondedKeyringWhenServerOwnershipChanged() = runTest(dispatcher) {
+        val port = ProbeFixture().apply {
+            scanFailure = BleFailure.ScanFailed
+            bondedCandidates = listOf("bonded")
+        }
+        val vm = model(port) { ApiResult.Ok(emptyList()) }
+
+        vm.connectOwned(OwnedKeyring(4, "READY", "test", port.serial))
+        runCurrent()
+
+        assertFalse(vm.state.value.connected)
+        assertEquals(BleFailure.NotOwned, vm.state.value.error)
+        assertEquals(BleLinkState.Closed, port.linkState.value)
+        assertEquals(listOf("GET_DEVICE_INFO"), port.commands)
     }
 
     /** 다른 실물을 연결하면 기기 정보 조회까지만 진행하고 연결을 즉시 닫는다. */

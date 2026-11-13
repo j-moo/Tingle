@@ -94,6 +94,24 @@ class AndroidKeyringBle(context: Context) : KeyringBle {
         }
     }.buffer(Channel.CONFLATED).flowOn(Dispatchers.Main.immediate)
 
+    override suspend fun bondedKeyringCandidates(): List<String> = withContext(Dispatchers.Main.immediate) {
+        checkAvailable()
+        if (scanning || active != null) throw BleException(BleFailure.Busy)
+        try {
+            // OS에 저장된 키링만 후보로 삼고, 기기 주소는 Android 계층에만 둔다.
+            val bonded = adapter?.bondedDevices.orEmpty().filter { device ->
+                device.type != BluetoothDevice.DEVICE_TYPE_CLASSIC &&
+                    (device.name == "Tingle-Keyring" || device.uuids?.contains(ParcelUuid(NusUuid.service)) == true)
+            }
+            candidates.clear()
+            bonded.map { device ->
+                UUID.randomUUID().toString().also { candidates[it] = device }
+            }
+        } catch (_: SecurityException) {
+            throw BleException(BleFailure.PermissionRequired)
+        }
+    }
+
     override suspend fun connect(candidateId: String): BleConnection {
         var opened: AndroidNusLink? = null
         try {
