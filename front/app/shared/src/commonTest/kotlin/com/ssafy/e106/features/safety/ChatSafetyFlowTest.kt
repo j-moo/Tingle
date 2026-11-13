@@ -30,6 +30,20 @@ internal class ExtraServer : ChatExtrasRepository {
     override suspend fun notices(room: Long) = onNotices?.invoke() ?: ApiResult.Ok(ChatNotices(listOf(ChatNoticeRecord("notice", "ONE_HOUR_BEFORE_END",
         "2026-11-03T00:00:00Z", "2026-11-10T00:00:00Z", "곧 종료", null))))
     override suspend fun acknowledge(room: Long, id: String, key: String): ApiResult<ChatNoticeAck> { acks++; return ApiResult.Ok(ChatNoticeAck("2026-11-03T00:00:00Z")) }
+    var topic = TopicConsentRecord(false, TOPIC_CONSENT_VERSION, null)
+    val topicWrites = mutableListOf<TopicConsentBody>()
+    override suspend fun topicConsent(user: Long) = ApiResult.Ok(topic)
+    override suspend fun topicConsent(user: Long, body: TopicConsentBody): ApiResult<TopicConsentRecord> {
+        topicWrites += body; topic = TopicConsentRecord(body.enabled, body.noticeVersion, null); return ApiResult.Ok(topic)
+    }
+    var safety: ApiResult<SafetyNoticeList> = ApiResult.Ok(SafetyNoticeList(emptyList()))
+    val shown = mutableListOf<Long>()
+    var shownResult: ApiResult<SafetyNoticeShown>? = null
+    var safetyQueries = 0
+    override suspend fun safetyNotices(room: Long): ApiResult<SafetyNoticeList> { safetyQueries++; return safety }
+    override suspend fun safetyShown(room: Long, id: Long): ApiResult<SafetyNoticeShown> {
+        shown += id; return shownResult ?: ApiResult.Ok(SafetyNoticeShown(id, "2026-11-03T00:00:00Z"))
+    }
     override suspend fun consent(user: Long) = ApiResult.Ok(consent)
     override suspend fun consent(user: Long, body: RiskConsentBody): ApiResult<RiskConsentRecord> {
         consentWrites += body
@@ -51,6 +65,125 @@ class ChatSafetyFlowTest {
     @AfterTest fun teardown() { store.clear(); Dispatchers.resetMain() }
     private fun test(block: suspend TestScope.() -> Unit) = runTest(dispatcher) { try { block() } finally { store.clear() } }
     private fun session() = TestSession(OnboardingStatus.READY)
+    /** 위험 안내는 아는 유형만 보이고, 닫아야 표시 확인을 보내며 확인 실패면 그대로 남는다. */
+    @Test fun safetyNoticesShowKnownTypesAndCloseSendsDisplayed() = test {
+        val api = ExtraServer().apply { safety = ApiResult.Ok(SafetyNoticeList(listOf(
+            SafetyNoticeItem(7, "MONEY_REQUEST", "RECIPIENT", "2026-11-03T00:00:00Z"),
+            SafetyNoticeItem(8, "UNKNOWN_KIND", "RECIPIENT", "2026-11-03T00:00:00Z")))) }
+        val m = ChatExtrasViewModel(api,ChatTestServer(),session()).also { store.put("e",it) }
+        m.bind(20,true); runCurrent()
+        assertEquals(listOf(7L), m.state.value.safety.map { it.noticeId })
+        assertTrue(api.shown.isEmpty())
+        api.shownResult = ApiResult.Fail(AppError.Offline)
+        m.closeSafety(7); runCurrent()
+        assertEquals(listOf(7L), m.state.value.safety.map { it.noticeId })
+        api.shownResult = null
+        m.closeSafety(7); runCurrent()
+        assertEquals(listOf(7L, 7L), api.shown); assertTrue(m.state.value.safety.isEmpty())
+        m.check(); runCurrent()
+        assertTrue(m.state.value.safety.isEmpty())
+    }
+    /** 공통 관심 주제 질문(COMMON_TOPIC_TEMPLATE)도 정상 질문으로 보여 주고 출처를 남긴다. */
+    @Test fun commonTopicQuestionsAreShown() = test {
+        val api = ExtraServer().apply { result = ApiResult.Ok(IcebreakerResult("SUCCEEDED",listOf("하나","둘","셋"),"COMMON_TOPIC_TEMPLATE","v1")) }
+        val m = ChatExtrasViewModel(api,ChatTestServer(),session()).also { store.put("e",it) }
+        m.bind(20,true); runCurrent()
+        assertEquals(listOf("하나","둘","셋"), m.state.value.questions)
+        assertEquals("COMMON_TOPIC_TEMPLATE", m.state.value.source); assertNull(m.state.value.error)
+    }
+    /** 관심 주제 동의는 서버 버전으로 저장하고, 응답 값으로만 스위치를 바꾼다. */
+    @Test fun topicConsentLoadsAndSavesWithServerVersion() = test {
+        val api = ExtraServer()
+        val m = ChatExtrasViewModel(api,ChatTestServer(),session()).also { store.put("e",it) }
+        m.bind(20,true); runCurrent()
+        assertEquals(false, m.state.value.topicConsent)
+        m.setTopicConsent(true); runCurrent()
+        assertEquals(listOf(TopicConsentBody(true, "q040-consent-v1")), api.topicWrites)
+        assertEquals(true, m.state.value.topicConsent); assertFalse(m.state.value.topicSaving)
+        m.setTopicConsent(true); runCurrent()
+        assertEquals(1, api.topicWrites.size)
+    }
+    /** 동의를 끄면 보이던 공통 주제 질문을 바로 지우고 서버의 일반 질문을 다시 받는다. 생성 요청은 하지 않는다. */
+    @Test fun topicConsentOffHidesCommonTopicQuestionsAndReloads() = test {
+        val api = ExtraServer().apply { topic = TopicConsentRecord(true, TOPIC_CONSENT_VERSION, null)
+            result = ApiResult.Ok(IcebreakerResult("SUCCEEDED",listOf("하나","둘","셋"),"COMMON_TOPIC_TEMPLATE","v1")) }
+        val m = ChatExtrasViewModel(api,ChatTestServer(),session()).also { store.put("e",it) }
+        m.bind(20,true); runCurrent()
+        assertEquals("COMMON_TOPIC_TEMPLATE", m.state.value.source)
+        // 다시 조회가 실패해도 옛 공통 주제 질문은 남지 않는다
+        api.onQuestions = { ApiResult.Fail(AppError.Offline) }
+        m.setTopicConsent(false); runCurrent()
+        assertEquals(false, m.state.value.topicConsent)
+        assertTrue(m.state.value.questions.isEmpty()); assertNull(m.state.value.source)
+        api.onQuestions = null
+        api.result = ApiResult.Ok(IcebreakerResult("SUCCEEDED",listOf("넷","다섯","여섯"),"GENERAL_FALLBACK","v1"))
+        m.check(); runCurrent()
+        assertEquals(listOf("넷","다섯","여섯"), m.state.value.questions)
+        assertEquals("GENERAL_FALLBACK", m.state.value.source); assertEquals(0, api.requests)
+        // 조회가 되는 경우: 끄자마자 일반 질문으로 바뀐다
+        m.setTopicConsent(true); runCurrent()
+        api.result = ApiResult.Ok(IcebreakerResult("SUCCEEDED",listOf("일곱","여덟","아홉"),"GENERAL_FALLBACK","v1"))
+        m.setTopicConsent(false); runCurrent()
+        assertEquals(listOf("일곱","여덟","아홉"), m.state.value.questions); assertEquals(0, api.requests)
+    }
+    /** 동의를 끄기 전에 시작한 질문 조회의 응답이 늦게 와도 옛 공통 주제 질문을 되살리지 않는다. */
+    @Test fun topicConsentOffDiscardsLateQuestionResponse() = test {
+        val late = CompletableDeferred<ApiResult<IcebreakerResult>>()
+        val api = ExtraServer().apply { topic = TopicConsentRecord(true, TOPIC_CONSENT_VERSION, null); onQuestions = { late.await() } }
+        val m = ChatExtrasViewModel(api,ChatTestServer(),session()).also { store.put("e",it) }
+        m.bind(20,true); runCurrent()
+        assertTrue(m.state.value.busy); assertEquals(true, m.state.value.topicConsent)
+        // 끈 뒤의 조회는 서버가 바꿔 둔 일반 질문을 받는다
+        api.onQuestions = null
+        api.result = ApiResult.Ok(IcebreakerResult("SUCCEEDED",listOf("넷","다섯","여섯"),"GENERAL_FALLBACK","v1"))
+        m.setTopicConsent(false); runCurrent()
+        assertEquals(listOf("넷","다섯","여섯"), m.state.value.questions)
+        late.complete(ApiResult.Ok(IcebreakerResult("SUCCEEDED",listOf("하나","둘","셋"),"COMMON_TOPIC_TEMPLATE","v1"))); runCurrent()
+        assertEquals(listOf("넷","다섯","여섯"), m.state.value.questions)
+        assertEquals("GENERAL_FALLBACK", m.state.value.source)
+        assertFalse(m.state.value.busy); assertEquals(0, api.requests)
+    }
+    /** 첫 재조회(3초) 뒤에 생긴 위험 안내도 같은 화면에서 보인다. 재조회는 정해진 횟수만 하고 질문은 건드리지 않는다. */
+    @Test fun lateSafetyNoticeAppearsOnLaterRecheckWithinLimit() = test {
+        val api = ExtraServer()
+        val m = ChatExtrasViewModel(api,ChatTestServer(),session()).also { store.put("e",it) }
+        m.bind(20,true); runCurrent()
+        val queries = api.queries; val base = api.safetyQueries
+        m.watchSafety()
+        advanceTimeBy(3_000); runCurrent()
+        assertEquals(base + 1, api.safetyQueries); assertTrue(m.state.value.safety.isEmpty())
+        // 서버 분석이 6초쯤 끝나 안내가 생긴 경우
+        api.safety = ApiResult.Ok(SafetyNoticeList(listOf(SafetyNoticeItem(7, "MONEY_REQUEST", "RECIPIENT", "2026-11-03T00:00:00Z"))))
+        advanceTimeBy(5_000); runCurrent()
+        assertEquals(listOf(7L), m.state.value.safety.map { it.noticeId })
+        advanceTimeBy(60_000); runCurrent()
+        assertEquals(base + SAFETY_REFRESH_AT_MS.size, api.safetyQueries)
+        assertEquals(queries, api.queries); assertEquals(0, api.requests)
+        // 새 메시지가 오면 처음부터 다시 센다
+        m.watchSafety(); advanceTimeBy(2_000); m.watchSafety(); advanceTimeBy(2_000); runCurrent()
+        assertEquals(base + SAFETY_REFRESH_AT_MS.size, api.safetyQueries)
+        advanceTimeBy(1_000); runCurrent()
+        assertEquals(base + SAFETY_REFRESH_AT_MS.size + 1, api.safetyQueries)
+    }
+    /** 입장 때 없던 위험 안내가 채팅 중 생기면 같은 방에서 보이고, 이때 질문은 다시 조회 · 생성하지 않는다. */
+    @Test fun safetyNoticeCreatedDuringChatAppearsWithoutQuestionRequests() = test {
+        val api = ExtraServer()
+        val m = ChatExtrasViewModel(api,ChatTestServer(),session()).also { store.put("e",it) }
+        m.bind(20,true); runCurrent()
+        assertTrue(m.state.value.safety.isEmpty())
+        val queries = api.queries; val questions = m.state.value.questions
+        api.safety = ApiResult.Ok(SafetyNoticeList(listOf(SafetyNoticeItem(7, "HARASSMENT", "RECIPIENT", "2026-11-03T00:00:00Z"))))
+        m.refreshSafety(); runCurrent()
+        assertEquals(listOf(7L), m.state.value.safety.map { it.noticeId })
+        m.closeSafety(7); runCurrent()
+        assertEquals(listOf(7L), api.shown); assertTrue(m.state.value.safety.isEmpty())
+        // 같은 방으로 돌아오면(bind) 닫은 안내는 빼고 새 안내만 보인다
+        api.safety = ApiResult.Ok(SafetyNoticeList(listOf(SafetyNoticeItem(7, "HARASSMENT", "RECIPIENT", "2026-11-03T00:00:00Z"),
+            SafetyNoticeItem(9, "MONEY_REQUEST", "RECIPIENT", "2026-11-03T00:00:00Z"))))
+        m.bind(20,true); runCurrent()
+        assertEquals(listOf(9L), m.state.value.safety.map { it.noticeId })
+        assertEquals(queries, api.queries); assertEquals(0, api.requests); assertEquals(questions, m.state.value.questions)
+    }
     /** 방 확인 이후 도착한 안내가 방 종료를 넘어 잠깐이라도 화면에 노출되면 안 된다. */
     @Test fun delayedNoticeRechecksRoomBeforePublishingOrRequestingQuestions() = test {
         val gate = CompletableDeferred<Unit>(); val chats = ChatTestServer(); val api = ExtraServer()

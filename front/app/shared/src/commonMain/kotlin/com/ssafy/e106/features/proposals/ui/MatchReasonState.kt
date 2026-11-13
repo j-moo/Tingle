@@ -8,6 +8,9 @@ data class MatchReasonTask(val status: String, val retryable: Boolean, val pollA
 /** 공개 조회 응답의 표시용 입력. 통신/역직렬화/권한 확인은 후속 연결부의 책임이다. */
 data class MatchReasonResult(val status: String, val source: String? = null, val text: String? = null)
 
+/** 화면에 보여 줄 설명 출처: AI가 만든 설명(GENERATED)과 규칙 기반 설명(RULE_FALLBACK). 그 밖의 출처는 숨긴다. */
+private val SHOWN_SOURCES = setOf("GENERATED", "RULE_FALLBACK")
+
 data class MatchReasonState(
     val status: MatchReasonStatus = MatchReasonStatus.Unknown,
     val text: String? = null,
@@ -18,7 +21,7 @@ data class MatchReasonState(
     val accessible: Boolean = true,
 ) {
     val visibleText: String? get() = text?.takeIf {
-        accessible && status == MatchReasonStatus.Ready && source == "RULE_FALLBACK" && it.isNotBlank()
+        accessible && status == MatchReasonStatus.Ready && source in SHOWN_SOURCES && it.isNotBlank()
     }
     val canRetry: Boolean get() = accessible && !busy && status == MatchReasonStatus.Failed && retryable
     val canCheck: Boolean get() = accessible && !busy &&
@@ -39,7 +42,7 @@ data class MatchReasonState(
         fun fromResult(result: MatchReasonResult): MatchReasonState = when (result.status) {
             "PENDING" -> MatchReasonState(MatchReasonStatus.Pending)
             "FAILED" -> MatchReasonState(MatchReasonStatus.Failed)
-            "SUCCEEDED" -> if (result.source == "RULE_FALLBACK" && !result.text.isNullOrBlank())
+            "SUCCEEDED" -> if (result.source in SHOWN_SOURCES && !result.text.isNullOrBlank())
                 MatchReasonState(MatchReasonStatus.Ready, result.text, result.source) else MatchReasonState()
             else -> MatchReasonState()
         }

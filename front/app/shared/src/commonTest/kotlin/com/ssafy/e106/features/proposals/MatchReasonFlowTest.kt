@@ -27,10 +27,12 @@ class MatchReasonFlowTest {
     @AfterTest fun teardown() { store.clear(); Dispatchers.resetMain() }
     private fun vm(server: ReasonServer, session: TestSession = TestSession(OnboardingStatus.READY)) =
         MatchReasonViewModel(server, session).also { store.put("reason", it); it.bind(ProposalReviewContext(1, 10, 1)) }
-    @Test fun onlyApprovedSuccessfulRuleTextIsVisible() = runTest(dispatcher) {
+    @Test fun generatedAndRuleTextAreVisibleButUnknownSourceIsNot() = runTest(dispatcher) {
         val server = ReasonServer(); val m = vm(server); m.check(); runCurrent()
         assertEquals(server.result.text, m.state.value.view.visibleText)
-        server.result = server.result.copy(source = "GENERATED"); m.check(); runCurrent()
+        server.result = server.result.copy(source = "GENERATED", text = "두 분 모두 조용한 산책을 좋아해요."); m.check(); runCurrent()
+        assertEquals("두 분 모두 조용한 산책을 좋아해요.", m.state.value.view.visibleText)
+        server.result = server.result.copy(source = "UNREVIEWED"); m.check(); runCurrent()
         assertNull(m.state.value.view.visibleText)
     }
     @Test fun networkRetryUsesSameKeyAndDoesNotInventAnExplanation() = runTest(dispatcher) {

@@ -47,7 +47,7 @@ class QuestionCardsTestActivity : ComponentActivity() {
         setContent { AppTheme {
             ConnectedChatRoute(session.state.value as Session.SignedIn, initialRoom = 20,
                 onHome = {}, onProposals = {}, onProfile = {}, onSafety = { _, _ -> }, onConsent = {},
-                support = { id, readable, editable, draft, insert ->
+                support = { id, readable, editable, draft, insert, _, _ ->
                     ConnectedChatExtras(id, readable, editable, insert, extras, draft)
                 }, listModel = provider[ChatListViewModel::class.java], roomModel = roomModel,
                 partnerModel = provider[ChatPartnerViewModel::class.java])
