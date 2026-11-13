@@ -15,20 +15,23 @@ import com.ssafy.e106.resources.*
 import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.viewmodel.koinViewModel
 
-/** 가입 키링 단계의 실제 서버 등록 경로(운영 앱 · 개발 앱 같음). */
-@Composable fun ConnectedKeyringSetupRoute(onBack: () -> Unit, managedConnection: Boolean = false, allowRegistration: Boolean = false) {
+/** 가입과 내 키링에서 같은 서버 등록 경로를 사용한다. */
+@Composable fun ConnectedKeyringSetupRoute(onBack: () -> Unit, managedConnection: Boolean = false,
+    allowRegistration: Boolean = false, onRegistrationDone: (() -> Unit)? = null) {
     // 호스트가 연결을 관리하는 경우 화면을 나가도 설정 저장/가입 단계 전환까지 같은 연결을 사용한다.
     // 등록 화면은 등록 증명만 다룬다. 동기화 화면과 초기화 연결에는 소유 목록 확인을 적용한다.
     ConnectedBleProbeRoute(onBack, registration = if (allowRegistration) koinViewModel<KeyringRegistrationViewModel>() else null,
         sync = if (allowRegistration) null else koinViewModel<KeyringSyncViewModel>(),
-        managedConnection = managedConnection, autoScan = true)
+        managedConnection = managedConnection, autoScan = true, onRegistrationDone = onRegistrationDone)
 }
 
 /** 재시도는 새 등록이 아니라 보관한 동일 요청의 결과 확인이다. 자동으로 서버 등록을 시작하지 않는다. */
 @Composable internal fun KeyringRegistrationPanel(model: KeyringRegistrationViewModel, ble: BleProbeViewModel,
-    bleState: BleProbeState, syncBusy: Boolean = false) {
+    bleState: BleProbeState, syncBusy: Boolean = false, onRegistrationDone: (() -> Unit)? = null) {
     val state by model.state.collectAsStateWithLifecycle()
-    KeyringRegistrationPanelContent(state, bleState, syncBusy, onRestore = model::restore, onContinue = model::continueOnboarding,
+    // 가입 화면은 서버의 다음 단계를 다시 확인하고, 관리 화면은 확인된 등록 결과를 목록에서 보여준다.
+    KeyringRegistrationPanelContent(state, bleState, syncBusy, onRestore = model::restore,
+        onContinue = onRegistrationDone ?: model::continueOnboarding,
         onRetry = { serial -> model.retry { challenge -> ble.registrationProof(challenge, serial) } }, onRestart = model::restart,
         onStart = { serial -> model.start(serial) { challenge -> ble.registrationProof(challenge, serial) } })
 }

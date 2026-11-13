@@ -169,9 +169,12 @@ class BleProbeViewModel(
         val session = sessions.state.value as? Session.SignedIn
             ?: throw BleException(BleFailure.OwnershipUnverified)
         if (session.userId != owner) throw BleException(BleFailure.OwnershipUnverified)
-        // 가입의 등록 화면에서만 목록 밖 기기의 등록 절차를 허용한다.
-        // 일반 연결은 펌웨어가 미귀속 상태를 보고해도 서버 목록을 다시 확인한다.
-        if (registrationMode && session.status == OnboardingStatus.KEYRING_REQUIRED) return
+        // 가입을 마친 계정은 등록 화면에서 미귀속 상태를 명시한 보드의 증명만 요청할 수 있다.
+        // 일반 연결과 귀속된 보드는 서버 소유 목록을 대조하고, 실제 귀속은 등록 API가 확인한다.
+        if (registrationMode) {
+            if (!session.isReady && session.status == OnboardingStatus.KEYRING_REQUIRED) return
+            if (session.isReady && info.ownerState == "UNOWNED" && info.supportsRegistration) return
+        }
 
         // BLE 연결은 기기 정보를 읽는 데만 쓴다. 계정이 소유한 실물임을 확인해야 연결 완료를 공개한다.
         val response = owned.list()

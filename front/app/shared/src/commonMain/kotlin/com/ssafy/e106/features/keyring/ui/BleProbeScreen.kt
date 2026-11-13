@@ -53,12 +53,13 @@ import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.viewmodel.koinViewModel
 
 /**
- * 키링 연결 화면. [registration] 을 받으면(가입 키링 단계) 아래에 등록 패널을 붙여 실제 귀속까지 진행한다.
+ * 키링 연결 화면. [registration] 을 받으면 등록 패널을 붙여 실제 귀속까지 진행한다.
  * [autoScan] 이면 들어오자마자(블루투스가 켜지면 그때) 주변 키링을 찾는다. 탐색은 등록이 아니다.
  */
 @Composable fun ConnectedBleProbeRoute(onBack: () -> Unit, model: BleProbeViewModel = koinViewModel(),
     registration: KeyringRegistrationViewModel? = null, sync: KeyringSyncViewModel? = null,
-    managedConnection: Boolean = false, autoScan: Boolean = false, allowEncounterTransfer: Boolean = false) {
+    managedConnection: Boolean = false, autoScan: Boolean = false, allowEncounterTransfer: Boolean = false,
+    onRegistrationDone: (() -> Unit)? = null) {
     val permission = rememberBlePermission()
     val state by model.state.collectAsStateWithLifecycle()
     val registrationState = registration?.state?.collectAsStateWithLifecycle()?.value
@@ -112,7 +113,7 @@ import org.koin.compose.viewmodel.koinViewModel
         onDisconnect = { model.leave(); searched = false }) {
         // 동기화 중 다른 명령을 막고 등록 결과와 설정 상태를 같은 화면에 표시한다.
         // 저장된 등록 요청 복구 · 미전송 동기화도 연결 전에 보여야 해서 단계와 상관없이 아래에 둔다.
-        if (!pickExisting) registration?.let { KeyringRegistrationPanel(it, model, state, syncBusy) }
+        if (!pickExisting) registration?.let { KeyringRegistrationPanel(it, model, state, syncBusy, onRegistrationDone) }
         sync?.let { KeyringSyncPanel(it, model, state, registrationBusy, ownedModel!!, managedConnection = managedConnection, pickExisting = pickExisting) }
         // 소유 확인은 화면에 보인 이름이 아니라 서버가 확인한 동기화 기록으로 수행한다.
         val info = state.info
