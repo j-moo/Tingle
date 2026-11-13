@@ -27,6 +27,9 @@
     <string name="sync_fail_close">닫기</string>
     <string name="sync_live_latest">최신 설정 보내기</string>
     <string name="sync_live_open">등록된 키링 연결·동기화</string>
+    <string name="sync_manual_open">키링 설정 동기화</string>
+    <string name="sync_manual_check">최신 설정 확인·동기화</string>
+    <string name="sync_manual_already_latest">키링에 최신 설정이 저장되어 있어요.</string>
     <!-- 이미 등록된 키링(BOUND)을 연결했을 때: 내 키링 목록에서 고르기 -->
     <string name="sync_pick_title">내 키링을 골라 주세요</string>
     <string name="sync_pick_firmware">펌웨어 %1$s</string>

@@ -158,6 +158,39 @@ class KeyringSyncTest {
     private fun model(server: SyncServer, store: KeyringSyncStore, session: SessionStore = TestSession(OnboardingStatus.SYNC_PENDING)) =
         KeyringSyncViewModel(server, store, server, session).also { models.put("sync", it); it.resume() }
 
+    /** 같은 버전이라도 해시가 다르면 다시 보내고, 둘 다 일치할 때만 최신으로 표시한다. */
+    @Test fun manualSyncChecksCurrentBoardBeforeSendingAgain() = runTest(dispatcher) {
+        val server = SyncServer()
+        val store = KeyringSyncStore(SyncPrefs())
+        val serial = "XIAO-test"
+        store.rememberTarget(1, syncRun.deviceId, serial)
+        var hash = syncRun.payloadHash
+        var writes = 0
+        val m = model(server, store, TestSession(OnboardingStatus.READY))
+        m.attachRequest(serial, { SyncChallengeBody("A".repeat(43)) },
+            getDeviceInfo = { BleDeviceInfo(serial, "test", true,
+                storedSettingsVersion = syncRun.settingsVersion, storedPayloadHash = hash) }) {
+            writes++
+            stored(it)
+        }
+        runCurrent()
+        assertEquals(1, writes)
+
+        m.useExisting(syncRun.deviceId, serial, checkLatest = true)
+        runCurrent()
+        assertTrue(m.state.value.items.single().alreadyLatest)
+        assertEquals(1, writes)
+        assertEquals(1, server.creates.size)
+
+        hash = "0".repeat(64)
+        m.useExisting(syncRun.deviceId, serial, checkLatest = true)
+        runCurrent()
+        assertEquals(2, writes)
+        assertEquals(2, server.acks.size)
+        assertFalse(m.state.value.items.single().alreadyLatest)
+        assertEquals(SyncPhase.Confirmed, m.state.value.items.single().phase)
+    }
+
     // 실제 NetworkMonitor는 OS 콜백을 Flow로 제공한다. 시험은 신호만 제어하고 기존 내구 복구 경로를 검증한다.
     @Test fun internetRestoreRetriesFailedCreateWithSameKeyAndBody() = runTest(dispatcher) {
         val availability = MutableStateFlow(false)

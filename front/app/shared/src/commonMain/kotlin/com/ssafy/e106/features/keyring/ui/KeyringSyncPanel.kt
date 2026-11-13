@@ -39,7 +39,7 @@ import org.jetbrains.compose.resources.stringResource
  */
 @Composable internal fun KeyringSyncPanel(model: KeyringSyncViewModel, ble: BleProbeViewModel,
     bleState: BleProbeState, registrationBusy: Boolean, owned: OwnedKeyringsViewModel,
-    managedConnection: Boolean = false, pickExisting: Boolean = false) {
+    managedConnection: Boolean = false, pickExisting: Boolean = false, manualSettings: Boolean = false) {
     val state by model.state.collectAsStateWithLifecycle()
     val list by owned.state.collectAsStateWithLifecycle()
     val serial = bleState.info?.serial?.takeIf { bleState.connected }
@@ -48,15 +48,18 @@ import org.jetbrains.compose.resources.stringResource
     if (!managedConnection) DisposableEffect(serial, state.owner) {
         // 호스트 없이 이 화면만 쓸 때도 서비스 호스트와 동일한 형식 선택을 사용한다.
         if (serial != null) model.attachRequest(serial, { ble.syncIssuanceRequest(serial) },
-            getApplied = { ble.readSettingsApplied(it, serial) }) { run -> ble.syncSettings(run, serial) }
+            getApplied = { ble.readSettingsApplied(it, serial) },
+            getDeviceInfo = { ble.readSyncDeviceInfo(serial) }) { run -> ble.syncSettings(run, serial) }
         onDispose { model.detach() }
     }
     // 고르기 화면에서 목록이 비어 있으면(첫 진입 · 세션 갱신으로 초기화됨) 불러온다
     val needList = pickExisting && list.owner != null && list.items == null && list.error == null && !list.loading
     LaunchedEffect(needList) { if (needList) owned.load() }
     KeyringSyncPanelContent(state, bleState, list, registrationBusy, pickExisting, onRetry = model::retry, onLatest = model::latest,
-        onRetryRecovery = model::retryRecovery, onRefreshOwned = owned::load, onUseExisting = model::useExisting,
-        onReadStatus = ble::readStatus)
+        onRetryRecovery = model::retryRecovery, onRefreshOwned = owned::load,
+        onUseExisting = { deviceId, serial -> model.useExisting(deviceId, serial) },
+        onReadStatus = ble::readStatus, manualSettings = manualSettings,
+        onCheckSettings = { deviceId, serial -> model.useExisting(deviceId, serial, checkLatest = true) })
 }
 
 /** 순수 화면(Preview 용). 동기화 · 내 키링 목록 · 연결 상태만 받아 그리고, 서버 · 기기 호출은 콜백으로 넘긴다 */
@@ -73,6 +76,8 @@ import org.jetbrains.compose.resources.stringResource
     onRefreshOwned: () -> Unit = {},
     onUseExisting: (deviceId: Long, serial: String) -> Unit = { _, _ -> },
     onReadStatus: () -> Unit = {},
+    manualSettings: Boolean = false,
+    onCheckSettings: (deviceId: Long, serial: String) -> Unit = { _, _ -> },
 ) {
     val serial = bleState.info?.serial?.takeIf { bleState.connected }
     // 사용자가 손대야 하는 실패. 진행 상황은 띄우지 않고(연결되면 알아서 보낸다), 실패는 하단 시트로 알린다
@@ -111,7 +116,14 @@ import org.jetbrains.compose.resources.stringResource
         // 지금 연결한 보드로 보내는 중 · 보낸 키링만 "보내는 중"으로 친다. 실패했거나 다른 보드용 기록이면
         // 맞추기 · 다시 불러오기를 남겨 이 보드로 다시 맞출 수 있게 한다
         val mine = state.items.filter { it !in stuck && it.serial == serial }
-        OwnedKeyringPicker(list, serial, syncing = mine.map { it.deviceId }.toSet(),
+        if (manualSettings) {
+            // 연결한 일련번호에 대응하는 소유 기기 하나만 동기화한다.
+            val target = list.items?.singleOrNull { it.deviceSerial == serial }
+            if (target != null) AppButton(stringResource(Res.string.sync_manual_check), Modifier.fillMaxWidth(),
+                enabled = !locked && !bleState.busy && !registrationBusy, onClick = { onCheckSettings(target.deviceId, serial) })
+            else OwnedKeyringPicker(list, serial, emptySet(),
+                !locked && !bleState.busy && !registrationBusy, onRefreshOwned, onCheckSettings)
+        } else OwnedKeyringPicker(list, serial, syncing = mine.map { it.deviceId }.toSet(),
             enabled = !state.busy && !registrationBusy && !bleState.busy, onRefreshOwned, onUseExisting)
         // 이 보드로 보내는 중 · 보냄만 바로 아래에 보여준다(실패는 하단 시트로, 다른 보드용 기록은 숨김)
         // 카드와 같은 "내 키링 N" 번호를 붙인다(목록에 없는 키링은 번호 없이)
@@ -228,7 +240,11 @@ import org.jetbrains.compose.resources.stringResource
             SyncPhase.Sending -> Res.string.sync_live_sending
             SyncPhase.Stored -> Res.string.sync_live_stored
             SyncPhase.Confirming -> Res.string.sync_live_confirming
-            SyncPhase.Confirmed -> if (item.confirmedTsv3Version != null) Res.string.sync_live_full_confirmed else Res.string.sync_live_confirmed
+            SyncPhase.Confirmed -> when {
+                item.alreadyLatest -> Res.string.sync_manual_already_latest
+                item.confirmedTsv3Version != null -> Res.string.sync_live_full_confirmed
+                else -> Res.string.sync_live_confirmed
+            }
             SyncPhase.PolicyWaiting -> Res.string.sync_live_policy
             SyncPhase.Stale -> Res.string.sync_live_stale
             SyncPhase.Failed -> Res.string.sync_live_failed

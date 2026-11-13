@@ -355,6 +355,22 @@ class BleProbeViewModel(
         return SyncChallengeBody(nonce, info.issuanceFormat())
     }
 
+    /** 버튼을 누른 시점의 저장 상태를 읽고, 다른 기기나 끊어진 연결의 응답은 버린다. */
+    internal suspend fun readSyncDeviceInfo(expectedSerial: String): BleDeviceInfo {
+        awaitAvailable(expectedSerial)
+        val channel = connection ?: throw BleException(BleFailure.Disconnected)
+        val stamp = generation
+        mutable.update { it.copy(busy = true) }
+        try {
+            val info = readInfo(channel)
+            check(stamp == generation && channel === connection && info.serial == expectedSerial)
+            mutable.update { it.copy(info = info) }
+            return info
+        } finally {
+            if (stamp == generation) mutable.update { it.copy(busy = false) }
+        }
+    }
+
     // 현재 기기가 증명 버전과 보호 전송을 선언한 형식 중 가장 구체적인 형식을 발급받는다.
     private fun BleDeviceInfo.issuanceFormat() = when {
         ownerFlow.supportsFullSettings(this) -> KeyringSyncProtocol.FULL_SETTINGS_FORMAT
