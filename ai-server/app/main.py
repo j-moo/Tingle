@@ -15,7 +15,8 @@ if TYPE_CHECKING:
     from app.risk_detection.gms_runtime import GmsPrimaryConfiguration
 
 def create_app(app_settings: Settings | None = None, *, _risk_engine_factory: Callable | None = None,
-               _risk_gms_primary: "GmsPrimaryConfiguration | None" = None) -> FastAPI:
+               _risk_gms_primary: "GmsPrimaryConfiguration | None" = None,
+               _match_gms_client=None, _icebreaker_gms_client=None) -> FastAPI:
     """Build the real application with explicit Python-only dependency injection.
 
     No setting or HTTP input selects a model. The default application keeps
@@ -51,6 +52,7 @@ def create_app(app_settings: Settings | None = None, *, _risk_engine_factory: Ca
     application.state.risk_runtime = risk_runtime
     application.include_router(create_icebreaker_router(
         service_auth, configured.icebreaker_release_descriptor_file, dev_enabled=configured.icebreaker_dev_enabled,
+        gms_client=_icebreaker_gms_client if configured.app_env in {"local", "test", "dev"} else None,
     ))
     application.include_router(create_development_router(
         authenticate=service_auth, environment=configured.app_env, runtime=risk_runtime,

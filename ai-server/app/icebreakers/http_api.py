@@ -77,7 +77,7 @@ def _select_questions(topic_key: CommonTopicKey | None) -> IcebreakerResponse:
 
 
 def create_router(
-    authenticate: ServiceAuthenticator, descriptor_file: str = "", *, dev_enabled: bool = False,
+    authenticate: ServiceAuthenticator, descriptor_file: str = "", *, dev_enabled: bool = False, gms_client=None,
 ) -> APIRouter:
     router = APIRouter()
     releases = None
@@ -90,6 +90,11 @@ def create_router(
             # Invalid icebreaker configuration must not disable other AI routes.
             pass
 
+    generator = None
+    if enabled and gms_client is not None:
+        from .gms import GmsIcebreakerGenerator
+        generator = GmsIcebreakerGenerator(gms_client)
+
     @router.post("/internal/ai/icebreakers", tags=["internal"], response_model=IcebreakerResponse)
     async def icebreakers(request: Request) -> IcebreakerResponse:
         authenticate(request)  # Includes the shared RS256 and ai:execute checks.
@@ -98,7 +103,12 @@ def create_router(
         payload = await _parse_request(request)
         try:
             await run_in_threadpool(releases.verify, payload.manifest.model_dump())
-            return _select_questions(payload.commonTopicKey)
+            result = _select_questions(payload.commonTopicKey)
+            # Omitted key means public-topic consent is unavailable: never call GMS.
+            if generator is not None and payload.commonTopicKey is not None:
+                result = await generator.suggest(payload.commonTopicKey, result)
+                await run_in_threadpool(releases.verify, payload.manifest.model_dump())
+            return result
         except (ReleaseError, ValidationError):
             raise _unavailable() from None
 
