@@ -134,4 +134,16 @@ class KeyringResetDeviceTest {
             assertEquals(0, f.server.ownershipReads)
         }
     }
+
+    /** 서버 완료 기록을 보관한 상태로 화면을 다시 열어도 복구 카드가 나타나지 않는다. */
+    @Test fun completedResetDoesNotAppearInRecoveryLinks() {
+        val f = ResetFixture()
+        runBlocking { f.seed(run = resetDone(), ack = resetProof) }
+        KeyringResetTestActivity.fixture = f
+        launch("links").use {
+            compose.waitForIdle()
+            compose.onNodeWithText("초기화 중인 키링").assertDoesNotExist()
+            assertEquals(0, f.server.ownershipReads)
+        }
+    }
 }
