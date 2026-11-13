@@ -21,6 +21,7 @@ import java.time.ZoneOffset;
 import java.util.Arrays;
 import java.util.Base64;
 import java.util.HexFormat;
+import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.zip.CRC32;
@@ -257,6 +258,26 @@ class Ter2BusinessPromotionTest {
 		jdbc.update("update keyring_peer_encounter set retired=true where owner_user_id=2");
 		assertThatThrownBy(() -> evaluator.evaluate(work.input(), work.inputHash()))
 			.isInstanceOf(BusinessException.class).extracting("errorCode").isEqualTo(ErrorCode.POLICY_UNRESOLVED);
+	}
+
+	@Test
+	void keyringVerdictBuildsMatchReasonsFromEachPersonsSnapshotSurvey() {
+		// 만남 당시 설정 기록(input_json.analysis.surveyId)이 가리키는 본인 설문에서 근거를 읽는다.
+		for (long user : List.of(1L, 2L)) {
+			long survey = jdbc.queryForObject("insert into survey(user_id,survey_version,completed_at) "
+				+ "values (?,'SIS-Q-1.1-100',?) returning id", Long.class, user, Timestamp.from(metAt));
+			jdbc.update("insert into survey_answer(survey_id,question_id,answer_value,answer_type) values "
+				+ "(?,'Q034','3','NUMBER'),(?,'Q069','3','NUMBER'),(?,'Q053','nearby','STRING')",
+				survey, survey, survey);
+			String canonical = "{\"analysis\":{\"surveyId\":" + survey + ",\"surveyVersion\":\"SIS-Q-1.1-100\"}}";
+			jdbc.update("update settings_snapshot set input_json=?,input_hash=? "
+				+ "where user_id=? and settings_version=10", canonical, snapshots.hash(canonical), user);
+		}
+		promotion.promote(1, 100, submission(raw));
+		EncounterEvaluationWorker.Work work = work(matching());
+		var evidence = verdict().evaluate(work.input(), work.inputHash()).historicalEvidence();
+		assertThat(evidence.sourceEvidence()).extracting(item -> item.fact())
+			.containsExactly("두 분 다 하루에 몇 번씩 연락하는 게 좋대요.");
 	}
 
 	@Test

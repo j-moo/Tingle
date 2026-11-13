@@ -1,5 +1,6 @@
 package com.e106.tingle.encounter.peer;
 
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -24,6 +25,7 @@ import com.e106.tingle.proposal.evaluation.HistoricalEvaluationEvidence.Snapshot
 import com.e106.tingle.proposal.evaluation.HistoricalEvidenceVerifier;
 
 import lombok.RequiredArgsConstructor;
+import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
 
 /**
@@ -42,9 +44,9 @@ public class KeyringVerdictEvaluator
 	implements EncounterEvaluationGateway, MatchingEvaluationRuntimeVerifier, HistoricalEvidenceVerifier {
 
 	static final String SOURCE = "KEYRING_VERDICT";
-	// 키링 판정은 설문·성향 분석 결과를 서버에서 쓰지 않는다. 근거 형식이 요구하는 칸에 사용하지 않았다고 남긴다.
+	// 키링 판정은 설문·성향 분석 결과로 점수를 다시 계산하지 않는다. 근거 형식이 요구하는 칸에 사용하지 않았다고 남긴다.
+	// (매칭 이유 근거는 SurveyMatchEvidence가 당시 설문 5쌍에서 따로 만든다.)
 	private static final String NOT_USED = "NOT_USED";
-	private static final Map<String, List<String>> NO_VIEWER_EVIDENCE = Map.of("A", List.of(), "B", List.of());
 
 	private final JdbcTemplate jdbc;
 	private final JsonMapper mapper;
@@ -104,6 +106,8 @@ public class KeyringVerdictEvaluator
 				return false;
 			}
 			// 이미 고정한 근거는 당시 조합으로 확인한다. 지금 설정이 다음 조합으로 바뀌어도 과거 근거는 유효하다.
+			// 주의: 근거를 지금 코드로 다시 만들어 통째로 비교한다. SurveyMatchEvidence의 문장·판정 규칙을 바꾸면
+			// 그 규칙에 걸리는 기존 매칭은 검증에 실패해 매칭 이유가 안 나온다. 바꿀 때는 이전 규칙을 남겨 둘 것.
 			Decision expected = decide(input);
 			Map<String, Object> stored = new LinkedHashMap<>(matching.getEvaluation());
 			stored.remove(HistoricalEvaluationEvidence.STORAGE_KEY);
@@ -145,14 +149,43 @@ public class KeyringVerdictEvaluator
 			Map.entry("wordingVersion", NOT_USED), Map.entry("scoringVersion", NOT_USED),
 			Map.entry("typeModelVersion", NOT_USED), Map.entry("analysisVersion", NOT_USED),
 			Map.entry("typeReferenceVersion", NOT_USED));
+		// 매칭 이유 근거: 만남 당시 설정 기록이 가리키는 설문 회차의 답으로 만든다. 다시 계산해도 같은 값이 나온다.
+		SurveyMatchEvidence.Result reasons = SurveyMatchEvidence.build(answers(input.left()), answers(input.right()));
 		HistoricalEvaluationEvidence evidence = new HistoricalEvaluationEvidence(1, input.matchingId(),
-			input.metAt(), input.policyVersion(), left, right, manifest, SOURCE, List.of(), NO_VIEWER_EVIDENCE,
-			NO_VIEWER_EVIDENCE);
+			input.metAt(), input.policyVersion(), left, right, manifest, SOURCE, reasons.evidence(),
+			reasons.displayByViewer(), Map.of("A", List.of(), "B", List.of()));
 		Map<String, Object> evaluation = Map.of("source", SOURCE, "eligible", true,
 			"releaseId", input.releaseId().toString(), "matchingVersion", input.matchingRuleVersion(),
 			"productPolicyVersion", input.policyVersion(), "leftSnapshotId", left.snapshotId().toString(),
 			"rightSnapshotId", right.snapshotId().toString());
 		return new Decision(evaluation, evidence);
+	}
+
+	/** 만남 당시 설정 기록의 설문 회차(본인 것, SIS-Q-1.1-100)의 답. 없거나 형식이 다르면 빈 값이라 근거를 만들지 않는다. */
+	private Map<String, JsonNode> answers(ParticipantInput participant) {
+		Map<String, JsonNode> values = new HashMap<>();
+		// surveyId는 숫자로 바꾸지 않고 글자로 비교한다. 기록 형식이 이상해도 오류 대신 빈 결과(근거 없음)가 된다.
+		jdbc.query("select a.question_id,a.answer_type,a.answer_value from settings_snapshot s "
+			+ "join survey v on v.user_id=s.user_id and v.survey_version=? "
+			+ "and v.id::text=s.input_json::jsonb->'analysis'->>'surveyId' "
+			+ "join survey_answer a on a.survey_id=v.id "
+			+ "where s.user_id=? and s.settings_version=? and s.input_json::jsonb->'analysis'->>'surveyVersion'=?",
+			row -> {
+				String type = row.getString("answer_type");
+				String value = row.getString("answer_value");
+				try {
+					if ("STRING".equals(type)) {
+						values.put(row.getString("question_id"), mapper.getNodeFactory().stringNode(value));
+					} else if ("NUMBER".equals(type) || "ARRAY".equals(type)) {
+						values.put(row.getString("question_id"), mapper.readTree(value));
+					}
+				} catch (RuntimeException malformed) {
+					// 설명 재료가 깨졌다고 매칭 판정까지 막지 않는다. 그 문항만 근거에서 빠진다.
+					values.remove(row.getString("question_id"));
+				}
+			}, SurveyMatchEvidence.SURVEY_VERSION, participant.userId(), participant.settingsVersion(),
+			SurveyMatchEvidence.SURVEY_VERSION);
+		return values;
 	}
 
 	private static BusinessException unresolved() {
