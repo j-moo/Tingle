@@ -46,4 +46,17 @@
     <string name="home_keyring_alias_save">별명 저장</string>
     <string name="home_keyring_alias_saving">저장 중</string>
     <string name="home_keyring_alias_cancel">취소</string>
+    <string name="home_keyring_public_title">주변 검색에 별명 공개</string>
+    <string name="home_keyring_public_help">공개하면 근처에서 키링을 검색하는 사람에게 저장한 별명이 보여요.</string>
+    <string name="home_keyring_public_connect">키링 설정에서 이 키링을 연결하면 공개를 설정할 수 있어요.</string>
+    <string name="home_keyring_public_unsupported">연결한 키링은 이름 공개를 지원하지 않아요.</string>
+    <string name="home_keyring_public_checking">키링의 공개 이름을 확인하고 있어요.</string>
+    <string name="home_keyring_public_failed">공개 이름을 확인하지 못했어요. 키링 설정을 동기화한 뒤 다시 확인해 주세요.</string>
+    <string name="home_keyring_public_enabled">공개 이름 · %1$s</string>
+    <string name="home_keyring_public_disabled">공개 안 함</string>
+    <string name="home_keyring_public_save_first">먼저 별명을 저장해 주세요.</string>
+    <string name="home_keyring_public_limit">공개 이름은 %1$d바이트 이내이며 제어 문자를 사용할 수 없어요.</string>
+    <string name="home_keyring_public_publish">별명 공개</string>
+    <string name="home_keyring_public_clear">공개 해제</string>
+    <string name="home_keyring_public_retry">다시 확인</string>
 </resources>

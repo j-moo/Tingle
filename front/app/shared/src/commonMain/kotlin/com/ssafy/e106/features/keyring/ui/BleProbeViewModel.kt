@@ -346,6 +346,37 @@ class BleProbeViewModel(
             commandError = (failure as? BleCommandException)?.code)
     }
 
+    /** 현재 연결의 실물과 확인된 설정이 같은 경우에만 공개 이름을 읽거나 바꾼다. */
+    @OptIn(ExperimentalUuidApi::class)
+    internal suspend fun publicName(owner: Long, device: OwnedKeyring, stamp: Long, syncStore: KeyringSyncStore,
+        authorizer: KeyringOwnerAuthorizer, command: KeyringPublicNameCommand, name: String? = null): String? {
+        fun requireCurrent(): BleDeviceInfo {
+            val link = state.value
+            return link.info?.takeIf { info -> link.connected && link.connectionGeneration == stamp &&
+                info.serial == device.deviceSerial && info.ownerState == "BOUND" && info.supportsPublicName &&
+                (sessions.state.value as? Session.SignedIn)?.userId == owner }
+                ?: throw BleException(BleFailure.Disconnected)
+        }
+        val info = requireCurrent()
+        val limit = requireNotNull(info.maxPublicNameBytes)
+        val identity = syncStore.read(owner).singleOrNull { it.deviceId == device.deviceId && it.serial == info.serial &&
+            it.complete }?.identity ?: throw BleCommandException("SYNC_REQUIRED")
+        requireCurrent()
+        return withOwnerSession(info.serial, identity, KeyringOwnerPermission.Control, authorizer) { exchange ->
+            suspend fun send(next: KeyringPublicNameCommand, value: String? = null): String? {
+                val id = Uuid.random().toString()
+                return KeyringPublicNameProtocol.response(
+                    exchange(KeyringPublicNameProtocol.request(next, id, value)), id, limit)
+            }
+            if (command == KeyringPublicNameCommand.Read) send(command)
+            else {
+                // 성공 응답 뒤 같은 연결에서 다시 읽어 광고용 이름이 실제로 저장/해제됐는지 확인한다.
+                check(name == send(command, name))
+                send(KeyringPublicNameCommand.Read).also { check(it == name) }
+            }
+        }
+    }
+
     /** 등록 조정자가 받은 서버 challenge만 전달한다. 선택 기기가 바뀌면 다른 보드의 증명을 사용하지 않는다. */
     @OptIn(ExperimentalUuidApi::class)
     suspend fun registrationProof(challenge: KeyringChallenge, expectedSerial: String): RegisterKeyringBody {

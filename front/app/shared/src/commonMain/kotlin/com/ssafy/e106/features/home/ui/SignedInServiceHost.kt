@@ -30,6 +30,7 @@ import com.ssafy.e106.features.keyring.ui.ConnectedKeyringEncounterRoute
 import com.ssafy.e106.features.keyring.ui.KeyringForegroundSync
 import com.ssafy.e106.features.keyring.ui.ConnectedKeyringResetRoute
 import com.ssafy.e106.features.keyring.ui.BleProbeViewModel
+import com.ssafy.e106.features.keyring.ui.KeyringPublicNameControls
 import com.ssafy.e106.features.keyring.ui.observeOwnedKeyringConnection
 import com.ssafy.e106.resources.*
 import org.jetbrains.compose.resources.stringResource
@@ -137,7 +138,12 @@ internal enum class ServicePage { Home, Proposals, Menu, Chats, Safety, Report, 
                         HomeAction.Chats -> chats()
                         HomeAction.Keyring -> { keyringFromMenu = false; go(ServicePage.Keyrings) }
                     } }, onSaveKeyringAlias = model::saveKeyringAlias, keyringStatus = { connection.liveStatus },
-                        connectedKeyringId = connection.deviceId, checkingKeyringStatus = connection.liveStatus?.loading == true)
+                        connectedKeyringId = connection.deviceId, checkingKeyringStatus = connection.liveStatus?.loading == true,
+                        keyringPublicName = { id, name ->
+                            state.home.keyrings.singleOrNull { it.deviceId == id }?.let { device ->
+                                KeyringPublicNameControls(session.userId, device, name)
+                            }
+                        })
                 }
                 ServicePage.Proposals -> ConnectedProposalRoute(session, { go(ServicePage.Home) }, { go(ServicePage.Menu) },
                     { chats() }, { chats(it) }, pushes = pushes)

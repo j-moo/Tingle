@@ -48,7 +48,8 @@ fun HomeScreen(state: HomeState, onMatchingChange: (Boolean) -> Unit, onAction: 
     modifier: Modifier = Modifier, onOpenMatchingSettings: (() -> Unit)? = null,
     onSaveKeyringAlias: (suspend (Long, String) -> Boolean)? = null,
     keyringStatus: @Composable () -> OwnedKeyringLiveStatus? = { null },
-    connectedKeyringId: Long? = null, checkingKeyringStatus: Boolean = false) {
+    connectedKeyringId: Long? = null, checkingKeyringStatus: Boolean = false,
+    keyringPublicName: (@Composable (Long, String) -> Unit)? = null) {
     val refreshing = state.refreshing || checkingKeyringStatus
     val refreshLabel = stringResource(Res.string.home_refresh)
     val refresh = {
@@ -81,7 +82,7 @@ fun HomeScreen(state: HomeState, onMatchingChange: (Boolean) -> Unit, onAction: 
                             }
                             HomeLoadState.Ready -> {
                                 MatchingPower(state, onMatchingChange, onOpenMatchingSettings)
-                                KeyringSummary(state, connectedKeyringId, keyringStatus, onSaveKeyringAlias)
+                                KeyringSummary(state, connectedKeyringId, keyringStatus, onSaveKeyringAlias, keyringPublicName)
                             }
                         }
                     }
@@ -132,7 +133,8 @@ private fun MatchingPower(state: HomeState, onMatchingChange: (Boolean) -> Unit,
  */
 @Composable
 private fun KeyringSummary(state: HomeState, connectedKeyringId: Long?, keyringStatus: @Composable () -> OwnedKeyringLiveStatus?,
-    onSaveKeyringAlias: (suspend (Long, String) -> Boolean)?) {
+    onSaveKeyringAlias: (suspend (Long, String) -> Boolean)?,
+    keyringPublicName: (@Composable (Long, String) -> Unit)?) {
     var open by rememberSaveable { mutableStateOf(false) }
     var editing by rememberSaveable { mutableStateOf<Long?>(null) }
     val todo = keyringTodo(state.keyring)
@@ -199,15 +201,21 @@ private fun KeyringSummary(state: HomeState, connectedKeyringId: Long?, keyringS
     val target = editing
     if (target != null && onSaveKeyringAlias != null && state.keyrings.any { it.deviceId == target }) {
         key(target) {
-            KeyringAliasDialog(state.keyringAliases[target].orEmpty(),
-                save = { onSaveKeyringAlias(target, it) }, close = { editing = null })
+            val savedAlias = state.keyringAliases[target].orEmpty()
+            KeyringAliasDialog(savedAlias,
+                save = { onSaveKeyringAlias(target, it) }, close = { editing = null },
+                publicName = { draft ->
+                    // 공개 명령은 저장을 마친 별명만 키링에 보낸다.
+                    keyringPublicName?.invoke(target, savedAlias.takeIf { it == draft.trim() }.orEmpty())
+                })
         }
     }
 }
 
 /** 입력만 회전에 보존한다. 닫힌 화면에는 저장 결과를 전달하지 않는다. */
 @Composable
-private fun KeyringAliasDialog(initial: String, save: suspend (String) -> Boolean, close: () -> Unit) {
+private fun KeyringAliasDialog(initial: String, save: suspend (String) -> Boolean, close: () -> Unit,
+    publicName: @Composable (String) -> Unit) {
     var draft by rememberSaveable { mutableStateOf(initial) }
     var saving by remember { mutableStateOf(false) }
     var failed by remember { mutableStateOf(false) }
@@ -236,6 +244,8 @@ private fun KeyringAliasDialog(initial: String, save: suspend (String) -> Boolea
                 if (initial.isNotEmpty()) TextButton(onClick = { submit("") }, enabled = !saving) {
                     Text(stringResource(Res.string.home_keyring_alias_remove))
                 }
+                // 휴대폰에 저장하는 별명과 검색에 공개하는 작업은 각각 명시적으로 실행한다.
+                publicName(draft)
             }
         },
         confirmButton = {
