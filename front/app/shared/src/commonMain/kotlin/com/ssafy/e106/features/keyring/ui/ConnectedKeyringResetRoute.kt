@@ -7,7 +7,7 @@ import org.koin.compose.viewmodel.koinViewModel
 
 /** 키링 초기화(운영 · 개발 앱 같음). 시작 → 진행 중 → 완료 · 실패만 보여주고, 중간에 끊긴 작업은 자동으로 마저 한다. */
 @Composable fun ConnectedKeyringResetRoute(deviceId: Long, onBack: () -> Unit, onConnect: () -> Unit,
-    model: KeyringResetViewModel = koinViewModel(), ble: BleProbeViewModel = koinViewModel()) {
+    model: KeyringResetViewModel = koinViewModel(), ble: BleProbeViewModel = keyringBleModel()) {
     val state by model.state.collectAsStateWithLifecycle()
     val link by ble.state.collectAsStateWithLifecycle()
     // 중간에 끊긴 초기화는 결과 확인 화면 없이 연결 상태마다 한 번 자동으로 마저 한다. 그래도 안 되면 실패 + 다시 시도

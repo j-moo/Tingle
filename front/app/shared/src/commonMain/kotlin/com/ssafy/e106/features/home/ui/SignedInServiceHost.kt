@@ -29,7 +29,7 @@ import com.ssafy.e106.features.keyring.ui.ConnectedKeyringSetupRoute
 import com.ssafy.e106.features.keyring.ui.ConnectedKeyringEncounterRoute
 import com.ssafy.e106.features.keyring.ui.KeyringForegroundSync
 import com.ssafy.e106.features.keyring.ui.ConnectedKeyringResetRoute
-import com.ssafy.e106.features.keyring.ui.BleProbeViewModel
+import com.ssafy.e106.features.keyring.ui.keyringBleModel
 import com.ssafy.e106.features.keyring.ui.KeyringPublicNameControls
 import com.ssafy.e106.features.keyring.ui.observeOwnedKeyringConnection
 import com.ssafy.e106.resources.*
@@ -127,7 +127,7 @@ internal enum class ServicePage { Home, Proposals, Menu, Chats, Safety, Report, 
             when (page) {
                 ServicePage.Home -> {
                     // 카드가 접혀 있어도 기기 연결이 끊기거나 복구되면 바로 표시한다.
-                    val connection = observeOwnedKeyringConnection(session, state.home.keyrings, koinViewModel<BleProbeViewModel>())
+                    val connection = observeOwnedKeyringConnection(session, state.home.keyrings, keyringBleModel())
                     HomeScreen(state.home, model::setMatching, onAction = { action -> when (action) {
                         HomeAction.Refresh -> {
                             connection.refresh?.invoke()
@@ -170,7 +170,7 @@ internal enum class ServicePage { Home, Proposals, Menu, Chats, Safety, Report, 
                 // 소유 정보 확인만 수행하므로 메뉴를 열었다고 등록/동기화를 요청하지 않는다.
                 ServicePage.Keyrings -> ConnectedOwnedKeyringsRoute(session, { go(if (keyringFromMenu) ServicePage.Menu else ServicePage.Home) },
                     onReset = { id -> resetDeviceId = id; connectForReset = false; go(ServicePage.KeyringReset) },
-                    onConnectForRecords = { connectForReset = false; go(ServicePage.BleProbe) }, ble = koinViewModel(),
+                    onConnectForRecords = { connectForReset = false; go(ServicePage.BleProbe) }, ble = keyringBleModel(),
                     onRegister = if (session.isReady) ({ go(ServicePage.KeyringRegistration) }) else null,
                     onSync = if (session.isReady) ({ go(ServicePage.KeyringSync) }) else null)
                 ServicePage.KeyringSync -> if (session.isReady) {
@@ -190,7 +190,7 @@ internal enum class ServicePage { Home, Proposals, Menu, Chats, Safety, Report, 
                 // 연결 목적을 분리해 기록 메뉴에서 초기화 화면으로 이동하거나 등록 요청을 시작하지 않는다.
                 ServicePage.BleProbe -> {
                     if (connectForReset) {
-                        val link by koinViewModel<BleProbeViewModel>().state.collectAsStateWithLifecycle()
+                        val link by keyringBleModel().state.collectAsStateWithLifecycle()
                         LaunchedEffect(link.connected && link.info != null) {
                             if (link.connected && link.info != null) { connectForReset = false; go(ServicePage.KeyringReset) }
                         }

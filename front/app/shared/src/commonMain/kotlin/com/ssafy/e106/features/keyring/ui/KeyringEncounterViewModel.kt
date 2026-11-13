@@ -18,7 +18,7 @@ internal enum class EncounterTransferState {
     Idle, Sending, Empty, LegacyOnly, ConfirmedStored, ReviewStored, Stored, Retryable, PolicyWaiting, NoReceipt, Failed,
 }
 
-/** 전경 호스트와 수동 버튼이 같은 작업을 쓴다. 화면 이동 중에도 동일 연결의 전송을 이어간다. */
+/** 전경 호스트·Android 서비스·수동 버튼이 동일 연결과 전송 복구 기록을 사용한다. */
 internal class KeyringEncounterViewModel(
     private val sessions: SessionStore,
     private val syncStore: KeyringSyncStore,
@@ -52,6 +52,13 @@ internal class KeyringEncounterViewModel(
     fun retry(ble: BleProbeViewModel) {
         if (syncBusy || work?.isActive == true || target == null) return
         held.clear()
+        attempted = false
+        start(ble)
+    }
+
+    /** 연결이 유지되는 사이 새로 쌓인 기록도 확인한다. 이미 보류한 원본을 반복 제출하지 않는다. */
+    fun checkForNewRecords(ble: BleProbeViewModel) {
+        if (syncBusy || work?.isActive == true || target == null) return
         attempted = false
         start(ble)
     }

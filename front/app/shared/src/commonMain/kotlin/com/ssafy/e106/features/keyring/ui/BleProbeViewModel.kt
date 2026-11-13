@@ -24,7 +24,7 @@ data class OwnedKeyringLiveStatus(val owner: Long, val deviceId: Long, val conne
 
 /**
  * 첫 연동 진단: 발견/Notify 구독/기기 정보/상태를 분리한다. 서버 계정 귀속은 변경하지 않는다.
- * 서비스 화면 사이 이동은 연결을 유지한다. 실제 앱 중지(회전 포함)에는 닫으며 백그라운드 재연결은 하지 않는다.
+ * 일반 연결은 화면이 중지되면 닫는다. Android 자동 연결에 선택된 실물만 서비스로 넘길 수 있다.
  */
 class BleProbeViewModel(
     private val ble: KeyringBle,
@@ -42,7 +42,10 @@ class BleProbeViewModel(
     private var ownedStatusRequest: Job? = null
 
     /** 전경 호스트만 자동 복구를 허용한다. 중지·권한 상실·명시적 연결 해제는 재탐색도 함께 취소한다. */
-    fun setForeground(value: Boolean) { foreground = value; if (!value) leave() }
+    fun setForeground(value: Boolean, keepConnection: Boolean = false) {
+        foreground = value
+        if (!value && !keepConnection) leave()
+    }
 
     init { viewModelScope.launch(start = CoroutineStart.UNDISPATCHED) {
         // 같은 회원의 가입 단계 갱신은 연결 종료 사유가 아니다. 계정 경계만 감시하고,
@@ -160,6 +163,38 @@ class BleProbeViewModel(
         }
     }
 
+    /** 주소는 Android에서만 사용한다. 새 연결도 실물 식별과 현재 서버 소유 검증을 통과해야 한다. */
+    internal suspend fun connectOwnedAutomatically(owner: Long, deviceId: Long, serial: String, ownershipEpoch: Long,
+        open: suspend () -> BleConnection) {
+        if (connection != null || state.value.busy || state.value.scanning) throw BleException(BleFailure.Busy)
+        if ((sessions.state.value as? Session.SignedIn)?.userId != owner) throw BleException(BleFailure.NotOwned)
+        val stamp = ++generation
+        val job = currentCoroutineContext().job
+        work = job
+        var candidate: BleConnection? = null
+        try {
+            // 가까이 올 때까지 기다리는 동안에는 수동 연결 버튼을 막지 않는다.
+            val channel = open()
+            candidate = channel
+            if (stamp != generation) throw CancellationException()
+            mutable.value = BleProbeState(busy = true)
+            val info = readInfo(channel)
+            if (info.serial != serial || info.ownerState != "BOUND" || info.ownershipEpoch != ownershipEpoch) {
+                throw BleException(BleFailure.NotOwned)
+            }
+            verifyOwnership(info, owner, registrationMode = false, expectedDeviceId = deviceId)
+            currentCoroutineContext().ensureActive()
+            if (stamp != generation || channel.state.value != BleLinkState.Ready) throw BleException(BleFailure.Disconnected)
+            connection = channel
+            mutable.value = BleProbeState(connected = true, info = info, connectionGeneration = stamp)
+            watch(channel, stamp, serial, registrationMode = false, expectedDeviceId = deviceId, recover = false)
+        } finally {
+            if (candidate !== connection) candidate?.close()
+            if (work === job) work = null
+            if (stamp == generation) mutable.update { it.copy(busy = false) }
+        }
+    }
+
     private suspend fun probeOwnedCandidate(id: String, serial: String): Pair<BleConnection, BleDeviceInfo>? {
         var channel: BleConnection? = null
         var matched = false
@@ -183,7 +218,7 @@ class BleProbeViewModel(
 
     /** 재부팅으로 링크가 끊긴 경우에만 이전 선택 기기를 제한적으로 다시 찾는다. 이름이 같은 다른 보드는 선택하지 않는다. */
     private fun watch(channel: BleConnection, stamp: Long, serial: String, registrationMode: Boolean,
-        expectedDeviceId: Long? = null) {
+        expectedDeviceId: Long? = null, recover: Boolean = true) {
         watcher = viewModelScope.launch {
             channel.state.first { it == BleLinkState.Closed }
             if (stamp != generation || channel !== connection) return@launch
@@ -191,7 +226,7 @@ class BleProbeViewModel(
             ownedStatusRequest?.cancel()
             mutable.update { it.copy(connected = false, busy = false, info = null, status = null,
                 ownedStatus = null, error = BleFailure.Disconnected) }
-            if (!foreground) return@launch
+            if (!foreground || !recover || managesKeyringAutoConnection(serial)) return@launch
             val owner = (sessions.state.value as? Session.SignedIn)?.userId ?: return@launch
             val previous = work
             reconnect = viewModelScope.launch {

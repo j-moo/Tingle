@@ -70,7 +70,7 @@ internal data class OwnedKeyringConnection(
     session: Session.SignedIn, devices: List<OwnedKeyring>, ble: BleProbeViewModel,
 ): OwnedKeyringConnection {
     val link by ble.state.collectAsStateWithLifecycle()
-    val transfer by koinViewModel<KeyringEncounterViewModel>().state.collectAsStateWithLifecycle()
+    val transfer by keyringEncounterModel().state.collectAsStateWithLifecycle()
     val syncing by koinViewModel<KeyringSyncViewModel>().state.collectAsStateWithLifecycle()
     val store = koinInject<KeyringSyncStore>()
     val authorizer = koinInject<KeyringOwnerAuthorizer>()

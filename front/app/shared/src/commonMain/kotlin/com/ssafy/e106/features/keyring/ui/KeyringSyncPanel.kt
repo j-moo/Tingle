@@ -50,7 +50,7 @@ import org.koin.compose.viewmodel.koinViewModel
 /** 목록부터 보여주고 선택한 실물만 연결한다. 화면이 바뀌어도 계정의 목록을 새로 확인한다. */
 @Composable internal fun ConnectedOwnedKeyringSyncRoute(session: Session.SignedIn,
     readAliases: suspend (Long, List<OwnedKeyring>) -> Map<Long, String>, onBack: () -> Unit,
-    owned: OwnedKeyringsViewModel = koinViewModel(), ble: BleProbeViewModel = koinViewModel(),
+    owned: OwnedKeyringsViewModel = koinViewModel(), ble: BleProbeViewModel = keyringBleModel(),
     sync: KeyringSyncViewModel = koinViewModel()) {
     val list by owned.state.collectAsStateWithLifecycle()
     val link by ble.state.collectAsStateWithLifecycle()
@@ -79,6 +79,7 @@ import org.koin.compose.viewmodel.koinViewModel
             selectedId = item.deviceId
             if (availability == BleAvailability.Ready) ble.connectOwned(item)
         }) {
+        KeyringAutoConnectionControl(session, selected, link)
         if (selected != null && link.connected && link.info?.serial == selected.deviceSerial) {
             KeyringSyncPanel(sync, ble, link, registrationBusy = false, owned = owned,
                 managedConnection = true, pickExisting = true, manualSettings = true)

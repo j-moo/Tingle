@@ -26,7 +26,6 @@ import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.withTimeout
 import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.koinInject
-import org.koin.compose.viewmodel.koinViewModel
 
 private data class PublicNameRequest(val command: KeyringPublicNameCommand, val name: String? = null)
 
@@ -36,7 +35,7 @@ internal fun KeyringPublicNameControls(
     owner: Long,
     device: OwnedKeyring,
     savedAlias: String,
-    ble: BleProbeViewModel = koinViewModel(),
+    ble: BleProbeViewModel = keyringBleModel(),
     store: KeyringSyncStore = koinInject(),
     authorizer: KeyringOwnerAuthorizer = koinInject(),
 ) {

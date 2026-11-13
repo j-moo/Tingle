@@ -658,6 +658,67 @@ class BleProbeViewModelTest {
         override suspend fun list() = list()
     }).also { store.put("ble", it) }
 
+    /** 서비스가 기다리는 동안 목록은 비어 있고, 소유 확인 뒤에만 연결 정보를 내보낸다. */
+    @Test fun backgroundConnectionWaitsForVerifiedOwnedBoard() = runTest(dispatcher) {
+        val port = ownerPort()
+        val vm = model(port, TestSession(OnboardingStatus.READY))
+        val nearby = CompletableDeferred<Unit>()
+        val pending = launch {
+            vm.connectOwnedAutomatically(1, 4, port.serial, 2) {
+                nearby.await()
+                port.link
+            }
+        }
+        runCurrent()
+        assertFalse(vm.state.value.connected)
+        assertFalse(vm.state.value.busy)
+        nearby.complete(Unit)
+        pending.join()
+        assertEquals(port.serial, vm.state.value.info?.serial)
+        assertTrue(vm.state.value.connected)
+        assertEquals(listOf("GET_DEVICE_INFO"), port.commands)
+        assertEquals(0, port.scans)
+    }
+
+    @Test fun backgroundConnectionRejectsOldOwnershipEpoch() = runTest(dispatcher) {
+        val port = ownerPort()
+        val vm = model(port, TestSession(OnboardingStatus.READY))
+        runCurrent()
+        val failure = assertFailsWith<BleException> {
+            vm.connectOwnedAutomatically(1, 4, port.serial, 1) { port.link }
+        }
+        assertEquals(BleFailure.NotOwned, failure.reason)
+        assertEquals(BleLinkState.Closed, port.linkState.value)
+        assertFalse(vm.state.value.connected)
+    }
+
+    @Test fun backgroundConnectionRejectsDeviceRemovedFromAccount() = runTest(dispatcher) {
+        val port = ownerPort()
+        val vm = model(port, TestSession(OnboardingStatus.READY)) { ApiResult.Ok(emptyList()) }
+        runCurrent()
+        val failure = assertFailsWith<BleException> {
+            vm.connectOwnedAutomatically(1, 4, port.serial, 2) { port.link }
+        }
+        assertEquals(BleFailure.NotOwned, failure.reason)
+        assertEquals(BleLinkState.Closed, port.linkState.value)
+        assertNull(vm.state.value.info)
+    }
+
+    @Test fun manualScanCancelsOnlyPendingAutomaticConnection() = runTest(dispatcher) {
+        val port = ownerPort()
+        val vm = model(port, TestSession(OnboardingStatus.READY))
+        runCurrent()
+        val pending = launch {
+            vm.connectOwnedAutomatically(1, 4, port.serial, 2) { awaitCancellation() }
+        }
+        runCurrent()
+        assertTrue(vm.scan())
+        runCurrent()
+        assertTrue(pending.isCancelled)
+        assertEquals(1, port.scans)
+        assertEquals("a", vm.state.value.candidates.single().id)
+    }
+
     /** 이름이 같고 더 가까운 키링이 있어도 계정 목록에서 고른 실물만 연결 완료로 공개한다. */
     @Test fun ownedSelectionSkipsStrongerCandidateWithDifferentSerial() = runTest(dispatcher) {
         val port = ProbeFixture().apply { otherSerial = "XIAO-other"; finiteScan = true }
