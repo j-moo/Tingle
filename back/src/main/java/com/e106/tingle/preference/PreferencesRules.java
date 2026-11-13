@@ -16,6 +16,8 @@ public final class PreferencesRules {
 	private static final Set<String> FIELDS = Set.of(
 		"desiredAgeMode", "desiredAgeMin", "desiredAgeMax");
 	private static final int MIN_AGE = 19;
+	// 키링 저장 형식(KeyringProfileStorageEncoder)이 나이를 2바이트로 담는다. 넘으면 동기화가 막힌다.
+	private static final int MAX_AGE = 65535;
 
 	private PreferencesRules() {
 	}
@@ -71,7 +73,8 @@ public final class PreferencesRules {
 		if (node.isNull()) {
 			return null;
 		}
-		if (!node.isIntegralNumber() || !node.canConvertToInt() || node.intValue() < MIN_AGE) {
+		if (!node.isIntegralNumber() || !node.canConvertToInt() || node.intValue() < MIN_AGE
+			|| node.intValue() > MAX_AGE) {
 			throw new BusinessException(ErrorCode.INVALID_AGE_RANGE);
 		}
 		return node.intValue();
