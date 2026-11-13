@@ -5,6 +5,7 @@ from collections.abc import Mapping
 import httpx2 as httpx
 
 from .dto import ModelInput, ModelOutput
+from .grounding import _claim_phrasings
 from .prompts import GENERATION_PROMPT, VERIFICATION_PROMPT
 from .validation import unique_json_object
 
@@ -42,7 +43,11 @@ class GmsClient:
         return cls(api_key) if api_key.strip() else None
 
     async def generate(self, request: ModelInput) -> str:
-        return await self.request_text(GENERATION_PROMPT, request.model_dump(mode="json"))
+        return await self.request_text(GENERATION_PROMPT, {
+            **request.model_dump(mode="json"),
+            "allowedPhrasings": {item.id: sorted(_claim_phrasings(request.viewer, item))
+                                 for item in request.evidence},
+        })
 
     async def verify(self, request: ModelInput, output: ModelOutput) -> str:
         return await self.request_text(VERIFICATION_PROMPT, {

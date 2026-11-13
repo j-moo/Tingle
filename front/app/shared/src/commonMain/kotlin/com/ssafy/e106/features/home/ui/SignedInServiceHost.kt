@@ -36,7 +36,7 @@ import org.koin.compose.koinInject
 import org.koin.compose.viewmodel.koinViewModel
 
 // Keyrings는 서버의 등록 목록을 확인하는 경로이며 BLE 등록/초기화 경로와 구분한다.
-internal enum class ServicePage { Home, Proposals, Menu, Chats, Safety, Report, AiConsent, Profile, Survey, Settings, Help, HelpHub, Keyrings, BleProbe, KeyringReset, Preparing }
+internal enum class ServicePage { Home, Proposals, Menu, Chats, Safety, Report, AiConsent, Profile, Survey, Settings, Help, HelpHub, Keyrings, BleProbe, KeyringRegistration, KeyringReset, Preparing }
 
 /** 가입 중에는 가입 화면을 유지하되, 탈퇴 제한을 해소할 소유 키링 관리 경로만 허용한다. */
 @Composable fun SignedInServiceHost(session: Session.SignedIn, access: ProposalAccess = koinInject(),
@@ -65,7 +65,8 @@ internal enum class ServicePage { Home, Proposals, Menu, Chats, Safety, Report, 
     val uri = LocalUriHandler.current
     // 같은 Activity의 동기화 모델을 BLE 화면에서도 공유한다. 가입 화면이 바뀌어도 대상 기록은 유지하며,
     // 앱이 화면에 떠 있는 동안 자동 발급한다(운영 · 개발 앱 같음). 회전/백그라운드에서는 취소 후 내구 기록으로 복구한다.
-    foregroundSync(page == ServicePage.KeyringReset || connectForReset)
+    // 새 키링의 등록 증명이 끝날 때까지 자동 동기화와 기록 전송이 같은 BLE 연결을 사용하지 않게 한다.
+    foregroundSync(page == ServicePage.KeyringReset || page == ServicePage.KeyringRegistration || connectForReset)
     fun go(destination: ServicePage) { model.leave(); page = destination }
     fun chats(room: Long? = null) { roomId = room; go(ServicePage.Chats) }
     fun proposals() { go(ServicePage.Proposals) }
@@ -156,7 +157,15 @@ internal enum class ServicePage { Home, Proposals, Menu, Chats, Safety, Report, 
                 // 소유 정보 확인만 수행하므로 메뉴를 열었다고 등록/동기화를 요청하지 않는다.
                 ServicePage.Keyrings -> ConnectedOwnedKeyringsRoute(session, { go(if (keyringFromMenu) ServicePage.Menu else ServicePage.Home) },
                     onReset = { id -> resetDeviceId = id; connectForReset = false; go(ServicePage.KeyringReset) },
-                    onConnectForRecords = { connectForReset = false; go(ServicePage.BleProbe) }, ble = koinViewModel())
+                    onConnectForRecords = { connectForReset = false; go(ServicePage.BleProbe) }, ble = koinViewModel(),
+                    onRegister = if (session.isReady) ({ go(ServicePage.KeyringRegistration) }) else null)
+                ServicePage.KeyringRegistration -> if (session.isReady) {
+                    // 서버 소유 목록으로 등록을 확인한 뒤 관리 화면으로 복귀해 새 목록을 읽는다.
+                    ConnectedKeyringSetupRoute({ go(ServicePage.Keyrings) }, managedConnection = true,
+                        allowRegistration = true, onRegistrationDone = { go(ServicePage.Keyrings) })
+                } else {
+                    LaunchedEffect(session) { go(ServicePage.Keyrings) }
+                }
                 // 키링 초기화는 운영 · 개발 앱 같다. 초기화하려면 키링 연결이 필요해 연결 화면으로 보낸다
                 ServicePage.KeyringReset -> resetDeviceId?.let { id ->
                     ConnectedKeyringResetRoute(id, { go(ServicePage.Keyrings) }, { connectForReset = true; go(ServicePage.BleProbe) })
