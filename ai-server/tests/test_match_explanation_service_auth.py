@@ -55,7 +55,7 @@ def configured(tmp_path, private_key):
     bundle = {
         "context": {"reference": reference, "viewer": "B", "conflicting_source_refs": [],
                     "evidence": [{"reference": dict(reference), "source_ref": "synthetic-source",
-                                  "evidence": {"id": "e1", "direction": "B_TO_A",
+                                  "evidence": {"id": "e1", "direction": "A_TO_B",
                                                "kind": "ONE_WAY_PREFERENCE_FIT", "topic": "contact",
                                                "fact": "A의 실제 연락 빈도가 B의 허용 범위에 들어간다."}}]},
         "scope": {"reference": dict(reference), "viewer": "B", "version": "synthetic-public-v1",

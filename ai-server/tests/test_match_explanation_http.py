@@ -39,7 +39,7 @@ def context(manifest):
             "reference": reference, "viewer": "B", "conflicting_source_refs": [],
             "evidence": [{
                 "reference": dict(reference), "source_ref": "synthetic-verified-comparison",
-                "evidence": {"id": "e1", "direction": "B_TO_A", "kind": "ONE_WAY_PREFERENCE_FIT",
+                "evidence": {"id": "e1", "direction": "A_TO_B", "kind": "ONE_WAY_PREFERENCE_FIT",
                              "topic": "contact", "fact": "A의 실제 연락 빈도가 B의 허용 범위에 들어간다."},
             }],
         },
@@ -187,7 +187,7 @@ def test_bundle_mismatch_is_rejected_before_rule_success(release, change):
     elif change == "context":
         raw["context"]["reference"]["encounter_id"] = 1002
     elif change == "model":
-        raw["scope"]["model_evidence_ids"] = ["e1"]
+        raw["scope"]["model_evidence_ids"] = ["e2"]
     elif change == "topic":
         raw["context"]["evidence"][0]["evidence"]["topic"] = "religion"
     elif change == "source":
