@@ -17,12 +17,14 @@ import org.koin.compose.viewmodel.koinViewModel
 
 /** 질문 선택은 초안 교체만 한다. 전송과 동의는 각각 사용자의 별도 행동이다. */
 @Composable fun ConnectedChatExtras(room: Long, readable: Boolean, editable: Boolean, insert: (String) -> Unit,
-    model: ChatExtrasViewModel = koinViewModel(), draft: String = "") {
+    model: ChatExtrasViewModel = koinViewModel(), draft: String = "", onBlock: () -> Unit = {}, latestMessage: String? = null) {
     val state by model.state.collectAsStateWithLifecycle()
     LaunchedEffect(room, readable) { model.bind(room, readable) }
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { model.bind(room, readable) }
     LifecycleEventEffect(Lifecycle.Event.ON_STOP) { model.clear() }
     DisposableEffect(room) { onDispose { model.clear() } }
+    // 새 메시지(내가 보낸 것 포함) 뒤에 위험 안내만 몇 번 다시 본다(시각은 ViewModel 이 정한다)
+    LaunchedEffect(room, latestMessage) { if(latestMessage != null) model.watchSafety() }
     if(state.room != room || !readable) return
     Column(verticalArrangement = Arrangement.spacedBy(AppSpacing.Small)) {
         state.notices.forEach { notice ->
@@ -31,7 +33,8 @@ import org.koin.compose.viewmodel.koinViewModel
             // LazyColumn은 화면 밖 항목도 미리 구성할 수 있어 실제 표시 좌표를 확인한다.
             LaunchedEffect(notice.noticeId, visible) { if(visible) { withFrameNanos { }; model.displayedNotice(notice.noticeId) } }
         }
+        state.safety.forEach { notice -> SafetyNoticeCard(notice, onBlock) { model.closeSafety(notice.noticeId) } }
         // 패널을 접어도 연결 컴포넌트는 유지한다. 여닫기는 POST/GET을 새로 시작하지 않는다.
-        ChatQuestionCards(state, editable, draft, insert, model::generate, model::check)
+        ChatQuestionCards(state, editable, draft, insert, model::generate, model::check, model::setTopicConsent)
     }
 }
