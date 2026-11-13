@@ -50,7 +50,7 @@ class BleProbeViewModel(
     init { viewModelScope.launch(start = CoroutineStart.UNDISPATCHED) {
         // 같은 회원의 가입 단계 갱신은 연결 종료 사유가 아니다. 계정 경계만 감시하고,
         // 실제 화면 이탈/회전은 화면의 leave 호출에서 별도로 정리한다.
-        sessions.state.map { (it as? Session.SignedIn)?.userId }.distinctUntilChanged().collect { leave() }
+        sessions.state.map { (it as? Session.SignedIn)?.userId }.distinctUntilChanged().collect { ble.forgetPreviousDevice(); leave() }
     } }
 
     /** 탐색을 시작했으면 true. 이미 진행 중이거나 로그인 전이면 아무것도 하지 않고 false */
@@ -77,6 +77,20 @@ class BleProbeViewModel(
         else if (mutable.value.scanning) { work?.cancel(); mutable.value = mutable.value.copy(scanning = false) }
     }
 
+    /**
+     * 목록에서 키링을 눌렀을 때. 연결 중이거나 이미 연결돼 있으면 그 연결을 끊고 누른 키링에 새로 연결한다
+     * (고르던 목록은 그대로 둔다). 등록 · 설정 전송 중에는 화면이 이 호출을 막는다.
+     */
+    fun pick(id: String, registrationMode: Boolean = false) {
+        val s = mutable.value
+        if (s.candidates.none { it.id == id }) return
+        if (!s.busy && connection == null) return connect(id, registrationMode)
+        if (id == s.selectedId) return                      // 지금 연결 중 · 연결된 그 키링
+        leave()                                             // 앞 연결(시도)을 끊는다. 뒤이은 connect 가 그 정리가 끝나길 기다린다
+        mutable.value = BleProbeState(candidates = s.candidates)
+        connect(id, registrationMode)
+    }
+
     fun connect(id: String, registrationMode: Boolean = false) {
         if (mutable.value.busy || connection != null || mutable.value.candidates.none { it.id == id }) return
         val owner = (sessions.state.value as? Session.SignedIn)?.userId ?: return
@@ -89,7 +103,13 @@ class BleProbeViewModel(
             try {
                 // stopScan의 정리가 완료돼야 플랫폼 단일 탐색/연결 락을 넘겨받을 수 있다.
                 previous?.join()
-                val channel = ble.connect(id)
+                // 앞 연결을 끊은 직후나 신호가 약할 때 연결 수립이 한 번 실패하는 일이 흔하다. 잠깐 쉬고 한 번만 다시 건다
+                val channel = try { ble.connect(id) } catch (failure: BleException) {
+                    if (failure.reason != BleFailure.ConnectFailed || stamp != generation) throw failure
+                    delay(800)
+                    if (stamp != generation) return@launch
+                    ble.connect(id)
+                }
                 if (stamp != generation) { channel.close(); return@launch }
                 connection = channel
                 val info = readInfo(channel)

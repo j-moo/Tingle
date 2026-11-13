@@ -20,18 +20,15 @@
     <string name="ai_consent_confirm">철회하고 채팅방 종료하기</string>
     <string name="ai_consent_saved">동의를 저장했어요</string>
     <string name="ai_consent_withdrawn">동의를 철회했어요</string>
-    <string name="ai_consent_loading">동의 상태를 확인하고 있어요</string>
-    <string name="ai_consent_saving">변경 사항을 저장하고 있어요</string>
-    <string name="ai_consent_failed">동의 상태를 불러오지 못했어요</string>
     <string name="ai_consent_unknown">저장 결과를 확인해야 해요</string>
-    <string name="ai_consent_unknown_help">응답을 받지 못했어요. 현재 상태를 확인한 뒤 다시 진행해 주세요.</string>
     <string name="ai_consent_changed">안내 내용이 변경됐어요</string>
-    <string name="ai_consent_changed_help">최신 상태와 안내를 다시 확인해 주세요. 이전 선택은 저장하지 않았어요.</string>
-    <string name="ai_consent_login">다시 로그인해 주세요</string>
     <string name="ai_consent_forbidden">동의 정보를 확인할 수 없어요</string>
-    <string name="ai_consent_retry">다시 확인하기</string>
-    <string name="ai_consent_check_result">현재 상태 확인하기</string>
+    <string name="ai_consent_recheck">다시 확인</string>
+    <string name="ai_consent_view_new">새 내용 보기</string>
+    <string name="ai_consent_relogin">다시 로그인</string>
     <string name="ai_consent_notice_title">AI 분석 안내 전문</string>
     <string name="ai_consent_notice_read">내용 확인했어요</string>
     <string name="ai_consent_back">돌아가기</string>
+    <string name="ai_consent_unknown_help">저장됐는지 아직 알 수 없어요. 다시 저장하지 않고 현재 상태부터 확인해요.</string>
+    <string name="ai_consent_changed_help">이전 선택은 저장하지 않았어요.</string>
 </resources>

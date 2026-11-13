@@ -140,7 +140,6 @@ class SurveyLifecycleDeviceTest {
         launch(f).use { s ->
             ready(s, SurveyPage.Completed)
             compose.onNodeWithText("분석은 완료됐지만 이 결과는 아직 매칭에 적용되지 않았어요. 필요한 답변 확인이나 재검사가 남아 있을 수 있어요.").assertExists()
-            compose.onNodeWithText("작성 중인 설문 이어하기").assertExists()
             s.recreate(); ready(s, SurveyPage.Completed)
             s.onActivity {
                 assertEquals(false, it.model.state.value.analysisApplied)
@@ -181,11 +180,10 @@ class SurveyLifecycleDeviceTest {
         f.server.base.persist("Q001", JsonPrimitive("unknown"))
         launch(f).use { s ->
             ready(s, SurveyPage.Resume); s.onActivity { it.model.resume(); it.model.previous() }; ready(s, SurveyPage.Question)
-            compose.onNodeWithText("직전 회차 확인").performScrollTo().performClick()
+            s.onActivity { it.model.openPrevious() }   // "직전 회차 확인" 버튼은 화면에서 뺐다. 동작은 그대로라 모델로 연다
             compose.waitUntil(5_000) {
                 var busy = false; s.onActivity { busy = it.model.state.value.busy }; busy
             }
-            compose.onNodeWithText("최신 설문 확인").assertIsNotEnabled()
             s.onActivity { assertFalse(it.model.beginChange()) }
             gate.complete(Unit); ready(s, SurveyPage.Resume)
             assertEquals(0, f.server.moves.get())
@@ -199,7 +197,7 @@ class SurveyLifecycleDeviceTest {
         f.server.target = longDefinition; f.server.base.definition = longDefinition
         launch(f).use { s ->
             start(s); s.onActivity { it.model.answer(SurveyAnswer.Unknown) }; ready(s, SurveyPage.Question)
-            compose.onNodeWithText("최신 설문 확인").performScrollTo()
+            compose.onNodeWithText("다음").performScrollTo()
             compose.onNodeWithText("question-1").assertIsNotDisplayed()
             s.recreate(); compose.onNodeWithText("question-1").assertIsNotDisplayed()
             compose.onNodeWithText("다음").performClick()
@@ -234,34 +232,6 @@ class SurveyLifecycleDeviceTest {
             ready(s, SurveyPage.Completed)
             assertEquals(1, f.server.base.analysisRequests); assertEquals(1, f.server.completes.get())
             s.onActivity { assertEquals(21L, it.model.state.value.analysisReference?.resultId); assertFalse(it.model.state.value.recoveryRequired) }
-        }
-    }
-    @Test fun migrationBackWaitsForResultAcrossRecreation() {
-        val f = SurveyLifecycleFixture(); val gate = CompletableDeferred<Unit>(); f.server.changeGate = gate
-        launch(f).use { s ->
-            start(s)
-            f.server.target = surveyDefinition.copy(manifest = surveyManifest.copy(surveyVersion = "v2"))
-            compose.onNodeWithText("최신 설문 확인").performScrollTo().performClick()
-            compose.waitUntil(5_000) { f.server.plans.get() == 1 }
-            compose.onNodeWithText("확인하고 새 설문으로 옮기기").assertExists()
-            s.recreate()
-            compose.onNodeWithText("확인하고 새 설문으로 옮기기").assertExists(); assertEquals(1, f.server.plans.get())
-            compose.onNodeWithText("확인하고 새 설문으로 옮기기").performClick()
-            compose.waitUntil(5_000) { f.server.moves.get() == 1 }
-            // 시스템 뒤로가기를 눌러도 요청은 유지되고 새 회차가 확정된 뒤에만 전환 화면을 닫는다.
-            s.onActivity { it.onBackPressedDispatcher.onBackPressed() }
-            compose.waitForIdle()
-            s.onActivity {
-                assertTrue(it.changeModel.state.value.busy)
-                assertTrue(it.changeModel.state.value.exitRequested)
-                assertNotNull(f.cursor.pending[1])
-            }
-            s.recreate(); s.moveToState(Lifecycle.State.CREATED); gate.complete(Unit); s.moveToState(Lifecycle.State.RESUMED)
-            compose.waitUntil(10_000) {
-                var ok = false; s.onActivity { ok = it.model.state.value.session?.sessionId == 12L && !it.model.state.value.busy }; ok
-            }
-            assertEquals(1, f.server.moves.get()); assertEquals(1, f.server.plans.get())
-            compose.onNodeWithText("확인하고 새 설문으로 옮기기").assertDoesNotExist()
         }
     }
 }

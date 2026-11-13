@@ -73,6 +73,8 @@ internal class SurveyServer : SurveyRepository {
     var loseStart = false
     var lastValue: JsonElement? = null
     var failSaveAfterPersist = false
+    /** 저장을 받지 않고 이 오류로 거절한다(서버에도 남지 않는다) */
+    var saveError: AppError? = null
     var pendingSave: CompletableDeferred<ApiResult<SurveySession>>? = null
     var failGet: AppError? = null
     var failDefinition = false
@@ -91,6 +93,7 @@ internal class SurveyServer : SurveyRepository {
     override suspend fun save(id: Long, questionId: String, value: JsonElement): ApiResult<SurveySession> {
         saves++; lastValue = value
         pendingSave?.let { return withContext(NonCancellable) { it.await() } }
+        saveError?.let { return ApiResult.Fail(it) }
         persist(questionId, value)
         return if (failSaveAfterPersist) ApiResult.Fail(AppError.Offline) else ApiResult.Ok(data)
     }
@@ -184,15 +187,15 @@ class SurveyApiFlowTest {
         assertTrue(m.state.value.pendingChange); assertEquals(11L, m.state.value.pendingSourceId)
     }
 
-    @Test fun serverSaveAcknowledgementEnablesNextAndTypedValuesArePreserved() = runTest(dispatcher) {
+    // 답을 고르면 저장을 기다리지 않고 바로 "다음"이 켜진다. 보내기 전에 답을 바꾸면 마지막 답만 한 번 보낸다
+    @Test fun choosingEnablesNextAtOnceAndOnlyLatestQueuedValueIsSentWithItsType() = runTest(dispatcher) {
         val server = SurveyServer(); val m = vm(server); open(m)
         assertEquals(SurveyPage.Question, m.state.value.page)
         assertFalse(m.state.value.questionScreen!!.canContinue)
-        m.answer(SurveyAnswer.Choices(setOf("4"))); m.answer(SurveyAnswer.Unknown)
-        assertEquals(SurveySaveState.Saving, m.state.value.saveState)
-        m.next(); assertEquals(0, m.state.value.index)
+        m.answer(SurveyAnswer.Unknown); m.answer(SurveyAnswer.Choices(setOf("4")))
+        assertTrue(m.state.value.questionScreen!!.canContinue); assertEquals(1, m.state.value.pending.size); assertFalse(m.state.value.busy)
         runCurrent(); assertEquals(JsonPrimitive(4), server.lastValue); assertEquals(1, server.saves)
-        assertTrue(m.state.value.questionScreen!!.canContinue)
+        assertTrue(m.state.value.pending.isEmpty())
         m.next(); m.answer(SurveyAnswer.Choices(setOf("\"walk\"", "\"talk\""))); runCurrent()
         assertEquals(JsonArray(listOf(JsonPrimitive("walk"), JsonPrimitive("talk"))), server.lastValue)
         m.next(); assertEquals(SurveyPage.Review, m.state.value.page)
@@ -217,14 +220,17 @@ class SurveyApiFlowTest {
         restored.resume(); assertEquals("Q002", restored.state.value.question?.questionId)
         restored.previous(); assertEquals(SurveyAnswer.Choices(setOf("4")), restored.state.value.draft)
     }
-    @Test fun failedSaveRequiresReadAndResponseLossDoesNotAutomaticallyWriteAgain() = runTest(dispatcher) {
+    // 저장이 안 돼도 다음 문항으로 넘어갈 수 있고, 못 보낸 답은 줄에 남아 뒤에서 계속 다시 보낸다(같은 답을 다시 보내도 결과는 같다)
+    @Test fun failedSaveStaysQueuedLetsUserMoveOnAndRetriesUntilAccepted() = runTest(dispatcher) {
         val server = SurveyServer(); val m = vm(server); open(m); server.failSaveAfterPersist = true
         m.answer(SurveyAnswer.Choices(setOf("3"))); runCurrent()
-        assertTrue(m.state.value.recoveryRequired); assertEquals(SurveySaveState.Failed, m.state.value.saveState)
-        m.answer(SurveyAnswer.Unknown); m.next(); runCurrent(); assertEquals(1, server.saves)
-        m.load(); runCurrent(); assertEquals(SurveyPage.Question, m.state.value.page)
-        m.resume(); m.previous(); assertEquals(SurveyAnswer.Choices(setOf("3")), m.state.value.draft)
-        assertEquals(1, server.saves)
+        assertFalse(m.state.value.recoveryRequired); assertEquals(1, m.state.value.pending.size); assertEquals(1, server.saves)
+        m.next(); assertEquals(1, m.state.value.index)
+        m.previous(); assertEquals(SurveyAnswer.Choices(setOf("3")), m.state.value.draft)   // 못 보낸 답도 돌아가면 그대로 보인다
+        advanceTimeBy(1_001); runCurrent(); assertEquals(2, server.saves); assertEquals(1, m.state.value.pending.size)
+        server.failSaveAfterPersist = false
+        advanceTimeBy(2_001); runCurrent(); assertEquals(3, server.saves)
+        assertTrue(m.state.value.pending.isEmpty()); assertFalse(m.state.value.recoveryRequired)
     }
     @Test fun delayedOldAccountResponseCannotPopulateNewAccount() = runTest(dispatcher) {
         val server = SurveyServer(); val session = TestSession(OnboardingStatus.KEYRING_REQUIRED)
@@ -242,17 +248,38 @@ class SurveyApiFlowTest {
         assertEquals(expected, m.state.value)
         assertEquals(2L, m.state.value.owner?.userId); assertEquals(22L, m.state.value.session?.sessionId)
     }
-    @Test fun leavingWaitsForInFlightSaveBeforeAllowingASecondAnswer() = runTest(dispatcher) {
+    // 답 저장은 화면을 막지 않는다: 보내는 중에도 나갈 수 있고, 나간 뒤 늦게 온 응답은 새 화면 상태를 건드리지 않는다
+    @Test fun leavingDuringBackgroundSaveResetsScreenAndLateResponseIsIgnored() = runTest(dispatcher) {
         val server = SurveyServer(); val m = vm(server); open(m)
         val pending = CompletableDeferred<ApiResult<SurveySession>>(); server.pendingSave = pending
-        m.answer(SurveyAnswer.Unknown); runCurrent(); m.requestLeave(); m.leave()
-        m.load(); m.answer(SurveyAnswer.Choices(setOf("4"))); runCurrent()
-        assertTrue(m.state.value.busy); assertTrue(m.state.value.exitRequested); assertEquals(1, server.saves)
+        m.answer(SurveyAnswer.Unknown); runCurrent()
+        assertFalse(m.state.value.busy); assertEquals(1, server.saves)
+        m.requestLeave(); m.leave()
+        assertNull(m.state.value.definition); assertTrue(m.state.value.pending.isEmpty())
         server.persist("Q001", JsonPrimitive("unknown"))
         pending.complete(ApiResult.Ok(server.data)); runCurrent()
-        assertEquals(SurveySaveState.Saved, m.state.value.saveState); m.leave()
         assertNull(m.state.value.definition); assertFalse(m.state.value.busy)
+        server.pendingSave = null
         m.load(); runCurrent(); assertEquals(SurveyPage.Resume, m.state.value.page)
+    }
+    // 못 보낸 답이 남아 있으면 제출하지 않는다(답이 빠진 채 제출되면 분석이 "답 부족"으로 끝난다). 다 저장되면 제출된다
+    @Test fun submitWaitsUntilEveryQueuedAnswerIsSaved() = runTest(dispatcher) {
+        val server = SurveyServer(); val m = vm(server); open(m); server.saveError = AppError.Offline
+        m.answer(SurveyAnswer.Choices(setOf("4"))); m.next()
+        m.answer(SurveyAnswer.Choices(setOf("\"walk\""))); runCurrent()
+        m.next(); assertEquals(SurveyPage.Review, m.state.value.page); assertEquals(2, m.state.value.pending.size)
+        m.submit(); runCurrent(); assertEquals(0, server.completes)
+        server.saveError = null
+        advanceTimeBy(1_001); runCurrent(); assertTrue(m.state.value.pending.isEmpty())
+        m.submit(); runCurrent(); assertEquals(1, server.completes)
+    }
+    // 다시 보내도 소용없는 거절(회차가 이미 제출됨 등)은 반복하지 않고 서버 상태를 다시 불러오게 한다
+    @Test fun rejectedSaveIsNotRepeatedAndRequiresReload() = runTest(dispatcher) {
+        val server = SurveyServer(); val m = vm(server); open(m)
+        server.saveError = AppError.Server(409, "SURVEY_SESSION_COMPLETED", "")
+        m.answer(SurveyAnswer.Choices(setOf("4"))); runCurrent()
+        assertTrue(m.state.value.recoveryRequired); assertTrue(m.state.value.pending.isEmpty()); assertEquals(1, server.saves)
+        advanceTimeBy(60_000); runCurrent(); assertEquals(1, server.saves)
     }
     @Test fun failedQuestionnaireReadKeepsSessionPointerForRetry() = runTest(dispatcher) {
         val server = SurveyServer(); val cursor = CursorMemory(); val m = vm(server, cursor)

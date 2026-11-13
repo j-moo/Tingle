@@ -3,9 +3,11 @@
     <string name="report_title">신고하기</string>
     <string name="report_restoring">저장된 신고 요청을 확인하고 있어요.</string>
     <string name="report_switch_wait">신고 화면을 준비하고 있어요.</string>
-    <string name="report_restore_failed">저장된 신고 요청을 확인하지 못했어요.</string>
+    <string name="report_restore_failed">저장된 신고 요청을 확인하지 못했어요</string>
     <string name="report_storage_corrupt">저장된 신고 기록이 손상되어 확인할 수 없어요. 중복 접수를 막기 위해 새 신고를 보낼 수 없어요. 서비스팀에 문의해 주세요.</string>
-    <string name="report_restore_retry">저장된 신고 다시 확인</string>
+    <string name="report_storage_corrupt_title">저장된 신고 기록을 확인할 수 없어요</string>
+    <string name="report_storage_corrupt_note">중복 접수를 막기 위해 새 신고를 보낼 수 없어요. 서비스팀에 문의해 주세요.</string>
+    <string name="report_restore_retry">다시 확인</string>
     <string name="report_reason_title">신고 사유를 선택해 주세요</string>
     <string name="report_abuse">욕설·모욕·협박</string>
     <string name="report_sexual">성희롱·불쾌한 성적 표현</string>
@@ -18,8 +20,8 @@
     <string name="report_evidence_help">검토할 메시지를 선택해 주세요. 선택하지 않아도 신고할 수 있어요.</string>
     <string name="report_evidence_count">선택한 메시지 %1$d개</string>
     <string name="report_evidence_loading">메시지를 불러오고 있어요.</string>
-    <string name="report_evidence_failed">메시지를 불러오지 못했어요.</string>
-    <string name="report_evidence_empty">선택할 수 있는 메시지가 없어요.</string>
+    <string name="report_evidence_failed">메시지를 불러오지 못했어요</string>
+    <string name="report_evidence_empty">선택할 수 있는 메시지가 없어요</string>
     <string name="report_evidence_label">%1$s · %2$s\n%3$s</string>
     <string name="report_me">나</string>
     <string name="report_other">상대</string>

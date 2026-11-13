@@ -13,7 +13,7 @@ import kotlin.time.Instant
 import kotlin.uuid.ExperimentalUuidApi
 import kotlin.uuid.Uuid
 
-enum class RegistrationIssue { Storage, ExpiredChallenge, InvalidResponse, Device, NotInOwnedList, ResetPending, DeviceBound }
+enum class RegistrationIssue { Storage, ExpiredChallenge, InvalidResponse, Device, NotInOwnedList, ResetPending, DeviceBound, WindowClosed }
 
 /** 기기의 소유 상태는 현재 계정 소유라는 증명이 아니다. 신규 증명 요청만 막고 서버 조회/HTTP 복구는 유지한다. */
 internal fun registrationBlock(info: BleDeviceInfo?): RegistrationIssue? = when (info?.ownerState) {
@@ -98,6 +98,8 @@ class KeyringRegistrationViewModel(private val api: KeyringRegistrationRepositor
             catch (failure: BleCommandException) { throw RegistrationProblem(when (failure.code) {
                 "DEVICE_ALREADY_BOUND", "OWNER_MISMATCH" -> RegistrationIssue.DeviceBound
                 "RESET_IN_PROGRESS" -> RegistrationIssue.ResetPending
+                // 키링은 켠 뒤 1분 동안만 등록 증명을 내준다. 응답 없음과 구분해 다시 켜도록 안내한다
+                "REGISTRATION_WINDOW_CLOSED" -> RegistrationIssue.WindowClosed
                 else -> RegistrationIssue.Device
             }) }
             catch (_: Exception) { throw RegistrationProblem(RegistrationIssue.Device) }
@@ -118,11 +120,14 @@ class KeyringRegistrationViewModel(private val api: KeyringRegistrationRepositor
         val response = api.register(pending.registerKey, requireNotNull(pending.body))
         operation.ensure()
         if (response is ApiResult.Fail) {
-            // 입력/증명·기기 귀속의 명시적 거절은 사용자가 기록을 정리하고 다른 보드를 고를 수 있다.
+            // 입력 · 기기 귀속의 명시적 거절은 사용자가 기록을 정리하고 다른 보드를 고를 수 있다(증명 거절은 아래에서 바로 지운다).
             // 모든 409를 거절로 취급하지 않는다. 멱등 충돌·5xx·통신 단절은 기존 요청을 보존한다.
             val code = (response.error as? AppError.Server)?.code
-            mutable.update { it.copy(canRestart = code in setOf("INVALID_REQUEST", "INVALID_DEVICE_PROOF", "DEVICE_ALREADY_BOUND")) }
+            mutable.update { it.copy(canRestart = code in setOf("INVALID_REQUEST", "DEVICE_ALREADY_BOUND")) }
             if (code == "DEVICE_ALREADY_BOUND") throw RegistrationProblem(RegistrationIssue.DeviceBound)
+            // 증명 거절(기한 지남 등)은 같은 요청을 다시 보내도 결과가 같다. 사용자가 "다시 시작"을 누르지 않아도
+            // 다음 시도가 새 요청으로 시작되게 기록을 지운다(키링의 1분 등록 시간을 낡은 요청으로 쓰지 않는다)
+            if (code == "INVALID_DEVICE_PROOF") operation.save(null)
         }
         val receipt = operation.unwrap(response)
         if (!KeyringRegistrationProtocol.validReceipt(receipt) ||

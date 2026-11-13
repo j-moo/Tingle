@@ -1,10 +1,7 @@
 <resources>
     <string name="owned_keyrings_title">내 키링</string>
     <string name="owned_keyrings_back">이전</string>
-    <string name="owned_keyrings_loading">등록된 키링을 확인하고 있어요.</string>
-    <string name="owned_keyrings_failed">키링 정보를 불러오지 못했어요.</string>
-    <string name="owned_keyrings_blocked">가입 단계를 먼저 완료해 주세요.</string>
-    <string name="owned_keyrings_empty">등록된 키링이 없어요.</string>
+    <string name="owned_keyrings_empty">등록된 키링이 없어요</string>
     <string name="owned_keyrings_reset">초기화</string>
     <string name="owned_keyrings_reset_for">%1$s 초기화</string>
     <string name="owned_keyrings_firmware_unknown">펌웨어 미확인</string>

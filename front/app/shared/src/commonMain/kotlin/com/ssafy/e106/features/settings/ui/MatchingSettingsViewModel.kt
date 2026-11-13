@@ -32,6 +32,8 @@ data class ConnectedSettingsState(
         }
         SettingsKind.MATCHING -> matching
     }
+    /** 아직 고르지 않은 계정에 화면이 얹어 둔 기본값("상관없어요"). 사용자가 고친 값이 아니라서 다시 불러올 때 지킬 편집으로 치지 않는다 */
+    val defaulted get() = (document?.values as? ConflictValues.Age)?.unselected == true && intended == ConflictValues.Age(any = true)
     val editable get() = !busy && document != null && conflict == null && validSettingsEtag(document.etag)
     val canSave get() = editable && intended?.valid == true && intended != document?.values
 }
@@ -105,7 +107,7 @@ class MatchingSettingsViewModel(
     fun load() = launch { id, stamp ->
         saving?.join()   // 저장 중에 다시 열었으면 저장이 끝난 뒤의 값을 받는다(이전 값을 편집 시작점으로 삼지 않게)
         val before = mutable.value
-        val keep = before.conflict?.intended ?: before.intended?.takeIf { it != before.document?.values && before.document != null }
+        val keep = before.conflict?.intended ?: before.intended?.takeIf { it != before.document?.values && before.document != null && !before.defaulted }
         if (keep != null) mutable.update { it.copy(conflict = SettingsConflictState(id, keep, ConflictStage.Loading)) }
         when (val result = repository.get(id, before.kind)) {
             is ApiResult.Ok -> if (valid(stamp)) {
@@ -171,7 +173,7 @@ class MatchingSettingsViewModel(
     private fun applyDocument(doc: SettingsDocument) {
         mutable.update { s -> when (val value = doc.values) {
             is ConflictValues.Age -> s.copy(document = doc, conflict = null, error = null,
-                age = AgePreferenceState(mode = when { !value.selected -> null; value.any -> AgePreferenceMode.Any; else -> AgePreferenceMode.Range },
+                age = AgePreferenceState(mode = when { !value.selected || value.any -> AgePreferenceMode.Any; else -> AgePreferenceMode.Range },   // 안 고른 계정의 기본은 "상관없어요"(저장 전까지 서버 값은 미선택 그대로),
                     minimumAge = value.minimum?.toString().orEmpty(), maximumAge = value.maximum?.toString().orEmpty(),
                     noUpperLimit = value.selected && !value.any && value.maximum == null))
             is ConflictValues.Matching -> s.copy(document = doc, matching = value, conflict = null, error = null)

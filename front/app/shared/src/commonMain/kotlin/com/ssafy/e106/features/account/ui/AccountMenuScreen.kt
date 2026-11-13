@@ -19,7 +19,6 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
@@ -34,6 +33,7 @@ import org.jetbrains.compose.resources.stringResource
 /**
  * 순수 메뉴 화면. 데이터 조회·화면 이동·계정 변경은 호출부가 담당한다.
  * 위쪽에 내 프로필 사진을 큰 네모로 통째로(잘리지 않게) 보여 주고 그 위에 닉네임, 아래 자주 쓰는 3개를 타일로, 나머지는 목록.
+ * 내 정보를 받는 중 · 못 받았을 때도 메뉴(로그아웃 · 탈퇴 포함)는 그대로 쓸 수 있게 사진 카드 자리만 뼈대 · 상태 표시로 바꾼다.
  */
 @Composable
 fun AccountMenuScreen(
@@ -44,21 +44,18 @@ fun AccountMenuScreen(
     Surface(modifier.fillMaxSize(), color = AppColors.Background) {
         Column(Modifier.fillMaxSize().safeDrawingPadding()) {
             AppTopBar(stringResource(Res.string.account_title))
-            Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.TopCenter) {
+            // 당기면 다시 받는다. 다시 받는 동안은 사진 카드가 뼈대로 바뀌어 알리므로 고리는 따로 돌리지 않는다
+            PullDownRefreshBox(false, { onAction(AccountMenuAction.Refresh) }, Modifier.weight(1f).fillMaxWidth()) {
                 Column(Modifier.widthIn(max = 640.dp).fillMaxWidth()
                     .verticalScroll(rememberScrollState()).padding(screenPaddingValues()),
                     verticalArrangement = Arrangement.spacedBy(AppSpacing.Large)) {
                     when (state.load) {
-                        AccountMenuLoad.Loading -> Box(Modifier.align(Alignment.CenterHorizontally).widthIn(max = HeroMax).fillMaxWidth().aspectRatio(1f).clip(AppShapes.Card).background(AppColors.SurfaceMuted),
-                            contentAlignment = Alignment.Center) {
-                            val loading = stringResource(Res.string.account_loading)
-                            CircularProgressIndicator(Modifier.semantics { contentDescription = loading }, color = AppColors.SelectionBorder)
+                        AccountMenuLoad.Loading -> SkeletonGroup(Modifier.align(Alignment.CenterHorizontally).widthIn(max = HeroMax)) {
+                            SkeletonBone(Modifier.aspectRatio(1f), shape = AppShapes.Card)   // 사진 카드 자리(정사각형)
                         }
-                        AccountMenuLoad.Failed -> {
-                            StatusCard(stringResource(Res.string.account_failed), stringResource(Res.string.account_failed_help))
-                            AppButton(stringResource(Res.string.account_retry), Modifier.fillMaxWidth(),
-                                onClick = { onAction(AccountMenuAction.Refresh) })
-                        }
+                        // 화면이 오류 종류를 받지 않아 "알 수 없는 오류" 모양으로 보인다
+                        AccountMenuLoad.Failed -> StateView(StateKind.Unknown, stringResource(Res.string.account_failed),
+                            onRetry = { onAction(AccountMenuAction.Refresh) })
                         AccountMenuLoad.Ready -> ProfileHero(state, Modifier.align(Alignment.CenterHorizontally)) { onAction(AccountMenuAction.Profile) }
                     }
                     Row(Modifier.height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(AppSpacing.Small)) {

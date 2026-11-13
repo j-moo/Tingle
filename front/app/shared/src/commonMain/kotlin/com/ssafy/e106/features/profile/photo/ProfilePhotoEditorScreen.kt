@@ -50,7 +50,7 @@ fun ProfilePhotoEditorScreen(
                     PhotoEditorStage.Manage -> {
                         if (current != null) Image(current, stringResource(Res.string.photo_editor_current),
                             Modifier.fillMaxWidth().aspectRatio(1f), contentScale = ContentScale.Fit)
-                        else StatusCard(stringResource(Res.string.profile_photo_empty), stringResource(Res.string.profile_photo_matching))
+                        else ProfilePlaceholder(stringResource(Res.string.profile_photo_empty))
                         Text(stringResource(Res.string.photo_editor_rule), style = MaterialTheme.typography.bodySmall)
                         AppCheckbox(state.consent, { onChange(state.copy(consent = it)) },
                             stringResource(Res.string.profile_photo_consent))
@@ -69,25 +69,23 @@ fun ProfilePhotoEditorScreen(
                     PhotoEditorStage.Review -> {
                         if (prepared != null) Image(prepared, stringResource(Res.string.photo_editor_candidate),
                             Modifier.fillMaxWidth().aspectRatio(1f), contentScale = ContentScale.Fit)
-                        AppButton(stringResource(Res.string.photo_editor_recrop), variant = AppButtonVariant.Secondary,
+                        AppButton(stringResource(Res.string.photo_editor_recrop), Modifier.fillMaxWidth(), variant = AppButtonVariant.Secondary,
                             onClick = { onChange(state.copy(stage = PhotoEditorStage.Crop)) })
                     }
-                    else -> {
-                        CircularProgressIndicator()
-                        Text(stringResource(if (state.stage == PhotoEditorStage.Reading) Res.string.photo_editor_reading else Res.string.photo_editor_processing),
-                            Modifier.semantics { liveRegion = LiveRegionMode.Polite })
+                    // 읽는 중 · 자르는 중: 사진이 들어갈 자리를 회색으로 둔다. 화면 리더에는 무엇을 하는 중인지 한 문장으로 읽힌다
+                    else -> SkeletonGroup(label = stringResource(if (state.stage == PhotoEditorStage.Reading) Res.string.photo_editor_reading else Res.string.photo_editor_processing)) {
+                        SkeletonBone(Modifier.aspectRatio(1f), shape = AppShapes.Card)
                     }
                 }
             }
+            // 사진을 못 읽었거나 못 잘랐다: 고른 내용은 그대로 두고 버튼 바로 위에 한 줄로 알린다
             state.error?.let {
-                    Text(stringResource(when (it) {
+                    InlineError(stringResource(when (it) {
                         PhotoEditorError.TooLarge -> Res.string.photo_editor_too_large
                         PhotoEditorError.Unsupported -> Res.string.photo_editor_unsupported
                         PhotoEditorError.ReadFailed -> Res.string.photo_editor_read_failed
                         PhotoEditorError.ProcessFailed -> Res.string.photo_editor_process_failed
-                    }), color = AppColors.Error, modifier = Modifier.align(Alignment.CenterHorizontally)
-                        .widthIn(max = 560.dp).fillMaxWidth().padding(horizontal = AppSpacing.Medium)
-                        .semantics { liveRegion = LiveRegionMode.Polite })
+                    }), Modifier.align(Alignment.CenterHorizontally).widthIn(max = 560.dp).fillMaxWidth().padding(horizontal = AppSpacing.Medium))
             }
             AppButton(stringResource(when (state.stage) {
                 PhotoEditorStage.Crop -> Res.string.photo_editor_preview

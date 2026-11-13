@@ -29,6 +29,7 @@ import com.ssafy.e106.core.network.AppError
 import com.ssafy.e106.core.ui.theme.AppSpacing
 import com.ssafy.e106.features.startup.ui.StartupScreen
 import com.ssafy.e106.features.onboarding.ui.KeyringPermissionGate
+import com.ssafy.e106.features.onboarding.ui.RequiredConsentGate
 import com.ssafy.e106.features.onboarding.ui.OnboardingRoute
 import kotlinx.coroutines.launch
 import org.koin.compose.koinInject
@@ -66,13 +67,17 @@ fun AuthenticationHost(
             Session.Restoring -> StartupScreen()
             Session.SignedOut -> SocialLoginRoute(snackbar)
             is Session.SignedIn -> when {
-                // 약관 다음부터는 키링 연결 권한이 있어야 앱을 쓸 수 있다. 권한 안내 시트를 모든 화면 위에 얹는다(✕ = 로그아웃)
-                !current.needsAgreement() -> KeyringPermissionGate(current.userId, onLogout = { scope.launch { auth.logout() } }) { signedIn(current) }
                 current.needsSignupAgreement() && !passedLogin -> StartupScreen()   // 위 자동 로그아웃이 끝날 때까지
-                // 로그인 직후 약관: 로그인 화면 위에 시트로. ✕ · 뒤로 가기 = 로그아웃
-                // 약관 개정으로 다시 동의하는 기존 회원은 이미 로그인한 사람이라 뒤에 로그인 화면 대신 시작 화면
-                else -> SignupSheet(onClose = { scope.launch { auth.logout() } },
-                    background = { if (current.signupCompleted) StartupScreen() else SocialLoginRoute(snackbar) }) { signedIn(current) }
+                // 로그인하면 먼저 키링 연결 권한을 안내하고(시트를 모든 화면 위에 얹는다, ✕ = 로그아웃), 그다음 동의를 한 곳에서 받는다.
+                // 권한 문은 한 자리에 둔다. 동의 전후로 자리가 바뀌면 통과 여부를 다시 묻게 된다
+                else -> KeyringPermissionGate(current.userId, onLogout = { scope.launch { auth.logout() } }) {
+                    // 동의 단계를 지난 계정도 필수 동의(사진 · 자기소개)가 빠져 있으면 어느 화면에서든 시트로 받는다. 동의하지 않으면 로그아웃
+                    if (!current.needsAgreement()) RequiredConsentGate(current.userId, onLogout = { scope.launch { auth.logout() } }) { signedIn(current) }
+                    // 동의: 로그인 화면 위에 시트로. ✕ · 뒤로 가기 = 로그아웃
+                    // 약관 개정으로 다시 동의하는 기존 회원은 이미 로그인한 사람이라 뒤에 로그인 화면 대신 시작 화면
+                    else SignupSheet(onClose = { scope.launch { auth.logout() } },
+                        background = { if (current.signupCompleted) StartupScreen() else SocialLoginRoute(snackbar) }) { signedIn(current) }
+                }
             }
         }
         })

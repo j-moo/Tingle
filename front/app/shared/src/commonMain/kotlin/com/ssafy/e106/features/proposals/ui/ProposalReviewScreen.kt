@@ -1,10 +1,11 @@
 package com.ssafy.e106.features.proposals.ui
 
 import androidx.compose.runtime.Composable
+import com.ssafy.e106.core.network.AppError
 
 /** 프로필 열람 · 수락/거절 확인. API 호출·자동 재전송·성공 상태 전환을 하지 않는다. */
 @Composable
-fun ProposalReviewScreen(state: ProposalReviewState, canLeave: Boolean = true, onAction: (ProposalReviewAction) -> Unit) {
+fun ProposalReviewScreen(state: ProposalReviewState, canLeave: Boolean = true, error: AppError? = null, onAction: (ProposalReviewAction) -> Unit) {
     if (state.stage == ProposalReviewStage.Submitting && state.visibleConfirmation == null) {
         // 수락 · 거절을 보내는 중엔 목록으로 못 간다(연결부가 판단)
         ProposalDecisionScreen(ProposalDecisionState(ProposalDecisionStage.Checking), {
@@ -25,10 +26,10 @@ fun ProposalReviewScreen(state: ProposalReviewState, canLeave: Boolean = true, o
         ProposalReviewStage.Unavailable -> ProposalProfileScreen(ProposalProfileState(load = ProposalProfileLoad.Unavailable), {
             if (it == ProposalProfileAction.Back) onAction(ProposalReviewAction.Back)
         })
-        ProposalReviewStage.Loading, ProposalReviewStage.Failed -> ReloadProfileScreen(state.stage == ProposalReviewStage.Loading, onAction)
+        ProposalReviewStage.Loading, ProposalReviewStage.Failed -> ReloadProfileScreen(state.stage == ProposalReviewStage.Loading, error, onAction)
         ProposalReviewStage.Review, ProposalReviewStage.Submitting -> {
             val current = state.current
-            if (current == null) ReloadProfileScreen(false, onAction)
+            if (current == null) ReloadProfileScreen(false, error, onAction)
             else {
                 // 보내는 중엔 확인창 뒤 버튼을 그대로 두어 "응답 가능 여부 확인" 문구가 비치지 않게(누르기는 아래에서 막힘)
                 ProposalProfileScreen(current.profile.copy(canRespond = state.canChoose || state.stage == ProposalReviewStage.Submitting), { action ->
@@ -51,12 +52,12 @@ fun ProposalReviewScreen(state: ProposalReviewState, canLeave: Boolean = true, o
 }
 
 @Composable
-private fun ReloadProfileScreen(loading: Boolean, onAction: (ProposalReviewAction) -> Unit) {
+private fun ReloadProfileScreen(loading: Boolean, error: AppError?, onAction: (ProposalReviewAction) -> Unit) {
     ProposalProfileScreen(ProposalProfileState(load = if (loading) ProposalProfileLoad.Loading else ProposalProfileLoad.Failed), {
         when (it) {
             ProposalProfileAction.Back -> onAction(ProposalReviewAction.Back)
             ProposalProfileAction.Reload -> if (!loading) onAction(ProposalReviewAction.Reload)
             else -> Unit
         }
-    })
+    }, error = error)
 }

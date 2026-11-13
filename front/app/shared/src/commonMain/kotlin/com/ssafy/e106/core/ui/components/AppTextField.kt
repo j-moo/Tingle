@@ -88,8 +88,7 @@ fun AppTextField(
             visualTransformation = visualTransformation, interactionSource = interaction,
         ) { innerTextField ->
             Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(AppSpacing.Small)) {
-                Text(title, style = MaterialTheme.typography.labelLarge,
-                    color = if (enabled) AppColors.TextPrimary else AppColors.TextDisabled)
+                TagLabel(title, color = if (enabled) AppColors.TextPrimary else AppColors.TextDisabled)
                 Box(Modifier.fillMaxWidth().heightIn(min = AppSpacing.InputMinHeight), propagateMinConstraints = true) {
                     OutlinedTextFieldDefaults.DecorationBox(
                         value = value, innerTextField = innerTextField, enabled = enabled, singleLine = true,

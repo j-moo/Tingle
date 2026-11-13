@@ -103,7 +103,7 @@ class ProposalPollingDeviceTest {
             scenario.onActivity { it.model.open(10) }; ready()
             scenario.onActivity { it.model.ask(ProposalChoice.Accept); it.model.submit() }
             compose.waitUntil(10_000) { compose.onAllNodesWithText("채팅방 40 진입 확인").fetchSemanticsNodes().isNotEmpty() }
-            compose.onNodeWithText("제안 응답 시간이\n지났어요").assertDoesNotExist()
+            compose.onNodeWithText("제안 응답 시간이 지났어요").assertDoesNotExist()
         }
     }
 
@@ -157,7 +157,7 @@ class ProposalPollingDeviceTest {
                 compose.onNodeWithText("수락했어요").assertDoesNotExist()
                 gate.complete(Unit); compose.waitForIdle()
                 scenario.onActivity { assertEquals(ProposalPageMode.List, it.model.state.value.page) }
-                compose.onNodeWithText("제안 응답 시간이\n지났어요").assertDoesNotExist()
+                compose.onNodeWithText("제안 응답 시간이 지났어요").assertDoesNotExist()
             } finally { gate.complete(Unit) }
         }
     }
@@ -180,7 +180,7 @@ class ProposalPollingDeviceTest {
                 ready = it.model.state.value.list.load == ProposalListLoad.Ready }; ready }
             accept()
             server.record = server.record.copy(status = "EXPIRED")
-            compose.waitUntil(10_000) { compose.onAllNodesWithText("제안 응답 시간이\n지났어요").fetchSemanticsNodes().isNotEmpty() }
+            compose.waitUntil(10_000) { compose.onAllNodesWithText("제안 응답 시간이 지났어요").fetchSemanticsNodes().isNotEmpty() }
             compose.onNodeWithText("제안 목록으로").performClick()
             compose.onNodeWithText("아직 받은 제안이 없어요").assertExists()
 

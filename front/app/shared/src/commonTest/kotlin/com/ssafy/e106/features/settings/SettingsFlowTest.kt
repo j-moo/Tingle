@@ -49,6 +49,17 @@ class SettingsFlowTest {
         assertEquals(1, server.writes); assertTrue(m.state.value.saved); assertFalse(m.state.value.canSave)
         assertEquals("\"1\"", server.lastTag)
     }
+    // 아직 고르지 않은 계정은 "상관없어요"가 기본으로 보이고 바로 저장할 수 있다. 이 기본값은 편집이 아니라서
+    // 손대지 않고 다시 불러와도(앱을 내렸다 올림 · 당겨서 새로고침) 충돌 화면으로 가지 않는다
+    @Test fun unselectedAgeDefaultsToAnyAndReloadIsNotAConflict() = runTest(dispatcher) {
+        val server = SettingsServer().apply { doc = SettingsDocument(ConflictValues.Age(selected = false), "\"1\"") }
+        val m = vm(server); m.load(); runCurrent()
+        assertEquals(AgePreferenceMode.Any, m.state.value.age.mode); assertTrue(m.state.value.canSave); assertEquals(0, server.writes)
+        m.load(); runCurrent()
+        assertNull(m.state.value.conflict); assertTrue(m.state.value.canSave)
+        m.save(); runCurrent()
+        assertEquals(1, server.writes); assertEquals(ConflictValues.Age(any = true), server.doc.values); assertTrue(m.state.value.saved)
+    }
     @Test fun conflictRequiresGetAndExplicitReviewedChoice() = runTest(dispatcher) {
         val server = SettingsServer(); val m = vm(server); m.load(); runCurrent(); m.change()
         server.saveError = AppError.Server(412, "PRECONDITION_FAILED", "changed")

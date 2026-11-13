@@ -52,7 +52,8 @@ class ChatEntryRecoveryDeviceTest {
                 assertTrue(server.reads.isEmpty())
                 assertFalse(it.room.state.value.ui.readable)
             }
-            compose.onNodeWithText("채팅 목록으로").performScrollTo().performClick()
+            // 아래 고정 버튼(스크롤 부모 없음)
+            compose.onNodeWithText("채팅 목록으로").assertIsDisplayed().performClick()
             scenario.onActivity { assertTrue(server.writes.isEmpty()) }
         }
     }

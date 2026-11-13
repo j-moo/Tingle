@@ -57,22 +57,17 @@ import kotlinx.coroutines.delay
     ProfileBackHandler(enabled = true) { back() }
     if (room == null) {
         if (list.owner != session) return
-        Column {
-            list.error?.let { Text(it.message, Modifier.padding(AppSpacing.Medium), color = MaterialTheme.colorScheme.error) }
-            // 목록 조회부터 동의가 필요할 수 있으므로 방에 들어가지 않아도 동의 관리로 이동할 수 있다.
-            if (list.error?.chatCode() == "AI_RISK_CONSENT_REQUIRED") {
-                AppButton(stringResource(Res.string.chat_access_open_consent),
-                    Modifier.fillMaxWidth().padding(horizontal = AppSpacing.Medium),
-                    onClick = { listModel.pause(); onConsent() })
-            }
-            ChatListScreen(list.ui, { room = it; page = "conversation" }, { action -> when(action) {
-                ChatListAction.Refresh -> listModel.refresh()
-                ChatListAction.LoadMore -> listModel.more()
-                ChatListAction.Home -> onHome()
-                ChatListAction.Proposals -> onProposals()
-                ChatListAction.Profile -> onProfile()
-            } })
-        }; return
+        // 오류는 화면 위 빨간 글 대신 목록의 상태 화면 · 아래 띠가 알린다.
+        // 목록 조회부터 동의가 필요할 수 있으므로 방에 들어가지 않아도 동의 관리로 이동할 수 있다.
+        ChatListScreen(list.ui, { room = it; page = "conversation" }, { action -> when(action) {
+            ChatListAction.Refresh -> listModel.refresh()
+            ChatListAction.LoadMore -> listModel.more()
+            ChatListAction.Home -> onHome()
+            ChatListAction.Proposals -> onProposals()
+            ChatListAction.Profile -> onProfile()
+        } }, error = list.error,
+            onConsent = if (list.error?.chatCode() == "AI_RISK_CONSENT_REQUIRED") ({ listModel.pause(); onConsent() }) else null)
+        return
     }
     if (page == "partner") {
         ChatPartnerScreen(partner, onAction = { action -> when(action) {
@@ -96,27 +91,31 @@ import kotlinx.coroutines.delay
                 onClick = { roomModel.pause(); onConsent() })
         }; return
     }
-    Column(Modifier.fillMaxSize()) {
-        conversation.error?.let { Text(it.message, Modifier.padding(AppSpacing.Medium), color = MaterialTheme.colorScheme.error) }
-        conversation.pending?.let { pending ->
-            if (!conversation.sending) {
-                Text(stringResource(if (pending.room == room) Res.string.chat_connected_recovery else Res.string.chat_connected_other_pending), Modifier.padding(AppSpacing.Medium))
-                AppButton(stringResource(if (pending.room == room) Res.string.chat_connected_check else Res.string.chat_connected_open_pending),
-                    enabled = pending.room != room || conversation.ui.readable && conversation.ui.canSend,
-                    onClick = { if (pending.room == room) roomModel.retry() else room = pending.room })
+    // 결과를 모르는 전송은 다시 보내지 않고 같은 메시지로 결과부터 확인한다(안내 문구는 그대로 둔다)
+    val pending = conversation.pending?.takeIf { !conversation.sending }
+    ChatConversationScreen(conversation.ui, roomModel::draft, { action -> when(action) {
+        ConversationAction.Back -> back()
+        ConversationAction.Reload -> roomModel.reload()
+        ConversationAction.Send -> roomModel.send()
+        ConversationAction.LoadOlder -> roomModel.older()
+        ConversationAction.OpenPartner -> { roomModel.pause(); page = "partner" }
+        ConversationAction.OpenMenu -> page = "menu"
+        ConversationAction.OpenAiNotice, ConversationAction.OpenConsent -> { roomModel.pause(); onConsent() }
+    } }, onMessageRecovery = { _, _ -> roomModel.retry() },
+        onMessagesDisplayed = { displayed = it; roomModel.displayed(it) },
+        conversationSupport = support?.let { block -> { block(room!!, conversation.ui.readable, conversation.ui.inputEnabled, conversation.ui.draft, roomModel::draft) } },
+        // 화면 위 빨간 글 · 버튼 대신 입력창 위 아래 띠로 알린다. 불러오기 실패는 화면이 상태 화면으로 보여 준다
+        error = conversation.error, notices = {
+            pending?.let { sent ->
+                val here = sent.room == room
+                NoticeBar(stringResource(if (here) Res.string.chat_connected_recovery else Res.string.chat_connected_other_pending),
+                    actionText = stringResource(if (here) Res.string.chat_connected_check else Res.string.chat_connected_open_pending),
+                    actionEnabled = !here || conversation.ui.readable && conversation.ui.canSend,
+                    onAction = { if (here) roomModel.retry() else room = sent.room })
             }
-        }
-        if (conversation.readError) TextButton(onClick = { roomModel.displayed(displayed) }) { Text(stringResource(Res.string.chat_connected_read_failed)) }
-        ChatConversationScreen(conversation.ui, roomModel::draft, { action -> when(action) {
-            ConversationAction.Back -> back()
-            ConversationAction.Reload -> roomModel.reload()
-            ConversationAction.Send -> roomModel.send()
-            ConversationAction.LoadOlder -> roomModel.older()
-            ConversationAction.OpenPartner -> { roomModel.pause(); page = "partner" }
-            ConversationAction.OpenMenu -> page = "menu"
-            ConversationAction.OpenAiNotice, ConversationAction.OpenConsent -> { roomModel.pause(); onConsent() }
-        } }, onMessageRecovery = { _, _ -> roomModel.retry() },
-            onMessagesDisplayed = { displayed = it; roomModel.displayed(it) },
-            conversationSupport = support?.let { block -> { block(room!!, conversation.ui.readable, conversation.ui.inputEnabled, conversation.ui.draft, roomModel::draft) } })
-    }
+            if (conversation.readError) NoticeBar(stringResource(Res.string.chat_connected_read_failed), onAction = { roomModel.displayed(displayed) })
+            // 보던 대화는 그대로 두고 한 줄만(이전 메시지 실패는 목록 끝 줄이, 전송 실패는 말풍선이 따로 알린다)
+            if (conversation.ui.readable && pending == null && conversation.ui.historyLoad != HistoryLoad.Failed)
+                conversation.error?.let { NoticeBar(it.stateTitle(), actionText = null) }
+        })
 }

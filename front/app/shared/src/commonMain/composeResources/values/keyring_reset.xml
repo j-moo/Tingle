@@ -14,13 +14,11 @@
     <string name="reset_start">키링 초기화</string>
     <string name="reset_connect">키링 연결하기</string>
     <string name="reset_retry">다시 시도</string>
-    <string name="reset_refresh">등록 정보 다시 확인</string>
     <string name="reset_close">확인</string>
     <string name="reset_loading_label">키링 정보를 확인하고 있어요</string>
     <string name="reset_running">초기화하고 있어요</string>
     <string name="reset_running_help">키링을 휴대폰 가까이에 두고 잠시만 기다려 주세요.</string>
     <string name="reset_done">초기화되었어요!</string>
-    <string name="reset_done_help">이제 이 키링을 다른 사람에게 주거나 다시 등록할 수 있어요.</string>
     <string name="reset_cancel">돌아가기</string>
     <string name="reset_records_unknown">미전송 만남 기록 확인이 필요해요</string>
     <string name="reset_records_unknown_help">키링에 서버로 보내지 않은 만남 기록이 있을 수 있어요. 현재는 기록 개수를 확인할 수 없어요.</string>

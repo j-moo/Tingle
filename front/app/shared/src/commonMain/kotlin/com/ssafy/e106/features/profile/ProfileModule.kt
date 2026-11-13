@@ -18,4 +18,5 @@ fun profileModule(allowKeyringSkip: Boolean = false, allowUnpublishedAgreements:
     // 선택 정보도 기본 프로필과 동일한 운영/개발 진입 정책을 사용한다.
     viewModel { OptionalProfileViewModel(get(), get(), get(), allowUnpublishedAgreements, get(), siteBase) }
     viewModel { ProfileEditViewModel(get(), get(), get(), get()) }
+    viewModel { com.ssafy.e106.features.onboarding.ui.RequiredConsentViewModel(get(), siteBase) }
 }

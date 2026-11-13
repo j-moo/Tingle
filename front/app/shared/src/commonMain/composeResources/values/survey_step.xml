@@ -1,8 +1,5 @@
 <resources>
     <!-- 성향테스트 문항 밖 화면(시안 01): 시작 · 다 답함 · 분석 -->
-    <string name="survey_step_loading_title">불러오고 있어요</string>
-    <string name="survey_step_error_title">정보를 불러오지 못했어요</string>
-    <string name="survey_step_reload">다시 불러오기</string>
     <string name="survey_step_intro_title">나와 잘 맞는 사람을 찾기 위한 질문이에요</string>
     <string name="survey_step_intro_body">정답은 없어요. 평소의 나에 가깝게 고르면 돼요.</string>
     <string name="survey_step_count">%1$d문항</string>
@@ -24,5 +21,6 @@
     <string name="survey_step_insufficient_body">제출한 답은 그대로 보관돼요. 다시 하기로 새로 답할 수 있어요.</string>
     <string name="survey_step_failed_title">분석하지 못했어요</string>
     <string name="survey_step_failed_body">다시 답하지 않아도 돼요. 저장된 답으로 다시 분석을 요청할 수 있어요.</string>
-    <string name="survey_step_retry_analysis">다시 분석하기</string>
+    <string name="survey_step_unconfirmed_title">저장 결과를 확인하지 못했어요</string>
+    <string name="survey_step_recheck">다시 확인</string>
 </resources>

@@ -1,14 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="proposal_photo_description">상대 프로필 사진</string>
-    <string name="proposal_profile_loading">프로필을 확인하고 있어요</string>
-    <string name="proposal_profile_loading_help">현재 공개된 정보를 불러오고 있어요.</string>
-    <string name="proposal_profile_unavailable">지금은 확인할 수 없는\n제안이에요</string>
-    <string name="proposal_profile_unavailable_help">제안 목록으로 돌아가\n지금 이용할 수 있는 제안을 확인해 주세요.</string>
+    <string name="proposal_profile_unavailable">지금은 확인할 수 없는 제안이에요</string>
     <string name="proposal_profile_back">제안 목록으로</string>
-    <string name="proposal_profile_failed">프로필을 불러오지 못했어요</string>
-    <string name="proposal_profile_failed_help">연결 상태를 확인하고\n다시 시도해 주세요.</string>
-    <string name="proposal_profile_retry">프로필 다시 불러오기</string>
     <string name="proposal_profile_retry_photo">사진 다시 불러오기</string>
     <string name="proposal_profile_unknown_name">이름 확인 필요</string>
     <string name="proposal_profile_age">만 %1$d세</string>

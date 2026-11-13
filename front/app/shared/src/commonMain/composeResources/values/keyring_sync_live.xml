@@ -13,13 +13,6 @@
     <string name="sync_live_stale">설정이 바뀌었어요. 최신 설정을 다시 보내 주세요.</string>
     <string name="sync_live_failed">설정을 보내지 못했어요. 다시 시도해 주세요.</string>
     <string name="sync_live_not_applied">키링에 설정이 아직 적용되지 않았어요. 잠시 후 다시 확인해 주세요.</string>
-    <string name="sync_live_applied">설정 적용 · %1$s</string>
-    <string name="sync_live_time_ready">기기 시각 · %1$s</string>
-    <string name="sync_live_matching_ready">매칭 준비 · %1$s</string>
-    <string name="sync_live_read_status">키링 준비 상태 확인</string>
-    <string name="sync_live_ready_yes">완료</string>
-    <string name="sync_live_ready_no">아직 준비되지 않음</string>
-    <string name="sync_live_ready_unknown">미확인</string>
     <string name="sync_live_storage">설정 기록을 불러오지 못했어요. 다시 시도해 주세요.</string>
     <string name="sync_live_retry">다시 시도</string>
     <string name="sync_fail_title">키링 설정을 보내지 못했어요</string>
@@ -38,8 +31,7 @@
     <!-- 이미 등록된 키링(BOUND)을 연결했을 때: 내 키링 목록에서 고르기 -->
     <string name="sync_pick_title">내 키링을 골라 주세요</string>
     <string name="sync_pick_firmware">펌웨어 %1$s</string>
-    <string name="sync_pick_loading">내 키링 목록을 불러오고 있어요.</string>
-    <string name="sync_pick_empty">내 키링 목록에 없어요. 다른 계정의 키링이라면 그 계정에서 초기화한 뒤 다시 등록해 주세요.</string>
-    <string name="sync_pick_reload">목록 다시 불러오기</string>
+    <string name="sync_pick_empty">내 키링 목록에 없어요</string>
+    <string name="sync_pick_empty_help">다른 계정의 키링이라면 그 계정에서 초기화한 뒤 다시 등록해 주세요.</string>
     <string name="sync_pick_confirm">선택한 키링으로 맞추기</string>
 </resources>

@@ -29,7 +29,7 @@ fun MatchReasonContent(state: MatchReasonState, onAction: (ProposalProfileAction
         }), style = MaterialTheme.typography.bodyMedium)
         if (state.status == MatchReasonStatus.Failed && state.accessible && !state.retryable)
             Text(stringResource(Res.string.proposal_reason_no_retry), style = MaterialTheme.typography.bodySmall)
-        if (state.canRetry) AppButton(stringResource(Res.string.proposal_reason_retry), Modifier.fillMaxWidth(),
+        if (state.canRetry) AppButton(stringResource(Res.string.state_retry), Modifier.fillMaxWidth(),
             variant = AppButtonVariant.Secondary, onClick = { if (state.canRetry) onAction(ProposalProfileAction.RetryReason) })
         if (state.canCheck) AppButton(stringResource(Res.string.proposal_reason_check), Modifier.fillMaxWidth(),
             variant = AppButtonVariant.Secondary, onClick = { if (state.canCheck) onAction(ProposalProfileAction.CheckReason) })

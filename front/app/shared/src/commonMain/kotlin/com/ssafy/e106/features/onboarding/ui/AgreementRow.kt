@@ -1,5 +1,6 @@
 package com.ssafy.e106.features.onboarding.ui
 
+import com.ssafy.e106.core.ui.components.TagLabel
 import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -62,11 +63,10 @@ internal fun AgreementRow(
             horizontalArrangement = Arrangement.spacedBy(AppSpacing.Medium),
         ) {
             CheckSquare(checked, enabled)
-            Text(
-                label, color = if (enabled) AppColors.TextPrimary else AppColors.TextDisabled,
+            // "(필수)" · "(선택)"은 이름 오른쪽 작은 회색 박스로
+            TagLabel(label, Modifier.weight(1f), color = if (enabled) AppColors.TextPrimary else AppColors.TextDisabled,
                 style = if (strong) MaterialTheme.typography.titleMedium else MaterialTheme.typography.bodyLarge,
-                fontWeight = if (strong) FontWeight.Bold else null, modifier = Modifier.weight(1f),
-            )
+                fontWeight = if (strong) FontWeight.Bold else null)
         }
         if (onRead != null) TextButton(onClick = onRead) {
             Text(stringResource(Res.string.onboarding_read_terms), color = AppColors.TextSecondary, style = MaterialTheme.typography.bodyMedium)

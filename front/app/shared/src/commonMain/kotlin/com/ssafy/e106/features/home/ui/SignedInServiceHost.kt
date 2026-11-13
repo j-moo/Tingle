@@ -102,13 +102,8 @@ internal enum class ServicePage { Home, Proposals, Menu, Chats, Safety, Report, 
 
     // 가입 상태를 READY로 바꾸거나 홈·제안·채팅을 열지 않는다. 소유 해제에 필요한 화면만 예외다.
     if (!opened || (!access.allowed(session) && !canManageOwnedKeyring(session, page))) {
-        Column(Modifier.fillMaxSize()) {
-            Box(Modifier.weight(1f)) { OnboardingRoute(session, managedKeyringConnection = true) }
-            // BE 탈퇴 API는 가입 중에도 허용한다. 키링 미등록 계정이 홈에 도달할 때까지 기다리지 않는다.
-            TextButton(onClick = { withdrawal.open(session.userId) }, modifier = Modifier.fillMaxWidth()) {
-                Text(stringResource(Res.string.account_withdrawal))
-            }
-        }
+        // 가입 중 화면에는 회원탈퇴를 두지 않는다(가입을 마친 뒤 내 정보에서 탈퇴한다)
+        OnboardingRoute(session, managedKeyringConnection = true)
         return
     }
     if (state.session != session) return
@@ -120,7 +115,8 @@ internal enum class ServicePage { Home, Proposals, Menu, Chats, Safety, Report, 
             else -> go(ServicePage.Home)
         } }
     Column(Modifier.fillMaxSize()) {
-        if (page in listOf(ServicePage.Home, ServicePage.Menu)) state.error?.let {
+        // 홈의 불러오기 실패는 홈 화면이 상태 화면으로 보여 준다
+        if (page == ServicePage.Menu) state.error?.let {
             Text(it.message, Modifier.padding(AppSpacing.Medium), color = MaterialTheme.colorScheme.error)
         }
         Box(Modifier.weight(1f)) {
@@ -143,7 +139,7 @@ internal enum class ServicePage { Home, Proposals, Menu, Chats, Safety, Report, 
                             state.home.keyrings.singleOrNull { it.deviceId == id }?.let { device ->
                                 KeyringPublicNameControls(session.userId, device, name)
                             }
-                        })
+                        }, error = state.error)
                 }
                 ServicePage.Proposals -> ConnectedProposalRoute(session, { go(ServicePage.Home) }, { go(ServicePage.Menu) },
                     { chats() }, { chats(it) }, pushes = pushes)

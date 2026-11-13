@@ -6,6 +6,7 @@
     <string name="registration_live_storage">등록 정보를 불러오지 못했어요. 다시 확인해 주세요.</string>
     <string name="registration_live_expired">등록 시간이 지났어요. 처음부터 다시 등록해 주세요.</string>
     <string name="registration_live_device">키링에서 응답을 받지 못했어요. 키링을 휴대폰 가까이 두고 다시 시도해 주세요.</string>
+    <string name="registration_live_window">키링 등록 시간이 지났어요. 키링을 껐다 켠 뒤 1분 안에 다시 시도해 주세요.</string>
     <string name="registration_live_bound">이미 등록된 키링이에요. 다른 계정의 키링이라면 그 계정에서 초기화한 뒤 다시 등록해 주세요.</string>
     <string name="registration_live_unconfirmed">등록 결과를 아직 확인하지 못했어요. 잠시 후 다시 확인해 주세요.</string>
     <string name="registration_live_invalid">등록 결과를 확인하지 못했어요. 다시 확인해 주세요.</string>

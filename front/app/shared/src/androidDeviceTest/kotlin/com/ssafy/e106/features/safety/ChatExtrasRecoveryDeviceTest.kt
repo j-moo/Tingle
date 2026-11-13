@@ -68,7 +68,7 @@ class ChatExtrasRecoveryDeviceTest {
             InstrumentationRegistry.getInstrumentation().context,ChatExtrasRecoveryTestActivity::class.java)).use { scenario ->
             // 추천은 기본 접힘이다. 열어도 생성 요청 없이 기존 오류의 재조회를 제공한다.
             compose.onNodeWithText("대화 주제 추천").performClick()
-            compose.onNodeWithText("연결을 확인해 주세요").assertExists()
+            compose.onNodeWithText("인터넷 연결을 확인해 주세요").assertExists()
             compose.onNodeWithText("다시 시도").assertIsEnabled()
             scenario.onActivity { it.chats.roomFailure = null }
             compose.onNodeWithText("다시 시도").performClick()

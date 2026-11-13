@@ -74,10 +74,10 @@ class ReportRestoreDeviceTest {
         ActivityScenario.launch<ReportRestoreTestActivity>(Intent(
             InstrumentationRegistry.getInstrumentation().context,ReportRestoreTestActivity::class.java)).use { scenario ->
             scenario.onActivity { it.prefs.failRead = true; it.prefs.readable.value = true }
-            compose.onNodeWithText("저장된 신고 요청을 확인하지 못했어요.").assertExists()
+            compose.onNodeWithText("저장된 신고 요청을 확인하지 못했어요").assertExists()
             compose.onNodeWithText("증거 메시지 선택").assertDoesNotExist()
             scenario.onActivity { assertEquals(0,it.calls.get()); it.prefs.failRead = false }
-            compose.onNodeWithText("저장된 신고 다시 확인").performClick()
+            compose.onNodeWithText("다시 확인").performClick()
             compose.onNodeWithText("접수 결과 확인").assertIsEnabled()
             scenario.onActivity { assertEquals(0,it.calls.get()) }
         }
@@ -86,7 +86,9 @@ class ReportRestoreDeviceTest {
         ActivityScenario.launch<ReportRestoreTestActivity>(Intent(
             InstrumentationRegistry.getInstrumentation().context,ReportRestoreTestActivity::class.java)).use { scenario ->
             scenario.onActivity { it.prefs.corruptRead = true; it.prefs.readable.value = true }
-            compose.onNodeWithText("저장된 신고 기록이 손상되어 확인할 수 없어요. 중복 접수를 막기 위해 새 신고를 보낼 수 없어요. 서비스팀에 문의해 주세요.").assertExists()
+            // 상태 화면 제목 + 지우면 안 되는 중복 접수 방지 · 문의 안내
+            compose.onNodeWithText("저장된 신고 기록을 확인할 수 없어요").assertExists()
+            compose.onNodeWithText("중복 접수를 막기 위해 새 신고를 보낼 수 없어요. 서비스팀에 문의해 주세요.").assertExists()
             compose.onNodeWithText("돌아가기").assertIsEnabled()
             compose.onNodeWithText("증거 메시지 선택").assertDoesNotExist()
             scenario.onActivity { assertEquals(0,it.calls.get()) }
@@ -101,7 +103,8 @@ class ReportRestoreDeviceTest {
             compose.waitUntil(5000) { prefs.reads.value == 1 }
             // 실제 Route의 room 인자만 바꾼다. 모델 상태를 직접 바꾸지 않는다.
             scenario.onActivity { it.requestedRoom = 21L }
-            compose.onNodeWithText("저장된 신고 요청을 확인하고 있어요.").assertExists()
+            // 확인하는 동안은 뼈대(화면 리더에는 한 문장)
+            compose.onNodeWithContentDescription("저장된 신고 요청을 확인하고 있어요.").assertExists()
             scenario.onActivity { it.prefs.readable.value = true }
             compose.onNodeWithText("신고 사유를 선택해 주세요").assertExists()
             compose.onNodeWithText("접수 결과 확인").assertDoesNotExist()

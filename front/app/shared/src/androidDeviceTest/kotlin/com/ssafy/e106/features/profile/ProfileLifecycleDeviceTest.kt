@@ -229,7 +229,7 @@ class ProfileLifecycleDeviceTest {
         try {
             launch(f).use { scenario ->
                 loaded(scenario)
-                compose.onNodeWithText("사진 선택").performScrollTo().performClick()
+                compose.onNodeWithText("눌러서 사진 선택", substring = true).performScrollTo().performClick()
                 compose.waitUntil(5_000) { f.pickerLaunches == 1 }
                 scenario.recreate(); compose.waitForIdle(); assertEquals(1, f.pickerLaunches)
                 scenario.onActivity { it.photoRegistry.dispatchResult(f.pickerRequest, Uri.fromFile(file)) }

@@ -1,5 +1,4 @@
 <resources>
-    <string name="optional_loading">선택 동의와 저장된 정보를 확인하고 있어요.</string>
     <string name="optional_unavailable">선택 동의 상태를 확인하지 못했어요. 정보를 입력하려면 다시 조회해 주세요. 선택 정보 저장 없이 가입을 계속할 수 있어요.</string>
     <string name="optional_unknown">요청 결과를 아직 확인하지 못했어요. 다시 조회한 뒤 계속해 주세요.</string>
     <string name="optional_version_changed">동의 문서가 변경됐어요. 최신 내용을 확인하고 다시 선택해 주세요.</string>
@@ -7,7 +6,6 @@
     <string name="optional_changed">동의 변경을 저장했어요.</string>
     <string name="optional_saved">정보를 저장했어요.</string>
     <string name="optional_checked">현재 저장 상태를 확인했어요.</string>
-    <string name="optional_refresh">현재 상태 다시 조회</string>
     <string name="optional_retry_consent">같은 동의 변경 다시 요청</string>
     <string name="optional_skip">선택 정보 저장 없이 계속</string>
     <string name="optional_skip_title">입력한 내용을 저장하지 않고 계속할까요?</string>

@@ -1,9 +1,9 @@
 <resources>
     <string name="chat_connected_recovery">전송 결과가 확인되지 않았어요. 같은 메시지로 다시 확인해 주세요.</string>
-    <string name="chat_connected_check">전송 결과 확인</string>
+    <string name="chat_connected_check">다시 확인</string>
     <string name="chat_connected_other_pending">이전에 전송한 메시지의 결과를 먼저 확인해 주세요.</string>
     <string name="chat_connected_open_pending">이전 대화방 열기</string>
-    <string name="chat_connected_read_failed">읽음 확인을 보내지 못했어요. 다시 시도해 주세요.</string>
+    <string name="chat_connected_read_failed">읽음 확인을 보내지 못했어요</string>
     <string name="chat_connected_menu">대화방 메뉴</string>
     <string name="chat_connected_report">신고하기</string>
     <string name="chat_connected_block">차단하기</string>

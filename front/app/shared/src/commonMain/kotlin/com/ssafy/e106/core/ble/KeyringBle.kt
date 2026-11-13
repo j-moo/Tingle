@@ -4,7 +4,8 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.StateFlow
 
 /** 화면에는 플랫폼 객체 대신 탐색 세션에서만 유효한 ID를 제공한다. 서버 deviceId/소유 인증이 아니다. */
-data class BleCandidate(val id: String, val name: String?, val rssi: Int)
+/** [recent]: 이 앱 실행 중 마지막으로 연결했던 기기(플랫폼이 RAM에서만 대조한다. 소유 인증이 아니다) */
+data class BleCandidate(val id: String, val name: String?, val rssi: Int, val recent: Boolean = false)
 enum class BleLinkState { Ready, Closed }
 enum class BleFailure { Unsupported, PermissionRequired, BluetoothOff, LocationOff, Busy, NotFound, ScanFailed,
     ConnectFailed, ServiceMissing, SubscribeFailed, WriteFailed, Disconnected, Timeout, InvalidFrame, Overflow,
@@ -24,6 +25,8 @@ interface KeyringBle {
     /** 현재 탐색 후보가 이 프로세스에서 마지막으로 연결한 기기인지 플랫폼 안에서만 대조한다.
      * 탐색 ID는 매번 바뀌므로 화면이 예전 ID를 비교하면 안 된다. 주소를 노출/저장하지 않으며 소유 인증을 대신하지 않는다. */
     fun isPreviousDevice(candidateId: String): Boolean = false
+    /** 계정이 바뀌면 마지막 연결 기기 기억을 지운다. 다음 계정에게 이전 계정의 키링을 "최근 연결"로 알려 주지 않는다 */
+    fun forgetPreviousDevice() {}
 }
 
 interface BleConnection {

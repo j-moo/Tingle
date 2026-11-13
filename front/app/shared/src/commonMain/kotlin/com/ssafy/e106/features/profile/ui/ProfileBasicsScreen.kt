@@ -1,5 +1,6 @@
 package com.ssafy.e106.features.profile.ui
 
+import com.ssafy.e106.core.ui.components.TagLabel
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -134,8 +135,7 @@ internal fun ProfileBasicsFields(
             visualTransformation = BirthDateVisualTransformation,
         )
         Column(verticalArrangement = Arrangement.spacedBy(AppSpacing.Small)) {
-            Text(stringResource(Res.string.profile_gender), style = MaterialTheme.typography.labelLarge,
-                color = if (editable) AppColors.TextPrimary else AppColors.TextDisabled)
+            TagLabel(stringResource(Res.string.profile_gender), color = if (editable) AppColors.TextPrimary else AppColors.TextDisabled)
             Row(Modifier.fillMaxWidth().selectableGroup(), horizontalArrangement = Arrangement.spacedBy(AppSpacing.Small)) {
                 ProfileGender.entries.forEach { gender ->
                     val selected = state.gender == gender

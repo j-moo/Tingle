@@ -1,18 +1,27 @@
 package com.ssafy.e106.features.profile.ui
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.ssafy.e106.core.auth.Session
 import com.ssafy.e106.core.ui.components.*
-import com.ssafy.e106.features.account.ui.*
-import com.ssafy.e106.features.onboarding.ui.OnboardingPanel
+import com.ssafy.e106.core.ui.theme.*
+import com.ssafy.e106.features.account.ui.HelpGuideAction
+import com.ssafy.e106.features.account.ui.HelpGuideKind
+import com.ssafy.e106.features.account.ui.HelpGuideScreen
+import com.ssafy.e106.features.account.ui.HelpGuideState
 import com.ssafy.e106.features.profile.photo.ProfilePhotoBytes
 import com.ssafy.e106.resources.*
 import org.jetbrains.compose.resources.stringResource
@@ -56,27 +65,55 @@ fun ProfileManagementRoute(session: Session.SignedIn, onExit: () -> Unit, model:
             onBack = ::back, onDiscard = { model.discard(::overview) }, onKeep = model::keepEditing,
             onOptional = { if (state.canEdit) page = ProfileDestination.Optional },
             onCorrection = { if (state.canEdit) page = ProfileDestination.Correction }, onReload = model::load)
-        ProfileDestination.Overview -> OnboardingPanel(stringResource(Res.string.profile_manage_title)) {
-            if (!session.isReady) Text(stringResource(Res.string.profile_manage_dev_notice))
-            if (state.busy) { CircularProgressIndicator(); Text(stringResource(Res.string.profile_manage_load)) }
-            ProfileManagementNotice(state)
-            state.profile?.let { p ->
-                Text(p.nickname.orEmpty(), style = MaterialTheme.typography.headlineMedium)
-                state.photo?.let { Box(Modifier.size(144.dp)) { ProfilePhotoBytes(it) } }
-                OptionalProfileSummary(state)
-            }
-            AppButton(stringResource(Res.string.profile_edit_title), enabled = state.canEdit,
-                onClick = { page = ProfileDestination.Edit })
-            TextButton(onClick = model::load, enabled = !state.busy) { Text(stringResource(Res.string.profile_manage_reload)) }
-            TextButton(onClick = ::back, enabled = !state.busy) {
-                Text(stringResource(Res.string.onboarding_previous))
-            }
-        }
+        ProfileDestination.Overview -> ProfileOverviewScreen(state, devNotice = !session.isReady,
+            onEdit = { page = ProfileDestination.Edit }, onReload = model::load, onBack = ::back)
     }
     // 오프라인에서도 사용자를 가두지 않는다. 나가더라도 서버 반영 여부는 미확인으로 남긴다.
     if (unknownExitPrompt) ProfileUnknownExitDialog(
         onDismiss = { unknownExitPrompt = false },
         onExit = { unknownExitPrompt = false; exit() })
+}
+
+/**
+ * 내 프로필: 불러오는 중은 뼈대, 처음 불러오기 실패는 상태 화면, 보던 중 새로고침 실패는 아래 띠.
+ * 다시 불러오기는 당겨서 새로고침으로 하고, 아래 "프로필 수정"은 화면 바닥에 붙여 둔다.
+ */
+@Composable
+private fun ProfileOverviewScreen(state: ProfileManagementState, devNotice: Boolean, onEdit: () -> Unit, onReload: () -> Unit, onBack: () -> Unit) {
+    val title = stringResource(Res.string.profile_manage_title)
+    val profile = state.profile
+    if (profile == null) {
+        if (state.loadFailed) ProfileLoadFailed(state, title, onBack, onReload)
+        else ProfileSkeletonFrame(title, stringResource(Res.string.profile_edit_title)) {
+            SkeletonGroup {
+                SkeletonBone(width = 160.dp, height = 28.dp)
+                SkeletonBone(width = 144.dp, height = 144.dp, shape = AppShapes.Card)
+                BoneField(Res.string.profile_intro_title) { SkeletonBone(Modifier.fillMaxWidth(0.7f)) }
+                BoneField(Res.string.profile_religion_title) { SkeletonBone(Modifier.fillMaxWidth(0.4f)) }
+            }
+        }
+        return
+    }
+    val (refreshing, refresh) = pullRefresh(state.busy, onReload)
+    Surface(Modifier.fillMaxSize(), color = AppColors.Background) {
+        Column(Modifier.fillMaxSize().safeDrawingPadding()) {
+            AppTopBar(title, onBack = onBack.takeIf { !state.busy })
+            PullDownRefreshBox(refreshing, refresh, Modifier.weight(1f).fillMaxWidth()) {
+                Column(Modifier.widthIn(max = 640.dp).fillMaxSize().verticalScroll(rememberScrollState()).padding(screenPaddingValues()),
+                    verticalArrangement = Arrangement.spacedBy(AppSpacing.Large)) {
+                    if (devNotice) Text(stringResource(Res.string.profile_manage_dev_notice), style = MaterialTheme.typography.bodySmall, color = AppColors.TextSecondary)
+                    ProfileManagementNotice(state, onReload)
+                    Text(profile.nickname.orEmpty(), style = MaterialTheme.typography.headlineMedium, modifier = Modifier.semantics { heading() })
+                    state.photo?.let { Box(Modifier.size(144.dp).clip(AppShapes.Card)) { ProfilePhotoBytes(it) } }
+                    OptionalProfileSummary(state)
+                }
+            }
+            // 보던 내용은 그대로 두고 새로고침 실패만 아래 띠로 알린다(결과 미확인은 위 안내가 따로 맡는다)
+            if (state.error != null && !state.unknown) NoticeBar(state.error.stateTitle(), actionEnabled = !state.busy, onAction = onReload)
+            AppButton(stringResource(Res.string.profile_edit_title), Modifier.align(Alignment.CenterHorizontally).widthIn(max = 640.dp).fillMaxWidth()
+                .padding(horizontal = screenGutter(), vertical = AppSpacing.Large), enabled = state.canEdit, onClick = onEdit)
+        }
+    }
 }
 
 /** Same pure editor as the Preview, with optional operations delegated to their consent flow. */
@@ -88,15 +125,27 @@ fun ProfileConnectedEditScreen(
 ) {
     val editor = state.editor
     if (editor == null) {
-        OnboardingPanel(stringResource(Res.string.profile_edit_title)) {
-            ProfileManagementNotice(state)
-            if (state.busy) CircularProgressIndicator()
-            AppButton(stringResource(Res.string.profile_manage_reload), enabled = !state.busy, onClick = onReload)
-            TextButton(onClick = onBack, enabled = !state.busy) { Text(stringResource(Res.string.onboarding_previous)) }
+        val title = stringResource(Res.string.profile_edit_title)
+        if (state.loadFailed) ProfileLoadFailed(state, title, onBack, onReload)
+        else ProfileSkeletonFrame(title, stringResource(Res.string.profile_edit_save)) {
+            SkeletonGroup(spacing = AppSpacing.Section) {
+                BoneField(Res.string.profile_photo_title) { PhotoBone() }
+                BoneField(Res.string.profile_nickname)
+                BoneField(Res.string.profile_edit_smoking)
+                BoneField(Res.string.profile_edit_drinking)
+            }
         }
         return
     }
-    ProfileEditScreen(editor.copy(saving = state.busy, interactionEnabled = !state.recoveryRequired),
+    // 저장 실패(결과 미확인 제외)는 저장 버튼 바로 위 한 줄로 알린다. 입력을 고치면 ViewModel 이 오류를 지운다
+    val saveError = if (state.unknown || state.busy) null else when (state.problem) {
+        ProfileEditProblem.DuplicateNickname -> stringResource(Res.string.onboarding_duplicate_nickname)
+        ProfileEditProblem.InvalidNickname -> stringResource(Res.string.profile_edit_nickname_invalid)
+        ProfileEditProblem.InvalidProfile -> stringResource(Res.string.profile_manage_invalid)
+        else -> state.error?.message
+    }
+    val (refreshing, refresh) = pullRefresh(state.busy, onReload)
+    ProfileEditScreen(editor.copy(saving = state.busy, interactionEnabled = !state.recoveryRequired, saveError = saveError),
         onChange, onSave, onBack, onDiscard, onKeep, onOptional, onCorrection,
         photoContent = { state.photo?.let { ProfilePhotoBytes(it) } ?: Text(stringResource(Res.string.optional_photo_unavailable)) },
         optionalContent = {
@@ -104,30 +153,35 @@ fun ProfileConnectedEditScreen(
             Text(stringResource(Res.string.profile_manage_optional_help), style = MaterialTheme.typography.bodySmall)
         },
         photoActionLabel = stringResource(Res.string.profile_manage_optional),
-        header = {
-            ProfileManagementNotice(state)
-            if (state.recoveryRequired || state.error != null) TextButton(onClick = onReload, enabled = !state.busy) {
-                Text(stringResource(Res.string.profile_manage_reload))
-            }
-        })
+        header = { ProfileManagementNotice(state, onReload) },
+        refreshing = refreshing, onRefresh = refresh)
+}
+
+/** 프로필이 없는데 불러오기도 끝났다 = 못 불러왔다(오류) 또는 수정할 프로필이 아니다(입력 미완료) */
+private val ProfileManagementState.loadFailed get() = !busy && (error != null || problem != null)
+/** 저장 결과를 확인하지 못한 상태. 다시 저장하지 않고 먼저 서버 상태를 확인하게 한다 */
+private val ProfileManagementState.unknown get() = recoveryRequired || problem == ProfileEditProblem.ResultUnknown
+
+@Composable private fun ProfileLoadFailed(state: ProfileManagementState, title: String, onBack: () -> Unit, onReload: () -> Unit) {
+    val invalid = state.problem == ProfileEditProblem.InvalidProfile
+    StateScreen(if (invalid) StateKind.Locked else state.error.stateKind(),
+        if (invalid) stringResource(Res.string.profile_manage_invalid) else state.error.stateTitle(),
+        barTitle = title, onBack = onBack, refreshing = state.busy, onRefresh = onReload)
 }
 
 @Composable private fun OptionalProfileSummary(state: ProfileManagementState) {
     val p = state.profile ?: return
-    Text(stringResource(Res.string.profile_intro_title), style = MaterialTheme.typography.titleMedium)
+    TagLabel(stringResource(Res.string.profile_intro_title), style = MaterialTheme.typography.titleMedium)
     Text(p.introduction?.takeIf { it.isNotBlank() } ?: stringResource(Res.string.profile_manage_none))
-    Text(stringResource(Res.string.profile_religion_title), style = MaterialTheme.typography.titleMedium)
+    TagLabel(stringResource(Res.string.profile_religion_title), style = MaterialTheme.typography.titleMedium)
     Text(p.religion.religion()?.let { stringResource(it.label()) } ?: stringResource(Res.string.profile_manage_none))
 }
 
-@Composable private fun ProfileManagementNotice(state: ProfileManagementState) {
-    if (state.savedNotice) Text(stringResource(Res.string.profile_manage_saved))
-    state.problem?.let { Text(stringResource(when(it) {
-        ProfileEditProblem.InvalidProfile -> Res.string.profile_manage_invalid
-        ProfileEditProblem.DuplicateNickname -> Res.string.onboarding_duplicate_nickname
-        ProfileEditProblem.InvalidNickname -> Res.string.profile_edit_nickname_invalid
-        ProfileEditProblem.ResultUnknown -> Res.string.profile_manage_unknown
-    }), color = MaterialTheme.colorScheme.error) }
-    if (state.recoveryRequired && state.problem != ProfileEditProblem.ResultUnknown) Text(stringResource(Res.string.profile_manage_unknown))
-    state.error?.let { Text(it.message, color = MaterialTheme.colorScheme.error) }
+/** 저장했어요 · 결과 미확인 안내. 결과 미확인 문구는 같은 내용을 두 번 저장하지 않게 하는 설명이라 줄이지 않는다 */
+@Composable private fun ProfileManagementNotice(state: ProfileManagementState, onReload: () -> Unit) {
+    if (state.savedNotice) Text(stringResource(Res.string.profile_manage_saved), style = MaterialTheme.typography.bodyMedium, color = AppColors.TextSecondary)
+    if (state.unknown) {
+        Text(stringResource(Res.string.profile_manage_unknown), style = MaterialTheme.typography.bodyMedium, color = AppColors.Error)
+        TextAction(stringResource(Res.string.profile_state_recheck), onReload, enabled = !state.busy)
+    }
 }

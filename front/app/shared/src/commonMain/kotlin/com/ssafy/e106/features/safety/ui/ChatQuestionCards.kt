@@ -27,7 +27,10 @@ fun ChatQuestionCards(state: ChatExtrasState, editable: Boolean, draft: String,
             }
             if (expanded) {
                 Text(stringResource(Res.string.chat_questions_help), style = MaterialTheme.typography.bodySmall)
-                if (state.busy) LinearProgressIndicator(Modifier.fillMaxWidth())
+                // 받는 중: 질문 자리 뼈대(이미 받은 질문이 있으면 그대로 둔다)
+                if (state.busy && state.questions.isEmpty()) SkeletonGroup(spacing = AppSpacing.Small) {
+                    repeat(3) { SkeletonBone(height = AppSpacing.ControlMinHeight, shape = AppShapes.Control) }
+                }
                 if (state.status == "PENDING") Text(stringResource(Res.string.chat_questions_pending))
                 state.questions.forEach { question ->
                     AppButton(question, Modifier.fillMaxWidth(), variant = AppButtonVariant.Secondary,
@@ -40,11 +43,12 @@ fun ChatQuestionCards(state: ChatExtrasState, editable: Boolean, draft: String,
                         })
                 }
                 if (state.status == "FAILED") Text(stringResource(Res.string.chat_extras_failed))
-                state.error?.let { Text(it.message, color = MaterialTheme.colorScheme.error) }
-                if (state.accessRetryRequired) AppButton(stringResource(Res.string.chat_extras_retry),
+                // 실패는 버튼 위 한 줄로 알린다
+                state.error?.let { InlineError(it.stateTitle()) }
+                if (state.accessRetryRequired) AppButton(stringResource(Res.string.state_retry), Modifier.fillMaxWidth(),
                     enabled = !state.busy, onClick = check)
                 else if (state.questions.isEmpty() && state.status != "FAILED")
-                    AppButton(stringResource(if (state.status == null) Res.string.chat_extras_generate else Res.string.chat_extras_check),
+                    AppButton(stringResource(if (state.status == null) Res.string.chat_extras_generate else Res.string.chat_extras_check), Modifier.fillMaxWidth(),
                         enabled = !state.busy, onClick = { if (state.status == null) generate() else check() })
             }
         }

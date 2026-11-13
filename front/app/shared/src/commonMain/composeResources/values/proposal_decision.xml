@@ -8,17 +8,12 @@
     <string name="proposal_decision_reject">거절하기</string>
     <string name="proposal_decision_reconsider">다시 생각하기</string>
     <string name="proposal_decision_title">제안 응답</string>
-    <string name="proposal_decision_checking">처리 결과를\n확인하고 있어요</string>
-    <string name="proposal_decision_checking_help">잠시만 기다려 주세요.\n이미 저장된 응답이 있는지 확인하고 있어요.</string>
-    <string name="proposal_decision_unknown">처리 결과를\n확인하지 못했어요</string>
+    <string name="proposal_decision_checking">처리 결과를 확인하고 있어요</string>
+    <string name="proposal_decision_unknown">처리 결과를 확인하지 못했어요</string>
     <string name="proposal_decision_unknown_help">응답이 저장됐을 수도 있어요.\n다시 보내기 전에 처리 결과를 확인해 주세요.</string>
-    <string name="proposal_decision_not_matched">매칭이 성사되지\n않았어요</string>
-    <string name="proposal_decision_not_matched_help">이번 제안은 종료됐어요.\n다른 인연을 기다려 주세요.</string>
-    <string name="proposal_decision_expired">제안 응답 시간이\n지났어요</string>
-    <string name="proposal_decision_expired_help">제안을 받은 지 24시간이 지나\n종료됐어요.</string>
-    <string name="proposal_decision_unavailable">더 이상 이용할 수 없는\n제안이에요</string>
-    <string name="proposal_decision_unavailable_help">제안 목록에서\n지금 이용할 수 있는 제안을 확인해 주세요.</string>
-    <string name="proposal_decision_check">처리 결과 다시 확인</string>
-    <string name="proposal_decision_checking_button">결과 확인 중…</string>
+    <string name="proposal_decision_not_matched">매칭이 성사되지 않았어요</string>
+    <string name="proposal_decision_expired">제안 응답 시간이 지났어요</string>
+    <string name="proposal_decision_unavailable">더 이상 이용할 수 없는 제안이에요</string>
+    <string name="proposal_decision_check">다시 확인</string>
     <string name="proposal_decision_list">제안 목록으로</string>
 </resources>

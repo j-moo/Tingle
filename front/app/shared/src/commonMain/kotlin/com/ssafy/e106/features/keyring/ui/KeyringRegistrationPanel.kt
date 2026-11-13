@@ -71,6 +71,7 @@ import org.koin.compose.viewmodel.koinViewModel
             RegistrationIssue.InvalidResponse -> Res.string.registration_live_invalid
             RegistrationIssue.ResetPending -> Res.string.registration_reset_pending
             RegistrationIssue.DeviceBound -> Res.string.registration_live_bound
+            RegistrationIssue.WindowClosed -> Res.string.registration_live_window
         }), color = MaterialTheme.colorScheme.error, textAlign = center) }
         when {
             state.confirmed != null -> {

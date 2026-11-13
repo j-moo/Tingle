@@ -1,10 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="home_brand">Tingle</string>
-    <string name="home_loading">홈 정보를 불러오고 있어요</string>
-    <string name="home_failed">홈 정보를 불러오지 못했어요</string>
-    <string name="home_failed_help">연결 상태를 확인한 뒤 다시 시도해 주세요. 제안과 채팅은 아래 메뉴에서 확인할 수 있어요.</string>
-    <string name="home_retry">다시 불러오기</string>
     <string name="home_tab">홈</string>
     <string name="home_proposal_tab">제안</string>
     <string name="home_chat_tab">채팅</string>

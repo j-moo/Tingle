@@ -47,6 +47,27 @@ class SurveyCompletionTest {
         assertEquals(AnalysisStatus.SUCCEEDED, m.state.value.analysisResult?.status)
         assertFalse(m.state.value.recoveryRequired)
     }
+    // 분석은 서버에서 몇 초 뒤에 끝난다. PENDING 인 동안 뒤에서 다시 조회해, 버튼을 누르지 않아도 끝난 결과와 가입 단계가 반영된다
+    @Test fun pendingAnalysisIsPolledUntilFinishedWithoutPressingTheButton() = runTest(dispatcher) {
+        val s = completedAnswers(); val session = TestSession(OnboardingStatus.KEYRING_REQUIRED); val m = vm(s, session = session)
+        review(m); m.submit(); runCurrent()
+        assertEquals(AnalysisStatus.PENDING, m.state.value.analysisResult?.status); assertEquals(1, s.analysisGets)
+        advanceTimeBy(2_501); runCurrent(); assertEquals(2, s.analysisGets)
+        assertEquals(AnalysisStatus.PENDING, m.state.value.analysisResult?.status)
+        s.analysisStatus = AnalysisStatus.SUCCEEDED; val refreshes = session.refreshes
+        advanceTimeBy(2_501); runCurrent()
+        assertEquals(AnalysisStatus.SUCCEEDED, m.state.value.analysisResult?.status); assertEquals(refreshes + 1, session.refreshes)
+        val gets = s.analysisGets; advanceTimeBy(60_000); runCurrent(); assertEquals(gets, s.analysisGets)   // 끝난 뒤에는 더 조회하지 않는다
+    }
+    // 1분이 지나도 안 끝나면 멈추고 버튼에 맡긴다. 화면을 나가면 바로 멈춘다
+    @Test fun analysisPollingStopsAfterTheLimitAndWhenLeaving() = runTest(dispatcher) {
+        val s = completedAnswers(); val m = vm(s); review(m); m.submit(); runCurrent()
+        advanceTimeBy(120_000); runCurrent(); assertEquals(1 + 24, s.analysisGets)
+        assertEquals(AnalysisStatus.PENDING, m.state.value.analysisResult?.status)
+        m.refreshAnalysis(); runCurrent(); val gets = s.analysisGets          // 버튼으로 다시 보면 다시 지켜본다
+        advanceTimeBy(2_501); runCurrent(); assertEquals(gets + 1, s.analysisGets)
+        m.leave(); advanceTimeBy(60_000); runCurrent(); assertEquals(gets + 1, s.analysisGets)
+    }
     @Test fun submitLocksCompletedAnswersAndRequestsAnalysisOnce() = runTest(dispatcher) {
         val server = completedAnswers(); val m = vm(server); review(m)
         m.submit(); m.submit(); runCurrent()

@@ -44,6 +44,13 @@ fun AgePreferenceScreen(
     onBack: (() -> Unit)? = null,
     submitEnabled: Boolean = true,
     submitLabel: String? = null,
+    /** 불러오는 중: 틀(제목 · 아래 버튼)은 그대로 두고 값 자리만 회색 뼈대로 둔다 */
+    loading: Boolean = false,
+    refreshing: Boolean = false,
+    /** 있으면 당겨서 새로고침이 된다 */
+    onRefresh: (() -> Unit)? = null,
+    /** 버튼 위 알림 자리(새로고침 실패 띠 등). 좌우 여백은 호출부가 정한다 */
+    notice: @Composable ColumnScope.() -> Unit = {},
 ) {
     state.conflict?.let { SettingsConflictScreen(it, onConflictAction); return }
     val editable = !state.saving
@@ -57,29 +64,53 @@ fun AgePreferenceScreen(
                     Icon(painterResource(Res.drawable.ic_arrow_back), stringResource(Res.string.button_previous), tint = AppColors.TextPrimary)
                 }
             }
-            Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.TopCenter) {
-                Column(Modifier.widthIn(max = 640.dp).fillMaxWidth().verticalScroll(rememberScrollState()).padding(screenPaddingValues()),
+            // 빈 곳을 당겨도 새로고침이 되게 화면 높이를 다 쓴다
+            val body: @Composable BoxScope.() -> Unit = {
+                Column(Modifier.widthIn(max = 640.dp).fillMaxSize().verticalScroll(rememberScrollState()).padding(screenPaddingValues()),
                     verticalArrangement = Arrangement.spacedBy(AppSpacing.Large)) {
                     Text(stringResource(Res.string.age_preference_heading),
                         style = MaterialTheme.typography.headlineMedium, modifier = Modifier.semantics { heading() })
-                    ModeTabs(state.mode, editable) { onStateChange(state.selectMode(it)) }
-                    AgeRangeEditor(state, onStateChange, enabled = editable && state.mode == AgePreferenceMode.Range)
-                    if (state.mode == null) Text(stringResource(Res.string.age_preference_select_help),
-                        style = MaterialTheme.typography.bodySmall, color = AppColors.TextSecondary)
-                    if (state.saveFailed) Text(stringResource(Res.string.age_preference_save_failed),
-                        style = MaterialTheme.typography.bodyMedium, color = AppColors.Error,
-                        modifier = Modifier.fillMaxWidth().clip(AppShapes.Control).background(AppColors.Error.copy(alpha = 0.08f))
-                            .padding(AppSpacing.Medium).semantics { liveRegion = LiveRegionMode.Polite })
+                    // 불러오는 중: 탭 · 큰 숫자 · 막대 · 최소/최대 칸 자리만 회색으로
+                    if (loading) SkeletonGroup {
+                        SkeletonBone(height = AppSpacing.ControlMinHeight, shape = AppShapes.Control)
+                        SkeletonBone(width = 160.dp, height = 28.dp)
+                        SkeletonBone(height = 24.dp)
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(AppSpacing.Medium)) {
+                            SkeletonField(Modifier.weight(1f)); SkeletonField(Modifier.weight(1f))
+                        }
+                    } else {
+                        ModeTabs(state.mode, editable) { onStateChange(state.selectMode(it)) }
+                        AgeRangeEditor(state, onStateChange, enabled = editable && state.mode == AgePreferenceMode.Range)
+                        if (state.mode == null) Text(stringResource(Res.string.age_preference_select_help),
+                            style = MaterialTheme.typography.bodySmall, color = AppColors.TextSecondary)
+                    }
                 }
             }
-            Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-                AppButton(submitLabel ?: stringResource(if (state.saveFailed) Res.string.age_preference_retry else Res.string.age_preference_continue),
-                    modifier = Modifier.widthIn(max = 640.dp).fillMaxWidth().padding(horizontal = screenGutter(), vertical = AppSpacing.Large),
-                    enabled = state.canContinue && submitEnabled, loading = state.saving,
-                    loadingText = stringResource(Res.string.age_preference_saving), onClick = onContinue)
+            if (onRefresh != null) PullDownRefreshBox(refreshing, onRefresh, Modifier.weight(1f).fillMaxWidth(), content = body)
+            else Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.TopCenter, content = body)
+            Column(Modifier.widthIn(max = 640.dp).fillMaxWidth().align(Alignment.CenterHorizontally)) {
+                notice()
+                Column(Modifier.fillMaxWidth().padding(horizontal = screenGutter(), vertical = AppSpacing.Large),
+                    verticalArrangement = Arrangement.spacedBy(AppSpacing.Medium)) {
+                    // 저장 실패: 입력은 그대로 두고 버튼 위 빨간 한 줄 + 버튼 이름 "다시 시도"(고치거나 성공하면 saveFailed 가 풀린다)
+                    if (state.saveFailed) InlineError(stringResource(Res.string.age_preference_save_failed))
+                    AppButton(if (state.saveFailed) stringResource(Res.string.state_retry) else submitLabel ?: stringResource(Res.string.age_preference_continue),
+                        modifier = Modifier.fillMaxWidth(), enabled = !loading && state.canContinue && submitEnabled, loading = state.saving,
+                        loadingText = stringResource(Res.string.age_preference_saving), onClick = onContinue)
+                }
             }
         }
     }
+}
+
+/** 희망 나이 입력 칸만(탭 · 범위 · 안내). 가입 준비 화면의 줄 안에 펼쳐 넣을 때 쓴다 */
+@Composable
+fun AgePreferenceFields(state: AgePreferenceState, onStateChange: (AgePreferenceState) -> Unit) {
+    val editable = !state.saving
+    ModeTabs(state.mode, editable) { onStateChange(state.selectMode(it)) }
+    AgeRangeEditor(state, onStateChange, enabled = editable && state.mode == AgePreferenceMode.Range)
+    if (state.mode == null) Text(stringResource(Res.string.age_preference_select_help),
+        style = MaterialTheme.typography.bodySmall, color = AppColors.TextSecondary)
 }
 
 /** "상관없어요 | 범위 정하기" 탭 */
