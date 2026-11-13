@@ -138,6 +138,62 @@ class BleProbeViewModelTest {
         request.ownerGeneration, request.ownershipEpoch, request.deviceNonce, request.permissions,
         "2026-11-06T03:00:00Z", 1793934060L, "A".repeat(86))
 
+    /** 공개 설정은 소유 기기에만 전송되며, 재조회 값이 다르면 성공하지 않는다. */
+    @Test fun publicNameRequiresOwnedLinkAndProtectedReadback() = runTest(dispatcher) {
+        val port = ownerPort()
+        port.extraInfo = port.extraInfo + mapOf(
+            "supportedFunctions" to JsonArray(listOf("GET_OWNER_CHALLENGE", "AUTHORIZE_OWNER",
+                "GET_PUBLIC_NAME", "SET_PUBLIC_NAME", "CLEAR_PUBLIC_NAME").map(::JsonPrimitive)),
+            "maxPublicNameBytes" to JsonPrimitive(29),
+        )
+        val ownerReply = requireNotNull(port.commandReply)
+        var advertised: String? = null
+        var failReadback = false
+        port.commandReply = { request ->
+            val type = request.getValue("type").jsonPrimitive.content
+            if (type !in setOf("SET_PUBLIC_NAME", "CLEAR_PUBLIC_NAME", "GET_PUBLIC_NAME")) ownerReply(request)
+            else {
+                if (type == "SET_PUBLIC_NAME") advertised = request.getValue("name").jsonPrimitive.content
+                if (type == "CLEAR_PUBLIC_NAME") advertised = null
+                val responseName = if (failReadback && type == "GET_PUBLIC_NAME") "이전 이름" else advertised
+                buildJsonObject {
+                    put("protocolVersion", 1); put("type", "PUBLIC_NAME_RESULT")
+                    put("requestId", request.getValue("requestId"))
+                    put("enabled", responseName != null)
+                    put("name", responseName?.let(::JsonPrimitive) ?: JsonNull)
+                }
+            }
+        }
+        val session = TestSession(OnboardingStatus.READY)
+        val vm = model(port, session)
+        val store = KeyringSyncStore(ResetPrefs())
+        store.rememberTarget(1, ownerIdentity.deviceId, port.serial)
+        store.save(1, store.read(1).single().copy(identity = ownerIdentity, complete = true))
+        val authorizer = KeyringOwnerAuthorizer(object : KeyringOwnerSessionRepository {
+            override suspend fun create(deviceId: Long, key: String, body: KeyringOwnerGrantRequest): ApiResult<KeyringOwnerGrant> {
+                assertEquals(ownerIdentity.deviceId, deviceId)
+                assertEquals(8, body.permissions)
+                return ApiResult.Ok(ownerGrant(body))
+            }
+            override suspend fun get(deviceId: Long, key: String): ApiResult<KeyringOwnerGrant> = error("Unexpected lookup")
+        })
+        vm.scan(); runCurrent(); vm.connect(port.currentId); runCurrent()
+        val stamp = requireNotNull(vm.state.value.connectionGeneration)
+        val device = OwnedKeyring(4, "READY", "test", port.serial)
+        assertFailsWith<BleException> {
+            vm.publicName(1, device.copy(deviceSerial = "other"), stamp, store, authorizer, KeyringPublicNameCommand.Set, "팅글")
+        }
+        assertFalse(port.commands.any { "SET_PUBLIC_NAME" in it })
+        assertEquals("팅글", vm.publicName(1, device, stamp, store, authorizer, KeyringPublicNameCommand.Set, "팅글"))
+        assertEquals(listOf("PROTECTED_SET_PUBLIC_NAME", "PROTECTED_GET_PUBLIC_NAME"), port.commands.takeLast(2))
+        assertNull(vm.publicName(1, device, stamp, store, authorizer, KeyringPublicNameCommand.Clear))
+        assertEquals(listOf("PROTECTED_CLEAR_PUBLIC_NAME", "PROTECTED_GET_PUBLIC_NAME"), port.commands.takeLast(2))
+        failReadback = true
+        assertFailsWith<IllegalStateException> {
+            vm.publicName(1, device, stamp, store, authorizer, KeyringPublicNameCommand.Set, "새 이름")
+        }
+    }
+
     @Test fun ownedStatusUsesProtectedReadAndClearsOnAccountChange() = runTest(dispatcher) {
         val port = ownerPort()
         port.extraInfo = port.extraInfo + ("supportedFunctions" to JsonArray(listOf(
