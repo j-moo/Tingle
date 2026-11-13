@@ -77,7 +77,7 @@ class ChatPartnerProfileIntegrationTest extends IntegrationTestSupport {
 
 	@Test
 	void participantSeesPartnersCurrentProfileWithoutPrivateFields() throws Exception {
-		// 선택 항목이 비어 있는 상대: 키는 그대로 두고 null, 사진 없음
+		// 선택 항목이 비어 있는 상대: 키는 그대로 두고 null, 사진 없음. 종교 미입력은 비공개와 같게 보인다
 		partnerProfile(first).andExpect(status().isOk())
 			.andExpect(header().string("Cache-Control", "no-store"))
 			.andExpect(jsonPath("$.nickname").value(secondNickname))
@@ -86,7 +86,7 @@ class ChatPartnerProfileIntegrationTest extends IntegrationTestSupport {
 			.andExpect(jsonPath("$.gender").value("FEMALE"))
 			.andExpect(jsonPath("$.smokingStatus").value("NON_SMOKER"))
 			.andExpect(jsonPath("$.drinkingFrequency").value("MONTHLY_TWO_TO_FOUR"))
-			.andExpect(jsonPath("$.religion").value(nullValue()))
+			.andExpect(jsonPath("$.religion").value("UNDISCLOSED"))
 			.andExpect(jsonPath("$.introduction").value(nullValue()))
 			.andExpect(jsonPath("$.hasProfilePhoto").value(false))
 			.andExpect(jsonPath("$.birthDate").doesNotExist())
