@@ -238,7 +238,9 @@ keyring-peer-commands-270.sql, keyring-peer-encounter-270.sql 세 파일이다.
 TSV3 공급에는 DB에 등록된 XIAO 기기 + 폐기되지 않은 credential, 펌웨어에 고정한 서버 공개키와 일치하는 전용 서명 공급,
 승인한 policy/rule·lease/opportunity/presence 값 및 실제 사용자 입력이 필요하다.
 미승인 정책·미확정 수명을 정상 매칭 설정으로 보정하지 않는다.
-기존 개발 키 loader의 dev/test 전용·prod 거부와 임의 키 생성 금지를 유지한다.
+서명 키 loader는 dev/test와 함께 prod에서도 같은 개발 서명 키를 읽는다(11-11 결정 B, 펌웨어 고정 공개키 유지).
+키는 설정한 파일에서만 읽고 임의 키 생성·기본 키는 계속 금지한다. 운영에서도 1바이트 ON/OFF·TPS1 발급은 열지 않는다.
+실서비스로 가려면 운영 전용 키를 새로 만들고 그 공개키로 펌웨어를 다시 빌드해야 한다.
 
 정확한 바이너리·서명 원문은 이 기능 명세에 복사하지 않는다. 관련 Jira에서 외부 인계 기준을 연결하고
 실행하는 공개 합성 fixture인 `iot/tests/app-flow-v3-vectors.json`, `app-flow-owner-vectors.json`과

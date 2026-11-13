@@ -56,6 +56,9 @@ public class KeyringSyncService {
 	private final SettingsChangeCoordinator settingsChanges;
 	@Value("${app.keyring.dev-settings.profile-device-serials:}")
 	private Set<String> profileDeviceSerials;
+	// 운영은 서명 키를 켜도 TSV3만 발급한다. 1바이트 ON/OFF·TPS1 형식은 개발 전용이다(11-11 결정 B).
+	@Value("#{environment.matchesProfiles('prod')}")
+	private boolean production;
 	private final SecureRandom random = new SecureRandom();
 	private final StoredAckProofVerifier verifier = new StoredAckProofVerifier();
 	private final KeyringProofVerifier appliedVerifier = new KeyringProofVerifier();
@@ -83,6 +86,9 @@ public class KeyringSyncService {
 		boolean peerRequested = PeerSettingsCodec.FORMAT.equals(payloadFormat);
 		if (payloadFormat != null && !profileRequested && !peerRequested) {
 			throw new BusinessException(ErrorCode.INVALID_REQUEST);
+		}
+		if (production && !peerRequested) {
+			throw new BusinessException(ErrorCode.POLICY_UNRESOLVED);
 		}
 		Keyring device = access(userId, familyId, deviceId, OnboardingStatus.SYNC_PENDING);
 		requireCredential(device);
