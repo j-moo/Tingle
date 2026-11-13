@@ -4,6 +4,7 @@
 #include "feedback.h"
 #include "service.h"
 #include "storage.h"
+#include "settings_storage.h"
 #include "monocypher.h"
 #include "monocypher-ed25519.h"
 #include <assert.h>
@@ -730,6 +731,74 @@ static void test_charge_indicator(void)
 	puts("charge LED: 30/70% RGB, stability, unknown/absent/unplugged, gauge failures and onboard priority passed");
 }
 
+static int damaged_settings_read(void *ctx, uint16_t key, unsigned history, struct kr_settings *out)
+{
+	if (key != KR_SETTINGS_CURRENT_KEY || history) { return -ENOENT; }
+	memcpy(out, ctx, sizeof(*out)); return -EIO;
+}
+static bool recovery_owner(void *ctx, const struct kr_core *core, const struct kr_settings *s)
+{ (void)ctx; return kr_settings_recovery_owner(core, s, server); }
+
+static void test_signed_owner_recovery(struct test_board *b)
+{
+	struct kr_core core = {0}; core.identity = b->core.identity;
+	core.reset.magic = KR_RESET_MAGIC;
+	struct kr_settings damaged = b->core.current;
+	uint8_t *g = damaged.payload + 200;
+	/* A correctly signed epoch zero models the first owner, with no reset. */
+	kr_put32(g + 21, 0);
+	const char domain[] = "TINGLE-PEER-GRANT-V3\n";
+	uint8_t message[224], digest[32];
+	memcpy(message, domain, sizeof(domain) - 1); memcpy(message + sizeof(domain) - 1, g, 197);
+	crypto_ed25519_sign(g + 197, server_secret, message, sizeof(domain) - 1 + 197);
+	kr_hash(damaged.payload, damaged.payload_size, digest); kr_hex(digest, 32, damaged.hash);
+	/* Corrupt unused bytes: payload hash still passes, NVS CRC does not. */
+	damaged.payload[1500] = 0xff;
+	struct kr_settings original = damaged;
+	struct kr_identity original_key = core.identity;
+	const struct kr_settings_storage io = {.ctx = &damaged, .read = damaged_settings_read, .recover_owner = recovery_owner};
+	assert(kr_settings_storage_load(&core, &io) == 2);
+	assert(core.settings_owner_only && core.settings_recovery_required && !core.storage_error);
+	assert(!memcmp(&damaged, &original, sizeof(damaged)) && !memcmp(&core.identity, &original_key, sizeof(original_key)));
+	char signature[87]; core.profile_transport_protected = true;
+	struct kr_settings_auth auth = {.version2 = true};
+	assert(!strcmp(kr_store(&core, &original, &auth, signature), "POLICY_UNRESOLVED"));
+	assert(kr_settings_applied_proof(&core, original.sync_run, signature));
+	/* Same run/version can be repaired only with a NEW nonce-bound server proof. */
+	struct kr_settings clean = original, saved = b->persisted;
+	memset(clean.payload + clean.payload_size, 0, KR_PAYLOAD_MAX - clean.payload_size);
+	memset(b->sync_nonce, 7, sizeof(b->sync_nonce)); char device_nonce[44], text[768];
+	kr_base64_encode(b->sync_nonce, 32, device_nonce);
+	int n = snprintf(text, sizeof(text),
+		"TINGLE-KEYRING-SERVER-SETTINGS\n%s\n%s\n%s\n%s\n%" PRId64 "\n%s\n%s\n%" PRId64 "\n%s\n%s\n%s\n%s\n%" PRId64 "\n0\n",
+		KR_SETTINGS_PROOF_VERSION_2, server_id, core.identity.serial, core.identity.key_id, clean.device_id,
+		clean.owner_generation, clean.sync_run, clean.version, clean.format, clean.hash, clean.nonce, device_nonce, epoch);
+	char server_proof[87]; sign(text, (size_t)n, server_proof);
+	auth = (struct kr_settings_auth){.version2 = true, .ownership_epoch = 0, .protocol_version = KR_SETTINGS_PROOF_VERSION_2,
+		.server_key_id = server_id, .device_nonce = device_nonce, .server_time = "2026-11-02T00:05:00Z", .signature = server_proof};
+	core.platform = b->core.platform; core.platform.application = NULL;
+	server_proof[0] = server_proof[0] == 'A' ? 'B' : 'A';
+	assert(!strcmp(kr_store(&core, &clean, &auth, signature), "INVALID_SERVER_PROOF"));
+	sign(text, (size_t)n, server_proof);
+	assert(!kr_store(&core, &clean, &auth, signature));
+	assert(!core.settings_recovery_required && !core.settings_owner_only && !memcmp(&clean, &b->persisted, sizeof(clean)));
+	assert(!memcmp(&core.identity, &original_key, sizeof(original_key)));
+	b->persisted = saved; memset(b->sync_nonce, 0, sizeof(b->sync_nonce));
+	++damaged.version; assert(kr_settings_storage_load(&core, &io) == -EILSEQ); damaged = original;
+	damaged.owner_generation[0] = 'f'; assert(kr_settings_storage_load(&core, &io) == -EILSEQ); damaged = original;
+	damaged.sync_run[0] = 'f'; assert(kr_settings_storage_load(&core, &io) == -EILSEQ); damaged = original;
+	damaged.nonce[0] = 'B'; assert(kr_settings_storage_load(&core, &io) == -EILSEQ); damaged = original;
+	damaged.payload[200 + 197] ^= 1;
+	kr_hash(damaged.payload, damaged.payload_size, digest); kr_hex(digest, 32, damaged.hash);
+	assert(kr_settings_storage_load(&core, &io) == -EILSEQ); damaged = original;
+	core.identity.public_key[0] ^= 1; assert(kr_settings_storage_load(&core, &io) == -EILSEQ); core.identity = original_key;
+	core.reset.ownership_epoch = 1; assert(kr_settings_storage_load(&core, &io) == -EILSEQ); core.reset.ownership_epoch = 0;
+	core.reset.phase = KR_RESETTING; assert(kr_settings_storage_load(&core, &io) == -EILSEQ);
+	core.reset.phase = KR_RESET_DONE; strcpy(core.reset.owner_generation, original.owner_generation);
+	assert(kr_settings_storage_load(&core, &io) == -EILSEQ);
+	puts("signed owner recovery: CRC failure quarantined, key/data retained, no APPLIED/replay/owner/epoch substitution");
+}
+
 int main(int argc, char **argv)
 {
 	assert(argc == 3); FILE *f = fopen(argv[1], "rb"); assert(f && fread(profile, 1, 196, f) == 196 && !fclose(f));
@@ -738,6 +807,7 @@ int main(int argc, char **argv)
 	f = fopen(argv[2], "wb"); assert(f); uint8_t seed[32]; for (unsigned i = 0; i < 32; ++i) { seed[i] = (uint8_t)i; }
 	crypto_ed25519_key_pair(server_secret, server, seed); kr_hex(server, 8, server_id + 12); vector(f, "serverPublic", server, 32);
 	boot(0, 1, f); boot(1, 2, f); boot(2, 1, f);
+	test_signed_owner_recovery(&boards[0]);
 	test_public_name(&boards[2]);
 	struct test_board *b = &boards[0];
 	request(b, "{\"type\":\"GET_DEVICE_INFO\"}", "tingle-keyring-settings-v3");

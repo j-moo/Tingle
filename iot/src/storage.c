@@ -1,4 +1,5 @@
 #include "storage.h"
+#include "flash_guard.h"
 #include <errno.h>
 #include <string.h>
 #include <zephyr/device.h>
@@ -137,7 +138,7 @@ int kr_storage_open(struct kr_engine *e)
 	if (result) {
 		return result;
 	}
-	fs.flash_device = area->fa_dev;
+	fs.flash_device = kr_flash_guard_device();
 	fs.offset = area->fa_off;
 	fs.sector_size = 4096;
 	fs.sector_count = area->fa_size / fs.sector_size;

@@ -91,6 +91,7 @@ struct kr_core {
 	struct kr_platform platform;
 	bool storage_error;
 	_Atomic bool settings_recovery_required; /* Shared by NUS and the runtime. Never persisted. */
+	bool settings_owner_only; /* Independently signed owner reference, never a valid settings backup. */
 	bool profile_transport_protected; /* Per-request RAM state; never part of NVS. */
 	uint32_t connection_epoch;
 	bool stop_peer;
@@ -113,6 +114,8 @@ bool kr_nonce(const char *text);
 bool kr_positive(const char *text, int64_t *out);
 bool kr_epoch(const char *iso, int64_t *out);
 bool kr_settings_valid(const struct kr_settings *settings);
+bool kr_settings_recovery_owner(const struct kr_core *core, const struct kr_settings *settings,
+	const uint8_t server_key[32]);
 int kr_registration_proof(const struct kr_identity *id, const char *challenge,
 	const char *nonce, int64_t expires, char signature[87]);
 int kr_registration_proof_v2(const struct kr_identity *id, const char *challenge,
