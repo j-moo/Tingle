@@ -29,6 +29,8 @@ import com.ssafy.e106.features.keyring.ui.ConnectedKeyringEncounterRoute
 import com.ssafy.e106.features.keyring.ui.KeyringForegroundSync
 import com.ssafy.e106.features.keyring.ui.ConnectedKeyringResetRoute
 import com.ssafy.e106.features.keyring.ui.BleProbeViewModel
+import com.ssafy.e106.features.keyring.ui.ConnectedBleProbeRoute
+import com.ssafy.e106.features.keyring.ui.KeyringSyncViewModel
 import com.ssafy.e106.features.keyring.ui.observeOwnedKeyringConnection
 import com.ssafy.e106.resources.*
 import org.jetbrains.compose.resources.stringResource
@@ -36,7 +38,7 @@ import org.koin.compose.koinInject
 import org.koin.compose.viewmodel.koinViewModel
 
 // Keyrings는 서버의 등록 목록을 확인하는 경로이며 BLE 등록/초기화 경로와 구분한다.
-internal enum class ServicePage { Home, Proposals, Menu, Chats, Safety, Report, AiConsent, Profile, Survey, Settings, Help, HelpHub, Keyrings, BleProbe, KeyringRegistration, KeyringReset, Preparing }
+internal enum class ServicePage { Home, Proposals, Menu, Chats, Safety, Report, AiConsent, Profile, Survey, Settings, Help, HelpHub, Keyrings, BleProbe, KeyringRegistration, KeyringReset, KeyringSync, Preparing }
 
 /** 가입 중에는 가입 화면을 유지하되, 탈퇴 제한을 해소할 소유 키링 관리 경로만 허용한다. */
 @Composable fun SignedInServiceHost(session: Session.SignedIn, access: ProposalAccess = koinInject(),
@@ -158,7 +160,13 @@ internal enum class ServicePage { Home, Proposals, Menu, Chats, Safety, Report, 
                 ServicePage.Keyrings -> ConnectedOwnedKeyringsRoute(session, { go(if (keyringFromMenu) ServicePage.Menu else ServicePage.Home) },
                     onReset = { id -> resetDeviceId = id; connectForReset = false; go(ServicePage.KeyringReset) },
                     onConnectForRecords = { connectForReset = false; go(ServicePage.BleProbe) }, ble = koinViewModel(),
-                    onRegister = if (session.isReady) ({ go(ServicePage.KeyringRegistration) }) else null)
+                    onRegister = if (session.isReady) ({ go(ServicePage.KeyringRegistration) }) else null,
+                    onSync = if (session.isReady) ({ go(ServicePage.KeyringSync) }) else null)
+                ServicePage.KeyringSync -> if (session.isReady) {
+                    // 초기화와 기록 화면에 들어가지 않고 같은 소유 기기 탐색·설정 전송을 사용한다.
+                    ConnectedBleProbeRoute({ go(ServicePage.Keyrings) }, sync = koinViewModel<KeyringSyncViewModel>(),
+                        managedConnection = true, autoScan = true, manualSettings = true)
+                } else LaunchedEffect(session) { go(ServicePage.Keyrings) }
                 ServicePage.KeyringRegistration -> if (session.isReady) {
                     // 서버 소유 목록으로 등록을 확인한 뒤 관리 화면으로 복귀해 새 목록을 읽는다.
                     ConnectedKeyringSetupRoute({ go(ServicePage.Keyrings) }, managedConnection = true,

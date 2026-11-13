@@ -28,6 +28,7 @@ class OwnedKeyringsTestActivity : ComponentActivity() {
         val reads = AtomicInteger()
         val recordEntries = AtomicInteger()
         val registrationEntries = AtomicInteger()
+        val syncEntries = AtomicInteger()
         val metricFixture = MutableStateFlow<Pair<Long?, OwnedKeyringLiveStatus?>>(null to null)
     }
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -51,7 +52,8 @@ class OwnedKeyringsTestActivity : ComponentActivity() {
                     {}, {}, {}, connectedDeviceId = id, liveStatus = snapshot, onRefreshStatus = {})
             } else ConnectedOwnedKeyringsRoute(session, {}, model, onReset = {},
                 recoveryLinks = {}, onConnectForRecords = { recordEntries.incrementAndGet() },
-                onRegister = { registrationEntries.incrementAndGet() })
+                onRegister = { registrationEntries.incrementAndGet() },
+                onSync = { syncEntries.incrementAndGet() })
         } }
     }
 }
@@ -93,9 +95,20 @@ class OwnedKeyringsDeviceTest {
             .putExtra("empty", true)
         ActivityScenario.launch<OwnedKeyringsTestActivity>(intent).use {
             compose.onNodeWithText("등록된 키링이 없어요.").assertExists()
+            compose.onNodeWithText("키링 설정 동기화").assertDoesNotExist()
             compose.onNodeWithText("만남 기록 전송을 위해 키링 연결").assertDoesNotExist()
             compose.onNodeWithText("키링 등록하기").performClick()
             assertEquals(1, OwnedKeyringsTestActivity.registrationEntries.get())
+        }
+    }
+
+    /** 등록된 기기가 있으면 기록 전송 메뉴와 별도로 설정 동기화에 진입할 수 있다. */
+    @Test fun ownedListOpensSettingsSync() {
+        OwnedKeyringsTestActivity.syncEntries.set(0)
+        ActivityScenario.launch<OwnedKeyringsTestActivity>(Intent(InstrumentationRegistry.getInstrumentation().context,
+            OwnedKeyringsTestActivity::class.java)).use {
+            compose.onNodeWithText("키링 설정 동기화").performClick()
+            assertEquals(1, OwnedKeyringsTestActivity.syncEntries.get())
         }
     }
 

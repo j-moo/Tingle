@@ -36,7 +36,7 @@ import org.koin.compose.viewmodel.koinViewModel
     model: OwnedKeyringsViewModel = koinViewModel(), onReset: (Long) -> Unit,
     // 서버 소유 해제 뒤에도 원 계정의 로컬 기록으로 중단된 초기화를 다시 찾는다
     recoveryLinks: (@Composable () -> Unit)? = null, onConnectForRecords: (() -> Unit)? = null,
-    ble: BleProbeViewModel? = null, onRegister: (() -> Unit)? = null) {
+    ble: BleProbeViewModel? = null, onRegister: (() -> Unit)? = null, onSync: (() -> Unit)? = null) {
     val state by model.state.collectAsStateWithLifecycle()
     // 진입과 복귀를 한 곳에서 처리해 첫 화면에서 GET 두 개가 동시에 시작되지 않게 한다.
     LifecycleResumeEffect(session, state.owner) {
@@ -47,7 +47,7 @@ import org.koin.compose.viewmodel.koinViewModel
     if (state.owner != session) return
     val connection = if (ble != null) observeOwnedKeyringConnection(session, state.items.orEmpty(), ble) else null
     OwnedKeyringsScreen(state, model::load, onBack, onReset, onConnectForRecords,
-        connection?.deviceId, connection?.liveStatus, connection?.refresh, onRegister = onRegister) {
+        connection?.deviceId, connection?.liveStatus, connection?.refresh, onRegister = onRegister, onSync = onSync) {
         if (recoveryLinks != null) recoveryLinks()
         else {
             // 목록이 아직 없으면(불러오는 중 · 실패) 중복 여부를 모르므로 띄우지 않는다
@@ -95,6 +95,7 @@ internal data class OwnedKeyringConnection(
     onReset: (Long) -> Unit, onConnectForRecords: (() -> Unit)? = null, connectedDeviceId: Long? = null,
     liveStatus: OwnedKeyringLiveStatus? = null, onRefreshStatus: (() -> Unit)? = null,
     onRegister: (() -> Unit)? = null,
+    onSync: (() -> Unit)? = null,
     recoveryLinks: @Composable () -> Unit = {}) {
     Surface(Modifier.fillMaxSize(), color = AppColors.Background) {
         Column(Modifier.fillMaxSize().safeDrawingPadding(), horizontalAlignment = Alignment.CenterHorizontally) {
@@ -147,6 +148,9 @@ internal data class OwnedKeyringConnection(
                             onClick = onRegister)
                     }
                     // 실제 연결은 연결 화면에서 시작한다. 연결된 키링의 기록은 자동으로 처리한다.
+                    if (!state.loading && state.error == null && !state.items.isNullOrEmpty() && onSync != null) {
+                        AppButton(stringResource(Res.string.sync_manual_open), Modifier.fillMaxWidth(), onClick = onSync)
+                    }
                     if (!state.loading && state.error == null && !state.items.isNullOrEmpty() && onConnectForRecords != null) {
                         AppButton(stringResource(Res.string.keyring_encounter_connect), Modifier.fillMaxWidth(),
                             variant = AppButtonVariant.Secondary, onClick = onConnectForRecords)

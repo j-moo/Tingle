@@ -56,7 +56,8 @@ import kotlinx.coroutines.CancellationException
     DisposableEffect(serial, state.owner) {
         // 최초 발급에서만 기기 지원에 맞는 본문을 생성하며 이후 HTTP 재시도는 내구 본문을 사용한다.
         if (serial != null) sync.attachRequest(serial, { ble.syncIssuanceRequest(serial) },
-            getApplied = { ble.readSettingsApplied(it, serial) }) { run -> ble.syncSettings(run, serial) }
+            getApplied = { ble.readSettingsApplied(it, serial) },
+            getDeviceInfo = { ble.readSyncDeviceInfo(serial) }) { run -> ble.syncSettings(run, serial) }
         onDispose { sync.detach() }
     }
     val encounterTarget = link.info?.takeIf { canSync && allowEncounter && link.connected &&

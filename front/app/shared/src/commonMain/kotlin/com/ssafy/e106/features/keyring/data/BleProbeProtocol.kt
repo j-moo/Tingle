@@ -51,7 +51,9 @@ internal object BleProbeProtocol {
             } ?: throw BleException(BleFailure.InvalidFrame)
         } ?: listOf(KeyringRegistrationProtocol.VERSION)
         return BleDeviceInfo(serial, version, "GET_STATUS" in functions, "GET_REGISTRATION_PROOF" in functions,
-            epoch, owner, versions, value.string("resetContractVersion"), functions, profileInfo(value), BleOwnerFlowProtocol.info(value))
+            epoch, owner, versions, value.string("resetContractVersion"), functions, profileInfo(value), BleOwnerFlowProtocol.info(value),
+            number(value, "storedSettingsVersion")?.takeIf { it > 0 },
+            value.string("storedPayloadHash")?.takeIf { it.matches(Regex("[0-9a-f]{64}")) })
     }
 
     /** 구형 필드 생략은 미확인이다. 문자열 true/숫자 문자열/잘못된 배열을 지원 성공으로 보정하지 않는다. */
@@ -101,7 +103,8 @@ data class BleDeviceInfo(val serial: String, val firmware: String, val supportsS
     val supportedProofProtocolVersions: List<String> = listOf("tingle-device-proof-v1"),
     val resetContractVersion: String? = null, val supportedFunctions: List<String> = emptyList(),
     val profileStorage: BleProfileStorageInfo = BleProfileStorageInfo(),
-    val ownerFlow: BleOwnerFlowInfo = BleOwnerFlowInfo()) {
+    val ownerFlow: BleOwnerFlowInfo = BleOwnerFlowInfo(),
+    val storedSettingsVersion: Long? = null, val storedPayloadHash: String? = null) {
     /** 지원 선언은 암호화 성공/신원 증명이 아니다. 실제 전송 전 동일 연결의 보호 Read가 추가로 필요하다. */
     val supportsProtectedProfileStorage get() = profileStorage.supportsProtectedStorage &&
         supportedFunctions.containsAll(listOf("GET_SYNC_CHALLENGE", "SYNC_SETTINGS"))
