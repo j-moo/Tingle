@@ -2,6 +2,8 @@
 .env
 .env.*
 !.env.example
+# app.env 처럼 이름 끝이 .env 인 비밀 파일(Jenkins Credentials tingle-app-env 의 원본 등)
+*.env
 
 # 개인 AI 도구 지침·설정 (하위 디렉터리 포함)
 AGENTS.md

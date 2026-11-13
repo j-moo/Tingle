@@ -179,7 +179,7 @@ services:
     restart: unless-stopped
 
   # ai: 운영(ai-blue · ai-green 중 한쪽만 켬, back 은 http://ai:8000 → nginx 가 운영 색으로 전달) · 개발(ai-dev, back-dev 가 http://ai-dev:8000 으로 직접 호출).
-  # 외부에 열지 않는다. Dockerfile 기본값이 HOST=0.0.0.0 · PORT=8000 · APP_ENV=prod. GMS 키는 받으면 Credentials → app.env → 여기에 GMS_API_KEY 를 더한다.
+  # 외부에 열지 않는다. Dockerfile 기본값이 HOST=0.0.0.0 · PORT=8000 · APP_ENV=prod. GMS 키(GMS_API_KEY)는 Credentials → app.env 로 받고 지금은 ai-dev 에만 넘긴다.
   ai-blue:
     build: ../ai-server
     mem_limit: 512m
@@ -192,8 +192,16 @@ services:
 
   ai-dev:
     build: ../ai-server
+    # 개발 전용 구성(app.development): 아래 스위치가 켜진 기능만 GMS 로 생성하고, 나머지는 app.main 과 같다. 운영(ai-blue · ai-green)은 기본 CMD 그대로.
+    command: [python, -m, uvicorn, "app.development:create_app", --factory, --host, 0.0.0.0, --port, "8000"]
     environment:
       APP_ENV: dev
+      # GMS: 키는 Jenkins Credentials tingle-app-env(app.env)의 GMS_API_KEY. 스위치가 꺼져 있으면 키를 읽지 않고 app.main 과 똑같이 동작한다.
+      # 켜려면 서버 .env 에 ICEBREAKER_GMS_DEV_ENABLED=true 를 넣고 ai-dev 를 다시 띄운다(AI 담당과 Release 확인 후). 켰는데 키가 없으면 기동을 거절한다.
+      GMS_API_KEY: "${GMS_API_KEY:-}"
+      ICEBREAKER_GMS_DEV_ENABLED: "${ICEBREAKER_GMS_DEV_ENABLED:-false}"
+      # Match Insight GMS 는 개발용 Release(descriptor · artifact)를 서버에 둔 뒤 EXPLANATION_RELEASE_DESCRIPTOR_FILES 와 함께 켠다. 파일 없이 경로만 넣으면 기동이 실패한다.
+      MATCH_INSIGHT_GMS_DEV_ENABLED: "false"
       AI_SERVICE_PUBLIC_KEYS: '{"be-dev-1":"/run/ai-keys/be-dev-1.pub.pem"}' # back-dev 서명 키와 짝. 파일이 없으면 기동을 거절한다
       ICEBREAKER_DEV_ENABLED: "${Q040_DEV_ENABLED:-false}"
       ICEBREAKER_RELEASE_DESCRIPTOR_FILE: /run/tingle/q040-dev-release-v1/ai-descriptor.json
