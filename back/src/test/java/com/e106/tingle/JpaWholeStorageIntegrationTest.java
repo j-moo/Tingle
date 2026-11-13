@@ -30,12 +30,12 @@ class JpaWholeStorageIntegrationTest {
 	private JsonMapper mapper;
 
 	@Test
-	@DisplayName("실제 전체 앱의 JPA 생성은 nullable 기기 epoch를 포함한 설계 35표·297칼럼과 일치한다")
+	@DisplayName("실제 전체 앱의 JPA 생성은 nullable 기기 epoch를 포함한 설계 35표·298칼럼과 일치한다")
 	void generatesExactlyCanonicalTablesAndColumnsWithoutBootstrapSql() throws Exception {
 		JsonNode design = mapper.readTree(new ClassPathResource("database/tables.json")
 			.getContentAsString(StandardCharsets.UTF_8));
 		assertThat(design.path("total_tables").asInt()).isEqualTo(35);
-		assertThat(design.path("total_columns").asInt()).isEqualTo(297);
+		assertThat(design.path("total_columns").asInt()).isEqualTo(298);
 		List<String> expected = new ArrayList<>();
 		for (JsonNode table : design.path("tables")) {
 			for (JsonNode column : table.path("columns")) {
@@ -57,7 +57,7 @@ class JpaWholeStorageIntegrationTest {
 				}
 				return rs.getString(1) + "." + rs.getString(2) + ":" + type + ":" + rs.getString(5);
 			});
-		assertThat(actual).containsExactlyInAnyOrderElementsOf(expected).hasSize(297)
+		assertThat(actual).containsExactlyInAnyOrderElementsOf(expected).hasSize(298)
 			.contains("chat_message.push_state:jsonb:NO", "keyring_sync_run.server_proofs:jsonb:YES",
 				"keyring.ownership_epoch:int8:YES", "keyring_sync_run.ownership_epoch:int8:YES");
 		List<Map<String, Object>> epochs = jdbc.queryForList("select table_name,data_type,is_nullable,column_default"

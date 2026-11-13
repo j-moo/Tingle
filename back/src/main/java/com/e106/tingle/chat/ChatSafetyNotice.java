@@ -24,7 +24,7 @@ import lombok.NoArgsConstructor;
  */
 @Entity
 @Table(name = "chat_safety_notice", indexes = {
-	@Index(name = "uq_chat_safety_notice_once", columnList = "chat_participant_id,notice_type", unique = true)
+	@Index(name = "uq_chat_safety_notice_once", columnList = "chat_participant_id,notice_type,audience", unique = true)
 })
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
@@ -47,6 +47,10 @@ public class ChatSafetyNotice {
 
 	@Column(name = "displayed_at")
 	private Instant displayedAt;
+
+	/** SENDER(보낸 사람) · RECIPIENT(받은 사람). 이전 기록은 NULL. */
+	@Column(name = "audience", length = 16)
+	private String audience;
 
 	public enum SafetyNoticeType {
 		MONEY_REQUEST,

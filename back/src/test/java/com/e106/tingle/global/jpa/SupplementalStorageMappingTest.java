@@ -64,9 +64,11 @@ class SupplementalStorageMappingTest {
 				"insert into chat_report_message(report_id,message_id) values (100,200)"))
 				.isInstanceOf(DataIntegrityViolationException.class);
 			fixture.jdbc().update("insert into chat_safety_notice "
-				+ "(chat_participant_id,notice_type,created_at) values (100,'MONEY_REQUEST',?)", Timestamp.from(NOW));
+				+ "(chat_participant_id,notice_type,created_at,audience) "
+				+ "values (100,'MONEY_REQUEST',?,'RECIPIENT')", Timestamp.from(NOW));
 			assertThatThrownBy(() -> fixture.jdbc().update("insert into chat_safety_notice "
-				+ "(chat_participant_id,notice_type,created_at) values (100,'MONEY_REQUEST',?)", Timestamp.from(NOW)))
+				+ "(chat_participant_id,notice_type,created_at,audience) "
+				+ "values (100,'MONEY_REQUEST',?,'RECIPIENT')", Timestamp.from(NOW)))
 				.isInstanceOf(DataIntegrityViolationException.class);
 		}
 		assertThat(fixture.jdbc().queryForObject("select count(*) from information_schema.tables "
@@ -108,7 +110,7 @@ class SupplementalStorageMappingTest {
 			+ "where table_schema=current_schema() and table_type='BASE TABLE' order by table_name", String.class))
 			.isEqualTo(TABLES);
 		assertThat(jdbc.queryForObject("select count(*) from information_schema.columns "
-			+ "where table_schema=current_schema()", Integer.class)).isEqualTo(59);
+			+ "where table_schema=current_schema()", Integer.class)).isEqualTo(60);
 		assertThat(jdbc.queryForObject("select count(*) from information_schema.table_constraints "
 			+ "where constraint_schema=current_schema() and constraint_type='FOREIGN KEY'", Integer.class)).isZero();
 	}
