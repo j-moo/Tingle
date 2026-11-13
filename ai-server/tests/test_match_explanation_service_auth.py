@@ -55,7 +55,7 @@ def configured(tmp_path, private_key):
     bundle = {
         "context": {"reference": reference, "viewer": "B", "conflicting_source_refs": [],
                     "evidence": [{"reference": dict(reference), "source_ref": "synthetic-source",
-                                  "evidence": {"id": "e1", "direction": "B_TO_A",
+                                  "evidence": {"id": "e1", "direction": "A_TO_B",
                                                "kind": "ONE_WAY_PREFERENCE_FIT", "topic": "contact",
                                                "fact": "A의 실제 연락 빈도가 B의 허용 범위에 들어간다."}}]},
         "scope": {"reference": dict(reference), "viewer": "B", "version": "synthetic-public-v1",
@@ -179,7 +179,58 @@ def test_invalid_explicit_release_registration_fails_without_registering_a_fixtu
 def test_actual_main_registers_explanations_with_safe_default_release(
     configured, private_key, tmp_path, configured_keys,
 ):
-    _, _, body, public, _ = configured
+    _, _, body, _, _ = configured
+    result = run_actual_main(configured, private_key, tmp_path, {"default": body}, configured_keys)
+    assert result["registered"] and result["riskRegistered"]
+    assert result["ready"] is configured_keys
+    assert result["healthStatus"] == 200 and result["health"] == {"status": "ok"}
+    assert result["cases"]["default"] == [
+        503, {"code": "SERVICE_UNAVAILABLE", "message": "SERVICE_UNAVAILABLE"}, "no-store",
+    ]
+
+
+def test_actual_main_applies_explanation_evidence_contract(configured, private_key, tmp_path):
+    _, _, body, _, _ = configured
+    raw = json.dumps(body)
+    display = '"display_evidence_ids": ["e1"]'
+    version = f'"version_ref": "{body["manifest"]["releaseId"]}"'
+    private_fact = "합성비공개성명과 응답 원문"
+    cases = {
+        "verified": body,
+        "no-display-scope": raw.replace(display, '"display_evidence_ids": []'),
+        "private-fact": raw.replace(json.dumps(
+            body["contextBundle"]["context"]["evidence"][0]["evidence"]["fact"],
+        ), json.dumps(private_fact)),
+        "unknown-evidence-id": raw.replace(display, '"display_evidence_ids": ["e2"]'),
+        "manifest-mismatch": {
+            **body, "manifest": {**body["manifest"], "matchingVersion": "unregistered-v2"},
+        },
+        # 실제 필수 제외 판단은 BE에 있다. AI는 원본 판정 필드가 섞인 요청을 거부한다.
+        "raw-excluded-decision": {
+            **body, "directionAB": 98, "directionBA": 97, "coverageAB": 1, "coverageBA": 1,
+            "eligible": False, "excluded": ["synthetic-A-to-B-required"], "harmonicScore": 97.5,
+        },
+        "duplicate-display-scope": raw.replace(display, f'"display_evidence_ids": [], {display}'),
+        "duplicate-version-ref": raw.replace(
+            version, f'"version_ref": "{uuid4()}", {version}', 1,
+        ),
+    }
+    result = run_actual_main(configured, private_key, tmp_path, cases, True, register_release=True)
+    responses = result["cases"]
+    assert responses.pop("verified") == [
+        200, {"source": "RULE_FALLBACK", "text": "상대의 연락 방식이 당신의 선호와 맞아요.",
+              "evidenceKeys": [], "promptVersion": None, "encounterId": 1001}, "no-store",
+    ]
+    for case, (status, response, cache) in responses.items():
+        unavailable = case in {"no-display-scope", "private-fact", "manifest-mismatch"}
+        code = "SERVICE_UNAVAILABLE" if unavailable else "INVALID_REQUEST"
+        assert (status, response, cache) == (
+            503 if unavailable else 400, {"code": code, "message": code}, "no-store",
+        ), case
+
+
+def run_actual_main(configured, private_key, tmp_path, cases, configured_keys, *, register_release=False):
+    _, descriptor, _, public, _ = configured
     env = {key: value for key, value in os.environ.items()
            if key.upper() in {"SYSTEMROOT", "WINDIR", "PATH", "TEMP", "TMP"}}
     env.update({
@@ -187,35 +238,41 @@ def test_actual_main_registers_explanations_with_safe_default_release(
         "RISK_RELEASE_DESCRIPTOR_FILE": "", "PYTHONPATH": str(Path(__file__).resolve().parents[1]),
         "PYTHONIOENCODING": "utf-8", "PYTHONDONTWRITEBYTECODE": "1",
     })
+    if register_release:
+        env["EXPLANATION_RELEASE_DESCRIPTOR_FILES"] = json.dumps([str(descriptor)])
     now = int(time.time())
     probe = """
 import json
 import sys
+from unittest.mock import DEFAULT, patch
 from app.main import app
+from app.match_explanation.gms import GmsClient
 from fastapi.testclient import TestClient
 supplied = json.load(sys.stdin)
-with TestClient(app) as client:
+with TestClient(app) as client, patch.multiple(
+    GmsClient, from_environment=DEFAULT, generate=DEFAULT, verify=DEFAULT,
+) as model:
     health = client.get('/health')
-    response = client.post('/internal/ai/explanations', json=supplied['body'],
-                           headers={'Authorization': 'Bearer ' + supplied['token']})
+    responses = {}
+    headers = {'Authorization': 'Bearer ' + supplied['token'], 'Content-Type': 'application/json'}
+    for case, body in supplied['cases'].items():
+        content = body if isinstance(body, str) else json.dumps(body)
+        response = client.post('/internal/ai/explanations', content=content, headers=headers)
+        responses[case] = [response.status_code, response.json(), response.headers.get('cache-control')]
+    for method in model.values():
+        method.assert_not_called()
     paths = app.openapi()["paths"]
     print(json.dumps({'registered': '/internal/ai/explanations' in paths,
                       'riskRegistered': '/internal/ai/risk-detections' in paths,
                       'ready': app.state.service_auth.is_ready,
                       'healthStatus': health.status_code, 'health': health.json(),
-                      'status': response.status_code, 'body': response.json(),
-                      'cache': response.headers.get('cache-control')}))
+                      'cases': responses}))
 """
     completed = subprocess.run(
         [sys.executable, "-c", probe], cwd=tmp_path, env=env,
-        input=json.dumps({"body": body, "token": token(private_key, iat=now, nbf=now, exp=now + 300)}),
+        input=json.dumps({"cases": cases, "token": token(private_key, iat=now, nbf=now, exp=now + 300)}),
         capture_output=True, text=True, encoding="utf-8", timeout=30, check=False,
     )
-    assert completed.returncode == 0
+    assert completed.returncode == 0, completed.stderr
     assert completed.stderr == ""
-    result = json.loads(completed.stdout)
-    assert result["registered"] and result["riskRegistered"]
-    assert result["ready"] is configured_keys
-    assert result["healthStatus"] == 200 and result["health"] == {"status": "ok"}
-    assert result["status"] == 503 and result["body"]["code"] == "SERVICE_UNAVAILABLE"
-    assert result["cache"] == "no-store"
+    return json.loads(completed.stdout)

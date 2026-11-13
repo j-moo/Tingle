@@ -24,11 +24,13 @@ import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 
+import com.e106.tingle.auth.MemberAccessRepository;
 import com.e106.tingle.encounter.EncounterEvaluationGateway.Input;
 import com.e106.tingle.encounter.EncounterEvaluationGateway.Outcome;
 import com.e106.tingle.encounter.EncounterEvaluationGateway.ParticipantInput;
 import com.e106.tingle.encounter.EncounterEvaluationGateway.VerifiedResult;
 import com.e106.tingle.encounter.EncounterReceipts.FrozenEvidence;
+import com.e106.tingle.encounter.peer.Ter2BusinessStoredEvidence;
 import com.e106.tingle.global.ai.AiCallException;
 import com.e106.tingle.global.error.BusinessException;
 import com.e106.tingle.global.error.ErrorCode;
@@ -50,11 +52,12 @@ public class EncounterEvaluationWorker {
 	private final ObjectProvider<EncounterEvaluationCompletion> completions;
 	private final Environment environment;
 	private final TransactionTemplate transaction;
+	private final MemberAccessRepository members;
 
 	public EncounterEvaluationWorker(JdbcTemplate jdbc, JsonMapper mapper, Clock clock, EncounterReceipts receipts,
 		ObjectProvider<EncounterEvaluationGateway> gateways, ObjectProvider<EncounterProposalPublisher> publishers,
 		ObjectProvider<EncounterEvaluationCompletion> completions, Environment environment,
-		PlatformTransactionManager transactions) {
+		PlatformTransactionManager transactions, MemberAccessRepository members) {
 		this.jdbc = jdbc;
 		this.mapper = mapper;
 		this.clock = clock;
@@ -63,6 +66,7 @@ public class EncounterEvaluationWorker {
 		this.publishers = publishers;
 		this.completions = completions;
 		this.environment = environment;
+		this.members = members;
 		transaction = new TransactionTemplate(transactions);
 		transaction.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
 	}
@@ -344,24 +348,37 @@ public class EncounterEvaluationWorker {
 			|| row.high() != input.rightUserId() || !row.metAt().equals(input.metAt())
 			|| !row.opportunity().equals(input.opportunityExpiresAt())
 			|| !row.counterpart().equals(input.counterpartDeadlineAt())
-			|| !Objects.equals(row.policy(), input.policyVersion()) || !now.isBefore(deadline(row))) {
+			|| !Objects.equals(row.policy(), input.policyVersion()) || !now.isBefore(deadline(row))
+			|| members.restrictedPair(row.low(), row.high())) {
 			return false;
 		}
 		jdbc.query("select id from keyring where id in (?,?) order by id for update",
 			(rs, index) -> rs.getLong(1), input.left().deviceId(), input.right().deviceId());
-		List<Proof> proofs = jdbc.query("select p.user_id,p.encounter_signature from matching_participant p "
+		List<Proof> proofs = jdbc.query("select p.user_id,p.encounter_signature,k.owner_user_id,k.state::text "
+			+ "from matching_participant p "
 			+ "join users u on u.id=p.user_id and u.status='ACTIVE' "
-			+ "join keyring k on k.id=p.encounter_keyring_id and k.owner_user_id=p.user_id and k.state='REGISTERED' "
+			+ "join keyring k on k.id=p.encounter_keyring_id "
 			+ "where p.matching_id=? and ((p.user_id=? and p.encounter_keyring_id=?) "
 			+ "or (p.user_id=? and p.encounter_keyring_id=?)) and octet_length(p.encounter_signature)>0 "
 			+ "and p.encounter_reported_at<=? and p.encounter_verified_at<=? "
 			+ "and p.blocked_at is null and p.response is null order by p.user_id",
-			(rs, index) -> new Proof(rs.getLong(1), fingerprint(rs.getBytes(2))), row.id(), input.leftUserId(),
+			(rs, index) -> new Proof(rs.getLong(1), fingerprint(rs.getBytes(2)), rs.getBytes(2),
+				rs.getObject(3, Long.class), rs.getString(4)), row.id(), input.leftUserId(),
 			input.left().deviceId(), input.rightUserId(), input.right().deviceId(),
 			Timestamp.from(now), Timestamp.from(now));
 		return proofs.size() == 2 && proofs.getFirst().hash().equals(input.left().proofHash())
-			&& proofs.getLast().hash().equals(input.right().proofHash()) && receiptMatches(input, input.left())
+			&& proofs.getLast().hash().equals(input.right().proofHash())
+			&& deviceEvidence(input, input.left(), proofs.getFirst())
+			&& deviceEvidence(input, input.right(), proofs.getLast()) && receiptMatches(input, input.left())
 			&& receiptMatches(input, input.right());
+	}
+
+	private boolean deviceEvidence(Input input, ParticipantInput participant, Proof proof) {
+		if (Ter2BusinessStoredEvidence.isTer2(proof.raw())) {
+			return Ter2BusinessStoredEvidence.matches(jdbc, participant, input.metAt());
+		}
+		return Long.valueOf(participant.userId()).equals(proof.currentOwner())
+			&& "REGISTERED".equals(proof.currentState());
 	}
 
 	private boolean receiptMatches(Input input, ParticipantInput participant) {
@@ -506,6 +523,6 @@ public class EncounterEvaluationWorker {
 	private record Claim(long id, Work work) {
 	}
 
-	private record Proof(long userId, String hash) {
+	private record Proof(long userId, String hash, byte[] raw, Long currentOwner, String currentState) {
 	}
 }

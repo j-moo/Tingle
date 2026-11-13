@@ -39,10 +39,10 @@ class AiConsentRecoveryDeviceTest {
     @Test fun failedNoticeCanReloadInPlaceWithoutGrantingConsent() {
         ActivityScenario.launch<AiConsentRecoveryTestActivity>(Intent(
             InstrumentationRegistry.getInstrumentation().context,AiConsentRecoveryTestActivity::class.java)).use { scenario ->
-            compose.onNodeWithText("연결을 확인해 주세요").assertExists()
-            compose.onNodeWithText("다시 확인하기").assertIsEnabled()
+            compose.onNodeWithText("인터넷 연결을 확인해 주세요").assertExists()
+            compose.onNodeWithText("다시 시도").assertIsEnabled()
             scenario.onActivity { it.docs.failure = null }
-            compose.onNodeWithText("다시 확인하기").performClick()
+            compose.onNodeWithText("다시 시도").performClick()
             compose.onNodeWithText("현재 유효한 동의가 없어요").assertExists()
             compose.onNodeWithText("분석 안내 전문 보기").performScrollTo().assertIsEnabled()
             compose.onNodeWithText("동의하고 저장하기").performScrollTo().assertIsNotEnabled()

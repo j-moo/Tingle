@@ -16,21 +16,19 @@ import java.util.UUID;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.boot.jdbc.autoconfigure.JdbcConnectionDetails;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import org.springframework.jdbc.datasource.SingleConnectionDataSource;
 import org.springframework.jdbc.datasource.init.ResourceDatabasePopulator;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
-import org.testcontainers.postgresql.PostgreSQLContainer;
 
-@Testcontainers
+import com.e106.tingle.SharedPostgres;
+
 class MatchingLegacyMigrationTest {
 
 	private static final Instant NOW = Instant.parse("2026-10-28T00:00:00Z");
-	@Container
-	private static final PostgreSQLContainer POSTGRES = new PostgreSQLContainer("postgres:17");
+	private static final JdbcConnectionDetails POSTGRES = SharedPostgres.newDatabase();
 	private static DriverManagerDataSource source;
 	private static JdbcTemplate jdbc;
 

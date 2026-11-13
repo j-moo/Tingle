@@ -20,7 +20,7 @@ def run(awaitable):
 
 def make_evidence(
     id="e1", *, topic="contact", kind="ONE_WAY_PREFERENCE_FIT",
-    direction="B_TO_A", fact="A의 실제 연락 빈도가 B의 허용 범위에 들어간다.",
+    direction="A_TO_B", fact="A의 실제 연락 빈도가 B의 허용 범위에 들어간다.",
 ):
     return Evidence(id=id, direction=direction, kind=kind, topic=topic, fact=fact)
 
@@ -136,7 +136,7 @@ def test_generation_synthesizes_multiple_facts_and_a_difference():
         make_evidence("e2", kind="DIFFERENCE", direction="BOTH", topic="planning",
                       fact="약속을 준비하는 시점에는 차이가 있다."),
     )
-    text = "두 분 모두 산책을 즐긴다는 연결점이 있어요. 약속을 준비하는 시점에는 차이가 있어 함께 맞춰 보면 좋겠어요."
+    text = "두 분 모두 산책을 선호한다는 공통점이 있어요. 약속을 준비하는 시점에는 차이가 있어 함께 맞춰 보면 좋겠어요."
     model = FakeModel(raw=json.dumps({"text": text, "evidenceIds": ["e1", "e2"]}))
     result = explain(context, scope, model)
     assert result.explanation.source == "GENERATED"
@@ -164,13 +164,13 @@ def test_fallback_without_model_or_credentials_is_deterministic():
 
 
 @pytest.mark.parametrize("viewer,direction,expected", [
-    ("A", "A_TO_B", "상대의 연락 방식이 당신의 선호와 맞아요."),
-    ("B", "B_TO_A", "상대의 연락 방식이 당신의 선호와 맞아요."),
-    ("B", "A_TO_B", "당신의 연락 방식이 상대의 선호와 맞아요."),
-    ("A", "B_TO_A", "당신의 연락 방식이 상대의 선호와 맞아요."),
+    ("A", "B_TO_A", "상대의 연락 방식이 당신의 선호와 맞아요."),
+    ("B", "A_TO_B", "상대의 연락 방식이 당신의 선호와 맞아요."),
+    ("B", "B_TO_A", "당신의 연락 방식이 상대의 선호와 맞아요."),
+    ("A", "A_TO_B", "당신의 연락 방식이 상대의 선호와 맞아요."),
 ])
 def test_fallback_preserves_one_way_direction(viewer, direction, expected):
-    owner, other = ("A", "B") if direction == "A_TO_B" else ("B", "A")
+    owner, other = ("A", "B") if direction == "B_TO_A" else ("B", "A")
     item = make_evidence(direction=direction,
                          fact=f"{other}의 실제 연락 빈도가 {owner}의 허용 범위에 들어간다.")
     context, scope = setup_context(item, viewer=viewer)
@@ -252,18 +252,28 @@ def test_scores_private_information_and_one_way_expansion_are_blocked(text):
     assert not model.verifications
 
 
-@pytest.mark.parametrize("text,field", [
-    ("상대는 산책을 즐겨요.", "supported"),
-    ("당신의 연락 방식이 상대의 선호와 맞아요.", "directionCorrect"),
-    ("상대는 가상동네에 살아요.", "privacySafe"),
-    ("상대는 당신을 좋아해요.", "supported"),
-    ("차이는 만남에 영향을 주지 않아요.", "supported"),
+@pytest.mark.parametrize("text", [
+    "상대는 산책을 즐겨요.",
+    "당신의 연락 방식이 상대의 선호와 맞아요.",
+    "상대는 가상동네에 살아요.",
+    "상대는 당신을 좋아해요.",
+    "차이는 만남에 영향을 주지 않아요.",
 ])
-def test_existing_id_does_not_replace_semantic_verification(text, field):
+def test_existing_id_does_not_ground_an_unrelated_claim(text):
+    context, scope = setup_context(make_evidence())
+    model = FakeModel(text=text)
+    result = explain(context, scope, model)
+    assert not model.verifications
+    assert result.reason == "INVALID_OUTPUT"
+    assert result.explanation.source == "RULE_FALLBACK"
+
+
+@pytest.mark.parametrize("field", ["supported", "directionCorrect", "privacySafe"])
+def test_grounded_output_still_requires_semantic_approval(field):
     context, scope = setup_context(make_evidence())
     verdict = dict(supported=True, directionCorrect=True, privacySafe=True, evidenceIds=["e1"])
     verdict[field] = False
-    model = FakeModel(text=text, verdict=json.dumps(verdict))
+    model = FakeModel(verdict=json.dumps(verdict))
     result = explain(context, scope, model)
     assert len(model.verifications) == 1
     assert result.reason == "INVALID_OUTPUT"
@@ -396,9 +406,9 @@ def test_independent_safe_evidence_survives_excluded_private_evidence():
 
 @pytest.mark.parametrize("direction,kind", [
     ("BOTH", "ONE_WAY_PREFERENCE_FIT"),
-    ("B_TO_A", "MUTUAL_PREFERENCE_FIT"),
-    ("A_TO_B", "SHARED_REPORTED_BEHAVIOR"),
-    ("B_TO_A", "DIFFERENCE"),
+    ("A_TO_B", "MUTUAL_PREFERENCE_FIT"),
+    ("B_TO_A", "SHARED_REPORTED_BEHAVIOR"),
+    ("A_TO_B", "DIFFERENCE"),
 ])
 def test_inconsistent_kind_and_direction_are_excluded(direction, kind):
     context, scope = setup_context(make_evidence(kind=kind, direction=direction))
@@ -416,7 +426,7 @@ def test_unsupported_topic_is_not_generalized_into_a_reason():
     ("SHARED_REPORTED_BEHAVIOR", "두 사람의 연락 방식에 공통점이 없다."),
 ])
 def test_summary_that_negates_its_kind_cannot_produce_positive_fallback(kind, fact):
-    direction = "B_TO_A" if kind == "ONE_WAY_PREFERENCE_FIT" else "BOTH"
+    direction = "A_TO_B" if kind == "ONE_WAY_PREFERENCE_FIT" else "BOTH"
     context, scope = setup_context(make_evidence(kind=kind, direction=direction, fact=fact))
     assert explain(context, scope).explanation is None
 
@@ -586,7 +596,7 @@ def test_explicit_score_meeting_or_identity_claim_skips_even_positive_verifier(t
     ("contact", "SHARED_REPORTED_BEHAVIOR", "두 사람 모두 여유 있게 연락하는 편이라고 응답했다.",
      "두 분은 여유 있게 연락하는 편이라는 공통점이 있어요."),
     ("contact", "SHARED_REPORTED_BEHAVIOR", "두 사람 모두 여유 있게 연락하는 편이라고 응답했다.",
-     "두 분 모두 여유 있게 연락해요. 공통점은 바로 이 점이에요."),
+     "두 분 모두 여유 있게 연락하는 편이라고 해요. 공통점은 바로 이 점이에요."),
     ("experience", "SHARED_REPORTED_BEHAVIOR", "두 사람 모두 새로운 활동을 찾는 편이다.",
      "두 분은 새로운 활동을 찾는 편이라는 공통점이 있어요."),
 ])
@@ -623,3 +633,91 @@ def test_authorization_failure_after_generation_prevents_verifier_and_fallback(n
     assert len(model.requests) == 1
     assert not model.verifications
     assert "private authorization detail" not in repr(result) + caplog.text
+
+
+MAT04_CASES = json.loads((Path(__file__).parent / "fixtures/mat04-145/synthetic_cases.json")
+                        .read_text(encoding="utf-8"))
+
+
+@pytest.mark.parametrize("case", [
+    case for case in MAT04_CASES["claims"]
+    if case["id"] in {"invented-trait", "romantic-success", "raw-answer-paraphrase",
+                      "photo-description-without-label"}
+], ids=lambda case: case["id"])
+def test_false_positive_verdict_cannot_publish_unsupported_claim(case, caplog):
+    baseline = MAT04_CASES["one_way"][0]
+    context, scope = setup_context(Evidence(**baseline["evidence"]), viewer=baseline["viewer"])
+    model = FakeModel(text=case["text"])  # FakeModel approves every structurally valid candidate.
+    result = explain(context, scope, model)
+    assert result.reason == "INVALID_OUTPUT"
+    assert result.explanation.source == "RULE_FALLBACK"
+    assert result.explanation.text == baseline["fallback_text"]
+    assert result.explanation.promptVersion is None
+    assert result.explanation.evidenceKeys == ()
+    assert result.used_evidence_ids == ("e1",)
+    assert case["text"] not in repr(result) + caplog.text
+    assert len(model.requests) == 1
+    assert not model.verifications
+
+
+@pytest.mark.parametrize("case", MAT04_CASES["one_way"], ids=lambda case: case["id"])
+@pytest.mark.parametrize("swapped", [False, True], ids=["grounded", "swapped"])
+def test_one_way_candidate_must_match_viewer_and_preference_owner(case, swapped):
+    context, scope = setup_context(Evidence(**case["evidence"]), viewer=case["viewer"])
+    text = case["reversed_text"] if swapped else case["accepted_text"]
+    model = FakeModel(text=text)
+    result = explain(context, scope, model)
+    if swapped:
+        assert result.reason == "INVALID_OUTPUT"
+        assert result.explanation.source == "RULE_FALLBACK"
+        assert result.explanation.text == case["fallback_text"]
+        assert not model.verifications
+    else:
+        assert result.reason is None
+        assert result.explanation.source == "GENERATED"
+        assert result.explanation.text == text
+        assert len(model.verifications) == 1
+
+
+def test_grounded_candidate_combines_three_cited_facts():
+    case = MAT04_CASES["multi"]
+    context, scope = setup_context(*(Evidence(**item) for item in case["evidence"]), viewer=case["viewer"])
+    # The IDs need not follow the order in which the claims appear.
+    ids = ["e3", "e1", "e2"]
+    model = FakeModel(raw=json.dumps({"text": case["accepted_text"], "evidenceIds": ids}))
+    result = explain(context, scope, model)
+    assert result.reason is None
+    assert result.explanation.source == "GENERATED"
+    assert result.explanation.text == case["accepted_text"]
+    assert result.used_evidence_ids == tuple(ids)
+    assert len(model.verifications) == 1
+
+
+@pytest.mark.parametrize("text,ids,display", [
+    pytest.param("상대의 연락 빈도가 당신의 선호와 맞아요. 사랑이 이루어질 가능성이 매우 높아요.",
+                 ["e1"], None, id="supported-prefix-with-new-claim"),
+    pytest.param("두 분 모두 독서를 선호한다는 공통점이 있어요.",
+                 ["e2"], None, id="detail-contradicts-cited-fact"),
+    pytest.param("두 분 모두 산책을 즐긴다는 연결점이 있어요.",
+                 ["e1"], None, id="right-claim-wrong-id"),
+    pytest.param("상대의 연락 빈도가 당신의 선호와 맞아요.",
+                 ["e1", "e2"], None, id="unused-citation"),
+    pytest.param("두 분 모두 산책을 즐긴다는 연결점이 있어요.",
+                 ["e1"], frozenset({"e1"}), id="claim-requires-undisclosed-evidence"),
+])
+def test_all_clauses_must_match_only_their_cited_public_facts(text, ids, display):
+    context, scope = setup_context(
+        make_evidence(),
+        make_evidence("e2", kind="SHARED_REPORTED_BEHAVIOR", direction="BOTH",
+                      topic="activity", fact="A와 B 모두 산책을 선호한다고 응답했다."),
+        display=display,
+    )
+    model = FakeModel(raw=json.dumps({"text": text, "evidenceIds": ids}))
+    result = explain(context, scope, model)
+    assert result.reason == "INVALID_OUTPUT"
+    assert result.explanation.source == "RULE_FALLBACK"
+    assert result.explanation.text != text
+    assert not model.verifications
+    if display:
+        assert result.used_evidence_ids == ("e1",)
+        assert "산책" not in result.explanation.text

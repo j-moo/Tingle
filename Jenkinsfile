@@ -3,8 +3,8 @@
 // MR 은 검사로 끝나고 결과가 GitLab MR 에 파트별로 표시된다. develop · master 에 push(머지)되면 검사 뒤 각 환경에 배포한다 (인프라 계획 6절).
 
 def PARTS = [back: 'back/', ai: 'ai-server/', web: 'front/web/', app: 'front/app/', iot: 'iot/']
-// AI 테스트가 읽는 참조 원본이 바뀌어도 회귀 검사를 실행한다.
-def AI_TEST_INPUTS = ['ai-server/reference/survey-20261021/mockup/dist/', 'ai-server/reference/survey-20261021/questionnaire-SIS-Q-1.1-100.json']
+// 파트 간 테스트 입력 공유는 금지한다. 공유 계약 데이터는 각 파트가 복사본을 갖고 같은 SHA-256 을 고정한다
+// (back src/test/resources/contracts · ai tests/contracts.py · iot tests/data). 원본 변경 시 복사본과 해시를 함께 갱신한다.
 // 브랜치별 배포: 코드를 dir 에 풀고 services(infra/docker-compose.yml 서비스 이름 → 응답 확인 주소)만 다시 띄운다.
 // bluegreen 은 infra/deploy-bluegreen.sh 로 무중단 전환한다 (운영 back · ai). ai 를 먼저 바꾼다 — 새 ai 가 옛 back 요청도 받아야 한다 (인프라 계획 7절).
 // back 확인은 Actuator — DB 연결까지 정상이면 200, 아니면 503. ai 는 /health.
@@ -46,11 +46,21 @@ pipeline {
             git diff --name-only "$base...HEAD"
           ''').trim().readLines()
           // Jenkinsfile 이 바뀌면 검사 방법이 바뀐 것이므로 전부 돌린다.
-          changed = files.contains('Jenkinsfile') ? PARTS.keySet() as List : PARTS.findAll { k, dir -> files.any { it.startsWith(dir) } }.keySet() as List
-          if (!('ai' in changed) && files.any { file -> AI_TEST_INPUTS.any { path -> path.endsWith('/') ? file.startsWith(path) : file == path } }) {
-            changed.add('ai')
-          }
+          changed = files.contains('Jenkinsfile') ? PARTS.keySet() as List : PARTS.findAll { k, dir ->
+            files.any { it.startsWith(dir) }
+          }.keySet() as List
           echo "검사할 파트: ${changed ?: '없음'}"
+          // 공유 계약 복사본 쌍이 갈라지면 어떤 MR 이든 즉시 실패한다. 파트 검사는 각자 복사본만 읽고,
+          // 파이프라인은 여기서 쌍의 byte 일치만 확인한다 (원본·복사본과 양쪽 해시 상수를 함께 갱신해야 통과).
+          sh '''
+            same() { git diff --no-index --quiet "$1" "$2" || { echo "계약 복사본 불일치: $1 != $2" >&2; exit 1; }; }
+            same back/src/test/resources/contracts/mvp-policy-20261026-cases.json ai-server/tests/fixtures/mvp-policy-20261026-cases.json
+            same back/src/test/resources/contracts/prod-changes/247-keyring-server-proofs.sql infra/db/prod-changes/247-keyring-server-proofs.sql
+            same back/src/test/resources/contracts/prod-changes/2026-11-06-member-withdrawal.sql infra/db/prod-changes/2026-11-06-member-withdrawal.sql
+            same back/src/main/resources/survey/questionnaires/SIS-Q-1.1-100.json ai-server/reference/survey-20261021/questionnaire-SIS-Q-1.1-100.json
+            same back/src/main/resources/icebreakers/general-ko-v1.json ai-server/tests/fixtures/icebreakers-general-ko-v1.json
+            same front/app/shared/src/androidHostTest/resources/keyring/status-0.7.json iot/tests/data/status-0.7.json
+          '''
         }
       }
     }
@@ -62,7 +72,17 @@ pipeline {
             gitlabCommitStatus(name: 'back') {
               // build = 컴파일 + checkstyle(네이버 규칙) + 테스트. 테스트 DB 는 Testcontainers 가 서버 docker 로 띄운다.
               // ufw 가 컨테이너 → 호스트 포트를 막으므로 호스트 네트워크로 돌리고 Testcontainers 가 localhost 로 붙게 한다.
-              inDocker('eclipse-temurin:21-jdk', 'back', '-v tingle-ci-gradle-back:/root/.gradle --network host -e TESTCONTAINERS_HOST_OVERRIDE=localhost', 'sh gradlew build --no-daemon')
+              // 대량 데이터 부하 테스트(@Tag("load"))는 MR마다 돌리지 않고, develop·master 머지 중 back 이 바뀐 때만 함께 돌린다.
+              script {
+                def tasks = env.gitlabActionType == 'PUSH' && DEPLOY[env.gitlabSourceBranch] ? 'build loadTest' : 'build'
+                try {
+                  inDocker('eclipse-temurin:21-jdk', 'back', '-v tingle-ci-gradle-back:/root/.gradle --network host -e TESTCONTAINERS_HOST_OVERRIDE=localhost', "sh gradlew ${tasks} --no-daemon")
+                } finally {
+                  // 실패해도 어떤 테스트가 왜 깨졌는지 Jenkins 빌드 화면(Tests)에서 보이게 결과를 남긴다.
+                  // 이번 빌드에서 새로 만든 결과만 남긴다(skipOldReports — 다른 브랜치 빌드가 남긴 파일은 뺀다). 실패 판정은 Gradle 이 하고 junit 은 기록만 한다.
+                  junit allowEmptyResults: true, skipOldReports: true, skipMarkingBuildUnstable: true, testResults: 'back/build/test-results/*/*.xml'
+                }
+              }
             }
           }
         }
@@ -106,7 +126,7 @@ pnpm build
                 def publish = env.gitlabActionType == 'PUSH' && apkDir
                 def release = publish && env.gitlabSourceBranch == 'master'
                 def build = {
-                  inDocker('eclipse-temurin:21-jdk', 'front/app', '-v tingle-ci-gradle-app:/root/.gradle -v tingle-ci-android:/opt/android-sdk -e ANDROID_HOME=/opt/android-sdk -e APK_TASK -e TINGLE_KEYSTORE -e TINGLE_KEYSTORE_PASSWORD -e GOOGLE_WEB_CLIENT_ID -e KAKAO_NATIVE_APP_KEY -e KAKAO_NATIVE_APP_KEY_DEV -e NAVER_CLIENT_ID', '''
+                  inDocker('eclipse-temurin:21-jdk', 'front/app', '-v tingle-ci-gradle-app:/root/.gradle -v tingle-ci-android:/opt/android-sdk -e ANDROID_HOME=/opt/android-sdk -e APK_TASK -e APP_CHECK_ARGS -e TINGLE_KEYSTORE -e TINGLE_KEYSTORE_PASSWORD -e GOOGLE_WEB_CLIENT_ID -e KAKAO_NATIVE_APP_KEY -e KAKAO_NATIVE_APP_KEY_DEV -e NAVER_CLIENT_ID', '''
 if [ ! -x "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" ]; then
   apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq unzip >/dev/null
   curl -fsSLo /tmp/tools.zip https://dl.google.com/android/repository/commandlinetools-linux-13114758_latest.zip
@@ -114,19 +134,25 @@ if [ ! -x "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" ]; then
   mkdir -p "$ANDROID_HOME/cmdline-tools" && mv /tmp/tools/cmdline-tools "$ANDROID_HOME/cmdline-tools/latest"
 fi
 yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null || true
-sh gradlew check :androidApp:$APK_TASK --no-daemon -Dorg.gradle.jvmargs=-Xmx3g -Pkotlin.compiler.execution.strategy=in-process
+sh gradlew check ${APP_CHECK_ARGS:-} :androidApp:$APK_TASK --no-daemon -Dorg.gradle.jvmargs=-Xmx3g -Pkotlin.compiler.execution.strategy=in-process
 ''')
                 }
-                if (publish) {
-                  withEnv(["APK_TASK=${release ? 'assembleRelease' : 'assembleDebug'}"]) {
-                    // 소셜 로그인 키는 tingle-app-env 에서 앱이 쓰는 4개만 골라 넘긴다(네이버 비밀값은 APK 에 넣지 않는다 — OIDC PKCE) (DB · JWT 같은 서버 비밀값은 빌드에 넣지 않는다). build.gradle.kts 가 환경변수로 읽는다.
-                    withCredentials([file(credentialsId: 'tingle-release-key', variable: 'TINGLE_KEYSTORE'), string(credentialsId: 'tingle-release-password', variable: 'TINGLE_KEYSTORE_PASSWORD'), file(credentialsId: 'tingle-app-env', variable: 'APP_ENV')]) {
-                      def social = readFile(env.APP_ENV).readLines().findAll { it ==~ /(GOOGLE_WEB_CLIENT_ID|KAKAO_NATIVE_APP_KEY|KAKAO_NATIVE_APP_KEY_DEV|NAVER_CLIENT_ID)=.+/ }
-                      withEnv(social) { build() }
+                try {
+                  if (publish) {
+                    withEnv(["APK_TASK=${release ? 'assembleRelease' : 'assembleDebug'}"]) {
+                      // 소셜 로그인 키는 tingle-app-env 에서 앱이 쓰는 4개만 골라 넘긴다(네이버 비밀값은 APK 에 넣지 않는다 — OIDC PKCE) (DB · JWT 같은 서버 비밀값은 빌드에 넣지 않는다). build.gradle.kts 가 환경변수로 읽는다.
+                      withCredentials([file(credentialsId: 'tingle-release-key', variable: 'TINGLE_KEYSTORE'), string(credentialsId: 'tingle-release-password', variable: 'TINGLE_KEYSTORE_PASSWORD'), file(credentialsId: 'tingle-app-env', variable: 'APP_ENV')]) {
+                        def social = readFile(env.APP_ENV).readLines().findAll { it ==~ /(GOOGLE_WEB_CLIENT_ID|KAKAO_NATIVE_APP_KEY|KAKAO_NATIVE_APP_KEY_DEV|NAVER_CLIENT_ID)=.+/ }
+                        withEnv(social) { build() }
+                      }
                     }
+                  } else {
+                    // MR 은 iOS 컴파일(Kotlin/Native, 약 3분)을 건너뛴다. iOS 쪽은 develop · master 머지 빌드가 검사한다.
+                    withEnv(['APK_TASK=assembleDebug', 'APP_CHECK_ARGS=-x :shared:iosSimulatorArm64Test']) { build() }
                   }
-                } else {
-                  withEnv(['APK_TASK=assembleDebug']) { build() }
+                } finally {
+                  // 앱 단위 테스트 결과도 실패 원인을 Jenkins 빌드 화면에서 보게 남긴다(이번 빌드에서 새로 만든 결과만).
+                  junit allowEmptyResults: true, skipOldReports: true, skipMarkingBuildUnstable: true, testResults: 'front/app/*/build/test-results/**/*.xml'
                 }
                 // 공개: develop → https://도메인/dev/app/latest.apk, master → /app/latest.apk (nginx /dev/app/ → /srv/tingle/app/dev, /app/ → /srv/tingle/app). 앱이 바뀐 커밋에서만 갱신된다.
                 def apk = release ? 'release/androidApp-release.apk' : 'debug/androidApp-debug.apk'
@@ -198,6 +224,13 @@ sh gradlew check :androidApp:$APK_TASK --no-daemon -Dorg.gradle.jvmargs=-Xmx3g -
         script {
           def target = DEPLOY[env.gitlabSourceBranch]
           gitlabCommitStatus(name: "deploy-${env.gitlabSourceBranch}") {
+            def devWithdrawalCompose = '/srv/tingle/dev-runtime/withdrawal.compose.yml'
+            def composeOverride = ''
+            if (env.gitlabSourceBranch == 'develop') {
+              // 개발 백엔드에만 서버에 보관된 기존 탈퇴 설정과 서명 키를 전달한다.
+              sh "test -r '${devWithdrawalCompose}' || { echo '개발 탈퇴 Compose 설정을 읽을 수 없습니다'; exit 1; }"
+              composeOverride = "-f '${devWithdrawalCompose}'"
+            }
             if (target.backup) {
               // 두 DB 백업 계열 모두 최대 7일. 복원 후 재삭제 검증 전에는 서비스 개방 금지.
               sh '''
@@ -209,6 +242,7 @@ sh gradlew check :androidApp:$APK_TASK --no-daemon -Dorg.gradle.jvmargs=-Xmx3g -
                 echo "DB 백업: $f ($(du -h "$f" | cut -f1))"
               '''
             }
+            def compose = "docker compose --env-file /srv/tingle/.env --env-file /srv/tingle/app.env -f ${target.dir}/infra/docker-compose.yml ${composeOverride}"
             sh """
               # 폴더를 통째로 바꾸지 않고 안의 파일만 바꾼다. 폴더째 바꾸면 그 안을 마운트한 nginx · grafana 가 지워진 옛 폴더를 계속 본다 (2026-10-27).
               # 커밋에 없는 파일(저장소에서 지운 것)은 지운다. 한글 경로가 따옴표로 바뀌지 않게 core.quotePath=false.
@@ -217,12 +251,12 @@ sh gradlew check :androidApp:$APK_TASK --no-daemon -Dorg.gradle.jvmargs=-Xmx3g -
               git -c core.quotePath=false ls-tree -r --name-only HEAD | sort > \$WORKSPACE/.deploy-files
               (cd ${target.dir} && find . -type f ! -name .deployed-commit | sed 's#^\\./##' | sort | comm -23 - \$WORKSPACE/.deploy-files | xargs -r -d '\\n' rm -f --)
               git rev-parse --short HEAD > ${target.dir}/.deployed-commit
-              docker compose --env-file /srv/tingle/.env --env-file /srv/tingle/app.env -f ${target.dir}/infra/docker-compose.yml up -d --build --no-deps ${target.services.keySet().join(' ')}
+              ${compose} up -d --build --no-deps ${target.services.keySet().join(' ')}
               docker image prune -f
             """
-            // 떠서 응답하는지 확인 (Jenkins 는 compose 내부망에 있어 서비스 이름으로 부른다)
+            // 떠서 응답하는지 확인 (Jenkins 는 compose 내부망에 있어 서비스 이름으로 부른다). 실패하면 원인 확인용으로 로그 끝부분만 남긴다 (환경변수는 비밀값이라 찍지 않는다)
             target.services.each { name, url ->
-              sh "for i in \$(seq 1 60); do curl -fsS -o /dev/null ${url} && exit 0; sleep 2; done; echo '${name} 응답 없음'; exit 1"
+              sh "for i in \$(seq 1 60); do curl -fsS -o /dev/null ${url} && exit 0; sleep 2; done; echo '${name} 응답 없음 — 로그 마지막 100줄:'; ${compose} logs --no-color --tail 100 ${name} || true; exit 1"
             }
             // 무중단 전환 대상: 새 색 기동 → 상태 확인 → nginx 전환 → 옛 색 정지 (실패하면 운영은 옛 색 그대로)
             target.bluegreen?.each { name ->

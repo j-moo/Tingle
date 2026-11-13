@@ -23,6 +23,10 @@ import com.ssafy.e106.features.chat.ui.*
 import com.ssafy.e106.features.profile.ui.*
 import com.ssafy.e106.features.survey.ui.*
 import com.ssafy.e106.features.home.ui.*
+import com.ssafy.e106.features.keyring.data.BleDeviceStatus
+import com.ssafy.e106.features.keyring.data.BleOwnerFlowStatus
+import com.ssafy.e106.features.keyring.data.OwnedKeyring
+import com.ssafy.e106.features.keyring.ui.OwnedKeyringLiveStatus
 import org.junit.Rule
 import org.junit.Test
 import org.junit.Assert.assertTrue
@@ -50,16 +54,40 @@ class CompactLayoutTestActivity : ComponentActivity() {
                     var birth by rememberSaveable { mutableStateOf("") }
                     var draft by rememberSaveable { mutableStateOf("테스트 입력") }
                     var selected by remember { mutableStateOf<SurveyAnswer?>(null) }
+                    var aliases by remember { mutableStateOf(mapOf(7L to "초록 키링")) }
+                    var connectedKeyringId by remember { mutableStateOf<Long?>(7) }
                     AppTheme {
                         when (intent.getStringExtra("screen")) {
                             "home" -> HomeScreen(HomeState(HomeLoadState.Ready), {}, {})
+                            "home_connection" -> HomeScreen(
+                                HomeState(HomeLoadState.Ready, keyring = HomeKeyringState.Registered, keyrings = listOf(
+                                    OwnedKeyring(7, "REGISTERED", "0.1.0-registration"),
+                                    OwnedKeyring(8, "REGISTERED", "0.1.0-registration"),
+                                )), {}, { if (it == HomeAction.Refresh) connectedKeyringId = null },
+                                // 등록 목록은 그대로 두고, 새로고침 때 연결만 사라진 상황을 재현한다.
+                                connectedKeyringId = connectedKeyringId,
+                            )
+                            "home_keyrings" -> HomeScreen(
+                                HomeState(HomeLoadState.Ready, keyring = HomeKeyringState.Registered, keyrings = listOf(
+                                    OwnedKeyring(7, "REGISTERED", "0.1.0-registration"),
+                                    OwnedKeyring(8, "REGISTERED", "0.1.0-registration"),
+                                ), keyringAliases = aliases), {}, {},
+                                onSaveKeyringAlias = { id, value ->
+                                    aliases = if (value.isEmpty()) aliases - id else aliases + (id to value)
+                                    true
+                                },
+                                // 실제 BLE 대신 한 대의 관측값만 넣어 다른 키링 행으로 복제되지 않는지 확인한다.
+                                keyringStatus = { OwnedKeyringLiveStatus(1, 7, 1, loading = false,
+                                    metrics = BleDeviceStatus(72, null, null, null,
+                                        BleOwnerFlowStatus(batteryPercentSource = "VOLTAGE_ESTIMATE"))) },
+                            )
                             "profile" -> ProfileBasicsScreen(ProfileBasicsState(nickname, birth, ProfileGender.Male, canContinue = true),
                                 { nickname = it }, { birth = it }, {}, {})
                             "survey" -> SurveyQuestionScreen(SurveyQuestionState("layout", 16, 100,
                                 "작은 화면에서도 긴 질문과 마지막 응답을 확인할 수 있나요?",
                                 (1..6).map { SurveyOption("$it", "검증 선택지 $it") },
                                 answer = selected, saveState = SurveySaveState.Saved),
-                                { selected = it }, {}, {}, {})
+                                { selected = it }, {}, {})
                             else -> ChatConversationScreen(ChatConversationState(ConversationLoad.Active,
                                 nickname = "긴 이름을 사용하는 상대방", canRead = true, canSend = true, draft = draft,
                                 messages = listOf(ConversationMessage("1", false, "확인할 최근 메시지"))),
@@ -87,10 +115,49 @@ class CompactLayoutDeviceTest {
             bounds.width > 0 && bounds.height > 0 && bounds.left >= viewport.left &&
                 bounds.right <= viewport.right && bounds.top >= viewport.top && bounds.bottom <= viewport.bottom)
     }
+    @Test fun homeShowsNicknameAndBatteryOnlyForTheMatchingKeyring() {
+        launch("home_keyrings").use {
+            compose.onNodeWithText("내 키링").performScrollTo().performClick()
+            compose.onNode(hasText("초록 키링") and hasText("배터리 약 72%")).assertExists()
+            compose.onNode(hasText("내 키링 2") and hasText("배터리 미확인")).assertExists()
+            compose.onNodeWithText("0.1.0-registration", substring = true).assertDoesNotExist()
+        }
+    }
+
+    @Test fun homePullRefreshUpdatesConnectionWhileKeepingRegisteredKeyrings() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        ActivityScenario.launch<CompactLayoutTestActivity>(Intent(context, CompactLayoutTestActivity::class.java)
+            .putExtra("screen", "home_connection").putExtra("full", true).putExtra("fontScale", 1f)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)).use {
+            compose.onNodeWithText("연결됨").assertIsDisplayed()
+            compose.onNodeWithTag("viewport").performTouchInput {
+                swipeDown(startY = height * 0.38f, endY = height * 0.78f)
+            }
+            compose.onNodeWithText("연결 안 됨").assertIsDisplayed()
+            compose.onNodeWithText("연결됨").assertDoesNotExist()
+            compose.onNodeWithText("내 키링").performClick()
+            compose.onNodeWithText("내 키링 1").assertExists()
+            compose.onNodeWithText("내 키링 2").assertExists()
+        }
+    }
+
+    @Test fun homeEditsAndRemovesTheSelectedKeyringAlias() {
+        launch("home_keyrings").use {
+            compose.onNodeWithText("내 키링").performScrollTo().performClick()
+            compose.onNodeWithContentDescription("내 키링 2 별명 편집").performScrollTo().performClick()
+            compose.onNode(hasSetTextAction()).performTextInput("파랑 키링")
+            compose.onNodeWithText("별명 저장").performClick()
+            compose.onNodeWithText("초록 키링").assertExists()
+            compose.onNodeWithContentDescription("파랑 키링 별명 편집").performScrollTo().performClick()
+            compose.onNodeWithText("기본 이름으로").performScrollTo().performClick()
+            compose.onNodeWithText("내 키링 2").assertExists()
+        }
+    }
+
     @Test fun chatInputAndSendRemainReachableAtLargeFont() {
         launch("chat").use {
             fullyVisible(compose.onNode(hasSetTextAction()))
-            fullyVisible(compose.onNodeWithText("전송"))
+            fullyVisible(compose.onNodeWithContentDescription("전송"))
         }
     }
     @Test fun profileFieldsCanScrollAtLargeFont() {
@@ -143,7 +210,7 @@ class WideLayoutDeviceTest {
             }
             else -> {
                 compose.onNode(hasSetTextAction()).assertIsDisplayed()
-                compose.onNodeWithText("전송").assertIsDisplayed().assertIsEnabled()
+                compose.onNodeWithContentDescription("전송").assertIsDisplayed().assertIsEnabled()
             }
         }
     }

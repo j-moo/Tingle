@@ -87,6 +87,24 @@ class HttpRuleExplanationTransportTest {
 	}
 
 	@Test
+	void generatedExplanationKeepsItsPromptHashAndRejectsOtherVersionFormats() {
+		// AI가 프롬프트를 바꿔 해시가 달라져도 형식이 맞으면 받은 값 그대로 돌려준다.
+		for (String version : List.of("7bc00713".repeat(8), "0".repeat(64))) {
+			when(client.post(PATH, request, JsonNode.class, ATTEMPT))
+				.thenReturn(response().put("source", "GENERATED").put("promptVersion", version));
+			assertThat(transport.explain(request)).contains(new ExplanationStatus("SUCCEEDED", "GENERATED",
+				"연락 방식이 서로의 선호와 맞아요.", List.of(), version));
+		}
+		for (String version : List.of("0".repeat(63), "0".repeat(65), "A".repeat(64), "g".repeat(64), "v1", "")) {
+			assertRejected(response().put("source", "GENERATED").put("promptVersion", version));
+		}
+		assertRejected(response().put("source", "GENERATED").put("promptVersion", 7));
+		// 규칙 설명에 생성 버전이 붙어 오는 조합도 받지 않는다.
+		assertRejected(response().put("promptVersion", "0".repeat(64)));
+		assertRejected(response().put("source", "OTHER"));
+	}
+
+	@Test
 	void generatedContentOrEvidenceAndPromptMetadataAreRejected() {
 		assertRejected(response().put("source", "GENERATED"));
 		assertRejected(response().putNull("source"));

@@ -4,10 +4,12 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.StateFlow
 
 /** 화면에는 플랫폼 객체 대신 탐색 세션에서만 유효한 ID를 제공한다. 서버 deviceId/소유 인증이 아니다. */
-data class BleCandidate(val id: String, val name: String?, val rssi: Int)
+/** [recent]: 이 앱 실행 중 마지막으로 연결했던 기기(플랫폼이 RAM에서만 대조한다. 소유 인증이 아니다) */
+data class BleCandidate(val id: String, val name: String?, val rssi: Int, val recent: Boolean = false)
 enum class BleLinkState { Ready, Closed }
 enum class BleFailure { Unsupported, PermissionRequired, BluetoothOff, LocationOff, Busy, NotFound, ScanFailed,
-    ConnectFailed, ServiceMissing, SubscribeFailed, WriteFailed, Disconnected, Timeout, InvalidFrame, Overflow }
+    ConnectFailed, ServiceMissing, SubscribeFailed, WriteFailed, Disconnected, Timeout, InvalidFrame, Overflow,
+    SecureTransportRequired, NotOwned, OwnershipUnverified }
 class BleException(val reason: BleFailure) : Exception(reason.name)
 
 /**
@@ -18,14 +20,27 @@ class BleException(val reason: BleFailure) : Exception(reason.name)
 interface KeyringBle {
     fun scan(): Flow<List<BleCandidate>>
     suspend fun connect(candidateId: String): BleConnection
+    /** 등록된 키링 선택 화면에서만 쓰는 후보 ID다. 페어링은 기기 일련번호나 서버 소유권 검증을 대신하지 않는다. */
+    suspend fun bondedKeyringCandidates(): List<String> = emptyList()
     /** 현재 탐색 후보가 이 프로세스에서 마지막으로 연결한 기기인지 플랫폼 안에서만 대조한다.
      * 탐색 ID는 매번 바뀌므로 화면이 예전 ID를 비교하면 안 된다. 주소를 노출/저장하지 않으며 소유 인증을 대신하지 않는다. */
     fun isPreviousDevice(candidateId: String): Boolean = false
+    /** 계정이 바뀌면 마지막 연결 기기 기억을 지운다. 다음 계정에게 이전 계정의 키링을 "최근 연결"로 알려 주지 않는다 */
+    fun forgetPreviousDevice() {}
 }
 
 interface BleConnection {
     val state: StateFlow<BleLinkState>
     /** UTF-8 JSON+LF 하나를 보내고 LF 응답 하나를 받는다. Write ACK 자체는 업무 성공이 아니다. */
     suspend fun exchange(request: ByteArray, maxResponseBytes: Int = 4096, responseTimeoutMillis: Long = 10_000): ByteArray
+    /**
+     * 개인정보 없는 보호 특성 Read(01)로 현재 연결의 암호화 준비를 확인한다.
+     * 유효 시간이 짧은 challenge 발급 전에 호출한다. 기기 신원/소유 인증을 대신하지 않는다.
+     * 미지원 플랫폼은 일반 RX로 대체하지 않고 거부한다.
+     */
+    suspend fun prepareProtectedTransport() { throw BleException(BleFailure.Unsupported) }
+    /** 보호 특성을 다시 확인한 뒤 그 특성에만 쓴다. 재연결한 객체는 이전 확인을 승계하지 않는다. */
+    suspend fun exchangeProtected(request: ByteArray, maxResponseBytes: Int = 4096,
+        responseTimeoutMillis: Long = 10_000): ByteArray = throw BleException(BleFailure.Unsupported)
     fun close()
 }

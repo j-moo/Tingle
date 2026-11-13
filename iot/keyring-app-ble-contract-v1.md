@@ -1,8 +1,10 @@
 # 키링·앱 BLE 연동 계약 v1 초안
 
+**최신 0.7.2-owner-flow 변경:** [전체 연동 인계 맨 위0.7 절](app-flow-v2-handoff.md)과 [유저 플로우41항목](user-flow-coverage-v1.md)을 우선한다. TSV3 정상 계약을 유지하고 상대 소유 세대 분리·실패 입력 재계산·서명 복구 v2·현재 후보/늦은 완료 경계를 보강했다. !251 리뷰의 초기화 중지 계획 generation과 FE 상태 수신 한도도 수정했다. 아래 이전 버전은 당시 기록이다. 실물/서버 종단 완료를 뜻하지 않는다.
+
 | 항목 | 내용 |
 | --- | --- |
-| 버전·변경일 | v0.1.7-draft / 2026-11-06 · 성향·최소 프로필 저장 후보와 BE/FE 적용 경계 추가 |
+| 버전·변경일 | v0.1.8-draft / 2026-11-06 · 다중 peer 암호화 확장 광고·계산 개발 경로 연결 |
 | 작성자 | 김종무(IoT) |
 | 관련 Story | [S15P31E106-251](https://ssafy.atlassian.net/browse/S15P31E106-251) — 초기화·인증키 보존·완료 증명 재조회·복구. 기존 계약 근거: 224 |
 | 구현 후속 | 초기화 251·BE249·FE171, 등록·동기화 225, 매칭 226, 상태 조회 227, 기록 전달 228, 실물 통합 검증 230 |
@@ -11,7 +13,7 @@
 | 이번 테스트 | 별도 사용자 버튼이 없는 키링을 가정. 초기화·등록 해제·양도는 후속으로 분리 |
 | 문서 상태 | 로컬 협의 초안. 팀 공유 외부 원본의 위치·버전 연결과 관련 파트 승인 필요. 펌웨어 구현·실물 연동 완료를 뜻하지 않음 |
 
-**현재 빌드는 `0.3.1-dev-signed`, 통합 소스는 `iot/`, 보드에 복사할 파일은 `iot/build/zephyr.uf2`다.** 현재 설정 서명·저장 흐름, 성향 저장 후보와 빌드 방법은 [개발 설정 연동 안내](dev-settings-signing-handoff-v1.md)를 따른다. 초기화의 IoT 로컬 구현·검증 현황은 6.10절에 구분한다. 아래 `0.1.0-registration` 표기와 MR !172의 검증 결과는 이전 등록 전용 펌웨어의 기록이다. JSON 예시는 읽기 위한 들여쓰기다. 실제 전송은 JSON 한 줄 뒤에 LF를 붙이고, 문자열 값과 payload 원본 바이트는 보존한다.
+**0.5.0 당시 안내:** 통합 소스는 `iot/`, 보드에 복사할 파일은 `iot/build/zephyr.uf2`다. 전체 앱 흐름의 TSV2·타입3 grant·다중 계정 기기·소유자 인증·기록 전송/서명 접수 삭제는 [전체 앱 연동 v2](app-flow-v2-handoff.md)에 기록했고 현재 변경은 그 문서 맨 위 절을 우선한다. 기존 설정 서명 원문은 [개발 설정 연동 안내](dev-settings-signing-handoff-v1.md), PX 프레이밍·다중 상대·PC 참조 계산 기반은 [peer 개발 명세](peer-profile-exchange-v1.md)를 따른다. 당시 peerExchangeProtocol=`tingle-peer-v2`, maxPeerSessions=16은 지원 능력이며 실물 통과를 뜻하지 않는다. 초기화 구현은 6.10절에 구분한다. 아래 과거 버전·고정 MR은 각 시점의 기록이다. 실제 전송은 JSON 한 줄 뒤 LF, 문자열 값과 payload 원본 바이트를 보존한다.
 
 ## 기준과 이번에 확인한 결정
 
@@ -25,7 +27,7 @@
 | 항목 | 확인한 내용 |
 | --- | --- |
 | 실물 후보 | 이전 USB 부팅·BLE 탐색에 사용한 Seeed XIAO nRF52840 Sense 1대. 부트로더 ID `Seeed_XIAO_nRF52840_Sense`, 버전 `0.6.1`. 시험 직전에 보드 사용 가능 여부와 현재 설치 버전을 확인한다. |
-| 앱 연동 이미지 | 현재 `0.3.1-dev-signed` / Zephyr 4.2.0 / `xiao_ble/nrf52840`. 빌드 산출물은 `iot/build/zephyr.uf2`. |
+| 앱 연동 이미지 | 현재 `0.4.0-dev-peer` / Zephyr 4.2.0 / `xiao_ble/nrf52840`. 빌드 산출물은 `iot/build/zephyr.uf2`. |
 | 확인 범위 | UF2 빌드 및 호스트에서 C·Java 서명 호환성 검증 통과. 기존 `Tingle-Lab` 검색은 별도 바이너리 펌웨어의 실물 기록이다. 등록용 UF2의 실물 탑재·앱 종단 연동은 미확인이다. |
 | 첫 합동 시험 | IoT는 XIAO·UF2·USB 로그, FE는 테스트 앱·BLE 로그, BE는 테스트 계정과 기기 공개키 등록을 준비한다. 15~20분으로 제안하며 일정은 FE·BE·IoT가 조율한다. |
 
@@ -76,7 +78,7 @@
 | 등록 진입 | 앱의 스캔을 시작하고 시험 보드 전원을 켠다. 로컬에 유효한 설정이 없는 시험 기기는 BLE 광고 시작부터 60초 동안 등록 증명을 발급한다. |
 | 종료 | 60초 뒤 신규 광고가 종료된다. 연결 중에도 증명 요청은 `REGISTRATION_WINDOW_CLOSED`로 거부된다. 같은 조건에서 보드를 재부팅해 다시 시도한다. |
 | 등록 안내 | 등록 대기/선택/성공/실패의 LED·진동 패턴은 미정. 매칭 안내 패턴과 혼동하지 않도록 별도 합의 |
-| 현재 시험 광고 | NUS 서비스 UUID를 광고하고 Scan Response에 `Tingle-Keyring` 이름을 제공한다. 서비스 UUID를 스캔 필터로 사용한다. |
+| 일반 검색 광고 (0.9.3) | 기본 광고에는 NUS 서비스 UUID가 있고 Scan Response는 기본으로 비어 있다. 소유자가 공개를 켜면 Scan Response에 공개 이름을 넣는다. 앱 검색 필터는 NUS 서비스 UUID를 사용한다. |
 | 서비스 UUID | `6E400001-B5A3-F393-E0A9-E50E24DCCA9E`. 이름·UUID는 서비스 후보 필터이며 인증 수단이 아님 |
 | 광고 데이터 | 고정 사용자 ID·프로필·성향 원문을 싣지 않음. 정식 광고의 회전 임시 ID·등록 가능 표시·Manufacturer/Service Data 바이트는 미정 |
 | 여러 후보 구분 | 첫 합동 시험에서는 보드를 한 대씩 켜고 연결 후 `DEVICE_INFO.deviceSerial`을 USB `ENROLL` 로그의 serial과 대조한다. 출시용 물리 식별 방식은 미정이다. |
@@ -118,6 +120,48 @@
 `supportedFunctions`는 펌웨어가 공개한 기능 목록이다. 유효한 설정이 저장되지 않은 상태는 버전 `0`과 빈 해시로 표시한다. 출시용 인증 전 공개 범위는 미정이다.
 
 앱은 `발견 → BLE 연결 → 기기/소유 확인 → 서버 등록 확인 → 설정 반영 확인`을 구분한다. `CONNECTED`나 `DEVICE_INFO` 수신을 등록·사용 준비 완료로 표시하지 않는다.
+
+<a id="public-scan-name"></a>
+
+### 주변에 이름 공개 (0.9.3)
+
+지원 펌웨어는 D3.1 Y3의 `0.9.3-d31`과 Rev G의 `0.9.3-revg`다. 앱은 `DEVICE_INFO.supportedFunctions`의 `GET_PUBLIC_NAME`, `SET_PUBLIC_NAME`, `CLEAR_PUBLIC_NAME`과 `maxPublicNameBytes`를 확인한다. 앱 홈에만 쓰는 별명은 기존대로 앱에 저장한다. 주변에 공개할 이름은 사용자가 공개 옵션을 켤 때 앱이 명시적으로 전송한다.
+
+- 초기값은 공개 OFF다. ON이면 일반 휴대폰 탐색용 연결 가능 광고의 Scan Response에 `Complete Local Name (0x09)` 하나를 넣는다. 기본 광고의 NUS UUID·송신 설정과 키링 간 확장 광고를 유지한다. 광고에 나온 이름은 주변 BLE 스캐너가 읽을 수 있다.
+- Scan Response 31바이트 중 길이·타입에 2바이트를 사용한다. 이름은 **UTF-8 1~29바이트**이며 한글 완성형 음절만 쓰면 **최대 9자**다. 혼합 입력은 `name.encodeToByteArray().size`로 검사한다. 비어 있거나 ASCII 공백만 있는 이름, 제어 문자가 있는 이름을 거절한다.
+- 각 명령은 암호화된 NUS 쓰기 특성 `6e400004-b5a3-f393-e0a9-e50e24dcca9e`를 사용한다. 같은 연결에서 `GET_OWNER_CHALLENGE` → 기존 `POST /api/keyrings/{deviceId}/owner-session-grants`로 `permissions: 8` (CONTROL) 허가 발급 → `AUTHORIZE_OWNER`를 먼저 완료한다. 재연결하면 새 소유자 세션으로 진행한다.
+- SET·CLEAR 성공 응답은 저장·읽기 확인 뒤 반환한다. 같은 소유 세대라면 재부팅 후에도 유지된다. CLEAR·기기 초기화로 저장 이름을 삭제하고, 초기화 진행 또는 다른 소유 세대에서는 이전 이름을 광고하지 않는다. 서버 소유 해제는 기기 초기화 완료 증명을 받는 기존 순서를 사용한다.
+
+켜기 요청과 응답.
+
+```json
+{"protocolVersion":1,"type":"SET_PUBLIC_NAME","requestId":"name-1","name":"팅글 키링"}
+{"protocolVersion":1,"type":"PUBLIC_NAME_RESULT","requestId":"name-1","enabled":true,"name":"팅글 키링"}
+```
+
+끄기 요청과 응답.
+
+```json
+{"protocolVersion":1,"type":"CLEAR_PUBLIC_NAME","requestId":"name-2"}
+{"protocolVersion":1,"type":"PUBLIC_NAME_RESULT","requestId":"name-2","enabled":false,"name":null}
+```
+
+앱 시작 또는 연결 복구 뒤 현재 설정을 읽는 요청과 응답.
+
+```json
+{"protocolVersion":1,"type":"GET_PUBLIC_NAME","requestId":"name-3"}
+{"protocolVersion":1,"type":"PUBLIC_NAME_RESULT","requestId":"name-3","enabled":false,"name":null}
+```
+
+| `ERROR.code` | 처리 |
+| --- | --- |
+| `SECURE_TRANSPORT_REQUIRED` | 보호된 쓰기 특성과 BLE 암호화 상태를 확인한다. |
+| `OWNER_NOT_BOUND` | 유효한 소유자 설정 저장 또는 초기화 완료 후 등록을 확인한다. |
+| `OWNER_SESSION_REQUIRED` | 현재 연결에서 새 CONTROL 허가를 받아 인증한다. |
+| `INVALID_PUBLIC_NAME`, `PUBLIC_NAME_TOO_LONG`, `INVALID_MESSAGE` | 이름 형식과 UTF-8 바이트 수, JSON 프레임을 확인한다. |
+| `STORAGE_ERROR` | 앱 설정 화면에 실패를 표시하고 동일 동작을 다시 요청한다. 저장을 확인할 수 없는 실행 중에는 이름을 숨긴다. |
+
+Android에서 주변 이름은 현재 `ScanResult.scanRecord.deviceName`에서 표시한다. 이름이 빠진 새 스캔 결과에는 기본 후보 표시를 사용한다. BLE 이름은 소유 판정에 사용하지 않는다. 기존 연결을 종료해 키링 광고가 다시 시작된 뒤 다른 단말에서 확인한다. S20·Fold6 각각 OFF 기본 검색 → ON 이름 검색·연결 → 이름 변경 → OFF 후 이름 없음 → 초기화·재등록 후 이름 없음을 확인한다. ON 상태의 검색 호환성은 두 단말에서 반복 시험한다.
 
 ## 2. 키링 식별·계정 등록
 

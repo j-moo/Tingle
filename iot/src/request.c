@@ -1,11 +1,13 @@
 #include "registration.h"
 #include "profile.h"
+#include "monocypher.h"
 #include <inttypes.h>
 #include <stdio.h>
 #include <string.h>
 
 /* Called by one application worker, never from a Bluetooth callback. */
 static struct kr_settings candidate;
+void kr_request_forget_candidate(void) { crypto_wipe(&candidate, sizeof(candidate)); }
 
 static bool equal(const char *a, const char *b) { return a && !strcmp(a, b); }
 
@@ -78,6 +80,7 @@ void kr_request(struct kr_core *core, char *frame, struct kr_status status,
 {
 	core->stop_peer = false;
 	core->peer_after_stored.verified_time = 0;
+	core->peer_after_stored.settings_apply_attempt = 0;
 	struct kr_json json;
 	const char *error = "INVALID_MESSAGE";
 	char request[224] = "null";
@@ -89,6 +92,7 @@ void kr_request(struct kr_core *core, char *frame, struct kr_status status,
 		error = "UNSUPPORTED_PROTOCOL"; goto fail;
 	}
 	const char *type = kr_json_string(&json, "type");
+	if (core->platform.application && core->platform.application(core->platform.ctx, &json, request, status, response)) { return; }
 	if (equal(type, "GET_DEVICE_INFO")) {
 		bool settings_ready = core->platform.issue_settings_nonce != NULL;
 		snprintf(response, KR_RESPONSE_MAX,
@@ -103,6 +107,7 @@ void kr_request(struct kr_core *core, char *frame, struct kr_status status,
 			"\"profileStored\":%s,\"storedPayloadBytes\":%u,"
 			"\"profileStorageCharacteristic\":\"6e400004-b5a3-f393-e0a9-e50e24dcca9e\","
 			"\"profileRequiresEncryption\":true,"
+			"\"peerExchangeProtocol\":\"tingle-peer-dev-v1\",\"maxPeerSessions\":16,"
 			"\"storageHealthy\":%s,\"applied\":false,\"timeReady\":false}\n",
 			request, core->identity.serial, KR_FIRMWARE_VERSION,
 			settings_ready ? ",\"GET_SYNC_CHALLENGE\",\"SYNC_SETTINGS\"" : "",
@@ -210,6 +215,17 @@ void kr_request(struct kr_core *core, char *frame, struct kr_status status,
 			request, candidate.sync_run, candidate.version, candidate.hash,
 			equal(kr_json_string(&json, "proofProtocolVersion"), KR_PROOF_VERSION_2) ? KR_PROOF_VERSION_2 : KR_PROOF_VERSION,
 			core->identity.key_id, signature);
+		return;
+	}
+	if (equal(type, "GET_SETTINGS_APPLIED_PROOF")) {
+		error = kr_settings_applied_proof(core, kr_json_string(&json, "syncRunId"), signature);
+		if (error) { goto fail; }
+		snprintf(response, KR_RESPONSE_MAX,
+			"{\"protocolVersion\":1,\"type\":\"SETTINGS_APPLIED_PROOF\",\"requestId\":%s,"
+			"\"syncRunId\":\"%s\",\"settingsVersion\":%" PRId64 ",\"payloadHash\":\"%s\","
+			"\"proof\":{\"protocolVersion\":\"%s\",\"keyId\":\"%s\",\"signature\":\"%s\"}}\n",
+			request, core->current.sync_run, core->current.version, core->current.hash,
+			KR_SETTINGS_APPLIED_PROOF_VERSION, core->identity.key_id, signature);
 		return;
 	}
 	error = "UNSUPPORTED_TYPE";

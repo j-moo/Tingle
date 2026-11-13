@@ -8,13 +8,13 @@ from app.match_explanation import (
     DisclosureScope, Evidence, MatchExplanationService, ModelInput, Reference,
     ResolvedContext, SourceEvidence,
 )
-from app.match_explanation.gms import ENDPOINT, MODEL, GmsClient, GmsError
+from app.match_explanation.gms import ENDPOINT, MODEL, GmsClient, GmsConfigurationError, GmsError
 from app.match_explanation.prompts import GENERATION_PROMPT, VERIFICATION_PROMPT
 
 
 def request_input():
     return ModelInput(viewer="B", evidence=(Evidence(
-        id="e1", direction="B_TO_A", kind="ONE_WAY_PREFERENCE_FIT", topic="contact",
+        id="e1", direction="A_TO_B", kind="ONE_WAY_PREFERENCE_FIT", topic="contact",
         fact="A의 실제 연락 빈도가 B의 허용 범위에 들어간다.",
     ),))
 
@@ -89,7 +89,7 @@ def test_gms_service_generates_and_independently_verifies_minimal_payload(caplog
         assert body["max_output_tokens"] == 2048
         assert "temperature" not in body and "reasoning" not in body
         payload = json.loads(body["input"][1]["content"])
-        assert set(payload) <= {"viewer", "evidence", "candidate"}
+        assert set(payload) <= {"viewer", "evidence", "candidate", "allowedPhrasings"}
         serialized = json.dumps(payload)
         for private in ("synthetic-evaluation", "synthetic-version", "synthetic-source-row",
                         str(reference.encounter_id), "synthetic-secret", "synthetic-scope"):
@@ -98,7 +98,7 @@ def test_gms_service_generates_and_independently_verifies_minimal_payload(caplog
 
 
 @pytest.mark.parametrize("failure,reason", [
-    ("http-error", "MODEL_ERROR"), ("transport-error", "MODEL_ERROR"),
+    ("http-error", "MODEL_ERROR"), ("provider-auth", "MODEL_ERROR"), ("transport-error", "MODEL_ERROR"),
     ("timeout", "MODEL_TIMEOUT"), ("invalid-verdict", "INVALID_OUTPUT"),
 ])
 def test_gms_verification_failure_returns_only_safe_fallback(failure, reason, caplog):
@@ -112,6 +112,8 @@ def test_gms_verification_failure_returns_only_safe_fallback(failure, reason, ca
             })))
         if failure == "http-error":
             return httpx.Response(503, text="sensitive upstream detail")
+        if failure == "provider-auth":
+            return httpx.Response(401, text="sensitive upstream detail")
         if failure == "transport-error":
             raise httpx.ConnectError("sensitive upstream detail", request=request)
         if failure == "timeout":
@@ -141,8 +143,12 @@ def test_gms_verification_failure_returns_only_safe_fallback(failure, reason, ca
     assert "synthetic-secret" not in repr(result) + caplog.text
 
 
-@pytest.mark.parametrize("status", [301, 400, 401, 403, 429, 500, 503])
-def test_http_errors_do_not_retry_redirect_or_expose_body(status, caplog):
+@pytest.mark.parametrize("status,error_type", [
+    (301, GmsConfigurationError), (400, GmsConfigurationError), (401, GmsConfigurationError),
+    (403, GmsConfigurationError), (404, GmsConfigurationError), (408, GmsError),
+    (429, GmsError), (500, GmsError), (503, GmsError),
+])
+def test_http_errors_do_not_retry_redirect_or_expose_body(status, error_type, caplog):
     calls = []
 
     def handler(request):
@@ -154,9 +160,20 @@ def test_http_errors_do_not_retry_redirect_or_expose_body(status, caplog):
     client = GmsClient("synthetic-secret", transport=httpx.MockTransport(handler))
     with pytest.raises(GmsError) as caught:
         asyncio.run(client.generate(request_input()))
+    assert type(caught.value) is error_type
     assert len(calls) == 1
     assert "sensitive" not in str(caught.value) + caplog.text
     assert "synthetic-secret" not in str(caught.value) + caplog.text
+
+
+def test_local_request_configuration_error_is_sanitized():
+    def handler(request):
+        raise httpx.LocalProtocolError("sensitive request detail", request=request)
+
+    client = GmsClient("synthetic-secret", transport=httpx.MockTransport(handler))
+    with pytest.raises(GmsConfigurationError) as caught:
+        asyncio.run(client.generate(request_input()))
+    assert str(caught.value) == "Invalid GMS request configuration"
 
 
 @pytest.mark.parametrize("changes", [
@@ -178,8 +195,10 @@ def test_incomplete_refused_changed_model_or_ambiguous_response_is_rejected(chan
         asyncio.run(GmsClient("synthetic-secret", transport=transport).generate(request_input()))
 
 
-@pytest.mark.parametrize("body", ["not json", "null", "[]", "{}", "x" * 32_769],
-                         ids=["invalid-json", "null", "array", "missing-fields", "oversized"])
+@pytest.mark.parametrize("body", [
+    "not json", "null", "[]", "{}", "x" * 32_769,
+    '{"status":"incomplete",' + json.dumps(envelope("{}"))[1:],
+], ids=["invalid-json", "null", "array", "missing-fields", "oversized", "duplicate-key"])
 def test_malformed_or_oversized_envelope_is_rejected(body):
     transport = httpx.MockTransport(lambda _: httpx.Response(200, text=body))
     with pytest.raises(GmsError):

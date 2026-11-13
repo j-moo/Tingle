@@ -1,4 +1,6 @@
 from .dto import Evidence, Viewer
+from .facts import fact_item, shared_phrasing
+from .validation import supported_fact
 
 TOPIC_TEXT = {
     "contact": "연락 방식",
@@ -17,17 +19,22 @@ def rule_fallback(
     sentences = []
     used = []
     for item in (*matches, *differences):
-        topic = TOPIC_TEXT[item.topic]
+        if not supported_fact(item):
+            continue
+        spec = fact_item(item)
+        topic = spec.label if spec else TOPIC_TEXT[item.topic]
+        particle = spec.subject_particle if spec else "이"
         if item.kind == "SHARED_REPORTED_BEHAVIOR":
-            sentence = f"두 분은 {topic}에 공통점이 있어요."
+            sentence = (shared_phrasing(item, spec) if spec
+                        else f"두 분은 {topic}에 공통점이 있어요.")
         elif item.kind == "MUTUAL_PREFERENCE_FIT":
-            sentence = f"서로의 {topic}이 각자의 선호와 맞아요."
+            sentence = f"서로의 {topic}{particle} 각자의 선호와 맞아요."
         elif item.kind == "ONE_WAY_PREFERENCE_FIT":
-            owner = "A" if item.direction == "A_TO_B" else "B"
-            if viewer == owner:
-                sentence = f"상대의 {topic}이 당신의 선호와 맞아요."
+            subject = "A" if item.direction == "A_TO_B" else "B"
+            if viewer == subject:
+                sentence = f"당신의 {topic}{particle} 상대의 선호와 맞아요."
             else:
-                sentence = f"당신의 {topic}이 상대의 선호와 맞아요."
+                sentence = f"상대의 {topic}{particle} 당신의 선호와 맞아요."
         else:
             sentence = f"{topic}에는 차이가 있어요."
         sentences.append(sentence)

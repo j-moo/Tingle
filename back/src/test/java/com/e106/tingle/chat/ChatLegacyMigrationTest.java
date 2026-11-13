@@ -1,5 +1,6 @@
 package com.e106.tingle.chat;
 
+import static com.e106.tingle.CanonicalStorageDesign.totalTables;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
@@ -19,23 +20,21 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.springframework.boot.jdbc.autoconfigure.JdbcConnectionDetails;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import org.springframework.jdbc.datasource.init.ResourceDatabasePopulator;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
-import org.testcontainers.postgresql.PostgreSQLContainer;
 
-@Testcontainers
+import com.e106.tingle.SharedPostgres;
+
 class ChatLegacyMigrationTest {
 
 	private static final Instant CREATED = Instant.parse("2026-10-27T00:00:00Z");
 	private static final Instant DUE = CREATED.plusSeconds(167 * 3600);
 	private static final Instant DISPLAYED = CREATED.plusSeconds(2);
 
-	@Container
-	private static final PostgreSQLContainer POSTGRES = new PostgreSQLContainer("postgres:17");
+	private static final JdbcConnectionDetails POSTGRES = SharedPostgres.newDatabase();
 	private static DriverManagerDataSource source;
 	private static JdbcTemplate jdbc;
 
@@ -66,7 +65,7 @@ class ChatLegacyMigrationTest {
 			Long.class);
 		migrate();
 		assertThat(jdbc.queryForObject("select count(*) from information_schema.tables where table_schema='public' "
-			+ "and table_type='BASE TABLE'", Integer.class)).isEqualTo(30);
+			+ "and table_type='BASE TABLE'", Integer.class)).isEqualTo(totalTables());
 		assertThat(jdbc.queryForMap("select legacy_public_id,matching_id,created_at,expires_at,retain_until "
 			+ "from chat where id=?", legacy.roomId()))
 			.containsEntry("legacy_public_id", legacy.roomUuid()).containsEntry("matching_id", 20L)

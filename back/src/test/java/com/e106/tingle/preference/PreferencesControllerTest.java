@@ -31,6 +31,7 @@ import com.e106.tingle.preference.PreferencesService.VersionedPreferences;
 import com.e106.tingle.preference.dto.PreferencesRequest;
 import com.e106.tingle.preference.dto.PreferencesResponse;
 import com.e106.tingle.user.Gender;
+import com.e106.tingle.user.OnboardingService;
 
 /**
  * 실제 MVC 경계 검증. JWT 서명·세션 필터와 A 가입 연동은 이 테스트의 검증 범위가 아니다.
@@ -39,11 +40,12 @@ class PreferencesControllerTest {
 
 	private static final String ANY = "{\"desiredAgeMode\":\"ANY\",\"desiredAgeMin\":null,\"desiredAgeMax\":null}";
 	private final PreferencesService service = mock(PreferencesService.class);
+	private final OnboardingService onboarding = mock(OnboardingService.class);
 	private MockMvc mvc;
 
 	@BeforeEach
 	void prepare() {
-		mvc = MockMvcBuilders.standaloneSetup(new PreferencesController(service))
+		mvc = MockMvcBuilders.standaloneSetup(new PreferencesController(service, onboarding))
 			.setCustomArgumentResolvers(new AuthenticationPrincipalArgumentResolver())
 			.setControllerAdvice(new GlobalExceptionHandler()).build();
 		Jwt jwt = Jwt.withTokenValue("test-only").header("alg", "none").subject("7").build();

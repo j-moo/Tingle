@@ -20,5 +20,4 @@
     <string name="profile_confirmation_next">등록을 마치면 성향테스트를 진행해요.</string>
     <string name="profile_confirmation_submit">확인하고 등록</string>
     <string name="profile_confirmation_registering">등록 중…</string>
-    <string name="profile_confirmation_retry">등록 다시 시도</string>
 </resources>

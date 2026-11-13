@@ -22,6 +22,7 @@ import androidx.test.core.app.ActivityScenario
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import com.ssafy.e106.core.auth.*
+import com.ssafy.e106.core.ble.BleAvailability
 import com.ssafy.e106.core.ui.theme.AppTheme
 import com.ssafy.e106.features.auth.ui.*
 import com.ssafy.e106.features.onboarding.data.AgreementItem
@@ -97,9 +98,12 @@ private fun ResponsiveExample(screen: String) {
             deviceLabel = "시험 키링", ownershipConfirmed = true, connected = true, pendingRecordCount = 0),
             {}, {}, {}, {})
         "account" -> AccountMenuScreen(AccountMenuState(load = AccountMenuLoad.Ready, nickname = "화면 확인"), {})
-        "permissions" -> DevicePermissionsScreen(DevicePermissionsState(), {})
         "keyringWaiting" -> OnboardingScreen(OnboardingState(
-            session = Session.SignedIn(1, OnboardingStatus.KEYRING_REQUIRED, false)), { _, _ -> }, {}, {}, {}, {})
+            session = Session.SignedIn(1, OnboardingStatus.KEYRING_REQUIRED, false), purchaseUrl = "https://tingle.test/shop"),
+            { _, _ -> }, {}, {}, {}, {})
+        "permissionSheet" -> SignupSheet(onClose = {}, background = {}, animate = false) {
+            PermissionSheetContent(BleAvailability.PermissionRequired, notificationGranted = false, denied = true)
+        }
     }
 }
 
@@ -112,7 +116,7 @@ class AdditionalResponsiveDeviceTest(private val screen: String, private val wid
     companion object {
         @JvmStatic @Parameterized.Parameters(name = "{0}-{1}x{2}-font{3}")
         fun cases(): List<Array<Any>> = listOf("login", "agreements", "lifestyle", "details", "age",
-            "proposal", "report", "matching", "reset", "account", "permissions", "keyringWaiting").flatMap { screen ->
+            "proposal", "report", "matching", "reset", "account", "keyringWaiting", "permissionSheet").flatMap { screen ->
             listOf(arrayOf(screen, 320, 480, 2f), arrayOf(screen, 640, 320, 1.3f),
                 arrayOf(screen, 800, 1280, 1.3f))
         }
@@ -126,23 +130,20 @@ class AdditionalResponsiveDeviceTest(private val screen: String, private val wid
                 .putExtra("fontScale", scale).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)).use {
             val labels = when (screen) {
                 "login" -> listOf("네이버 로그인")
-                "agreements" -> listOf("동의하고 계속하기")
+                "agreements" -> listOf("전체 동의 (선택 항목 포함)", "다음")
                 "lifestyle" -> listOf("주 4회 이상", "다음")
                 "details" -> listOf("공개하지 않음", "다음")
-                "age" -> listOf("최대 나이는 제한하지 않을게요", "저장하고 계속하기")
+                "age" -> listOf("범위 정하기", "저장하고 계속하기")
                 "proposal" -> listOf("수락하기", "거절하기")
                 "report" -> listOf("증거 메시지 선택")
                 "matching" -> listOf("키링 관리")
-                "reset" -> listOf("키링 초기화하기")
+                "reset" -> listOf("키링 초기화")
                 "account" -> listOf("로그아웃")
-                "permissions" -> listOf("상태 다시 확인")
+                "keyringWaiting" -> listOf("키링 찾기", "구매하기", "가입 상태 다시 확인", "로그아웃")
+                "permissionSheet" -> listOf("접근 권한 안내", "앱 설정 열기")
                 else -> listOf("로그아웃")
             }
             labels.forEach { label ->
-                // LazyColumn의 화면 밖 버튼은 아직 생성되지 않을 수 있어 목록을 통해 먼저 찾는다.
-                if (screen == "report" && height <= 320) {
-                    compose.onNode(hasScrollToIndexAction()).performScrollToNode(hasText(label))
-                }
                 val node = compose.onNodeWithText(label)
                 // 스크롤 밖 고정 버튼과 스크롤 안의 버튼을 동일한 도달 조건으로 검사한다.
                 try { node.performScrollTo() } catch (_: AssertionError) { node.assertIsDisplayed() }
@@ -182,8 +183,6 @@ class AdditionalFormImeDeviceTest {
                 val bounds = compose.onAllNodesWithTag("responsiveViewport").fetchSemanticsNodes().firstOrNull()?.boundsInRoot
                 bounds != null && bounds.width > bounds.height
             }
-            // 신고는 LazyColumn이라 화면 밖 항목을 먼저 구성하게 스크롤한다.
-            if (screen == "report") compose.onNode(hasScrollToIndexAction()).performScrollToNode(hasSetTextAction())
             val input = compose.onAllNodes(hasSetTextAction())[0]
             input.performScrollTo().performClick()
             compose.waitUntil(10_000) {
@@ -206,13 +205,11 @@ class AdditionalFormImeDeviceTest {
             java.io.File(evidence, "$screen-tree.txt").writeText(compose.onRoot().printToString())
             assertTrue("$screen 키보드 위 입력칸 높이가 부족함: $bounds", bounds.height >= 48 * density)
             val button = compose.onNodeWithText(submit)
-            if (screen == "report") compose.onNode(hasScrollToIndexAction()).performScrollToNode(hasText(submit))
             try { button.performScrollTo() } catch (_: AssertionError) { button.assertIsDisplayed() }
             button.assertIsDisplayed()
             // 화면 재배치가 키보드를 강제로 닫아 통과한 것으로 보이지 않도록 끝에서도 확인한다.
             scenario.onActivity { assertTrue("검사 중 IME 유지", it.window.decorView.rootWindowInsets.isVisible(WindowInsets.Type.ime())) }
             androidx.test.espresso.Espresso.closeSoftKeyboard()
-            if (screen == "report") compose.onNode(hasScrollToIndexAction()).performScrollToNode(hasSetTextAction())
             input.performScrollTo().assertTextContains(if (screen == "age") "25" else "시험 입력")
         }
     }

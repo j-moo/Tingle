@@ -11,7 +11,7 @@ data class ReviewedProposalProfile(val context: ProposalReviewContext, val profi
         profile.load == ProposalProfileLoad.Ready && profile.profile != null &&
         profile.profile.photoState != ProposalPhotoState.Unavailable
 }
-enum class ProposalReviewStage { Changed, Loading, Failed, Review, Submitting, Unknown, Unavailable }
+enum class ProposalReviewStage { Loading, Failed, Review, Submitting, Unavailable }
 data class ProposalReviewConfirmation(val choice: ProposalChoice, val snapshot: ReviewedProposalProfile)
 
 sealed interface ProposalReviewAction {
@@ -27,7 +27,7 @@ sealed interface ProposalReviewAction {
 /** 상태·확인 창은 호출부가 관리한다. 조회 완료만으로 수락/거절 동작을 만들지 않는다. */
 data class ProposalReviewState(
     val context: ProposalReviewContext,
-    val stage: ProposalReviewStage = ProposalReviewStage.Changed,
+    val stage: ProposalReviewStage = ProposalReviewStage.Loading,
     val latest: ReviewedProposalProfile? = null,
     val confirmation: ProposalReviewConfirmation? = null,
 ) {
@@ -47,7 +47,6 @@ data class ProposalReviewState(
     fun ask(choice: ProposalChoice): ProposalReviewConfirmation? = current?.takeIf { canChoose }
         ?.let { ProposalReviewConfirmation(choice, it) }
 
-    fun profileChanged() = copy(stage = ProposalReviewStage.Changed, latest = null, confirmation = null)
     fun beginReload() = copy(context = context.copy(generation = context.generation + 1),
         stage = ProposalReviewStage.Loading, latest = null, confirmation = null)
     fun received(snapshot: ReviewedProposalProfile): ProposalReviewState =

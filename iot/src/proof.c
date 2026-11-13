@@ -1,5 +1,6 @@
 #include "registration.h"
 #include "profile.h"
+#include "policy.h"
 #include "monocypher-ed25519.h"
 #include <inttypes.h>
 #include <stdio.h>
@@ -181,6 +182,9 @@ bool kr_settings_valid(const struct kr_settings *s)
 	struct kr_profile_data profile;
 	if (!strcmp(s->format, KR_PROFILE_STORAGE_FORMAT) &&
 		!kr_profile_data_decode(s->payload, s->payload_size, &profile)) { return false; }
+	struct kr_policy policy;
+	if (kr_policy_format(s->format) && (!kr_policy_decode(s->payload, s->payload_size, &policy) ||
+		s->payload[3] != (!strcmp(s->format, KR_POLICY_FORMAT) ? '3' : '2'))) { return false; }
 	uint8_t digest[32];
 	char hex[65];
 	kr_hash(s->payload, s->payload_size, digest);
@@ -192,10 +196,11 @@ const char *kr_store(struct kr_core *core, const struct kr_settings *next,
 	const struct kr_settings_auth *auth, char signature[87])
 {
 	core->peer_after_stored.verified_time = 0;
+	core->peer_after_stored.settings_apply_attempt = 0;
 	core->stop_peer = false;
 	if (core->storage_error) { return "STORAGE_ERROR"; }
 	if (core->reset.phase == KR_RESETTING) { return "RESET_IN_PROGRESS"; }
-	if (!strcmp(next->format, KR_PROFILE_STORAGE_FORMAT) && !core->profile_transport_protected) {
+	if ((!strcmp(next->format, KR_PROFILE_STORAGE_FORMAT) || kr_policy_format(next->format)) && !core->profile_transport_protected) {
 		return "SECURE_TRANSPORT_REQUIRED";
 	}
 	bool version2 = auth && auth->version2;
@@ -207,6 +212,11 @@ const char *kr_store(struct kr_core *core, const struct kr_settings *next,
 	if (core->reset.phase == KR_RESET_DONE &&
 		!strcmp(next->owner_generation, core->reset.owner_generation)) { return "OWNER_MISMATCH"; }
 	const struct kr_settings *old = &core->current;
+	if (core->settings_recovery_required && next->version <= old->version &&
+		!(core->settings_owner_only && next->version == old->version &&
+		!strcmp(next->sync_run, old->sync_run) && !strcmp(next->nonce, old->nonce))) {
+		return "SETTINGS_RECOVERY_REQUIRED";
+	}
 	if (old->magic) {
 		if (old->device_id != next->device_id || strcmp(old->owner_generation, next->owner_generation)) {
 			return "OWNER_MISMATCH";
@@ -225,15 +235,19 @@ const char *kr_store(struct kr_core *core, const struct kr_settings *next,
 	}
 	/* Stop advertising the old state even if the new setting's reply is lost. */
 	core->stop_peer = next->version != old->version || (plan.verified_time && !plan.length);
-	if (memcmp(old, next, sizeof(*next))) {
+	core->settings_apply_state = KR_SETTINGS_APPLY_NONE;
+	if (memcmp(old, next, sizeof(*next)) || core->settings_owner_only) {
 		if (!core->platform.save || core->platform.save(core->platform.ctx, next)) {
 			/* An uncertain write may have committed. Stop serving mutable requests
 			 * until a reboot/readback resolves the authoritative state. */
 			core->storage_error = true;
+			core->settings_recovery_required = true;
 			core->stop_peer = true;
 			return "STORAGE_ERROR";
 		}
 		core->current = *next;
+		core->settings_recovery_required = false;
+		core->settings_owner_only = false;
 	}
 	char transcript[640];
 	int n = snprintf(transcript, sizeof(transcript),
@@ -246,17 +260,66 @@ const char *kr_store(struct kr_core *core, const struct kr_settings *next,
 			"%" PRId64 "\n", core->reset.ownership_epoch);
 	}
 	if (sign_text(&core->identity, transcript, n, signature)) { return "PROOF_ERROR"; }
+	if (version2 && plan.verified_time > 0 && !strcmp(next->format, KR_POLICY_FORMAT)) {
+		/* Even a byte-identical resubmission can stage a new radio plan. */
+		if (!++core->settings_apply_attempt) { ++core->settings_apply_attempt; }
+		core->settings_apply_epoch = auth->ownership_epoch;
+		core->settings_apply_state = KR_SETTINGS_APPLY_PENDING;
+		plan.settings_apply_attempt = core->settings_apply_attempt;
+	}
 	core->peer_after_stored = plan;
 	return NULL;
 }
 
 bool kr_peer_after_response(struct kr_core *core, bool sent, struct kr_peer_plan *out)
 {
+	/* Full settings also publish an OFF/blocked plan so applied/time state
+	 * can advance without starting a radio. Legacy discovery semantics stay. */
 	bool start = sent && core->peer_after_stored.verified_time > 0 &&
-		core->peer_after_stored.length;
+		(core->peer_after_stored.length || kr_policy_format(core->current.format));
 	if (start) {
 		*out = core->peer_after_stored;
+	} else {
+		kr_settings_apply_finished(core, &core->peer_after_stored, false);
 	}
 	core->peer_after_stored.verified_time = 0;
+	core->peer_after_stored.settings_apply_attempt = 0;
 	return start;
+}
+
+static bool settings_apply_bound(const struct kr_core *core)
+{
+	return core->settings_apply_state != KR_SETTINGS_APPLY_NONE && !core->storage_error && !core->settings_recovery_required &&
+		core->current.magic == KR_RECORD_MAGIC && !strcmp(core->current.format, KR_POLICY_FORMAT) &&
+		core->reset.phase != KR_RESETTING && core->settings_apply_epoch == core->reset.ownership_epoch;
+}
+
+bool kr_settings_apply_current(const struct kr_core *core, const struct kr_peer_plan *plan)
+{
+	return plan->settings_apply_attempt && plan->settings_apply_attempt == core->settings_apply_attempt &&
+		settings_apply_bound(core);
+}
+
+void kr_settings_apply_finished(struct kr_core *core, const struct kr_peer_plan *plan, bool success)
+{
+	if (kr_settings_apply_current(core, plan)) {
+		core->settings_apply_state = success ? KR_SETTINGS_APPLIED : KR_SETTINGS_APPLY_FAILED;
+	}
+}
+
+const char *kr_settings_applied_proof(const struct kr_core *core, const char *run, char signature[87])
+{
+	if (!core->profile_transport_protected) { return "SECURE_TRANSPORT_REQUIRED"; }
+	const struct kr_settings *s = &core->current;
+	if (!kr_uuid(run) || !settings_apply_bound(core) || strcmp(run, s->sync_run)) {
+		return "SETTINGS_RUN_MISMATCH";
+	}
+	if (core->settings_apply_state == KR_SETTINGS_APPLY_PENDING) { return "SETTINGS_APPLY_PENDING"; }
+	if (core->settings_apply_state != KR_SETTINGS_APPLIED) { return "SETTINGS_APPLY_FAILED"; }
+	char transcript[640];
+	int n = snprintf(transcript, sizeof(transcript),
+		"TINGLE-KEYRING-APPLIED\n%s\n%s\n%s\n%" PRId64 "\n%s\n%" PRId64 "\n%s\n%s\n%" PRId64 "\n%s\nAPPLIED\n",
+		KR_SETTINGS_APPLIED_PROOF_VERSION, core->identity.key_id, core->identity.serial,
+		s->device_id, s->owner_generation, core->settings_apply_epoch, s->sync_run, s->nonce, s->version, s->hash);
+	return sign_text(&core->identity, transcript, n, signature) ? "PROOF_ERROR" : NULL;
 }

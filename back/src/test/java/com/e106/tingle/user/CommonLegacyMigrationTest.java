@@ -16,22 +16,20 @@ import java.util.function.Consumer;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.springframework.boot.jdbc.autoconfigure.JdbcConnectionDetails;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import org.springframework.jdbc.datasource.init.ResourceDatabasePopulator;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
-import org.testcontainers.postgresql.PostgreSQLContainer;
 
-@Testcontainers
+import com.e106.tingle.SharedPostgres;
+
 class CommonLegacyMigrationTest {
 	private static final Instant NOW = Instant.parse("2026-10-28T00:00:00Z");
 	private static final String PHOTO_BASE = "https://photos.example/";
 
-	@Container
-	private static final PostgreSQLContainer POSTGRES = new PostgreSQLContainer("postgres:17");
+	private static final JdbcConnectionDetails POSTGRES = SharedPostgres.newDatabase();
 
 	@Test
 	@DisplayName("제자리 이관은 ID·증가위치·모든 회원상태·시각·프로필·항목별 동의 이력을 보존한다")

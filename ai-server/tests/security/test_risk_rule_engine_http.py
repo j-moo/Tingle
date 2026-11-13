@@ -49,8 +49,9 @@ def test_actual_engine_retains_service_jwt_gate(release, verifier, token_factory
 
 def test_production_app_stays_unregistered_with_valid_service_jwt(verifier, token_factory, monkeypatch):
     monkeypatch.setattr(production_app.state.service_auth, "_verifier", verifier)
-    response = TestClient(production_app).post(
-        ROUTE, content=b"invalid-body-never-parsed",
-        headers={"Authorization": f"Bearer {token_factory()}"},
-    )
+    with TestClient(production_app) as client:
+        response = client.post(
+            ROUTE, content=b"invalid-body-never-parsed",
+            headers={"Authorization": f"Bearer {token_factory()}"},
+        )
     assert_error(response, 422, "POLICY_UNRESOLVED")

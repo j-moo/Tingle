@@ -130,7 +130,7 @@ internal val PhotoEditorSaver = listSaver<PhotoEditorState, Any>(
                     val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
                     BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
                     var sample = 1
-                    while (bounds.outWidth / sample > 512 || bounds.outHeight / sample > 512) sample *= 2
+                    while (bounds.outWidth / sample > 1024 || bounds.outHeight / sample > 1024) sample *= 2   // 사진 칸이 화면 폭만큼 커서 512로는 흐리다
                     BitmapFactory.decodeByteArray(bytes, 0, bytes.size, BitmapFactory.Options().apply { inSampleSize = sample })
                 } catch (_: Exception) { null } catch (_: OutOfMemoryError) { null }
             }

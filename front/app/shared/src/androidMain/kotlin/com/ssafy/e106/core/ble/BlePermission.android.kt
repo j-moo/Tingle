@@ -3,6 +3,7 @@ package com.ssafy.e106.core.ble
 import android.Manifest
 import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothManager
+import android.content.ActivityNotFoundException
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
@@ -15,6 +16,7 @@ import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.ContextCompat
 import androidx.core.location.LocationManagerCompat
@@ -41,11 +43,14 @@ internal fun Context.bleAvailability(): BleAvailability {
 @Composable actual fun rememberBlePermission(): BlePermission {
     val context = LocalContext.current
     var state by remember { mutableStateOf(context.bleAvailability()) }
+    var denied by rememberSaveable { mutableStateOf(false) }   // 회전 뒤에도 "다시 묻지 않음"이면 바로 설정으로
     val launcher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
         state = context.bleAvailability()
+        denied = state == BleAvailability.PermissionRequired
     }
     LifecycleResumeEffect(Unit) {
         state = context.bleAvailability()
+        if (state != BleAvailability.PermissionRequired) denied = false   // 설정에서 허용했다가 다시 회수하면 다시 물을 수 있다
         onPauseOrDispose { }
     }
     DisposableEffect(context) {
@@ -57,9 +62,12 @@ internal fun Context.bleAvailability(): BleAvailability {
         ContextCompat.registerReceiver(context, receiver, filter, ContextCompat.RECEIVER_EXPORTED)
         onDispose { context.unregisterReceiver(receiver) }
     }
-    fun open(intent: Intent) { context.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
+    // 일부 기기는 블루투스 · 위치 설정 화면이 없다(ActivityNotFoundException). 그때는 휴대폰 설정 첫 화면으로 보낸다
+    fun open(intent: Intent) {
+        try { context.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
+        catch (_: ActivityNotFoundException) { context.startActivity(Intent(Settings.ACTION_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
+    }
     return BlePermission(state, request = { launcher.launch(blePermissions()) },
         openAppSettings = { open(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:${context.packageName}"))) },
-        openBluetoothSettings = { open(Intent(Settings.ACTION_BLUETOOTH_SETTINGS)) },
-        openLocationSettings = { open(Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS)) })
+        denied = denied && state == BleAvailability.PermissionRequired)
 }

@@ -1,5 +1,9 @@
 package com.ssafy.e106.features.auth.ui
 
+import androidx.datastore.core.DataStore
+import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.emptyPreferences
+import androidx.datastore.preferences.core.preferencesOf
 import androidx.lifecycle.ViewModelStore
 import androidx.lifecycle.viewModelScope
 import com.ssafy.e106.core.auth.AuthRepository
@@ -13,6 +17,8 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.cancelChildren
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runCurrent
@@ -25,6 +31,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import kotlin.time.Instant
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class SocialLoginViewModelTest {
@@ -34,8 +41,30 @@ class SocialLoginViewModelTest {
     @BeforeTest fun setUp() = Dispatchers.setMain(dispatcher)
     @AfterTest fun tearDown() { store.clear(); Dispatchers.resetMain() }
 
-    private fun viewModel(auth: ControlledAuth): SocialLoginViewModel =
-        SocialLoginViewModel(auth).also { store.put("login", it) }
+    private fun viewModel(auth: ControlledAuth, prefs: DataStore<Preferences>? = null): SocialLoginViewModel =
+        SocialLoginViewModel(auth, prefs).also { store.put("login", it) }
+
+    @Test fun savedLastProviderIsShownOnOpen() = runTest(dispatcher) {
+        val vm = viewModel(ControlledAuth(), MemoryPrefs(preferencesOf(LAST_PROVIDER to "Kakao")))
+        runCurrent()
+        assertEquals(LoginProvider.Kakao, vm.state.value.lastProvider)
+    }
+
+    @Test fun successSavesLastProviderButCancelDoesNot() = runTest(dispatcher) {
+        val prefs = MemoryPrefs()
+        val auth = ControlledAuth()
+        val vm = viewModel(auth, prefs)
+        vm.login(LoginProvider.Kakao)
+        auth.answer.complete(LoginResult.Cancelled)
+        runCurrent()
+        assertNull(prefs.value[LAST_PROVIDER])
+        auth.answer = CompletableDeferred()
+        vm.login(LoginProvider.Google)
+        auth.answer.complete(LoginResult.Success(Session.SignedIn(1, OnboardingStatus.READY, true)))
+        runCurrent()
+        assertEquals("Google", prefs.value[LAST_PROVIDER])
+        assertEquals(LoginProvider.Google, vm.state.value.lastProvider)
+    }
 
     @Test fun unavailableProviderIsHiddenAndCannotStart() = runTest(dispatcher) {
         val auth = ControlledAuth(setOf(Provider.GOOGLE))
@@ -83,6 +112,20 @@ class SocialLoginViewModelTest {
         vm.login(LoginProvider.Google)
         assertNull(vm.state.value.errorMessage)
         assertEquals(LoginProvider.Google, vm.state.value.busyProvider)
+    }
+
+    /** 이전 계정의 제한 시각은 새 로그인 시도에 남지 않는다. */
+    @Test fun rejoinAvailabilityIsClearedOnRetry() = runTest(dispatcher) {
+        val auth = ControlledAuth()
+        val vm = viewModel(auth)
+        val availableAt = Instant.parse("2026-11-12T03:03:55Z")
+        vm.login(LoginProvider.Kakao)
+        auth.answer.complete(LoginResult.Failed(AppError.Server(409, "REJOIN_RESTRICTED", "제한 중", availableAt)))
+        runCurrent()
+        assertEquals(availableAt, vm.state.value.rejoinAvailableAt)
+        auth.answer = CompletableDeferred()
+        vm.login(LoginProvider.Google)
+        assertNull(vm.state.value.rejoinAvailableAt)
     }
 
     @Test fun coroutineCancellationIsNotDisplayedAsLoginFailure() = runTest(dispatcher) {
@@ -153,6 +196,14 @@ class SocialLoginViewModelTest {
 }
 
 /** 테스트 소스에서만 사용하는 제어용 인증 객체. 앱에는 등록하지 않는다. */
+/** 메모리 DataStore — 디스크 없이 저장 · 읽기만 흉내 */
+private class MemoryPrefs(initial: Preferences = emptyPreferences()) : DataStore<Preferences> {
+    private val flow = MutableStateFlow(initial)
+    val value get() = flow.value
+    override val data: Flow<Preferences> = flow
+    override suspend fun updateData(transform: suspend (t: Preferences) -> Preferences) = transform(flow.value).also { flow.value = it }
+}
+
 private class ControlledAuth(private val providers: Set<Provider> = setOf(Provider.GOOGLE, Provider.KAKAO)) : AuthRepository {
     val calls = mutableListOf<Provider>()
     var answer = CompletableDeferred<LoginResult>()

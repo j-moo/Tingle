@@ -19,31 +19,29 @@ import org.hibernate.boot.registry.StandardServiceRegistry;
 import org.hibernate.boot.registry.StandardServiceRegistryBuilder;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.springframework.boot.jdbc.autoconfigure.JdbcConnectionDetails;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
-import org.testcontainers.postgresql.PostgreSQLContainer;
 
+import com.e106.tingle.SharedPostgres;
 import com.e106.tingle.agreement.UserConsent;
 import com.e106.tingle.auth.RefreshToken;
 import com.e106.tingle.auth.SocialProvider;
 import com.e106.tingle.profile.PublicProfile;
+import com.e106.tingle.proposal.MatchProposal;
 import com.e106.tingle.push.PushInstallation;
 import com.e106.tingle.survey.SurveyResponse;
 import com.e106.tingle.user.Profile;
 import com.e106.tingle.user.User;
 
 /** SQL 선생성 없이 공통 실제 엔티티 5표만 검증한다. 전체 canonical 22표 증거와 구분한다. */
-@Testcontainers
 class JpaSchemaGenerationTest {
 	private static final Instant NOW = Instant.parse("2026-10-28T00:00:00Z");
 	private static final List<String> ENUMS = List.of("auth_provider", "device_platform", "drinking_frequency",
 		"gender", "religion", "smoking_status");
 
-	@Container
-	private static final PostgreSQLContainer POSTGRES = new PostgreSQLContainer("postgres:17");
+	private static final JdbcConnectionDetails POSTGRES = SharedPostgres.newDatabase();
 
 	@Test
 	@DisplayName("빈 PostgreSQL에 순수 JPA create-drop으로 표·canonical enum·실제 닉네임 유일성을 만든다")
@@ -188,6 +186,26 @@ class JpaSchemaGenerationTest {
 				.hasStackTraceContaining("uq_survey_draft is incompatible");
 			assertThat(fixture.jdbc().queryForObject("select 'uq_survey_draft'::regclass::oid::bigint", Long.class))
 				.isEqualTo(before);
+		}
+	}
+
+	@Test
+	@DisplayName("JPA matching은 회원 참조 없는 CLOSED 삭제 작업 행만 허용한다")
+	void generatesNullableClosedMatchingTombstone() {
+		Fixture fixture = emptySchema();
+		try (Factory factory = boot(fixture, "create-drop", MatchProposal.class)) {
+			assertThat(fixture.jdbc().queryForList("select is_nullable from information_schema.columns "
+				+ "where table_schema=current_schema() and table_name='matching' "
+				+ "and column_name in ('user_low_id','user_high_id') order by column_name", String.class))
+				.containsExactly("YES", "YES");
+			Long id = fixture.jdbc().queryForObject("insert into matching(status) values ('CLOSED') returning id",
+				Long.class);
+			MatchProposal tombstone = factory.sessions()
+				.fromTransaction(session -> session.find(MatchProposal.class, id));
+			assertThat(tombstone.hasMembers()).isFalse();
+			assertThat(tombstone.isProposed()).isFalse();
+			assertThatThrownBy(() -> fixture.jdbc().update("insert into matching(status) values ('PENDING')"))
+				.isInstanceOf(DataIntegrityViolationException.class);
 		}
 	}
 

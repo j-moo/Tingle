@@ -134,6 +134,12 @@ public class IcebreakerStore {
 				strings(state.get("questions")), (String)state.get("source"), (String)state.get("promptVersion")),
 				(String)state.get("commonTopicKey"));
 			if (result == null) {
+				// 승인 버전이 바뀌었거나 롤백되어 저장값이 지금 규칙에 안 맞으면 막지 말고 일반 질문으로 바꿔 저장한다.
+				// 저장값을 지우므로 옛 버전이 다시 승인돼도 예전 질문이 되살아나지 않는다.
+				retireTopic(roomId, state);
+				result = questions.fallback();
+			}
+			if (result == null) {
 				throw new BusinessException(ErrorCode.SERVICE_UNAVAILABLE);
 			}
 			return new IcebreakersStatus(current, result.questions(), result.source(), result.promptVersion());
@@ -271,7 +277,7 @@ public class IcebreakerStore {
 	private void lockParticipants(long roomId, long actor) {
 		List<Long> users = jdbc.queryForList("select user_id from chat_participant where chat_id=? order by user_id",
 			Long.class, roomId);
-		if (!users.contains(actor)) {
+		if (users.size() != 2 || users.contains(null) || !users.contains(actor)) {
 			throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND);
 		}
 		for (long userId : users) {

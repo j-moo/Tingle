@@ -5,6 +5,9 @@ spring:
       ddl-auto: create-drop
 
 app:
+  withdrawal:
+    scheduling-enabled: false
+    photo-cleanup-scheduling-enabled: false
   async-observation:
     enabled: false
   auth:
@@ -14,6 +17,9 @@ app:
     scheduling-enabled: false
   pending-emails:
     scheduling-enabled: false
+  # 통합 테스트는 한 IP 에서 수십 번 로그인한다. 횟수 제한 동작은 RateLimitFilterTest 가 따로 확인한다.
+  rate-limit:
+    enabled: false
 
 # 테스트가 만든 사진 파일은 로컬 실행용 폴더와 섞이지 않게 따로 둔다.
 tingle:

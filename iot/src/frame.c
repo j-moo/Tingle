@@ -1,7 +1,7 @@
 #include "registration.h"
 #include <string.h>
 
-void kr_frame_reset(struct kr_frame *frame) { frame->size = 0; }
+void kr_frame_reset(struct kr_frame *frame) { memset(frame, 0, sizeof(*frame)); }
 
 int kr_frame_push(struct kr_frame *frame, const void *bytes, size_t length)
 {

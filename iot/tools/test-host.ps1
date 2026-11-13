@@ -20,6 +20,13 @@ $fixture = Join-Path $projectRoot 'tests/sync-v1.hex'
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 & $testExe $fixture
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+$guardExe = Join-Path $buildRoot 'test-flash-guard.exe'
+& $Zig cc -target x86_64-windows-gnu -std=c11 -O0 -UNDEBUG -DKR_HOST -Wall -Wextra -Werror `
+    -I (Join-Path $projectRoot 'include') (Join-Path $projectRoot 'src/flash_guard.c') `
+    (Join-Path $projectRoot 'tests/test_flash_guard.c') -o $guardExe
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+& $guardExe
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 & $Python -m unittest discover -s (Join-Path $projectRoot 'tests') -p test_lab_server.py -v
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 & $Javac --release 17 -encoding UTF-8 -d $buildRoot `
@@ -29,4 +36,8 @@ if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 & $Java -cp $buildRoot WireTest $fixture
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 & (Join-Path $PSScriptRoot 'test-registration.ps1') -Zig $Zig -Python $Python -TinyCrypt $TinyCrypt -Javac $Javac -Java $Java
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+& (Join-Path $PSScriptRoot 'test-peer.ps1') -Zig $Zig -TinyCrypt $TinyCrypt
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+& (Join-Path $PSScriptRoot 'test-product.ps1') -Zig $Zig -TinyCrypt $TinyCrypt
 exit $LASTEXITCODE

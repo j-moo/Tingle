@@ -14,7 +14,7 @@ from app.risk_detection.tokenization import INPUT_VERSION, TOKENIZERS_VERSION, L
 
 SOURCE_FILES = (
     "__init__.py", "http_api.py", "local_engine.py", "rule_engine.py", "validation.py",
-    "tokenization.py", "releases.py", "runtime.py",
+    "tokenization.py", "releases.py", "runtime.py", "execution.py", "luna_shadow.py",
 )
 SOURCE_ROOT = Path(__file__).resolve().parent
 FORMAT = "safety48-development-rules-v1"

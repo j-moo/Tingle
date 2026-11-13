@@ -1,58 +1,89 @@
 package com.ssafy.e106.features.home.ui
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.*
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.launch
+import com.ssafy.e106.core.network.AppError
 import com.ssafy.e106.core.ui.components.*
 import com.ssafy.e106.core.ui.theme.*
+import com.ssafy.e106.features.keyring.ui.OwnedKeyringLiveStatus
+import com.ssafy.e106.features.keyring.ui.keyringBatteryText
 import com.ssafy.e106.resources.*
 import org.jetbrains.compose.resources.StringResource
+import org.jetbrains.compose.resources.painterResource
 import org.jetbrains.compose.resources.stringResource
 
-/** 가입 완료 회원의 순수 홈 화면. 저장/통신/실제 화면 이동은 호출부에서 처리한다. */
+private val WarnBackground = Color(0xFFFFF6E5)   // 키링 손볼 일(반영 대기 · 실패 · 미등록 등) 노란 바탕(시안)
+private val WarnInk = Color(0xFF7A4B00)
+
+/**
+ * 가입 완료 회원의 홈(시안 02 큰 매칭 버튼). 가운데 큰 원 하나가 새 매칭 상태, 그 문구 바로 아래 내 키링 요약 한 장(모두 화면 가운데).
+ * 받은 제안 · 대화방은 아래 탭(제안 · 채팅)으로 보고 홈에는 두지 않는다. 저장/통신/실제 화면 이동은 호출부에서 처리한다.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen(state: HomeState, onMatchingChange: (Boolean) -> Unit, onAction: (HomeAction) -> Unit,
-    modifier: Modifier = Modifier, onOpenMatchingSettings: (() -> Unit)? = null) {
+    modifier: Modifier = Modifier, onOpenMatchingSettings: (() -> Unit)? = null,
+    onSaveKeyringAlias: (suspend (Long, String) -> Boolean)? = null,
+    keyringStatus: @Composable () -> OwnedKeyringLiveStatus? = { null },
+    connectedKeyringId: Long? = null, checkingKeyringStatus: Boolean = false,
+    keyringPublicName: (@Composable (Long, String) -> Unit)? = null, error: AppError? = null) {
+    val refreshing = state.refreshing || checkingKeyringStatus
+    val refreshLabel = stringResource(Res.string.home_refresh)
+    val refresh = {
+        if (state.load != HomeLoadState.Loading && !refreshing && !state.savingMatching) onAction(HomeAction.Refresh)
+    }
     Surface(modifier.fillMaxSize(), color = AppColors.Background) {
         Column(Modifier.fillMaxSize().safeDrawingPadding()) {
-            AppTopBar(stringResource(Res.string.home_brand), actionText = stringResource(Res.string.home_refresh),
-                onAction = { onAction(HomeAction.Refresh) })
-            Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.TopCenter) {
-                Column(Modifier.widthIn(max = 640.dp).fillMaxWidth().verticalScroll(rememberScrollState())
-                    .padding(screenPaddingValues()), verticalArrangement = Arrangement.spacedBy(AppSpacing.Section)) {
-                    Text(stringResource(Res.string.home_heading), style = MaterialTheme.typography.headlineMedium,
-                        modifier = Modifier.semantics { heading() })
-                    when (state.load) {
-                        HomeLoadState.Loading -> {
-                            StatusCard(stringResource(Res.string.home_loading), stringResource(Res.string.home_loading_help))
-                            CircularProgressIndicator(color = AppColors.SelectionBorder, modifier = Modifier.align(Alignment.CenterHorizontally))
-                        }
-                        HomeLoadState.Failed -> {
-                            StatusCard(stringResource(Res.string.home_failed), stringResource(Res.string.home_failed_help))
-                            AppButton(stringResource(Res.string.home_retry), Modifier.fillMaxWidth(),
-                                onClick = { onAction(HomeAction.Refresh) })
-                        }
-                        HomeLoadState.Ready -> {
-                            MatchingCard(state, onMatchingChange, onOpenMatchingSettings)
-                            KeyringCard(state, onAction)
+            // 오른쪽 위 "키링 설정" = 키링 화면(내 키링 목록 · 초기화)
+            AppTopBar(stringResource(Res.string.home_brand), actionText = stringResource(Res.string.home_keyring_settings),
+                onAction = { onAction(HomeAction.Keyring) })
+            // 가운데: 큰 매칭 원 · 문구 · 내 키링 한 장을 한 덩어리로(길어지면 스크롤)
+            // 내용이 짧아도 화면 가운데에서 당길 수 있게 스크롤 영역을 채운다.
+            PullToRefreshBox(refreshing, refresh, Modifier.weight(1f).fillMaxWidth()
+                .semantics { customActions = listOf(CustomAccessibilityAction(refreshLabel) { refresh(); true }) },
+                contentAlignment = Alignment.TopCenter) {
+                BoxWithConstraints(Modifier.widthIn(max = 640.dp).fillMaxSize().padding(horizontal = screenGutter())) {
+                    Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).heightIn(min = maxHeight),
+                        verticalArrangement = Arrangement.spacedBy(AppSpacing.Large, Alignment.CenterVertically),
+                        horizontalAlignment = Alignment.CenterHorizontally) {
+                        when (state.load) {
+                            // 뼈대: 큰 원 · 문구 한 줄 · 내 키링 한 장 자리
+                            HomeLoadState.Loading -> SkeletonGroup {
+                                SkeletonBone(Modifier.align(Alignment.CenterHorizontally), width = 180.dp, height = 180.dp, shape = CircleShape)
+                                SkeletonBone(Modifier.align(Alignment.CenterHorizontally), width = 200.dp, height = 28.dp)
+                                SkeletonBone(height = AppSpacing.InputMinHeight, shape = RoundedCornerShape(16.dp))
+                            }
+                            HomeLoadState.Failed -> StateView(error.stateKind(), error.stateTitle(), onRetry = refresh)
+                            HomeLoadState.Ready -> {
+                                MatchingPower(state, onMatchingChange, onOpenMatchingSettings)
+                                KeyringSummary(state, connectedKeyringId, keyringStatus, onSaveKeyringAlias, keyringPublicName)
+                            }
                         }
                     }
-                    Text(stringResource(Res.string.home_connections), style = MaterialTheme.typography.titleLarge,
-                        modifier = Modifier.semantics { heading() })
-                    ServiceRow(stringResource(Res.string.home_proposals),
-                        detail = countText(if (state.load == HomeLoadState.Ready) state.proposalCount else null,
-                            Res.string.home_proposals_empty, Res.string.home_proposals_count), onClick = { onAction(HomeAction.Proposals) })
-                    ServiceRow(stringResource(Res.string.home_chats),
-                        detail = countText(if (state.load == HomeLoadState.Ready) state.chatCount else null,
-                            Res.string.home_chats_empty, Res.string.home_chats_count), onClick = { onAction(HomeAction.Chats) })
-                    ServiceRow(stringResource(Res.string.home_preferences), detail = stringResource(Res.string.home_preferences_help),
-                        onClick = { onAction(HomeAction.Preferences) })
                 }
             }
             AppBottomBar(labels = listOf(stringResource(Res.string.home_tab), stringResource(Res.string.home_proposal_tab),
@@ -68,73 +99,170 @@ fun HomeScreen(state: HomeState, onMatchingChange: (Boolean) -> Unit, onAction: 
     }
 }
 
+/** 가운데 큰 원: 켜짐 = 초록 원 · 연초록 테, 꺼짐 = 회색. 누르면 바꾼다(호출부가 설정 화면을 주면 그리로 연다) */
 @Composable
-private fun MatchingCard(state: HomeState, onMatchingChange: (Boolean) -> Unit, onOpenSettings: (() -> Unit)?) {
-    Surface(shape = AppShapes.Card,
-        color = if (state.matchingEnabled == true) AppColors.SelectionContainer else AppColors.SurfaceMuted) {
-        Column(Modifier.fillMaxWidth().padding(AppSpacing.Large), verticalArrangement = Arrangement.spacedBy(AppSpacing.Medium)) {
-            Text(stringResource(Res.string.home_matching_title), style = MaterialTheme.typography.titleLarge)
-            if (state.matchingEnabled == null) {
-                Text(stringResource(Res.string.home_matching_unknown), color = AppColors.TextSecondary)
-            } else {
-                if (onOpenSettings != null) AppButton(stringResource(if (state.matchingEnabled) Res.string.home_matching_on else Res.string.home_matching_off),
-                    onClick = onOpenSettings, variant = AppButtonVariant.Secondary)
-                else AppSwitch(state.matchingEnabled, onMatchingChange,
-                    stringResource(if (state.matchingEnabled) Res.string.home_matching_on else Res.string.home_matching_off),
-                    enabled = !state.savingMatching)
+private fun MatchingPower(state: HomeState, onMatchingChange: (Boolean) -> Unit, onOpenSettings: (() -> Unit)?) {
+    val on = state.matchingEnabled
+    val label = stringResource(when (on) { true -> Res.string.home_matching_on; false -> Res.string.home_matching_off; null -> Res.string.home_matching_title })
+    val enabled = on != null && !state.savingMatching
+    Box(Modifier.size(180.dp).border(14.dp, if (on == true) AppColors.SelectionContainer else AppColors.SurfaceMuted, CircleShape)
+        .padding(14.dp).clip(CircleShape).background(if (on == true) AppColors.SelectionBorder else AppColors.BorderSubtle)
+        .clickable(enabled, role = Role.Switch, onClickLabel = label) { if (onOpenSettings != null) onOpenSettings() else onMatchingChange(on != true) }
+        .semantics { stateDescription = label; if (on != null) toggleableState = androidx.compose.ui.state.ToggleableState(on) },
+        contentAlignment = Alignment.Center) {
+        Text(stringResource(when (on) { true -> Res.string.home_power_on; false -> Res.string.home_power_off; null -> Res.string.home_unknown }),
+            style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.ExtraBold,
+            color = if (on == true) AppColors.OnPrimary else AppColors.TextSecondary)
+    }
+    Text(stringResource(when (on) { true -> Res.string.home_power_on_title; false -> Res.string.home_power_off_title; null -> Res.string.home_matching_unknown }),
+        style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center,
+        modifier = Modifier.semantics { heading(); liveRegion = LiveRegionMode.Polite })
+    if (on == false) Text(stringResource(Res.string.home_power_off_body),
+        style = MaterialTheme.typography.bodyMedium, color = AppColors.TextSecondary, textAlign = TextAlign.Center)
+    if (state.savingMatching) Text(stringResource(Res.string.home_matching_saving), textAlign = TextAlign.Center,
+        modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite })
+    else if (state.matchingSaveFailed) Text(stringResource(Res.string.home_matching_failed), color = AppColors.Error, textAlign = TextAlign.Center,
+        modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite })
+}
+
+/**
+ * 내 키링을 펼치면 이 휴대폰의 별명과 해당 기기에서 직접 읽은 배터리 상태가 보인다.
+ * 손볼 일이 있으면 노란 바탕과 할 일 한 줄은 접혀 있어도 보인다. 키링 설정 화면은 오른쪽 위 "키링 설정"으로 간다
+ */
+@Composable
+private fun KeyringSummary(state: HomeState, connectedKeyringId: Long?, keyringStatus: @Composable () -> OwnedKeyringLiveStatus?,
+    onSaveKeyringAlias: (suspend (Long, String) -> Boolean)?,
+    keyringPublicName: (@Composable (Long, String) -> Unit)?) {
+    var open by rememberSaveable { mutableStateOf(false) }
+    var editing by rememberSaveable { mutableStateOf<Long?>(null) }
+    val todo = keyringTodo(state.keyring)
+    val ink = if (todo == null) AppColors.TextPrimary else WarnInk
+    val sub = if (todo == null) AppColors.TextSecondary else WarnInk
+    val turn by animateFloatAsState(if (open) 90f else -90f)
+    val expanded = stringResource(Res.string.profile_section_expanded)
+    val collapsed = stringResource(Res.string.profile_section_collapsed)
+    // 등록 목록에 포함된 현재 블루투스 연결만 색과 문구로 알린다.
+    val connected = state.keyrings.any { it.deviceId == connectedKeyringId }
+    val connectedLabel = stringResource(Res.string.home_keyring_connected)
+    val disconnectedLabel = stringResource(Res.string.home_keyring_disconnected)
+    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp))
+        .then(if (todo == null) Modifier.border(1.5.dp, AppColors.BorderSubtle, RoundedCornerShape(16.dp)) else Modifier.background(WarnBackground))) {
+        Column(Modifier.fillMaxWidth().clickable(role = Role.Button) { open = !open }.padding(AppSpacing.Medium)
+            .semantics(mergeDescendants = true) { stateDescription = if (open) expanded else collapsed },
+            verticalArrangement = Arrangement.spacedBy(AppSpacing.ExtraSmall)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(AppSpacing.Small)) {
+                Box(Modifier.size(8.dp).background(if (connected) AppColors.SelectionBorder else AppColors.Error, CircleShape))
+                Text(stringResource(Res.string.home_keyring_title), Modifier.weight(1f), style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold, color = ink)
+                Text(if (connected) connectedLabel else disconnectedLabel, style = MaterialTheme.typography.bodySmall, color = sub)
+                Icon(painterResource(Res.drawable.ic_arrow_back), null, Modifier.size(16.dp).rotate(turn), tint = sub)
             }
-            Text(stringResource(Res.string.home_matching_help), style = MaterialTheme.typography.bodySmall, color = AppColors.TextSecondary)
-            if (state.savingMatching) Text(stringResource(Res.string.home_matching_saving),
-                modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite })
-            else if (state.matchingSaveFailed) Text(stringResource(Res.string.home_matching_failed), color = AppColors.Error,
-                modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite })
+            todo?.let { Text(stringResource(it), style = MaterialTheme.typography.bodySmall, color = sub) }
+        }
+        AnimatedVisibility(open, enter = expandVertically(), exit = shrinkVertically()) {
+            Column(Modifier.fillMaxWidth().padding(start = AppSpacing.Medium, end = AppSpacing.Medium, bottom = AppSpacing.Medium),
+                verticalArrangement = Arrangement.spacedBy(AppSpacing.Small)) {
+                HorizontalDivider(color = if (todo == null) AppColors.BorderSubtle else WarnInk.copy(alpha = 0.2f))
+                when {
+                    state.keyrings.isNotEmpty() -> {
+                        val status = if (open) keyringStatus() else null
+                        state.keyrings.forEachIndexed { index, device ->
+                            // 번호는 표시용 순서지만 별명과 배터리 연결은 고정된 등록 기기 ID를 사용한다.
+                            val label = state.keyringAliases[device.deviceId]
+                                ?: stringResource(Res.string.sync_live_device, (index + 1).toString())
+                            val battery = keyringBatteryText(status?.takeIf { it.deviceId == device.deviceId }?.metrics)
+                            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(AppSpacing.Small)) {
+                                Column(Modifier.weight(1f).semantics(mergeDescendants = true) {}) {
+                                    Text(label, style = MaterialTheme.typography.bodyMedium,
+                                        fontWeight = FontWeight.Bold, color = ink)
+                                    Text(stringResource(Res.string.owned_keyrings_battery, battery),
+                                        style = MaterialTheme.typography.bodySmall, color = sub)
+                                    Text(if (device.deviceId == connectedKeyringId) connectedLabel else disconnectedLabel,
+                                        style = MaterialTheme.typography.bodySmall, color = sub)
+                                }
+                                if (onSaveKeyringAlias != null) TextButton(onClick = { editing = device.deviceId }) {
+                                    val action = stringResource(Res.string.home_keyring_alias_edit)
+                                    val description = stringResource(Res.string.home_keyring_alias_edit_for, label)
+                                    Text(action, Modifier.clearAndSetSemantics { contentDescription = description })
+                                }
+                            }
+                        }
+                    }
+                    state.keyring == HomeKeyringState.Missing -> Text(stringResource(Res.string.home_keyring_none), style = MaterialTheme.typography.bodySmall, color = sub)
+                    state.keyring == HomeKeyringState.Checking -> Text(stringResource(Res.string.home_keyring_checking), style = MaterialTheme.typography.bodySmall, color = sub)
+                    else -> Text(stringResource(Res.string.home_keyring_unknown), style = MaterialTheme.typography.bodySmall, color = sub)
+                }
+            }
+        }
+    }
+    val target = editing
+    if (target != null && onSaveKeyringAlias != null && state.keyrings.any { it.deviceId == target }) {
+        key(target) {
+            val savedAlias = state.keyringAliases[target].orEmpty()
+            KeyringAliasDialog(savedAlias,
+                save = { onSaveKeyringAlias(target, it) }, close = { editing = null },
+                publicName = { draft ->
+                    // 공개 명령은 저장을 마친 별명만 키링에 보낸다.
+                    keyringPublicName?.invoke(target, savedAlias.takeIf { it == draft.trim() }.orEmpty())
+                })
         }
     }
 }
 
+/** 입력만 회전에 보존한다. 닫힌 화면에는 저장 결과를 전달하지 않는다. */
 @Composable
-private fun KeyringCard(state: HomeState, onAction: (HomeAction) -> Unit) {
-    val copy = keyringCopy(state.keyring)
-    Column(verticalArrangement = Arrangement.spacedBy(AppSpacing.Medium)) {
-        Text(stringResource(Res.string.home_keyring_title), style = MaterialTheme.typography.titleLarge,
-            modifier = Modifier.semantics { heading() })
-        StatusCard(stringResource(copy.first), stringResource(copy.second))
-        if (state.keyring != HomeKeyringState.Missing) {
-            val unknown = stringResource(Res.string.home_unknown)
-            val battery = state.batteryPercent?.takeIf { it in 0..100 }?.let { stringResource(Res.string.home_battery_value, it) } ?: unknown
-            Text(stringResource(Res.string.home_device_info, battery, state.firmware?.takeIf { it.isNotBlank() } ?: unknown),
-                style = MaterialTheme.typography.bodySmall, color = AppColors.TextSecondary)
-            Text(stringResource(Res.string.home_last_sync, state.lastSyncLabel?.takeIf { it.isNotBlank() } ?: unknown),
-                style = MaterialTheme.typography.bodySmall, color = AppColors.TextSecondary)
+private fun KeyringAliasDialog(initial: String, save: suspend (String) -> Boolean, close: () -> Unit,
+    publicName: @Composable (String) -> Unit) {
+    var draft by rememberSaveable { mutableStateOf(initial) }
+    var saving by remember { mutableStateOf(false) }
+    var failed by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+    fun submit(value: String) {
+        if (saving) return
+        saving = true
+        failed = false
+        scope.launch {
+            if (save(value)) close()
+            else { saving = false; failed = true }
         }
-        AppButton(stringResource(if (state.keyring == HomeKeyringState.Missing) Res.string.home_register_keyring else Res.string.home_keyring_detail),
-            Modifier.fillMaxWidth(), variant = AppButtonVariant.Secondary, onClick = { onAction(HomeAction.Keyring) })
-        ServiceRow(stringResource(Res.string.home_encounters),
-            detail = stringResource(Res.string.home_pending_records, recordCount(state.pendingUploadCount), recordCount(state.waitingPeerCount)),
-            onClick = { onAction(HomeAction.Keyring) })
     }
+    AlertDialog(
+        onDismissRequest = { if (!saving) close() },
+        title = { Text(stringResource(Res.string.home_keyring_alias_title)) },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(AppSpacing.Small)) {
+                AppTextField(draft, { draft = it; failed = false }, stringResource(Res.string.home_keyring_alias_label),
+                    supportingText = stringResource(Res.string.home_keyring_alias_help),
+                    errorText = when {
+                        failed -> stringResource(Res.string.home_keyring_alias_failed)
+                        draft.trim().length > KEYRING_ALIAS_LIMIT -> stringResource(Res.string.home_keyring_alias_limit)
+                        else -> null
+                    }, enabled = !saving)
+                if (initial.isNotEmpty()) TextButton(onClick = { submit("") }, enabled = !saving) {
+                    Text(stringResource(Res.string.home_keyring_alias_remove))
+                }
+                // 휴대폰에 저장하는 별명과 검색에 공개하는 작업은 각각 명시적으로 실행한다.
+                publicName(draft)
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { submit(draft) }, enabled = !saving && draft.isNotBlank() && draft.trim().length <= KEYRING_ALIAS_LIMIT) {
+                Text(stringResource(if (saving) Res.string.home_keyring_alias_saving else Res.string.home_keyring_alias_save))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = close, enabled = !saving) { Text(stringResource(Res.string.home_keyring_alias_cancel)) }
+        },
+    )
 }
 
-@Composable
-private fun recordCount(count: Int?): String = count?.takeIf { it >= 0 }?.let {
-    stringResource(Res.string.home_record_count, it)
-} ?: stringResource(Res.string.home_unknown)
-
-@Composable
-private fun countText(count: Int?, empty: StringResource, nonempty: StringResource): String = when {
-    count == null || count < 0 -> stringResource(Res.string.home_count_unknown)
-    count == 0 -> stringResource(empty)
-    else -> stringResource(nonempty, count)
-}
-
-private fun keyringCopy(state: HomeKeyringState): Pair<StringResource, StringResource> = when (state) {
-    HomeKeyringState.Ready -> Res.string.home_device_ready to Res.string.home_device_ready_help
-    HomeKeyringState.Disconnected -> Res.string.home_device_disconnected to Res.string.home_device_disconnected_help
-    HomeKeyringState.DisconnectedPending -> Res.string.home_device_pending to Res.string.home_device_pending_help
-    HomeKeyringState.Syncing -> Res.string.home_device_syncing to Res.string.home_device_syncing_help
-    HomeKeyringState.SyncFailed -> Res.string.home_device_failed to Res.string.home_device_failed_help
-    HomeKeyringState.Missing -> Res.string.home_device_missing to Res.string.home_device_missing_help
-    HomeKeyringState.RecheckRequired -> Res.string.home_device_recheck to Res.string.home_device_recheck_help
-    HomeKeyringState.StorageFull -> Res.string.home_device_full to Res.string.home_device_full_help
-    HomeKeyringState.Unknown -> Res.string.home_device_unknown to Res.string.home_device_unknown_help
+/** 현재 연결 표시 아래에 키링에 필요한 조치가 있을 때만 추가 안내를 붙인다. */
+private fun keyringTodo(state: HomeKeyringState): StringResource? = when (state) {
+    HomeKeyringState.DisconnectedPending -> Res.string.home_device_pending_help
+    HomeKeyringState.SyncFailed -> Res.string.home_device_failed_help
+    HomeKeyringState.Missing -> Res.string.home_device_missing_help
+    HomeKeyringState.RecheckRequired -> Res.string.home_device_recheck_help
+    HomeKeyringState.StorageFull -> Res.string.home_device_full_help
+    else -> null
 }

@@ -19,6 +19,7 @@ import androidx.compose.ui.unit.dp
 import com.ssafy.e106.core.ui.components.AppButton
 import com.ssafy.e106.core.ui.components.AppButtonVariant
 import com.ssafy.e106.core.ui.components.AppTopBar
+import com.ssafy.e106.core.ui.components.InlineError
 import com.ssafy.e106.core.ui.theme.*
 import com.ssafy.e106.resources.*
 import org.jetbrains.compose.resources.StringResource
@@ -34,6 +35,7 @@ fun ProfileConfirmationScreen(
     onRegister: () -> Unit,
     photoContent: @Composable () -> Unit,
     modifier: Modifier = Modifier,
+    error: String? = null,
 ) {
     Surface(modifier.fillMaxSize(), color = AppColors.Background) {
         Column(Modifier.fillMaxSize().safeDrawingPadding()) {
@@ -72,7 +74,6 @@ fun ProfileConfirmationScreen(
                                 style = MaterialTheme.typography.bodySmall, color = AppColors.TextSecondary,
                                 modifier = Modifier.padding(AppSpacing.Large))
                         }
-                        if (!state.hasPhoto) SummaryHelp(Res.string.profile_photo_matching)
                         SummaryValue(Res.string.profile_confirmation_religion,
                             stringResource(if (state.religion == null || state.religion == ProfileReligion.Private)
                                 Res.string.profile_confirmation_private else state.religion.label()))
@@ -95,12 +96,10 @@ fun ProfileConfirmationScreen(
                 Column(Modifier.widthIn(max = 640.dp).fillMaxWidth()
                     .padding(horizontal = screenGutter(), vertical = AppSpacing.Large),
                     verticalArrangement = Arrangement.spacedBy(AppSpacing.Small)) {
-                    if (!state.registering && state.registrationError != null) {
-                        Text(state.registrationError, style = MaterialTheme.typography.bodySmall,
-                            color = AppColors.Error, modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite })
-                    }
-                    AppButton(text = stringResource(if (state.registrationError != null && state.canRegister)
-                        Res.string.profile_confirmation_retry else Res.string.profile_confirmation_submit),
+                    // 등록 실패: 확인한 내용은 그대로 두고 버튼 바로 위에 한 줄로 알린다. 버튼은 "다시 시도"가 된다
+                    val failure = (state.registrationError ?: error).takeIf { !state.registering }
+                    failure?.let { InlineError(it) }
+                    AppButton(text = stringResource(if (failure != null) Res.string.state_retry else Res.string.profile_confirmation_submit),
                         modifier = Modifier.fillMaxWidth(), enabled = state.canRegister && !state.registering,
                         loading = state.registering, loadingText = stringResource(Res.string.profile_confirmation_registering),
                         onClick = onRegister)

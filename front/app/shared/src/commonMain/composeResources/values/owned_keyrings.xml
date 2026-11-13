@@ -1,17 +1,18 @@
 <resources>
     <string name="owned_keyrings_title">내 키링</string>
     <string name="owned_keyrings_back">이전</string>
-    <string name="owned_keyrings_description">내 계정에 등록된 키링 정보를 확인해요.</string>
-    <string name="owned_keyrings_loading">등록된 키링을 확인하고 있어요.</string>
-    <string name="owned_keyrings_failed">키링 정보를 불러오지 못했어요.</string>
-    <string name="owned_keyrings_blocked">가입 단계를 먼저 완료해 주세요.</string>
-    <string name="owned_keyrings_empty">등록된 키링이 없어요.</string>
-    <string name="owned_keyrings_device">키링 #%1$s</string>
-    <string name="owned_keyrings_firmware">펌웨어 버전 · %1$s</string>
-    <string name="owned_keyrings_registered">서버 상태 · 등록됨</string>
-    <string name="owned_keyrings_pending">서버 상태 · 설정 동기화 필요</string>
-    <string name="owned_keyrings_ready">서버 상태 · 설정 동기화 완료</string>
-    <string name="owned_keyrings_unknown">서버 상태 · 추가 확인 필요</string>
-    <string name="owned_keyrings_live_unavailable">현재 블루투스 연결과 배터리 상태는 아직 확인할 수 없어요. 서버의 동기화 완료 표시는 지금 연결돼 있다는 뜻은 아니에요.</string>
-    <string name="owned_keyrings_refresh">다시 확인</string>
+    <string name="owned_keyrings_empty">등록된 키링이 없어요</string>
+    <string name="owned_keyrings_reset">초기화</string>
+    <string name="owned_keyrings_reset_for">%1$s 초기화</string>
+    <string name="owned_keyrings_firmware_unknown">펌웨어 미확인</string>
+    <string name="owned_keyrings_status_disconnected">연결하면 상태를 확인할 수 있어요.</string>
+    <string name="owned_keyrings_status_loading">키링 상태를 확인하고 있어요.</string>
+    <string name="owned_keyrings_status_failed">키링 상태를 불러오지 못했어요.</string>
+    <string name="owned_keyrings_status_unknown">미확인</string>
+    <string name="owned_keyrings_status_refresh">키링 상태 새로고침</string>
+    <string name="owned_keyrings_battery">배터리 %1$s</string>
+    <string name="owned_keyrings_battery_percent">%1$s%</string>
+    <string name="owned_keyrings_battery_estimate">약 %1$s%</string>
+    <string name="owned_keyrings_records">미전송 기록 %1$s</string>
+    <string name="owned_keyrings_records_count">%1$s건</string>
 </resources>

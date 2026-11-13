@@ -2,6 +2,8 @@
 .env
 .env.*
 !.env.example
+# app.env 처럼 이름 끝이 .env 인 비밀 파일(Jenkins Credentials tingle-app-env 의 원본 등)
+*.env
 
 # 개인 AI 도구 지침·설정 (하위 디렉터리 포함)
 AGENTS.md
@@ -22,6 +24,9 @@ __pycache__/
 *.py[cod]
 .pytest_cache/
 .vscode
+
+# 디자인 검토용 Compose Preview 소스는 저장소 밖에서 개인 관리한다.
+**/debug/**/*Previews.kt
 
 # 빌드 결과·실행 로그
 build/

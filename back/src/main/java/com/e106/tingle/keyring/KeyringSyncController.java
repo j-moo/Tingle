@@ -18,6 +18,7 @@ import com.e106.tingle.global.error.BusinessException;
 import com.e106.tingle.global.error.ErrorCode;
 import com.e106.tingle.keyring.dto.SyncAckRequest;
 import com.e106.tingle.keyring.dto.SyncRunView;
+import com.e106.tingle.keyring.proof.ServerSettingsTranscript;
 import com.e106.tingle.user.OnboardingStatus;
 import com.e106.tingle.user.RequiresOnboarding;
 
@@ -37,12 +38,18 @@ public class KeyringSyncController {
 	public ResponseEntity<SyncRunView> create(@AuthenticationPrincipal Jwt jwt,
 		@PathVariable @Positive long deviceId, @RequestHeader("Idempotency-Key") String requestKey,
 		@RequestBody(required = false) JsonNode body) {
-		if (body != null && (!body.isObject() || body.size() != 1 || !body.has("deviceNonce")
-			|| !body.get("deviceNonce").isString())) {
+		if (body != null && (!body.isObject() || !body.path("deviceNonce").isString()
+			|| body.size() != (body.has("payloadFormat") ? 2 : 1))) {
 			throw new BusinessException(ErrorCode.INVALID_REQUEST);
 		}
 		String nonce = body == null ? null : body.get("deviceNonce").asString();
-		KeyringSyncService.Created result = service.create(userId(jwt), family(jwt), deviceId, uuid(requestKey), nonce);
+		String format = body != null && body.has("payloadFormat") ? body.get("payloadFormat").asString("") : null;
+		if (format != null && !ServerSettingsTranscript.PROFILE_PAYLOAD_FORMAT.equals(format)
+			&& !ServerSettingsTranscript.PEER_PAYLOAD_FORMAT.equals(format)) {
+			throw new BusinessException(ErrorCode.INVALID_REQUEST);
+		}
+		KeyringSyncService.Created result = service.create(userId(jwt), family(jwt), deviceId, uuid(requestKey),
+			nonce, format);
 		return ResponseEntity.status(result.created() ? HttpStatus.CREATED : HttpStatus.OK).body(result.run());
 	}
 
@@ -59,6 +66,15 @@ public class KeyringSyncController {
 		@PathVariable String syncRunId, @RequestHeader("Idempotency-Key") String requestKey,
 		@Valid @RequestBody SyncAckRequest request) {
 		return service.acknowledge(userId(jwt), family(jwt), deviceId, uuid(syncRunId), uuid(requestKey), request);
+	}
+
+	@PostMapping("/{syncRunId}/applied")
+	@RequiresOnboarding(OnboardingStatus.SYNC_PENDING)
+	public SyncRunView confirmApplied(@AuthenticationPrincipal Jwt jwt, @PathVariable @Positive long deviceId,
+		@PathVariable String syncRunId, @RequestHeader("Idempotency-Key") String requestKey,
+		@Valid @RequestBody SyncAckRequest request) {
+		uuid(requestKey);
+		return service.confirmApplied(userId(jwt), family(jwt), deviceId, uuid(syncRunId), request);
 	}
 
 	private static long userId(Jwt jwt) {

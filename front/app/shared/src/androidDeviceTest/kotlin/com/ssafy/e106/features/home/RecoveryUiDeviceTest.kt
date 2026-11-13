@@ -4,11 +4,19 @@ import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.*
+import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import androidx.test.core.app.ActivityScenario
 import androidx.test.platform.app.InstrumentationRegistry
+import com.ssafy.e106.core.auth.AuthRepository
+import com.ssafy.e106.core.auth.LoginResult
+import com.ssafy.e106.core.auth.Provider
+import com.ssafy.e106.core.network.AppError
 import com.ssafy.e106.core.ui.theme.AppTheme
 import com.ssafy.e106.features.auth.ui.*
 import com.ssafy.e106.features.chat.ui.*
@@ -19,10 +27,12 @@ import com.ssafy.e106.features.settings.ui.*
 import org.junit.Assert.*
 import org.junit.Rule
 import org.junit.Test
+import kotlin.time.Instant
 
 /** 실제 화면에 상태만 전달하는 테스트 전용 호스트. SDK/API/실제 신고·차단은 호출하지 않는다. */
 class RecoveryUiTestActivity : ComponentActivity() {
-    var proposal by mutableStateOf(ProposalListState(ProposalListLoad.Ready, page = ProposalPageState.More))
+    // 각 시험이 상태를 정한다(Ready + More 면 화면이 곧바로 다음 쪽을 요청하므로 기본은 로딩)
+    var proposal by mutableStateOf(ProposalListState())
     var chatList by mutableStateOf(ChatListState(ChatListLoad.Failed))
     var login by mutableStateOf(SocialLoginState(setOf(LoginProvider.Google, LoginProvider.Kakao)))
     var chat by mutableStateOf(ChatConversationState(ConversationLoad.Active, canRead = true, canSend = true,
@@ -42,6 +52,21 @@ class RecoveryUiTestActivity : ComponentActivity() {
                         actions += it
                         login = login.copy(busyProvider = it, errorMessage = null)
                     })
+                    "rejoin" -> {
+                        // 실제 로그인 Route에 합성 409만 주입해 서버 없이 안내를 확인한다.
+                        val model = remember {
+                            SocialLoginViewModel(object : AuthRepository {
+                                override fun available(provider: Provider) = provider == Provider.KAKAO
+                                override suspend fun login(provider: Provider) = LoginResult.Failed(
+                                    AppError.Server(409, "REJOIN_RESTRICTED", "탈퇴 후 72시간이 지나면 다시 가입할 수 있어요.",
+                                        Instant.parse("2026-11-12T03:03:55Z")),
+                                )
+                                override suspend fun logout() = Unit
+                            })
+                        }
+                        val snackbar = remember { SnackbarHostState() }
+                        Scaffold(snackbarHost = { SnackbarHost(snackbar) }) { SocialLoginRoute(snackbar, model) }
+                    }
                     "chatList" -> ChatListScreen(chatList, {}, {
                         actions += it
                         chatList = ChatListState()
@@ -89,42 +114,113 @@ class RecoveryUiDeviceTest {
         button.performClick()
     }
 
-    @Test fun emptyProposalPageCanContinueAndCannotRepeatLoading() {
+    @Test fun emptyProposalPageContinuesAutomatically() {
         launch("proposals").use { scenario ->
-            // 첫 페이지가 비어도 다음 커서가 있으면 전체 목록이 비었다고 단정하면 안 된다.
+            // 첫 페이지가 비어도 다음 커서가 있으면 전체 목록이 비었다고 단정하지 않고, 버튼 없이 다음 쪽을 한 번만 요청한다
+            scenario.onActivity { it.proposal = ProposalListState(ProposalListLoad.Ready, page = ProposalPageState.More) }
+            compose.waitForIdle()
             compose.onNodeWithText("아직 받은 제안이 없어요").assertDoesNotExist()
-            tap("제안 더 보기")
-            compose.onNodeWithText("추가 제안 확인 중…").assertIsNotEnabled()
             scenario.onActivity { assertEquals(listOf(ProposalListAction.LoadMore), it.actions) }
         }
     }
     @Test fun emptyProposalPageFailureOffersRetryAndFinalEmptyIsDistinct() {
         launch("proposals").use { scenario ->
-            scenario.onActivity { it.proposal = it.proposal.copy(page = ProposalPageState.Failed) }
-            tap("추가 제안 다시 불러오기")
+            scenario.onActivity { it.proposal = ProposalListState(ProposalListLoad.Ready, page = ProposalPageState.Failed) }
+            // 목록 끝 한 줄: "더 불러오지 못했어요 · 다시 시도". 다음 쪽이 남았으면 비었다고 단정하지 않는다
+            compose.onNodeWithText("더 불러오지 못했어요").assertExists()
+            compose.onNodeWithText("아직 받은 제안이 없어요").assertDoesNotExist()
+            tap("다시 시도")
             scenario.onActivity {
                 assertEquals(listOf(ProposalListAction.LoadMore), it.actions)
                 it.proposal = ProposalListState(ProposalListLoad.Ready)
             }
             compose.onNodeWithText("아직 받은 제안이 없어요").assertExists()
-            compose.onNodeWithText("제안 더 보기").assertDoesNotExist()
+            compose.onNodeWithText("더 불러오지 못했어요").assertDoesNotExist()
+        }
+    }
+    // 보던 목록에서 새로고침이 실패하면 목록은 그대로 두고 아래 띠의 "다시 시도"로 첫 쪽부터 다시 받는다
+    @Test fun proposalRefreshFailureKeepsListAndOffersRetryInNoticeBar() {
+        launch("proposals").use { scenario ->
+            scenario.onActivity { it.proposal = ProposalListState(ProposalListLoad.Ready, listOf(ProposalListItem(1, "하늘", 27)), refreshFailed = true) }
+            compose.onNodeWithText("하늘").assertExists()
+            compose.onNodeWithText("최신 목록을 확인하지 못했어요").assertIsDisplayed()
+            tap("다시 시도")
+            scenario.onActivity { assertEquals(listOf(ProposalListAction.Refresh), it.actions) }
+        }
+    }
+    // 다 받은 목록의 끝에는 작은 글 한 줄, 받는 중에는 뼈대(화면 리더에는 한 문장)
+    @Test fun proposalListShowsEndLineOnlyWhenFullyLoaded() {
+        launch("proposals").use { scenario ->
+            val item = ProposalListItem(1, "하늘", 27)
+            scenario.onActivity { it.proposal = ProposalListState(ProposalListLoad.Ready, listOf(item), ProposalPageState.Loading) }
+            compose.onNodeWithText("마지막이에요").assertDoesNotExist()
+            compose.onNodeWithContentDescription("불러오고 있어요").assertExists()
+            scenario.onActivity { it.proposal = ProposalListState(ProposalListLoad.Ready, listOf(item)) }
+            compose.onNodeWithText("마지막이에요").assertExists()
+            scenario.onActivity { assertTrue(it.actions.isEmpty()) }
         }
     }
     @Test fun initialProposalFailureRetriesWithoutShowingEmptySuccess() {
         launch("proposals").use { scenario ->
             scenario.onActivity { it.proposal = ProposalListState(ProposalListLoad.Failed) }
             compose.onNodeWithText("아직 받은 제안이 없어요").assertDoesNotExist()
-            tap("다시 불러오기")
-            compose.onNodeWithText("제안을 불러오고 있어요").assertExists()
-            compose.onNodeWithText("다시 불러오기").assertDoesNotExist()
+            // 오류 정보가 없으면 "문제가 생겼어요" + 작은 글자 버튼 "다시 시도". 다시 받는 동안은 뼈대
+            compose.onNodeWithText("문제가 생겼어요").assertExists()
+            tap("다시 시도")
+            compose.onNodeWithContentDescription("불러오고 있어요").assertExists()
+            compose.onNodeWithText("다시 시도").assertDoesNotExist()
             scenario.onActivity { assertEquals(listOf(ProposalListAction.Refresh), it.actions) }
         }
     }
     @Test fun chatListFailureRetriesWithoutEmptySuccess() {
         launch("chatList").use { scenario ->
-            tap("대화 목록 다시 불러오기")
+            // 실패 화면에서 아래로 당기면 새로고침(당길 수 없는 사용자는 제목 아래 "다시 시도")
+            compose.onNodeWithText("다시 시도").assertExists()
+            compose.onNodeWithText("문제가 생겼어요").performTouchInput { swipeDown(startY = centerY, endY = centerY + 240 * density) }
+            compose.waitForIdle()
             scenario.onActivity { assertEquals(listOf(ChatListAction.Refresh), it.actions) }
-            compose.onNodeWithText("대화 목록 다시 불러오기").assertDoesNotExist()
+            // 다시 받는 동안 빈 목록(성공)으로 보이지 않는다
+            compose.onNodeWithContentDescription("불러오고 있어요").assertExists()
+            compose.onNodeWithText("진행 중인 대화가 없어요").assertDoesNotExist()
+        }
+    }
+    // 7일 뒤 종료 안내는 불러오기 실패 · 비어 있음에서도 지우지 않는다
+    @Test fun chatListKeepsExpiryNoticeInFailureAndEmptyStates() {
+        launch("chatList").use { scenario ->
+            compose.onNodeWithText("채팅방은 7일 뒤 종료돼요.", substring = true).assertExists()
+            scenario.onActivity { it.chatList = ChatListState(ChatListLoad.Ready) }
+            compose.onNodeWithText("진행 중인 대화가 없어요").assertExists()
+            compose.onNodeWithText("채팅방은 7일 뒤 종료돼요.", substring = true).assertExists()
+        }
+    }
+    // 보던 목록에서 새로고침이 실패하면 목록은 그대로 두고 아래 띠로 알린다
+    @Test fun chatListRefreshFailureKeepsRoomsAndShowsNoticeBar() {
+        launch("chatList").use { scenario ->
+            scenario.onActivity { it.chatList = ChatListState(ChatListLoad.Ready, listOf(ChatListItem(1, "하늘", ChatRoomAccess.Allowed)), refreshFailed = true) }
+            compose.onNodeWithText("하늘").assertExists()
+            compose.onNodeWithText("최신 목록을 확인하지 못했어요").assertIsDisplayed()
+            tap("다시 시도")
+            scenario.onActivity { assertEquals(listOf(ChatListAction.Refresh), it.actions) }
+        }
+    }
+    // 더 보기 버튼 없이: 끝이 보이면 다음 쪽을 한 번 요청하고, 새로고침 중엔 요청하지 않는다
+    @Test fun chatListLoadsNextPageAutomatically() {
+        val room = ChatListItem(1, "하늘", ChatRoomAccess.Allowed)
+        launch("chatList").use { scenario ->
+            scenario.onActivity { it.chatList = ChatListState(ChatListLoad.Ready, listOf(room), ChatListPage.More, refreshing = true) }
+            compose.waitForIdle()
+            scenario.onActivity { assertTrue(it.actions.isEmpty()); it.chatList = ChatListState(ChatListLoad.Ready, listOf(room), ChatListPage.More) }
+            compose.waitForIdle()
+            scenario.onActivity { assertEquals(listOf(ChatListAction.LoadMore), it.actions) }
+        }
+    }
+    // 당기기를 못 하는 사용자는 제목의 "새로고침" 접근성 동작으로 다시 받는다
+    @Test fun chatListRefreshIsAvailableAsAccessibilityAction() {
+        launch("chatList").use { scenario ->
+            val action = compose.onNode(SemanticsMatcher.keyIsDefined(SemanticsActions.CustomActions)).fetchSemanticsNode()
+                .config[SemanticsActions.CustomActions].single { it.label == "새로고침" }
+            scenario.onActivity { assertTrue(action.action()) }
+            scenario.onActivity { assertEquals(listOf(ChatListAction.Refresh), it.actions) }
         }
     }
     @Test fun loginFailureCanRetryAndLocksBothProviders() {
@@ -140,6 +236,13 @@ class RecoveryUiDeviceTest {
                 // 취소/실패 후 busy 해제 상태에서는 다시 시도할 수 있어야 한다.
                 it.login = it.login.copy(busyProvider = null)
             }
+            compose.onNodeWithText("카카오 로그인").assertIsEnabled()
+        }
+    }
+    @Test fun restrictedRejoinShowsTheServerTimeOnTheLoginRoute() {
+        launch("rejoin").use {
+            tap("카카오 로그인")
+            compose.onNodeWithText("2026-11-12 03:03:55 (UTC)", substring = true).assertIsDisplayed()
             compose.onNodeWithText("카카오 로그인").assertIsEnabled()
         }
     }

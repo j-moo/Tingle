@@ -63,6 +63,25 @@ private class RegistrationServer : KeyringRegistrationRepository, OwnedKeyringRe
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class KeyringRegistrationTest {
+    /** 소유 상태 거절은 재부팅 안내로 바꾸지 않고, 준비 기록 정리도 서버 귀속/기존 동기화를 지우지 않는다. */
+    @Test fun boundProofShowsOwnershipReasonWithoutRegisteringOrRemovingExistingTarget() = runTest(dispatcher) {
+        val server = RegistrationServer(); val prefs = RegistrationPrefs()
+        val sync = KeyringSyncStore(prefs); sync.rememberTarget(1, 4, "XIAO-test")
+        val m = model(server, prefs); runCurrent()
+        m.start("XIAO-test") { throw BleCommandException("DEVICE_ALREADY_BOUND") }; runCurrent()
+        assertEquals(RegistrationIssue.DeviceBound, m.state.value.issue)
+        assertTrue(m.state.value.canRestart); assertNull(m.state.value.pending?.body)
+        assertTrue(server.sent.isEmpty()); assertNull(m.state.value.confirmed)
+        m.restart(); runCurrent()
+        assertNull(m.state.value.pending); assertNull(m.state.value.issue)
+        assertEquals(4L, sync.read(1).single().deviceId)
+        m.start("XIAO-test") { throw BleCommandException("OWNER_MISMATCH") }; runCurrent()
+        assertEquals(RegistrationIssue.DeviceBound, m.state.value.issue)
+        m.restart(); runCurrent()
+        m.start("XIAO-test") { throw BleCommandException("RESET_IN_PROGRESS") }; runCurrent()
+        assertEquals(RegistrationIssue.ResetPending, m.state.value.issue)
+        assertTrue(server.sent.isEmpty())
+    }
     /** MR230 재현: 초기화 ACK 유실 → 재등록 시도는 새 challenge/POST 전에 막고 기존 대상도 보존한다. */
     @Test fun pendingResetBlocksRegistrationUntilSameRunIsRecovered() = runTest(dispatcher) {
         val server = RegistrationServer(); val prefs = RegistrationPrefs(); val resets = KeyringResetStore(prefs)
@@ -217,14 +236,15 @@ class KeyringRegistrationTest {
         gate.complete(Unit); runCurrent()
         assertEquals(2L, m.state.value.owner); assertNull(m.state.value.pending); assertNull(m.state.value.confirmed)
     }
-    @Test fun serverFiveHundredKeepsRequestButExplicitProofRejectionAllowsRestart() = runTest(dispatcher) {
+    @Test fun serverFiveHundredKeepsRequestButExplicitProofRejectionClearsIt() = runTest(dispatcher) {
         val server = RegistrationServer(); val m = model(server); runCurrent()
         server.onSend = { ApiResult.Fail(AppError.Server(503, "SERVICE_UNAVAILABLE", "retry")) }
         m.start("XIAO-test") { proofBody(it) }; runCurrent(); m.restart(); runCurrent()
         assertNotNull(m.state.value.pending); assertFalse(m.state.value.canRestart)
         server.onSend = { ApiResult.Fail(AppError.Server(422, "INVALID_DEVICE_PROOF", "proof")) }
-        m.retry { error("No new proof") }; runCurrent(); assertTrue(m.state.value.canRestart)
-        m.restart(); runCurrent(); assertNull(m.state.value.pending)
+        // 증명 거절은 다시 보내도 같다. "다시 시작"을 누르지 않아도 기록을 지워 다음 시도가 새 요청으로 시작된다
+        m.retry { error("No new proof") }; runCurrent()
+        assertNull(m.state.value.pending); assertFalse(m.state.value.canRestart); assertNotNull(m.state.value.error)
     }
     @Test fun boundDeviceRejectionAllowsExplicitRestartWithAnotherBoard() = runTest(dispatcher) {
         val server = RegistrationServer(); val prefs = RegistrationPrefs(); val m = model(server, prefs); runCurrent()
@@ -235,6 +255,7 @@ class KeyringRegistrationTest {
         val rejected = server.sent.single()
         // 명시적 귀속 거절은 성공 미확인과 다르다. 사용자가 재시작하기 전까지 기록은 보존한다.
         assertTrue(m.state.value.canRestart); assertNotNull(m.state.value.pending)
+        assertEquals(RegistrationIssue.DeviceBound, m.state.value.issue)
         assertNull(m.state.value.confirmed)
         m.restart(); runCurrent()
         assertNull(m.state.value.pending); assertEquals(PrefRead.Found(null), KeyringRegistrationStore(prefs).read(1))

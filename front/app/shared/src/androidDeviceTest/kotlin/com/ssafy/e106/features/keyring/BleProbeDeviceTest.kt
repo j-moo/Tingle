@@ -4,6 +4,8 @@ import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.foundation.layout.Column
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import androidx.lifecycle.*
@@ -11,7 +13,13 @@ import androidx.test.core.app.ActivityScenario
 import androidx.test.platform.app.InstrumentationRegistry
 import com.ssafy.e106.core.auth.OnboardingStatus
 import com.ssafy.e106.core.ble.*
+import com.ssafy.e106.core.network.ApiResult
+import com.ssafy.e106.features.keyring.data.OwnedKeyring
+import com.ssafy.e106.features.keyring.data.OwnedKeyringRepository
 import com.ssafy.e106.core.ui.theme.AppTheme
+import com.ssafy.e106.features.keyring.data.BleDeviceInfo
+import com.ssafy.e106.features.keyring.data.BleDeviceStatus
+import com.ssafy.e106.features.keyring.data.BleOwnerFlowStatus
 import com.ssafy.e106.features.keyring.ui.*
 import com.ssafy.e106.features.onboarding.TestSession
 import kotlinx.coroutines.runBlocking
@@ -27,7 +35,12 @@ class BleProbeTestActivity : ComponentActivity() {
         val model = ViewModelProvider(this, object : ViewModelProvider.Factory {
             @Suppress("UNCHECKED_CAST")
             override fun <T : ViewModel> create(clazz: Class<T>): T = BleProbeViewModel(
-                AndroidKeyringBle(applicationContext), TestSession(OnboardingStatus.KEYRING_REQUIRED)) as T
+                AndroidKeyringBle(applicationContext), TestSession(OnboardingStatus.KEYRING_REQUIRED),
+                object : OwnedKeyringRepository {
+                    // 이 호스트는 권한 UI만 검증하며 제품 서버나 실물 소유 정보를 사용하지 않는다.
+                    override suspend fun list() = ApiResult.Ok(emptyList<OwnedKeyring>())
+                },
+            ) as T
         })[BleProbeViewModel::class.java]
         setContent { AppTheme { ConnectedBleProbeRoute({ finish() }, model) } }
     }
@@ -35,6 +48,29 @@ class BleProbeTestActivity : ComponentActivity() {
 
 class BleProbeDeviceTest {
     @get:Rule val compose = createEmptyComposeRule()
+
+    /** 저장 ACK 뒤 미지원 안내와 적용 확인 재시도는 가입 완료 UI로 바뀌지 않는다. */
+    @Test fun signupShowsFirmwareRequirementAndRetriesApplicationOnly() {
+        val context = InstrumentationRegistry.getInstrumentation().context
+        val serial = "XIAO-test"
+        val connected = BleProbeState(connected = true, info = BleDeviceInfo(serial, "test", supportsStatus = true))
+        val phase = mutableStateOf(SyncPhase.ApplyFirmwareRequired)
+        ActivityScenario.launch<BleProbeTestActivity>(Intent(context, BleProbeTestActivity::class.java)).use { scenario ->
+            scenario.onActivity { activity ->
+                activity.setContent {
+                    AppTheme {
+                        KeyringSyncPanelContent(KeyringSyncState(items = listOf(KeyringSyncProgress(4, phase.value, serial = serial))),
+                            connected, OwnedKeyringsState(), onRetry = { phase.value = SyncPhase.ApplyChecking })
+                    }
+                }
+            }
+            compose.onNodeWithText("설정은 저장됐어요. 적용 확인에는 키링 펌웨어 업데이트가 필요해요.").assertExists()
+            compose.onNodeWithText("적용 확인 다시 시도").assertDoesNotExist()
+            compose.runOnIdle { phase.value = SyncPhase.ApplyRetry }
+            compose.onNodeWithText("적용 확인 다시 시도").performClick()
+            compose.onNodeWithText("설정 저장 완료 · 적용 확인 중").assertExists()
+        }
+    }
 
     @Test fun realPermissionGuardAndRecreatedScreenDoNotPretendConnected() {
         val context = InstrumentationRegistry.getInstrumentation().context
@@ -48,13 +84,35 @@ class BleProbeDeviceTest {
                 BleFailure.BluetoothOff, BleFailure.LocationOff))
         }
         ActivityScenario.launch<BleProbeTestActivity>(Intent(context, BleProbeTestActivity::class.java)).use { scenario ->
-            compose.onNodeWithText("키링 BLE 연결 확인 · 개발용").assertExists()
-            compose.onNodeWithText("기기 정보 수신까지 확인했어요.", substring = true).assertDoesNotExist()
-            compose.onNodeWithText("기기 상태 읽기").assertDoesNotExist()
-            if (availability == BleAvailability.PermissionRequired) compose.onNodeWithText("권한 요청하기").assertExists()
+            compose.onNodeWithText("주변 키링 찾기").assertExists()
+            // 권한은 로그인 직후 권한 시트에서 받는다. 이 화면은 요청 버튼 없이 안내만 한다
+            if (availability == BleAvailability.PermissionRequired) compose.onNodeWithText("근처 기기 권한이 필요해요", substring = true).assertExists()
             scenario.recreate(); compose.waitForIdle()
-            compose.onNodeWithText("키링 BLE 연결 확인 · 개발용").assertExists()
-            compose.onNodeWithText("연결 종료").assertDoesNotExist()
+            compose.onNodeWithText("주변 키링 찾기").assertExists()
+            compose.onNodeWithText("연결 끊기").assertDoesNotExist()
         }
     }
+
+    /** 접수증을 받지 못한 결과를 정리 성공과 구별하고 수동 버튼으로만 작업을 시작한다. */
+    @Test fun encounterShowsReceiptMissingWithoutReportingDeletion() {
+        val context = InstrumentationRegistry.getInstrumentation().context
+        val state = mutableStateOf(EncounterTransferState.Idle)
+        ActivityScenario.launch<BleProbeTestActivity>(Intent(context, BleProbeTestActivity::class.java)).use { scenario ->
+            scenario.onActivity { activity ->
+                activity.setContent {
+                    AppTheme {
+                        Column {
+                            KeyringEncounterTransferContent(state.value, enabled = true,
+                                onSend = { state.value = EncounterTransferState.NoReceipt })
+                        }
+                    }
+                }
+            }
+            compose.onNodeWithText("서명된 접수증을 아직 받지 못했어요.", substring = true).assertDoesNotExist()
+            compose.onNodeWithText("만남 기록 다시 확인").performClick()
+            compose.onNodeWithText("서명된 접수증을 아직 받지 못했어요.", substring = true).assertExists()
+            compose.onNodeWithText("서버 접수와 키링의 정리를 확인했어요.").assertDoesNotExist()
+        }
+    }
+
 }

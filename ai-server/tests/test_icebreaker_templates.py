@@ -1,16 +1,14 @@
 import json
 import unicodedata
-from pathlib import Path
 
 import pytest
 
+import contracts
 from app.icebreakers import templates
 
 
 def test_general_fallback_matches_be_baseline():
-    repo_root = Path(__file__).resolve().parents[2]
-    be_fallback = repo_root / "back/src/main/resources/icebreakers/general-ko-v1.json"
-    assert templates.suggest() == json.loads(be_fallback.read_text(encoding="utf-8"))
+    assert templates.suggest() == json.loads(contracts.icebreakers_general_ko_v1())
 
 
 @pytest.mark.parametrize(

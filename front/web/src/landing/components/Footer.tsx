@@ -22,7 +22,7 @@ export default function Footer() {
           ))}
         </nav>
       </div>
-      <p className={styles.credit}>SSAFY 15기 자율 프로젝트 E106 · Suddenly I See</p>
+      <p className={styles.credit}>SSAFY 15기 자율 프로젝트 E106</p>
     </footer>
   )
 }

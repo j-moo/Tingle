@@ -7,14 +7,18 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.ssafy.e106.core.auth.Session
-import com.ssafy.e106.core.ui.components.AppButton
+import com.ssafy.e106.core.ui.components.StateAction
+import com.ssafy.e106.core.ui.components.StateKind
+import com.ssafy.e106.core.ui.components.StateScreen
 import com.ssafy.e106.resources.*
 import org.jetbrains.compose.resources.stringResource
 import com.ssafy.e106.features.profile.ui.ProfileBackHandler
+import com.ssafy.e106.features.safety.ui.StateLoadingScreen
+import com.ssafy.e106.features.safety.ui.StateNoteScreen
 import org.koin.compose.viewmodel.koinViewModel
 
 @Composable fun ConnectedReportRoute(session: Session.SignedIn, room: Long, onBack: () -> Unit,
-    model: ReportViewModel = koinViewModel()) {
+    model: ReportViewModel = koinViewModel(), onBlock: () -> Unit = {}) {
     val state by model.state.collectAsStateWithLifecycle()
     LaunchedEffect(session, room) { model.bind(room) }
     // 저장 요청 조회가 중단됐다면 증거 조회보다 복구를 먼저 재개한다.
@@ -23,11 +27,19 @@ import org.koin.compose.viewmodel.koinViewModel
     DisposableEffect(Unit) { onDispose { model.pause() } }
     ProfileBackHandler(true) { if(state.room != room || !state.busy || !state.recoveryComplete) onBack() }
     if(state.owner != session) return
-    // 이전 방의 전송을 마무리하는 동안 새 방의 빈 화면 대신 대기 안내와 나가기를 제공한다.
-    if(state.room != room) {
-        Column {
-            Text(stringResource(Res.string.report_switch_wait))
-            AppButton(stringResource(Res.string.report_back), onClick = onBack)
+    val bar = stringResource(Res.string.report_title)
+    // 이전 방의 전송을 마무리하는 동안 새 방의 빈 화면 대신 뼈대와 나가기(위쪽 이전)를 제공한다.
+    if(state.room != room) { StateLoadingScreen(bar, stringResource(Res.string.report_switch_wait), onBack); return }
+    // 복구 중/실패를 '신고할 수 없음'과 구분하고 재조회·나가기 경로를 제공한다. 확인 중은 뼈대, 못 읽었으면 상태 화면
+    if(!state.recoveryComplete) {
+        if(state.storageIssue == null && state.error == null) StateLoadingScreen(bar, stringResource(Res.string.report_restoring), onBack)
+        else {
+            val retry = if(state.busy) null else StateAction(stringResource(Res.string.report_restore_retry)) { model.resume(room) }
+            val back = StateAction(stringResource(Res.string.report_back), onClick = onBack)
+            // 기록이 손상됐으면 중복 접수 방지 · 문의 안내를 함께 둔다
+            if(state.storageIssue == ReportStorageIssue.Corrupt) StateNoteScreen(StateKind.Unconfirmed, stringResource(Res.string.report_storage_corrupt_title),
+                stringResource(Res.string.report_storage_corrupt_note), barTitle = bar, primary = retry, secondary = back)
+            else StateScreen(StateKind.Unconfirmed, stringResource(Res.string.report_restore_failed), barTitle = bar, primary = retry, secondary = back)
         }
         return
     }
@@ -37,15 +49,9 @@ import org.koin.compose.viewmodel.koinViewModel
         state.storageIssue?.let { issue ->
             Text(stringResource(if(issue == ReportStorageIssue.Corrupt) Res.string.report_storage_corrupt else Res.string.report_restore_failed))
         }
-        // 복구 중/실패를 '신고할 수 없음'과 구분하고 재조회·나가기 경로를 제공한다.
-        if(!state.recoveryComplete) {
-            if(state.storageIssue == null) Text(stringResource(if(state.error == null) Res.string.report_restoring else Res.string.report_restore_failed))
-            if(!state.busy) AppButton(stringResource(Res.string.report_restore_retry), onClick = { model.resume(room) })
-            AppButton(stringResource(Res.string.report_back), onClick = onBack)
-            return@Column
-        }
         ReportScreen(state.ui, model::reason, model::detail, model::select) { action ->
             if(action in listOf(ReportAction.Back, ReportAction.Close)) { if(!state.busy) onBack() }
+            else if(action == ReportAction.Block) { if(!state.busy) onBlock() }
             else model.action(action)
         }
     }

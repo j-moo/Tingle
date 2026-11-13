@@ -1,7 +1,7 @@
 {
   "version": "1.9.0-keyring-ownership-epoch",
-  "total_tables": 30,
-  "total_columns": 274,
+  "total_tables": 35,
+  "total_columns": 298,
   "physical_foreign_keys": false,
   "tables": {
     "personality": {
@@ -710,8 +710,8 @@
         {
           "name": "user_low_id",
           "type": "bigint",
-          "meaning": "작은 쪽 회원 ID — 두 회원 번호 중 작은 쪽. 탈퇴하면 이 행 삭제",
-          "nullable": false,
+          "meaning": "작은 쪽 회원 ID — 두 회원 번호 중 작은 쪽. 탈퇴 후 채팅 삭제 작업용 행은 양쪽 회원 참조를 비움",
+          "nullable": true,
           "pk": false,
           "increment": false,
           "unique": false,
@@ -722,8 +722,8 @@
         {
           "name": "user_high_id",
           "type": "bigint",
-          "meaning": "큰 쪽 회원 ID — 두 회원 번호 중 큰 쪽. 탈퇴하면 이 행 삭제",
-          "nullable": false,
+          "meaning": "큰 쪽 회원 ID — 두 회원 번호 중 큰 쪽. 탈퇴 후 채팅 삭제 작업용 행은 양쪽 회원 참조를 비움",
+          "nullable": true,
           "pk": false,
           "increment": false,
           "unique": false,
@@ -1074,7 +1074,17 @@
           "json_shape": null
         }
       ],
-      "indexes": []
+      "indexes": [
+        {
+          "columns": [
+            "owner_user_id"
+          ],
+          "primary_key": false,
+          "unique": false,
+          "name": "ix_keyring_owner",
+          "meaning": "회원별 등록 키링 조회(요청마다 도는 가입 단계 확인·설정 버전 조회)용"
+        }
+      ]
     },
     "chat_message": {
       "name": "chat_message",
@@ -2320,7 +2330,7 @@
     },
     "chat_safety_notice": {
       "name": "chat_safety_notice",
-      "purpose": "AI 위험 안내 — AI가 위험한 대화를 감지했을 때 한 사람에게 보여 준 안내. 같은 사람·같은 유형은 방마다 한 번만",
+      "purpose": "AI 위험 안내 — AI가 위험한 대화를 감지했을 때 한 사람에게 보여 준 안내. 같은 사람·같은 유형·같은 대상(보낸 쪽/받은 쪽)은 방마다 한 번만",
       "columns": [
         {
           "name": "id",
@@ -2373,7 +2383,19 @@
         {
           "name": "displayed_at",
           "type": "timestamptz",
-          "meaning": "안내 표시 시각 — 이 사람 화면에 실제로 보여 준 시각. NULL이면 아직 안 봄",
+          "meaning": "안내 확인 시각 — 이 사람이 앱에서 안내를 확인(닫음)한 시각. NULL이면 아직 확인 안 함(안내가 계속 보임)",
+          "nullable": true,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "audience",
+          "type": "varchar(16)",
+          "meaning": "안내 대상 — SENDER(위험한 말을 보낸 사람) / RECIPIENT(받은 사람). NULL이면 이전 기록(구분 없음)",
           "nullable": true,
           "pk": false,
           "increment": false,
@@ -2387,7 +2409,8 @@
         {
           "columns": [
             "chat_participant_id",
-            "notice_type"
+            "notice_type",
+            "audience"
           ],
           "primary_key": false,
           "unique": true,
@@ -4045,7 +4068,7 @@
           "name": "actor_id",
           "type": "bigint",
           "meaning": "작업한 운영자 ID",
-          "nullable": false,
+          "nullable": true,
           "pk": false,
           "increment": false,
           "unique": false,
@@ -4085,6 +4108,312 @@
           "unique": false,
           "name": "ix_rule_audit_target",
           "meaning": "대상별 기록·작성자 조회"
+        }
+      ]
+    },
+    "withdrawal_cooldown": {
+      "name": "withdrawal_cooldown",
+      "purpose": "회원탈퇴 목적 분리 기록/복구/외부 정리",
+      "columns": [
+        {
+          "name": "provider",
+          "type": "varchar(16)",
+          "meaning": "268 회원탈퇴 최소 상태",
+          "nullable": false,
+          "pk": true,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "account_hash",
+          "type": "varchar(64)",
+          "meaning": "268 회원탈퇴 최소 상태",
+          "nullable": false,
+          "pk": true,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "rejoin_available_at",
+          "type": "timestamptz",
+          "meaning": "268 회원탈퇴 최소 상태",
+          "nullable": false,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        }
+      ]
+    },
+    "withdrawal_relation": {
+      "name": "withdrawal_relation",
+      "purpose": "회원탈퇴 목적 분리 기록/복구/외부 정리",
+      "columns": [
+        {
+          "name": "first_hash",
+          "type": "varchar(64)",
+          "meaning": "268 회원탈퇴 최소 상태",
+          "nullable": false,
+          "pk": true,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "second_hash",
+          "type": "varchar(64)",
+          "meaning": "268 회원탈퇴 최소 상태",
+          "nullable": false,
+          "pk": true,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "expires_at",
+          "type": "timestamptz",
+          "meaning": "268 회원탈퇴 최소 상태",
+          "nullable": false,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        }
+      ]
+    },
+    "withdrawal_operation": {
+      "name": "withdrawal_operation",
+      "purpose": "회원탈퇴 목적 분리 기록/복구/외부 정리",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "meaning": "268 회원탈퇴 최소 상태",
+          "nullable": false,
+          "pk": true,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "user_id",
+          "type": "bigint",
+          "meaning": "268 회원탈퇴 최소 상태",
+          "nullable": true,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "session_id",
+          "type": "uuid",
+          "meaning": "268 회원탈퇴 최소 상태",
+          "nullable": true,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "request_key",
+          "type": "uuid",
+          "meaning": "268 회원탈퇴 최소 상태",
+          "nullable": true,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "kind",
+          "type": "varchar(10)",
+          "meaning": "268 회원탈퇴 최소 상태",
+          "nullable": false,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "prepared_at",
+          "type": "timestamptz",
+          "meaning": "268 회원탈퇴 최소 상태",
+          "nullable": false,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "expires_at",
+          "type": "timestamptz",
+          "meaning": "268 회원탈퇴 최소 상태",
+          "nullable": false,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "completed_at",
+          "type": "timestamptz",
+          "meaning": "268 회원탈퇴 최소 상태",
+          "nullable": true,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "rejoin_available_at",
+          "type": "timestamptz",
+          "meaning": "268 회원탈퇴 최소 상태",
+          "nullable": true,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "device_permanently_blocked",
+          "type": "boolean",
+          "meaning": "268 회원탈퇴 최소 상태",
+          "nullable": false,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        }
+      ]
+    },
+    "withdrawal_photo_task": {
+      "name": "withdrawal_photo_task",
+      "purpose": "회원탈퇴 목적 분리 기록/복구/외부 정리",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "meaning": "268 회원탈퇴 최소 상태",
+          "nullable": false,
+          "pk": true,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "withdrawal_id",
+          "type": "uuid",
+          "meaning": "268 회원탈퇴 최소 상태",
+          "nullable": false,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "file_key",
+          "type": "varchar(255)",
+          "meaning": "268 회원탈퇴 최소 상태",
+          "nullable": false,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "attempts",
+          "type": "integer",
+          "meaning": "268 회원탈퇴 최소 상태",
+          "nullable": false,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "next_attempt_at",
+          "type": "timestamptz",
+          "meaning": "268 회원탈퇴 최소 상태",
+          "nullable": false,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        }
+      ]
+    },
+    "withdrawal_identity_key": {
+      "name": "withdrawal_identity_key",
+      "purpose": "키 교체로 기존 제한 우회 방지",
+      "columns": [
+        {
+          "name": "id",
+          "type": "integer",
+          "meaning": "전용 HMAC 키 교체 감지용 지문, 원본 비밀키 없음",
+          "nullable": false,
+          "pk": true,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "key_hash",
+          "type": "varchar(64)",
+          "meaning": "전용 HMAC 키 교체 감지용 지문, 원본 비밀키 없음",
+          "nullable": false,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
         }
       ]
     }
@@ -4840,6 +5169,11 @@
       "date": "2026-11-04",
       "issue": "S15P31E106-57 / S15P31E106-58 / S15P31E106-59 / S15P31E106-60",
       "reason": "운영자 규칙 관리 API 구현: rule_artifact·rule_release·rule_channel·rule_audit 4표 38컬럼·논리관계 4개 추가. 기존 표는 변경 없음. 공유 DB 미적용."
+    },
+    {
+      "date": "2026-11-06",
+      "issue": "S15P31E106-268",
+      "reason": "회원탈퇴72시간/관계1년/영수증/사진정리4표 추가. matching CLOSED 보관행은 회원 참조 제거. 공유 DB 미적용."
     }
   ]
 }

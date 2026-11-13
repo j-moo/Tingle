@@ -1,89 +1,459 @@
 package com.ssafy.e106.features.keyring.ui
 
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalInspectionMode
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.*
 import com.ssafy.e106.core.ble.*
 import com.ssafy.e106.core.ui.components.*
-import com.ssafy.e106.features.onboarding.ui.OnboardingPanel
+import com.ssafy.e106.core.ui.theme.AppColors
+import com.ssafy.e106.core.ui.theme.AppSpacing
+import com.ssafy.e106.core.ui.theme.screenGutter
+import com.ssafy.e106.core.ui.theme.screenPaddingValues
 import com.ssafy.e106.features.profile.ui.ProfileBackHandler
 import com.ssafy.e106.resources.*
+import org.jetbrains.compose.resources.StringResource
+import org.jetbrains.compose.resources.painterResource
 import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.viewmodel.koinViewModel
 
-/** 읽기 진단은 단독 사용 가능하다. 개발 등록 경로에서만 별도 등록 모델을 받아 실제 귀속 확인 UI를 제공한다. */
-@Composable fun ConnectedBleProbeRoute(onBack: () -> Unit, model: BleProbeViewModel = koinViewModel(),
+/**
+ * 키링 연결 화면. [registration] 을 받으면 등록 패널을 붙여 실제 귀속까지 진행한다.
+ * [autoScan] 이면 들어오자마자(블루투스가 켜지면 그때) 주변 키링을 찾는다. 탐색은 등록이 아니다.
+ */
+@Composable fun ConnectedBleProbeRoute(onBack: () -> Unit, model: BleProbeViewModel = keyringBleModel(),
     registration: KeyringRegistrationViewModel? = null, sync: KeyringSyncViewModel? = null,
-    managedConnection: Boolean = false) {
+    managedConnection: Boolean = false, autoScan: Boolean = false, allowEncounterTransfer: Boolean = false,
+    onRegistrationDone: (() -> Unit)? = null) {
     val permission = rememberBlePermission()
     val state by model.state.collectAsStateWithLifecycle()
-    val registrationBusy = registration?.state?.collectAsStateWithLifecycle()?.value?.busy == true
-    val syncBusy = sync?.state?.collectAsStateWithLifecycle()?.value?.busy == true
+    val registrationState = registration?.state?.collectAsStateWithLifecycle()?.value
+    val registrationBusy = registrationState?.busy == true
+    val syncState = sync?.state?.collectAsStateWithLifecycle()?.value
+    val syncBusy = syncState?.busy == true
     val registering = registrationBusy || syncBusy
-    var settingsFailed by remember { mutableStateOf(false) }
-    // 서비스 호스트가 있으면 내부 화면 이동은 연결 종료가 아니다. 단독 진단 화면은 기존 종료 정책을 유지한다.
-    fun release() { registration?.pause(); if (!managedConnection) { sync?.detach(); model.leave() } }
+    // 이번 진입에서 찾아봤는지(문구용). 찾은 적 없거나 사용자가 그만뒀으면 "찾기 시작", 찾았는데 없으면 "찾지 못했어요"
+    var searched by rememberSaveable { mutableStateOf(false) }
+    // 자동 탐색을 이미 했는지. 사용자가 취소한 뒤 다시 저절로 찾지 않게 문구용 searched 와 나눈다
+    var autoTried by rememberSaveable { mutableStateOf(false) }
+    fun scan() { if (model.scan()) searched = true }               // 실제로 탐색을 시작했을 때만 "찾았다"로 친다
+    // 서비스 호스트가 있으면 내부 화면 이동은 연결 종료가 아니다. 단독 연결 화면은 기존 종료 정책을 유지한다.
+    // 연결을 놓으면 찾은 결과도 사라지므로 "찾아봤음"도 지운다(돌아왔을 때 "찾지 못했어요"로 보이지 않게)
+    fun release() {
+        // 등록 화면에서 아직 서버 확인을 받지 않은 연결을 다른 화면으로 넘기지 않는다.
+        val unconfirmedRegistration = registration != null && registration.state.value.confirmed == null
+        registration?.pause()
+        if (!managedConnection || unconfirmedRegistration) { sync?.detach(); model.leave(); searched = false }
+    }
     // 호스트가 초기화 복구/권한 상태를 보고 일시 중지한 경우 내부 화면 진입으로 다시 켜지 않는다.
-    LifecycleEventEffect(Lifecycle.Event.ON_START) { registration?.restore(); if (!managedConnection) sync?.resume() }
+    LifecycleEventEffect(Lifecycle.Event.ON_START) {
+        registration?.restore(); if (!managedConnection) sync?.resume()
+        if (autoScan && !state.connected) autoTried = false             // 돌아오면 다시 자동으로 찾는다
+    }
     LifecycleEventEffect(Lifecycle.Event.ON_STOP) { release() }
     DisposableEffect(model, registration, managedConnection) { onDispose { release() } }
-    LaunchedEffect(permission.availability) { if (permission.availability != BleAvailability.Ready) model.leave() }
+    // 블루투스가 꺼지면 연결 · 결과를 놓고, 다시 켜지면 처음처럼 자동으로 찾는다
+    LaunchedEffect(permission.availability) {
+        // 호스트가 관리하는 연결은 호스트가 정리한다(release 와 같은 정책)
+        if (permission.availability != BleAvailability.Ready) { if (!managedConnection) model.leave(); searched = false; autoTried = false }
+    }
+    LaunchedEffect(autoScan, permission.availability, autoTried, state.busy, state.scanning, registering) {
+        if (autoScan && !autoTried && permission.availability == BleAvailability.Ready &&
+            !state.connected && !state.busy && !state.scanning && !registering) { autoTried = true; scan() }
+    }
     ProfileBackHandler(true) { release(); onBack() }
-    OnboardingPanel(stringResource(Res.string.ble_probe_title)) {
-        TextButton(onClick = { release(); onBack() }) { Text(stringResource(Res.string.owned_keyrings_back)) }
-        Text(stringResource(if (registration == null) Res.string.ble_probe_description else Res.string.registration_live_description))
-        Text(stringResource(when (permission.availability) {
-            BleAvailability.Unsupported -> Res.string.ble_unsupported
-            BleAvailability.PermissionRequired -> Res.string.ble_permission
-            BleAvailability.BluetoothOff -> Res.string.ble_bluetooth_off
-            BleAvailability.LocationOff -> Res.string.ble_location_off
-            BleAvailability.Ready -> Res.string.ble_available
-        }))
-        fun guarded(action: () -> Unit) { settingsFailed = runCatching(action).isFailure }
-        when (permission.availability) {
-            BleAvailability.PermissionRequired -> {
-                AppButton(stringResource(Res.string.ble_request_permission), onClick = { guarded(permission.request) })
-                TextButton(onClick = { guarded(permission.openAppSettings) }) { Text(stringResource(Res.string.ble_app_settings)) }
-            }
-            BleAvailability.BluetoothOff -> AppButton(stringResource(Res.string.ble_bluetooth_settings), onClick = { guarded(permission.openBluetoothSettings) })
-            BleAvailability.LocationOff -> AppButton(stringResource(Res.string.ble_location_settings), onClick = { guarded(permission.openLocationSettings) })
-            else -> Unit
-        }
-        if (settingsFailed) Text(stringResource(Res.string.ble_settings_failed), color = MaterialTheme.colorScheme.error)
-        state.error?.let { Text(stringResource(Res.string.ble_failed, it.name), color = MaterialTheme.colorScheme.error) }
-        state.commandError?.let { Text(stringResource(Res.string.ble_command_failed, it), color = MaterialTheme.colorScheme.error) }
-        if (state.busy) { CircularProgressIndicator(); Text(stringResource(if (syncBusy) Res.string.sync_live_sending else Res.string.ble_connecting)) }
-        if (permission.availability == BleAvailability.Ready && !state.connected) {
-            AppButton(stringResource(if (state.scanning) Res.string.ble_stop_scan else Res.string.ble_start_scan),
-                enabled = !state.busy && !registering, onClick = { if (state.scanning) model.stopScan() else model.scan() })
-            Text(stringResource(Res.string.ble_scan_help))
-            if (state.scanning) Text(stringResource(Res.string.ble_scanning))
-            state.candidates.forEachIndexed { index, device ->
-                AppButton(stringResource(Res.string.ble_candidate, index + 1, device.name ?: "NUS", device.rssi),
-                    modifier = Modifier.fillMaxWidth(), variant = AppButtonVariant.Secondary,
-                    enabled = !state.busy && !registering, onClick = { model.connect(device.id) })
-            }
-        }
-        state.info?.let { info ->
-            Text(stringResource(Res.string.ble_info, info.serial, info.firmware))
-            Text(stringResource(Res.string.ble_not_registered))
-            AppButton(stringResource(Res.string.ble_read_status), enabled = !state.busy && !registering && state.connected && info.supportsStatus,
-                onClick = model::readStatus)
-            if (!info.supportsStatus) Text(stringResource(Res.string.ble_status_unsupported))
-        }
-        state.status?.let { status ->
-            val unknown = stringResource(Res.string.ble_unknown)
-            val charging = when (status.charging) { true -> stringResource(Res.string.ble_charging); false -> stringResource(Res.string.ble_not_charging); null -> unknown }
-            Text(stringResource(Res.string.ble_status, status.batteryPercent?.let { "$it%" } ?: unknown,
-                status.batteryMillivolts?.let { "$it mV" } ?: unknown, charging, status.pendingRecordCount?.toString() ?: unknown))
-        }
-        if (state.connected || state.busy) AppButton(stringResource(Res.string.ble_disconnect),
-            variant = AppButtonVariant.Secondary, enabled = !registering, onClick = model::leave)
+    // 이미 등록된 키링(BOUND)을 연결했고 내 등록 요청이 진행 중이 아니면 "연결됐어요" 대신 내 키링 목록에서 고르게 한다
+    // 실물이 초기화돼 "주인 없음"으로 답해도, 이 폰에 보낼 대상 기록이 없는 내 키링이면(앱을 새로 깔았거나 다른 폰에서 등록) 같은 화면에서
+    // 내 키링 목록과 맞추게 한다. 안 그러면 연결만 되고 설정을 보낼 길이 없다. 소유는 서버 목록과 일련번호 대조로 이미 확인했다
+    val unknownTarget = registration == null && state.info?.serial?.let { serial -> syncState?.items?.none { it.serial == serial } } == true
+    val pickExisting = sync != null && state.connected && (state.info?.ownerState == "BOUND" || unknownTarget) &&
+        (registration == null || registrationState?.loaded == true) &&       // 저장된 등록 요청을 다 읽은 뒤에만 판단한다
+        registrationState?.pending == null && registrationState?.confirmed == null
+    // 내 키링 목록은 동기화가 있을 때만 쓴다(패널과 같은 인스턴스를 넘긴다)
+    val ownedModel = sync?.let { koinViewModel<OwnedKeyringsViewModel>() }
+    val ownedState = ownedModel?.state?.collectAsStateWithLifecycle()?.value
+    // 내 키링 목록을 불러오는 동안(아직 안 불러온 첫 화면 포함)에도 연결 끊기를 숨긴다
+    val listLoading = pickExisting && ownedState?.owner != null && (ownedState.loading || (ownedState.items == null && ownedState.error == null))
+    BleProbeScreen(permission.availability, state, searched = searched, registrationMode = registration != null, pickExisting = pickExisting,
+        syncBusy = syncBusy, registering = registering || listLoading, onBack = { release(); onBack() },
+        onScan = ::scan, onStopScan = { model.stopScan(); searched = false },
+        onConnect = { id -> model.pick(id, registrationMode = registration != null) },
+        // 사용자가 그만둔 건 "못 찾음"이 아니다 — 찾기 전 화면으로
+        onDisconnect = { model.leave(); searched = false }) {
         // 동기화 중 다른 명령을 막고 등록 결과와 설정 상태를 같은 화면에 표시한다.
-        registration?.let { KeyringRegistrationPanel(it, model, state, syncBusy) }
-        sync?.let { KeyringSyncPanel(it, model, state, registrationBusy, managedConnection = managedConnection) }
+        // 저장된 등록 요청 복구 · 미전송 동기화도 연결 전에 보여야 해서 단계와 상관없이 아래에 둔다.
+        if (!pickExisting) registration?.let { KeyringRegistrationPanel(it, model, state, syncBusy, onRegistrationDone) }
+        sync?.let { KeyringSyncPanel(it, model, state, registrationBusy, ownedModel!!, managedConnection = managedConnection,
+            pickExisting = pickExisting) }
+        // 소유 확인은 화면에 보인 이름이 아니라 서버가 확인한 동기화 기록으로 수행한다.
+        val info = state.info
+        if (allowEncounterTransfer && sync != null && state.connected && info != null) {
+            // 목록의 서버 버전과 현재 보드가 보내온 버전은 다를 수 있다.
+            Text(stringResource(Res.string.keyring_encounter_connected_firmware, info.firmware),
+                style = MaterialTheme.typography.bodySmall, color = AppColors.TextSecondary)
+            when {
+                !info.supportsEncounterTransfer -> Body(Res.string.keyring_encounter_unsupported)
+                info.ownerState != "BOUND" -> Body(Res.string.keyring_encounter_unbound)
+                else -> KeyringEncounterTransfer(model, enabled = !registering && !state.busy)
+            }
+        }
     }
 }
+
+/** 기존 소유 키링의 기록 화면에는 새 키링을 등록하는 패널을 붙이지 않는다. */
+@Composable internal fun ConnectedKeyringEncounterRoute(onBack: () -> Unit) {
+    ConnectedBleProbeRoute(onBack, sync = koinViewModel<KeyringSyncViewModel>(),
+        managedConnection = true, autoScan = true, allowEncounterTransfer = true)
+}
+
+/** 화면은 전경 호스트의 전송 상태를 표시하며 사용자가 누른 재시도도 같은 모델로 보낸다. */
+@Composable private fun KeyringEncounterTransfer(ble: BleProbeViewModel, enabled: Boolean,
+    model: KeyringEncounterViewModel = keyringEncounterModel()) {
+    val transfer by model.state.collectAsStateWithLifecycle()
+    KeyringEncounterTransferContent(transfer, enabled, onSend = { model.retry(ble) })
+}
+
+/** 전송 결과만 그린다. 서버 접수증이 없는 상태에서는 키링 정리 완료를 표시하지 않는다. */
+@Composable internal fun KeyringEncounterTransferContent(transfer: EncounterTransferState, enabled: Boolean, onSend: () -> Unit) {
+    AppButton(stringResource(Res.string.keyring_encounter_send), Modifier.fillMaxWidth(), AppButtonVariant.Secondary,
+        enabled = enabled && transfer != EncounterTransferState.Sending, onClick = onSend)
+    val message = when (transfer) {
+        EncounterTransferState.Idle -> null
+        EncounterTransferState.Sending -> Res.string.keyring_encounter_sending
+        EncounterTransferState.Empty -> Res.string.keyring_encounter_empty
+        EncounterTransferState.LegacyOnly -> Res.string.keyring_encounter_legacy_only
+        EncounterTransferState.ConfirmedStored, EncounterTransferState.Stored -> Res.string.keyring_encounter_stored
+        EncounterTransferState.ReviewStored -> Res.string.keyring_encounter_review_stored
+        EncounterTransferState.Retryable -> Res.string.keyring_encounter_retryable
+        EncounterTransferState.PolicyWaiting -> Res.string.keyring_encounter_policy_waiting
+        EncounterTransferState.NoReceipt -> Res.string.keyring_encounter_no_receipt
+        EncounterTransferState.Failed -> Res.string.keyring_encounter_failed
+    }
+    message?.let { Body(it) }
+}
+
+/** 화면 단계: ① 찾기 전(Idle) · 찾는 중 · 못 찾음 · 블루투스 꺼짐 등(Unavailable) → ② 키링 고르기 → 연결 중 → ③ 연결됨
+ * (이미 등록된 키링이면 ③ 대신 내 키링 고르기: PickExisting) */
+private enum class ProbeStep { Unavailable, Idle, Searching, NotFound, Picking, Connecting, Connected, PickExisting }
+
+private fun step(availability: BleAvailability, state: BleProbeState, searched: Boolean, pickExisting: Boolean) = when {
+    state.connected && pickExisting -> ProbeStep.PickExisting
+    state.connected -> ProbeStep.Connected
+    availability != BleAvailability.Ready -> ProbeStep.Unavailable
+    state.busy && state.candidates.none { it.id == state.selectedId } -> ProbeStep.Connecting   // 끊긴 키링 자동 재연결(후보가 비어 있다)
+    state.candidates.isNotEmpty() -> ProbeStep.Picking   // 고른 키링에 연결하는 동안에도 목록을 그대로 둔다(누른 카드만 도는 표시)
+    state.scanning -> ProbeStep.Searching
+    searched -> ProbeStep.NotFound
+    else -> ProbeStep.Idle
+}
+
+/**
+ * 순수 화면(Preview 용). 권한 · 연결 상태만 받아 그리고, 등록 · 동기화 패널은 [extra] 로 붙인다(③ 연결됨 · 내 키링 고르기에서는 가운데 묶음 안).
+ * 권한은 로그인 직후 권한 시트에서 받으므로 여기서 요청하지 않는다(권한이 없으면 시트가 다시 앱을 막는다).
+ * 블루투스 · 위치 서비스는 권한이 아니라 언제든 꺼질 수 있어 준비되지 않았을 때만 안내 문구를 띄운다.
+ */
+@Composable fun BleProbeScreen(
+    availability: BleAvailability,
+    state: BleProbeState,
+    searched: Boolean = false,
+    registrationMode: Boolean = false,
+    pickExisting: Boolean = false,
+    syncBusy: Boolean = false,
+    registering: Boolean = false,
+    onBack: () -> Unit = {},
+    onScan: () -> Unit = {},
+    onStopScan: () -> Unit = {},
+    onConnect: (String) -> Unit = {},
+    onDisconnect: () -> Unit = {},
+    extra: @Composable () -> Unit = {},
+) {
+    val step = step(availability, state, searched, pickExisting)
+    val canAct = !state.busy && !registering
+    // 연결 중 · 연결된 뒤에도 목록의 다른 키링을 눌러 바꿀 수 있다(앞 연결은 끊는다). 등록 · 설정을 보내는 동안만 막는다
+    val canSwitch = !registering && !syncBusy
+    Surface(Modifier.fillMaxSize(), color = AppColors.Background) {
+        Column(Modifier.fillMaxSize().safeDrawingPadding(), horizontalAlignment = Alignment.CenterHorizontally) {
+            BackArrowBar(onBack)
+            // 화면 높이를 최소 높이로 잡아 ① 단계의 제목 · 레이더 · 버튼 묶음을 남은 공간 가운데에 둔다(넘치면 스크롤)
+            BoxWithConstraints(Modifier.weight(1f).widthIn(max = 640.dp).fillMaxWidth()) {
+            val viewport = maxHeight
+            Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).heightIn(min = viewport)
+                .padding(screenPaddingValues()), verticalArrangement = Arrangement.spacedBy(AppSpacing.Medium)) {
+                // 오류 안내와 등록 · 동기화 패널. ③ 연결됨에서는 위 묶음과 함께 화면 가운데에, 나머지 단계에선 아래에 둔다
+                val below = @Composable {
+                    state.error?.let {
+                        Banner(when (it) {
+                            BleFailure.NotOwned -> stringResource(Res.string.ble_not_owned)
+                            BleFailure.OwnershipUnverified -> stringResource(Res.string.ble_ownership_unverified)
+                            BleFailure.ConnectFailed -> stringResource(Res.string.ble_connect_failed)
+                            else -> stringResource(Res.string.ble_failed, it.name)
+                        })
+                    }
+                    state.commandError?.let { Banner(stringResource(Res.string.ble_command_failed, it)) }
+                    extra()
+                }
+                when (step) {
+                    ProbeStep.Connected -> ConnectedHero(state, registrationMode, syncBusy, canSwitch, onConnect, below)
+                    // 내 키링 고르기는 아래 동기화 패널이 그린다. 묶음을 화면 가운데에
+                    ProbeStep.PickExisting -> { Spacer(Modifier.weight(1f)); below(); Spacer(Modifier.weight(1f)) }
+                    ProbeStep.Picking -> { PickingHero(state, if (state.busy) canSwitch else canAct, onConnect); below() }
+                    else -> { SearchHero(step, availability, canAct, onScan, onStopScan, onDisconnect); below() }
+                }
+            }
+            }
+            Column(Modifier.widthIn(max = 640.dp).fillMaxWidth().padding(horizontal = screenGutter()).padding(bottom = AppSpacing.Large),
+                verticalArrangement = Arrangement.spacedBy(AppSpacing.Small)) {
+                val full = Modifier.fillMaxWidth()
+                // ① 단계 버튼은 레이더 아래 가운데에 있다(SearchHero)
+                when (step) {
+                    // 연결은 시간이 걸릴 수 있어 언제든 그만둘 수 있게 한다
+                    ProbeStep.Picking -> if (state.busy) AppButton(stringResource(Res.string.probe_stop), full, AppButtonVariant.Secondary, onClick = onDisconnect)
+                        else if (state.scanning) AppButton(stringResource(Res.string.probe_stop), full, AppButtonVariant.Secondary, onClick = onStopScan)
+                        else AppButton(stringResource(Res.string.probe_retry), full, AppButtonVariant.Secondary, enabled = canAct, onClick = onScan)
+                    // 등록 · 설정을 보내는 동안에는 연결 끊기를 아예 숨긴다
+                    ProbeStep.Connected, ProbeStep.PickExisting -> if (!registering)
+                        AppButton(stringResource(Res.string.ble_disconnect), full, AppButtonVariant.Secondary, onClick = onDisconnect)
+                    else -> Unit
+                }
+            }
+        }
+    }
+}
+
+/** ① 찾기 전 · 찾는 중 · 못 찾음 · 블루투스 꺼짐. 제목 · 레이더 · 버튼을 한 묶음으로 화면 가운데에 둔다 */
+@Composable private fun ColumnScope.SearchHero(step: ProbeStep, availability: BleAvailability, canAct: Boolean,
+    onScan: () -> Unit, onStopScan: () -> Unit, onCancelConnect: () -> Unit) {
+    val (title, body) = when (step) {
+        ProbeStep.Searching -> Res.string.probe_search_title to Res.string.probe_search_body
+        ProbeStep.Connecting -> Res.string.probe_connecting to Res.string.probe_connecting_body
+        ProbeStep.NotFound -> Res.string.probe_not_found_title to Res.string.probe_not_found_body
+        else -> Res.string.probe_idle_title to Res.string.probe_idle_body
+    }
+    Spacer(Modifier.weight(1f))
+    Title(title)
+    if (step == ProbeStep.Unavailable) Banner(stringResource(when (availability) {
+        BleAvailability.Unsupported -> Res.string.ble_unsupported
+        BleAvailability.PermissionRequired -> Res.string.ble_permission
+        BleAvailability.LocationOff -> Res.string.ble_location_off
+        else -> Res.string.ble_bluetooth_off
+    })) else Body(body)
+    // 끊긴 키링에 다시 연결할 때는 고르던 목록이 없다. 레이더 대신 연결 중인 카드 한 장을 보여 준다
+    if (step == ProbeStep.Connecting) KeyringCard(stringResource(Res.string.probe_card_mine), selected = false, enabled = false, onClick = null,
+        highlight = true, trailing = { Spinner() }) {
+        Text(stringResource(Res.string.probe_card_connecting), style = MaterialTheme.typography.bodySmall, color = AppColors.TextSecondary)
+    }
+    else Radar(scanning = step == ProbeStep.Searching, Modifier.align(Alignment.CenterHorizontally).padding(vertical = AppSpacing.Medium))
+    val button = Modifier.fillMaxWidth()
+    when (step) {
+        ProbeStep.Searching -> AppButton(stringResource(Res.string.probe_stop), button, AppButtonVariant.Secondary, onClick = onStopScan)
+        // 연결 · 자동 재연결은 시간이 걸릴 수 있어 언제든 그만둘 수 있게 한다
+        ProbeStep.Connecting -> AppButton(stringResource(Res.string.probe_stop), button, AppButtonVariant.Secondary, onClick = onCancelConnect)
+        ProbeStep.NotFound -> AppButton(stringResource(Res.string.probe_retry), button, enabled = canAct, onClick = onScan)
+        else -> AppButton(stringResource(Res.string.probe_start), button, enabled = canAct && step == ProbeStep.Idle, onClick = onScan)
+    }
+    Spacer(Modifier.weight(1f))
+}
+
+/** ② 찾은 키링 고르기. 신호가 센(가까운) 순서 */
+@Composable private fun ColumnScope.PickingHero(state: BleProbeState, canAct: Boolean, onConnect: (String) -> Unit) {
+    Spacer(Modifier.weight(1f))                                // ① 단계처럼 묶음을 화면 가운데에
+    Title(Res.string.probe_pick_title)
+    // 연결하는 동안에도 화면을 바꾸지 않는다. 누른 카드에만 테두리 · 도는 표시를 붙인다. 나머지 카드를 누르면 그 키링으로 바꿔 연결한다
+    val connecting = state.selectedId.takeIf { state.busy }
+    Body(if (connecting != null) Res.string.probe_connecting_body else Res.string.probe_pick_body)
+    // 방금 연결했던 키링을 맨 위에, 나머지는 신호가 센 순서
+    state.candidates.sortedWith(compareByDescending<BleCandidate> { it.recent }.thenByDescending { it.rssi }).forEach { device ->
+        if (device.id == connecting) KeyringCard(device.name ?: stringResource(Res.string.probe_unnamed), selected = false, enabled = false,
+            onClick = null, highlight = true, trailing = { Spinner() }) {
+            Text(stringResource(Res.string.probe_card_connecting), style = MaterialTheme.typography.bodySmall, color = AppColors.TextSecondary)
+        }
+        else KeyringCard(device.name ?: stringResource(Res.string.probe_unnamed), selected = false, enabled = canAct,
+            onClick = { onConnect(device.id) }) {
+            Row(Modifier.padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                SignalBars(signalBars(device.rssi))
+                if (device.recent) Text(stringResource(Res.string.probe_recent), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold,
+                    modifier = Modifier.background(AppColors.SurfaceMuted, RoundedCornerShape(99.dp)).padding(horizontal = 8.dp, vertical = 3.dp))
+            }
+        }
+    }
+    Text(stringResource(Res.string.probe_missing_help), style = MaterialTheme.typography.bodySmall, color = AppColors.TextSecondary,
+        modifier = Modifier.fillMaxWidth().background(AppColors.SurfaceMuted, RoundedCornerShape(14.dp)).padding(14.dp))
+    Spacer(Modifier.weight(1f))
+}
+
+/** ③ 연결됨. "연결됐어요" 화면 대신 고르던 목록을 그대로 두고, 연결한 키링만 초록 테두리 · 체크로 표시한다.
+ * 등록은 아래 등록 패널([below])이 맡는다 */
+@Composable private fun ColumnScope.ConnectedHero(state: BleProbeState, registrationMode: Boolean, syncBusy: Boolean,
+    canSwitch: Boolean, onConnect: (String) -> Unit, below: @Composable () -> Unit) {
+    Spacer(Modifier.weight(1f))                                // ① 단계처럼 묶음을 화면 가운데에
+    Title(Res.string.probe_pick_title)
+    Body(if (registrationMode) Res.string.probe_selected_body else Res.string.probe_selected_body_plain)
+    val info = state.info
+    val meta = info?.let { stringResource(Res.string.probe_device_meta, it.serial, it.firmware) }
+    val list = state.candidates.sortedByDescending { it.rssi }
+    if (list.any { it.id == state.selectedId }) list.forEach { device ->
+        val selected = device.id == state.selectedId
+        // 다른 키링을 누르면 지금 연결을 끊고 그 키링에 연결한다. 등록 · 설정을 보내는 동안에는 흐리게 막는다
+        KeyringCard(device.name ?: stringResource(Res.string.probe_unnamed), selected = selected, enabled = selected || (canSwitch && !state.busy),
+            onClick = if (selected) null else ({ onConnect(device.id) })) {
+            if (selected && meta != null) Text(meta, style = MaterialTheme.typography.bodySmall, color = AppColors.TextSecondary)
+            else SignalBars(signalBars(device.rssi), Modifier.padding(top = 4.dp))
+        }
+    } else if (info != null) {
+        // 자동 재연결 등으로 후보 목록이 없으면 연결한 키링 하나만
+        KeyringCard(info.serial, selected = true, onClick = null) {
+            Text(meta.orEmpty(), style = MaterialTheme.typography.bodySmall,
+                color = AppColors.TextSecondary)
+        }
+    }
+    if (state.busy) Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(AppSpacing.Small)) {
+        Spinner()
+        Text(stringResource(if (syncBusy) Res.string.sync_live_sending else Res.string.ble_connecting), style = MaterialTheme.typography.bodyMedium)
+    }
+    below()                                                    // 등록 패널을 묶음 안에 둬 함께 가운데로
+    Spacer(Modifier.weight(1f))
+}
+
+/** 글자 "이전" 대신 화살표 아이콘(TalkBack은 "이전"으로 읽는다). 눌렀을 때 원(물결) 없이 화살표만, 터치 영역은 48dp 유지 */
+@Composable internal fun BackArrowBar(onBack: () -> Unit) {
+    Box(Modifier.fillMaxWidth().padding(horizontal = AppSpacing.Small)) {
+        Box(Modifier.minimumInteractiveComponentSize().clickable(remember { MutableInteractionSource() }, indication = null,
+            role = Role.Button, onClick = onBack), contentAlignment = Alignment.Center) {
+            Icon(painterResource(Res.drawable.ic_arrow_back), stringResource(Res.string.owned_keyrings_back), tint = AppColors.TextPrimary)
+        }
+    }
+}
+
+/**
+ * 키링 카드. 선택되면 초록 테두리와 체크, 아니면 옅은 테두리. [onClick] 이 있으면 카드 전체를 누를 수 있다.
+ * 선택 목록에서는 화살표를 두지 않는다(눌러도 다른 화면이 나오지 않는다).
+ */
+@Composable internal fun KeyringCard(title: String, selected: Boolean, enabled: Boolean = true, onClick: (() -> Unit)?,
+    trailing: (@Composable () -> Unit)? = null,
+    /** 연결하는 중인 카드: 누를 수 없어도 흐리게 하지 않고 진한 테두리로 어떤 키링인지 보여 준다 */
+    highlight: Boolean = false, sub: @Composable () -> Unit) {
+    val border = if (selected) BorderStroke(2.dp, AppColors.SelectionBorder) else if (highlight) BorderStroke(2.dp, AppColors.TextPrimary)
+        else BorderStroke(1.dp, AppColors.BorderSubtle)
+    // 막혀 있어도 선택한 카드는 흐리게 하지 않는다(무엇을 골랐는지 계속 보이게)
+    val modifier = Modifier.fillMaxWidth().alpha(if (enabled || selected || highlight) 1f else 0.4f)
+        // 고를 수 있는 카드만 선택 상태를 읽어 준다(목록 카드는 "선택 안 됨"을 읽지 않게)
+        .semantics { if (onClick != null || selected) this.selected = selected }
+    val content = @Composable {
+        Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            PebbleThumb()
+            Column(Modifier.weight(1f)) {
+                Text(title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+                sub()
+            }
+            if (selected) Image(painterResource(Res.drawable.ic_check_done), null, Modifier.size(24.dp))
+            else trailing?.invoke()
+        }
+    }
+    if (onClick != null) Surface(onClick = onClick, enabled = enabled, shape = RoundedCornerShape(16.dp), color = AppColors.Background,
+        border = border, modifier = modifier) { content() }
+    else Surface(shape = RoundedCornerShape(16.dp), color = AppColors.Background, border = border, modifier = modifier) { content() }
+}
+
+@Composable private fun Title(text: StringResource) {
+    Text(stringResource(text), style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold,
+        color = AppColors.TextPrimary, textAlign = TextAlign.Center,
+        modifier = Modifier.fillMaxWidth().semantics { heading(); liveRegion = LiveRegionMode.Polite })
+}
+
+@Composable private fun Body(text: StringResource) {
+    Text(stringResource(text), style = MaterialTheme.typography.bodyMedium, color = AppColors.TextSecondary,
+        textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
+}
+
+@Composable private fun Banner(text: String) {
+    Text(text, style = MaterialTheme.typography.bodyMedium, color = AppColors.Error,
+        modifier = Modifier.fillMaxWidth().background(AppColors.Error.copy(alpha = 0.08f), RoundedCornerShape(14.dp)).padding(14.dp)
+            .semantics { liveRegion = LiveRegionMode.Polite })
+}
+
+@Composable private fun PebbleThumb() {
+    Box(Modifier.size(44.dp).background(KeyringPebbleColors.Light, RoundedCornerShape(12.dp)), contentAlignment = Alignment.Center) {
+        KeyringPebble(Modifier.size(36.dp))
+    }
+}
+
+@Composable private fun SignalBars(level: Int, modifier: Modifier = Modifier) {
+    Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(2.dp), modifier = modifier.clearAndSetSemantics {}) {
+        repeat(4) { i ->
+            Box(Modifier.width(3.dp).height((4 + i * 3).dp)
+                .background(if (i < level) AppColors.OnSelection else AppColors.BorderSubtle, RoundedCornerShape(1.dp)))
+        }
+    }
+}
+
+/** 작은 로딩 원. 프리뷰에선 멈춘 원(무한 애니메이션이면 프리뷰가 끝나지 않는다) */
+@Composable private fun Spinner() {
+    if (LocalInspectionMode.current) CircularProgressIndicator({ 0.7f }, Modifier.size(18.dp), strokeWidth = 2.dp)
+    else CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+}
+
+/** 신호 세기(dBm) → 막대 1~4개. 기기마다 달라 거리감만 보여준다 */
+private fun signalBars(rssi: Int) = when {
+    rssi >= -55 -> 4
+    rssi >= -70 -> 3
+    rssi >= -85 -> 2
+    else -> 1
+}
+
+/** 가운데 '나'와 겹친 원, 찾는 중이면 민트 빛이 돈다(장식이라 읽지 않음) */
+@Composable private fun Radar(scanning: Boolean, modifier: Modifier = Modifier) {
+    // 프리뷰는 화면이 멈출 때까지 기다렸다 찍으므로 무한 회전을 돌리면 끝나지 않는다(시간 초과). 프리뷰에선 한 장면으로 고정
+    val angle = if (LocalInspectionMode.current) null
+        else rememberInfiniteTransition().animateFloat(0f, 360f, infiniteRepeatable(tween(3000, easing = LinearEasing)))
+    Box(modifier.size(220.dp).clearAndSetSemantics {}, contentAlignment = Alignment.Center) {
+        Canvas(Modifier.fillMaxSize()) {
+            val r = size.minDimension / 2
+            drawCircle(Color(0xFFF7FBF8), radius = r / 3)
+            listOf(1f, 2f / 3, 1f / 3).forEach { drawCircle(Color(0xFFDDEBE1), radius = r * it, style = Stroke(1.dp.toPx())) }
+        }
+        // 회전값은 그리기 단계에서만 읽는다. 컴포지션에서 읽으면 매 프레임 화면 전체(문구 포함)를 다시 계산한다
+        if (scanning) Canvas(Modifier.fillMaxSize().graphicsLayer { rotationZ = angle?.value ?: 40f }) {
+            drawCircle(Brush.sweepGradient(0f to KeyringPebbleColors.Signal.copy(alpha = 0.5f), 0.2f to Color.Transparent,
+                1f to Color.Transparent))
+        }
+        Box(Modifier.size(44.dp).background(AppColors.TextPrimary, CircleShape), contentAlignment = Alignment.Center) {
+            Text(stringResource(Res.string.probe_me), color = AppColors.OnPrimary, style = MaterialTheme.typography.labelMedium)
+        }
+    }
+}
+

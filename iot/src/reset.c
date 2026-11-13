@@ -151,6 +151,7 @@ const char *kr_reset_begin(struct kr_core *core, const struct kr_json *json,
 	core->reset = next;
 	core->reset_challenge.deadline_ms = 0;
 	core->stop_peer = true;
+	core->settings_apply_state = KR_SETTINGS_APPLY_NONE;
 	memset(&core->peer_after_stored, 0, sizeof(core->peer_after_stored));
 	return NULL;
 }
@@ -173,6 +174,9 @@ const char *kr_reset_resume(struct kr_core *core)
 		return "STORAGE_ERROR";
 	}
 	core->reset = next;
+	core->settings_apply_state = KR_SETTINGS_APPLY_NONE;
+	core->settings_recovery_required = false;
+	core->settings_owner_only = false;
 	memset(&core->current, 0, sizeof(core->current));
 	memset(&core->peer_after_stored, 0, sizeof(core->peer_after_stored));
 	return NULL;

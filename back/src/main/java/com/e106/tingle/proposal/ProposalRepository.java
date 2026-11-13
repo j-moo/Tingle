@@ -23,7 +23,7 @@ public interface ProposalRepository extends JpaRepository<MatchProposal, Long> {
 		+ "and (own.response is null or p.status in ('PENDING','ONE_ACCEPTED')) ";
 
 	@Lock(LockModeType.PESSIMISTIC_WRITE)
-	@Query("select p from MatchProposal p where p.id = :id")
+	@Query("select p from MatchProposal p where p.id = :id and p.userLow is not null and p.userHigh is not null")
 	Optional<MatchProposal> lockById(@Param("id") long id);
 
 	@Query(value = VISIBLE + "order by p.proposed_at desc,p.id desc", nativeQuery = true)

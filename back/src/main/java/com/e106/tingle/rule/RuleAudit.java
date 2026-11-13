@@ -20,7 +20,8 @@ import lombok.AccessLevel;
 import lombok.NoArgsConstructor;
 
 /**
- * 규칙 관리 작업 기록(누가·언제·무엇을·왜). 고치거나 지우지 않는다.
+ * 규칙 관리 작업 기록(누가·언제·무엇을·왜). 업무 내용은 고치거나 지우지 않는다.
+ * 회원 탈퇴 시 actor 참조만 비우며 정의·조합의 불변 작성/승인 근거는 별도로 보존한다.
  * 초안 작성자 확인(작성자 본인 승인 금지)도 이 기록으로 한다.
  */
 @Entity
@@ -45,7 +46,6 @@ public class RuleAudit {
 	private String detail;
 	@Column(columnDefinition = "text")
 	private String reason;
-	@Column(nullable = false)
 	private Long actorId;
 	@Column(nullable = false)
 	private Instant occurredAt;

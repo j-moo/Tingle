@@ -1,5 +1,43 @@
 # 키링 상태 조회 BLE 명세 v1
 
+## 2026-11-12 / 0.9.6 설정 복구 상태
+
+`DEVICE_INFO`와 `STATUS`는 설정 복구가 필요한 경우에만 선택 필드 `settingsRecoveryRequired:true`를 추가한다. 없는 경우 기존 동작을 유지한다. `storedSettingsVersion`은 검증된 참조 설정 버전이며, 손상된 최신 버전을 정상 저장 완료로 표시하지 않는다. 복구 중 `applied:false`, `matchingReady:false`, `DEVICE_INFO.storageHealthy:false`다. 만남 저장소의 `storageState` 및 인증 후 집계는 별도 상태로 유지하므로 설정 오류를 만남 데이터 삭제/손실로 해석하지 않는다.
+
+FE는 복구 상태에서 초기화/재등록 대신 기존 계정의 정상 `GET_SYNC_CHALLENGE → SYNC_SETTINGS → STORED → 서버 ACK → APPLIED 조회`를 진행한다. 참조 버전 이하 설정은 `ERROR/SETTINGS_RECOVERY_REQUIRED`로 거부하며, 정상 서명된 상위 버전 저장을 확인한 뒤 복구 상태를 해제한다. 앱이 선택 필드를 아직 표시하지 않아도 기존 동기화 요청 형식은 바뀌지 않는다. BE는 새 실행과 서명을 기존 방식으로 발급하고 소유/설정 버전을 그대로 검증한다.
+
+## 2026-11-12 / 0.9.5 전원 진단 추가
+
+관련 Story [S15P31E106-322](https://ssafy.atlassian.net/browse/S15P31E106-322), [MR !326](https://lab.ssafy.com/s15-final/S15P31E106/-/merge_requests/326). 기존 `GET_STATUS` 요청·인증·전송 경계를 유지하고 `STATUS`에 아래 선택 필드를 추가한다. 기존 필드를 삭제하거나 타입을 바꾸지 않는다. 아래 JSON은 추가 필드 부분만 보여 주는 예시다.
+
+```json
+{
+  "batteryProtectionState": "NORMAL",
+  "chargeMonitorState": "CHARGING",
+  "configuredChargeCurrentMa": 100,
+  "usbConnectedSeconds": 120
+}
+```
+
+| 필드 | 타입·값 | 의미 |
+| --- | --- | --- |
+| `batteryProtectionState` | string: `NORMAL`, `LOW`, `CRITICAL`, `VOLTAGE_FAULT`, `MEASUREMENT_UNKNOWN` | MCU의 전압 운용 상태. 팩 보호 IC 작동 여부나 안전 인증이 아님 |
+| `chargeMonitorState` | string: `UNKNOWN`, `USB_DISCONNECTED`, `BATTERY_ABSENT`, `CHARGING`, `LONG_USB_SESSION`, `STOPPED_UNCONFIRMED`, `NOT_CHARGING_OR_FULL` | VBUS·CHG·확인 가능한 장착 정보에 따른 관측. `BATTERY_ABSENT`는 별도 존재 계측이 있을 때만 가능 |
+| `configuredChargeCurrentMa` | integer 또는 null | 정상 설정 시 공칭 100mA. **실제 측정한 배터리 충전 전류가 아님**. GPIO 설정 실패/미확인은 null |
+| `usbConnectedSeconds` | 0 이상 integer 또는 null | 현재 부팅에서 관측한 USB 연결 경과 초. 미연결 0, USB 계측 미확인 null. 실제 충전 누적 시간·충전 IC 타이머가 아님 |
+
+`LONG_USB_SESSION`은 USB 연결 9시간 이상이면서 CHG가 활성인 경우다. `STOPPED_UNCONFIRMED`는 한 번 이상 활성 CHG를 본 뒤 비활성인 경우이며 완충·타임아웃·분리 중 어느 것인지 구별하지 못한다. FE는 이를 자동으로 “100%/충전 완료”로 변환하지 않는다. 충전 전류 설정 실패와 ADC 실패도 정상 수치로 채우지 않는다.
+
+전압 구간·절전·USB 2초 진동 및 하드웨어 한계는 [README의 보호 범위](README.md#충전과-배터리-보호-범위)를 따른다. USB 진동을 시작하거나 완충을 확인하는 BLE 명령은 추가하지 않는다. 기존 STATUS 최대 수신 2,304B와 분할 수신을 유지한다. 기본 XIAO에서는 USB 연결 중 `batteryPercent:null`, `batteryPercentSource:UNKNOWN`, `batteryPresence:UNCONFIRMED`가 계속 유효하다.
+
+FE 적용은 선택 필드를 nullable로 파싱해 상태 안내에 사용할 수 있다. 현재 앱의 JSON 객체 파서는 모르는 필드를 무시하므로 등록·설정·기록 흐름을 바꿀 필요가 없다. BE API·서명 원문·NVS 저장 규격은 변경하지 않는다. 실제 전압·USB/CHG 변화·절전 복귀는 실물 시험으로 별도 확인한다.
+
+## 이전 상태 계약 기록
+
+**최신0.7.2 후속:** [연동 인계](app-flow-v2-handoff.md) 맨 위 절을 우선한다. STATUS 응답 수신 한도는2304B이며 기존 FE512B 제한을 확대했다. C686B 실제 응답 fixture와 Kotlin 전송/파서로 호환을 검사한다. powerSource·선택적 FUEL_GAUGE·USB 중 추정 금지·recordCursorEpoch를 유지하고, unresolvedAccountLockCount는 이전 상대 소유 scope/실패 입력 메타데이터 복구도 포함한다. 기본 보드의 정확한 잔량/장착 여부는 측정되지 않았으며 null/UNCONFIRMED를 유지한다.
+
+**2026-11-06 / 0.5.0 후속:** 현재 필드는 [전체 앱 연동 v2의 4절](app-flow-v2-handoff.md)을 우선한다. 공개 상태는 전압·충전과 전압 기반 추정치(측정 없으면 null), 기록/NVS 상세는 서버 소유 세션 READ 권한 후 실제 집계를 제공한다. batteryPresence는 UNCONFIRMED이며 실제 잔량계 측정으로 표시하지 않는다. 아래는 0.1.0 당시 기록이다.
+
 현재 통합 펌웨어는 `iot/src/main.c`·`iot/src/nus.c`에서 실행하며 빌드 파일은 `iot/build/zephyr.uf2`다. [빌드·서명 설정 안내](dev-settings-signing-handoff-v1.md)를 참고한다. 이 문서의 `0.1.0-registration` 및 고정 커밋 링크는 이전 시험 기준을 보존한 것이다.
 
 | 항목 | 내용 |

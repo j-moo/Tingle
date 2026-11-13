@@ -1,12 +1,12 @@
 {
-  "provenance": "S15P31E106-145를 위해 독립 작성한 합성 요약·사람 기대값. 실제 사용자/엔진/모델 출력이 아니다. 가상솔·달빛공원·달빛역은 노출 탐지용 가상 표식이다.",
+  "provenance": "S15P31E106-145를 위해 독립 작성한 합성 요약·사람 기대값. 실제 사용자/엔진/모델 출력이 아니다. 가상솔·달빛공원·달빛역은 노출 탐지용 가상 표식이다. 합성 ONE_WAY direction은 2026-11-12 확정 계약(A_TO_B=A가 B의 선호 충족)에 맞춰 갱신. 실제 저장 evidence의 마이그레이션을 뜻하지 않음.",
   "one_way": [
     {
       "id": "A-prefers-B-view-A",
       "viewer": "A",
       "evidence": {
         "id": "e1",
-        "direction": "A_TO_B",
+        "direction": "B_TO_A",
         "kind": "ONE_WAY_PREFERENCE_FIT",
         "topic": "planning",
         "fact": "A가 선호하는 준비 방식에 B의 실제 약속 준비 방식이 맞는다."
@@ -20,7 +20,7 @@
       "viewer": "B",
       "evidence": {
         "id": "e1",
-        "direction": "A_TO_B",
+        "direction": "B_TO_A",
         "kind": "ONE_WAY_PREFERENCE_FIT",
         "topic": "planning",
         "fact": "A가 선호하는 준비 방식에 B의 실제 약속 준비 방식이 맞는다."
@@ -34,7 +34,7 @@
       "viewer": "A",
       "evidence": {
         "id": "e1",
-        "direction": "B_TO_A",
+        "direction": "A_TO_B",
         "kind": "ONE_WAY_PREFERENCE_FIT",
         "topic": "activity",
         "fact": "B가선호하는 활동 범위에 A의 실제 활동이 들어간다."
@@ -48,7 +48,7 @@
       "viewer": "B",
       "evidence": {
         "id": "e1",
-        "direction": "B_TO_A",
+        "direction": "A_TO_B",
         "kind": "ONE_WAY_PREFERENCE_FIT",
         "topic": "activity",
         "fact": "B가 선호하는 활동 범위에 A의 실제 활동이 들어간다."

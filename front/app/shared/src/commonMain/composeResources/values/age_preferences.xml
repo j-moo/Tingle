@@ -1,25 +1,21 @@
 <resources>
     <string name="age_preference_title">희망 나이</string>
     <string name="age_preference_heading">어떤 나이의 상대를\n만나고 싶나요?</string>
-    <string name="age_preference_intro">만 나이로 선택해 주세요. 나중에 설정에서 바꿀 수 있어요.</string>
     <string name="age_preference_any">나이는 상관없어요</string>
-    <string name="age_preference_range">원하는 나이 범위가 있어요</string>
-    <string name="age_preference_any_help">만 19세 이상이면 나이 조건으로 제한하지 않아요.</string>
-    <string name="age_preference_select_help">두 가지 중 하나를 선택해 주세요.</string>
-    <string name="age_preference_input_help">범위를 움직이거나 나이를 입력해 주세요.</string>
+    <string name="age_preference_select_help">위에서 하나를 골라 주세요.</string>
     <string name="age_preference_selected">만 %1$d~%2$d세</string>
-    <string name="age_preference_at_least">만 %1$d세 이상 · 상한 없음</string>
+    <string name="age_preference_at_least">만 %1$d세 이상</string>
     <string name="age_preference_exact">만 %1$d세</string>
     <string name="age_preference_years">%1$d세</string>
-    <string name="age_preference_slider_help">숫자로도 입력할 수 있어요. 더 큰 나이를 입력하면 막대 범위도 넓어져요.</string>
     <string name="age_preference_minimum">최소 나이</string>
     <string name="age_preference_maximum">최대 나이</string>
-    <string name="age_preference_no_upper">최대 나이는 제한하지 않을게요</string>
     <string name="age_preference_integer_error">19 이상의 정수를 입력해 주세요.</string>
     <string name="age_preference_order_error">최소 나이 이상으로 입력해 주세요.</string>
-    <string name="age_preference_apply_help">저장한 조건은 새로운 매칭에 적용돼요. 이미 받은 제안은 유지돼요.</string>
     <string name="age_preference_continue">저장하고 계속하기</string>
     <string name="age_preference_saving">저장 중…</string>
-    <string name="age_preference_retry">다시 저장하기</string>
-    <string name="age_preference_save_failed">저장하지 못했어요. 선택한 내용은 그대로예요. 다시 시도해 주세요.</string>
+    <string name="age_preference_save_failed">저장하지 못했어요</string>
+    <string name="age_preference_tab_any">상관없어요</string>
+    <string name="age_preference_tab_range">범위 정하기</string>
+    <string name="age_preference_no_limit">제한 없음</string>
+    <string name="age_preference_top">%1$d세+</string>
 </resources>

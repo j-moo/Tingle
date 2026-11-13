@@ -183,6 +183,21 @@ class ChatAdditionalReviewTest {
         assertEquals(ChatPartnerPhoto.Empty, m.state.value.photo); assertEquals(1, api.photos)
     }
 
+    @Test fun listKeepsNicknameOnlyForReadableRooms() = test {
+        val api = object : ChatTestServer() {
+            override suspend fun list(cursor: String?) = ApiResult.Ok(ChatRoomsPage(listOf(
+                roomRecord.copy(partnerNickname = "하늘"),
+                roomRecord.copy(chatRoomId = 21, canRead = false, partnerNickname = "숨김"),
+                roomRecord.copy(chatRoomId = 22),
+            ), null, now))
+        }
+        val m = ChatListViewModel(api, TestSession(OnboardingStatus.READY), ChatLocalStorage(ChatMemoryPrefs()))
+            .also { models.put("list", it); it.refresh() }
+        runCurrent()
+        val names = m.state.value.ui.rooms.associate { it.chatRoomId to it.nickname }
+        assertEquals(mapOf(20L to "하늘", 21L to null, 22L to null), names)
+    }
+
     @Test fun absentClosedRoomIsRecheckedAndCleanedAfterStorageRecreation() = test {
         val prefs = ChatMemoryPrefs(); val firstLocal = ChatLocalStorage(prefs)
         firstLocal.mutex.withLock { firstLocal.trackLocked(1, 20) }
@@ -223,5 +238,78 @@ class ChatAdditionalReviewTest {
         runCurrent(); assertEquals(1, m.state.value.ui.rooms.size)
         advanceTimeBy(2_000); runCurrent()
         assertTrue(m.state.value.ui.rooms.isEmpty()); assertNull(prefs.flow(chatDraftKey(20)).first())
+    }
+    // 당겨서 새로고침: 보던 목록은 두고 refreshing 만 켠다. 실패하면 목록 + refreshFailed, 다시 성공하면 풀린다
+    @Test fun pullRefreshKeepsRoomsAndMarksFailure() = test {
+        val api = object : ChatTestServer() {
+            var answer: (suspend () -> ApiResult<ChatRoomsPage>)? = null
+            override suspend fun list(cursor: String?) = answer?.invoke() ?: super.list(cursor)
+        }
+        val m = ChatListViewModel(api, TestSession(OnboardingStatus.READY), ChatLocalStorage(ChatMemoryPrefs()))
+            .also { models.put("list", it); it.refresh() }
+        runCurrent(); assertEquals(1, m.state.value.ui.rooms.size)
+        val gate = CompletableDeferred<ApiResult<ChatRoomsPage>>(); api.answer = { gate.await() }
+        m.refresh(); runCurrent()
+        assertTrue(m.state.value.ui.refreshing); assertEquals(ChatListLoad.Ready, m.state.value.ui.load); assertEquals(1, m.state.value.ui.rooms.size)
+        gate.complete(ApiResult.Fail(AppError.Offline)); runCurrent()
+        assertFalse(m.state.value.ui.refreshing); assertTrue(m.state.value.ui.refreshFailed); assertEquals(1, m.state.value.ui.rooms.size)
+        api.answer = null; m.refresh(); runCurrent()
+        assertFalse(m.state.value.ui.refreshing); assertFalse(m.state.value.ui.refreshFailed); assertEquals(1, m.state.value.ui.rooms.size)
+    }
+
+    // 새로고침이 채팅 권한 회수(AI 동의 철회 등)로 실패하면 보던 목록을 남기지 않는다
+    @Test fun pullRefreshRevokedAccessClearsRooms() = test {
+        val api = object : ChatTestServer() {
+            var failure: AppError? = null
+            override suspend fun list(cursor: String?) = failure?.let { ApiResult.Fail(it) } ?: super.list(cursor)
+        }
+        val m = ChatListViewModel(api, TestSession(OnboardingStatus.READY), ChatLocalStorage(ChatMemoryPrefs()))
+            .also { models.put("list", it); it.refresh() }
+        runCurrent(); assertEquals(1, m.state.value.ui.rooms.size)
+        api.failure = AppError.Server(403, "AI_RISK_CONSENT_REQUIRED", ""); m.refresh(); runCurrent()
+        assertEquals(ChatListLoad.Failed, m.state.value.ui.load); assertTrue(m.state.value.ui.rooms.isEmpty())
+    }
+
+    // 다음 쪽을 받는 중에 당겨서 새로고침하면 그 요청을 버리고 첫 쪽을 새로 받는다(무시되지 않는다)
+    @Test fun refreshDuringNextPageLoadReplacesIt() = test {
+        val cursors = mutableListOf<String?>(); val gate = CompletableDeferred<Unit>()
+        val api = object : ChatTestServer() {
+            override suspend fun list(cursor: String?): ApiResult<ChatRoomsPage> {
+                cursors += cursor
+                // 취소를 늦게 처리하는 요청처럼 끝까지 응답한다(2쪽은 다른 방 21)
+                if (cursor != null) { withContext(NonCancellable) { gate.await() }
+                    return ApiResult.Ok(ChatRoomsPage(listOf(roomRecord.copy(chatRoomId = 21)), null, now)) }
+                return ApiResult.Ok(ChatRoomsPage(listOf(roomRecord), "page2", now))
+            }
+        }
+        val m = ChatListViewModel(api, TestSession(OnboardingStatus.READY), ChatLocalStorage(ChatMemoryPrefs()))
+            .also { models.put("list", it); it.refresh() }
+        runCurrent(); m.more(); runCurrent(); assertEquals(ChatListPage.Loading, m.state.value.ui.page)
+        m.refresh(); runCurrent()
+        assertEquals(listOf(null, "page2", null), cursors)
+        assertFalse(m.state.value.ui.refreshing); assertEquals(ChatListPage.More, m.state.value.ui.page)
+        gate.complete(Unit); runCurrent(); assertEquals(ChatListPage.More, m.state.value.ui.page)
+        assertEquals(listOf(20L), m.state.value.ui.rooms.map { it.chatRoomId })   // 버려진 2쪽은 붙지 않는다
+    }
+
+    // 새로고침이 실패한 뒤에도 다음 쪽은 이전 커서로 이어 받고, 실패 안내는 첫 쪽을 다시 받을 때까지 남는다
+    @Test fun nextPageAfterFailedRefreshKeepsNotice() = test {
+        val cursors = mutableListOf<String?>()
+        val api = object : ChatTestServer() {
+            var failFirst = false
+            override suspend fun list(cursor: String?): ApiResult<ChatRoomsPage> {
+                cursors += cursor
+                if (cursor == null && failFirst) return ApiResult.Fail(AppError.Offline)
+                return ApiResult.Ok(ChatRoomsPage(listOf(roomRecord.copy(chatRoomId = if (cursor == null) 20 else 21)), if (cursor == null) "page2" else null, now))
+            }
+        }
+        val m = ChatListViewModel(api, TestSession(OnboardingStatus.READY), ChatLocalStorage(ChatMemoryPrefs()))
+            .also { models.put("list", it); it.refresh() }
+        runCurrent(); api.failFirst = true; m.refresh(); runCurrent()
+        assertTrue(m.state.value.ui.refreshFailed); assertEquals(ChatListPage.More, m.state.value.ui.page)
+        m.more(); runCurrent()
+        assertEquals("page2", cursors.last()); assertEquals(listOf(20L, 21L), m.state.value.ui.rooms.map { it.chatRoomId })
+        assertTrue(m.state.value.ui.refreshFailed); assertEquals(ChatListPage.End, m.state.value.ui.page)
+        api.failFirst = false; m.refresh(); runCurrent(); assertFalse(m.state.value.ui.refreshFailed)
     }
 }

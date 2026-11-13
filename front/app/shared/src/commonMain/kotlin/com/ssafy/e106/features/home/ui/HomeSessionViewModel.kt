@@ -4,21 +4,38 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.ssafy.e106.core.auth.*
 import com.ssafy.e106.core.network.*
+import com.ssafy.e106.core.storage.AppPrefs
+import com.ssafy.e106.core.storage.PrefKey
+import com.ssafy.e106.core.storage.PrefRead
+import com.ssafy.e106.features.profile.data.OptionalProfileRepository
+import com.ssafy.e106.features.proposals.ui.decodeProposalImage
 import com.ssafy.e106.features.account.ui.*
+import com.ssafy.e106.features.keyring.data.KeyringSettingsChanges
+import com.ssafy.e106.features.keyring.data.OwnedKeyring
+import com.ssafy.e106.features.keyring.data.OwnedKeyringRepository
 import com.ssafy.e106.features.onboarding.data.OnboardingRepository
 import com.ssafy.e106.features.profile.data.ProfileRepository
 import com.ssafy.e106.features.settings.data.*
 import com.ssafy.e106.features.settings.ui.ConflictValues
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
+import kotlinx.serialization.builtins.serializer
 
 data class HomeSessionState(val session: Session.SignedIn? = null, val home: HomeState = HomeState(),
     val account: AccountMenuState = AccountMenuState(), val guide: HelpGuideState? = null,
     val error: AppError? = null, val busy: Boolean = false)
 
-/** 홈에서는 조회만 조합한다. 변경은 기존 설정/프로필 화면의 검증·버전 충돌 흐름으로 보낸다. */
+/** 홈은 조회를 조합하고, 매칭 켜기·끄기와 이 휴대폰의 키링 별명을 저장한다. */
 class HomeSessionViewModel(private val profiles: ProfileRepository, private val settings: MatchingSettingsRepository,
-    private val agreements: OnboardingRepository, private val sessions: SessionStore, private val auth: AuthRepository) : ViewModel() {
+    private val agreements: OnboardingRepository, private val sessions: SessionStore, private val auth: AuthRepository,
+    private val ownedKeyrings: OwnedKeyringRepository, private val changes: KeyringSettingsChanges = KeyringSettingsChanges(),
+    // 사진 조회 연결이 빠진 채 기본 이미지로만 동작하는 구성을 막기 위해 필수로 받는다.
+    private val photos: OptionalProfileRepository,
+    private val prefs: AppPrefs) : ViewModel() {
+    // 마지막으로 받은 매칭 설정(값 + ETag). 켜기 · 끄기 저장은 이 버전에 맞춰서만 보낸다
+    private var matching: SettingsDocument? = null
+    // 진행 중인 켜기 · 끄기 저장. 화면 이동(leave)과 상관없이 끝까지 가고, 홈 재조회는 이게 끝난 뒤에 한다
+    private var saving: Job? = null
     private val mutable = MutableStateFlow(HomeSessionState())
     val state = mutable.asStateFlow()
     private var generation = 0L
@@ -39,21 +56,130 @@ class HomeSessionViewModel(private val profiles: ProfileRepository, private val 
             finally { if (valid(stamp)) mutable.update { it.copy(busy = false) } }
         }
     }
-    fun home() = read { user, stamp ->
-        mutable.update { it.copy(home = HomeState()) }
-        when (val result = settings.get(user, SettingsKind.MATCHING)) {
-            is ApiResult.Ok -> if (valid(stamp)) mutable.update { it.copy(home = HomeState(HomeLoadState.Ready,
-                matchingEnabled = (result.value.values as? ConflictValues.Matching)?.enabled)) }
-            is ApiResult.Fail -> if (valid(stamp)) mutable.update { it.copy(home = HomeState(HomeLoadState.Failed), error = result.error) }
+    fun home() = loadHome(refresh = false)
+
+    fun refreshHome() {
+        val current = mutable.value
+        if (current.busy || current.home.savingMatching || current.session == null) return
+        loadHome(refresh = true)
+    }
+
+    private fun loadHome(refresh: Boolean) = read { user, stamp ->
+        val keepCurrent = refresh && mutable.value.home.load == HomeLoadState.Ready
+        // 당겨서 갱신하는 동안 목록을 비우면 살아 있는 BLE 연결이 잠깐 빨간색으로 바뀐다.
+        mutable.update { it.copy(home = if (keepCurrent) it.home.copy(refreshing = true) else HomeState(refreshing = refresh)) }
+        if (!keepCurrent) matching = null
+        try {
+            saving?.join() // 저장 중에 홈을 다시 열었으면 저장이 끝난 뒤의 값을 받는다.
+            val settingsResult = settings.get(user, SettingsKind.MATCHING)
+            if (!valid(stamp)) return@read
+            when (settingsResult) {
+                is ApiResult.Ok -> {
+                    matching = settingsResult.value
+                    mutable.update { it.copy(home = it.home.copy(load = HomeLoadState.Ready,
+                        matchingEnabled = (settingsResult.value.values as? ConflictValues.Matching)?.enabled,
+                        keyring = if (keepCurrent) it.home.keyring else HomeKeyringState.Checking)) }
+                }
+                is ApiResult.Fail -> {
+                    mutable.update { it.copy(home = if (keepCurrent) it.home else HomeState(HomeLoadState.Failed),
+                        error = settingsResult.error) }
+                    if (!keepCurrent) return@read
+                }
+            }
+            // 서버 목록으로 등록 기기를 갱신한다. 현재 연결은 화면의 BLE 모델에서 확인한다.
+            when (val list = ownedKeyrings.list()) {
+                is ApiResult.Ok -> {
+                    val devices = list.value
+                    val aliases = readKeyringAliases(user, devices)
+                    val keyring = if (devices.isEmpty()) HomeKeyringState.Missing else HomeKeyringState.Registered
+                    if (valid(stamp)) mutable.update { it.copy(home = it.home.copy(keyring = keyring,
+                        keyrings = devices, keyringAliases = aliases)) }
+                }
+                is ApiResult.Fail -> if (valid(stamp)) mutable.update {
+                    if (keepCurrent) it.copy(error = list.error) else it.copy(home = it.home.copy(keyring = HomeKeyringState.Unknown))
+                }
+            }
+        } finally {
+            // 계정 전환과 화면 이탈 뒤 도착한 응답은 현재 화면에 반영하지 않는다.
+            if (valid(stamp)) mutable.update { it.copy(home = it.home.copy(refreshing = false)) }
         }
-        // 목록에는 전체 건수가 없고 BLE 상태도 아직 없으므로 null/Unknown을 그대로 둔다.
+    }
+
+    /** 홈과 동기화 목록에서 이 계정의 휴대폰 별명을 같은 방식으로 읽는다. */
+    internal suspend fun readKeyringAliases(user: Long, devices: List<OwnedKeyring>): Map<Long, String> =
+        devices.mapNotNull { device ->
+            (prefs.read(aliasKey(device.deviceId), user) as? PrefRead.Found)?.value?.let { device.deviceId to it }
+        }.toMap()
+
+    /** 별명은 계정과 등록 기기 번호로 구분한다. 서버나 블루투스로 보내지 않는다. */
+    suspend fun saveKeyringAlias(deviceId: Long, alias: String): Boolean {
+        val user = mutable.value.session?.userId ?: return false
+        if (mutable.value.home.keyrings.none { it.deviceId == deviceId }) return false
+        val value = alias.trim().takeIf { it.isNotEmpty() }
+        if (value != null && value.length > KEYRING_ALIAS_LIMIT) return false
+        val key = aliasKey(deviceId)
+        prefs.set(key, value, user)
+        // 공통 저장소는 쓰기 오류를 숨기므로 다시 읽어서 화면에 성공을 표시할 수 있는지 확인한다.
+        val saved = when (val result = prefs.read(key, user)) {
+            is PrefRead.Found -> result.value == value
+            PrefRead.Missing -> value == null
+            else -> false
+        }
+        if (!saved || (sessions.state.value as? Session.SignedIn)?.userId != user) return false
+        mutable.update { state ->
+            if (state.session?.userId != user || state.home.keyrings.none { it.deviceId == deviceId }) state
+            else state.copy(home = state.home.copy(keyringAliases = if (value == null) state.home.keyringAliases - deviceId
+                else state.home.keyringAliases + (deviceId to value)))
+        }
+        return true
+    }
+    /**
+     * 홈 큰 원: 새 매칭 켜기 · 끄기를 바로 저장한다. 사진 조건은 받은 값 그대로 두고 켜짐만 바꾼다.
+     * - 서버 저장이 확정되거나(응답) 응답을 잃은 뒤 다시 받아 보니 설정이 바뀌어 있으면, 화면을 떠났어도 같은 계정인 한 키링 동기화에 알린다.
+     *   안 알리면 이미 연결 · 동기화를 마친 키링이 예전 설정으로 계속 동작한다.
+     * - 다른 곳에서 먼저 바꿨으면(412 등) 덮어쓰지 않고 실패로 알린 뒤 서버의 최신 값을 보여 준다.
+     * - 화면 반영만 generation 으로 거른다. 저장 중에 홈을 다시 열면 [home] 이 저장이 끝날 때까지 기다렸다 조회한다(이전 값 고정 방지).
+     */
+    fun setMatching(enabled: Boolean) {
+        val user = mutable.value.session ?: return
+        val doc = matching ?: return
+        val values = doc.values as? ConflictValues.Matching ?: return
+        val etag = doc.etag?.takeIf(::validSettingsEtag) ?: return
+        if (mutable.value.busy || mutable.value.home.savingMatching || values.enabled == enabled) return
+        val stamp = generation
+        val target = values.copy(enabled = enabled)
+        fun sameAccount() = (sessions.state.value as? Session.SignedIn)?.userId == user.userId
+        mutable.update { it.copy(home = it.home.copy(savingMatching = true, matchingSaveFailed = false)) }
+        saving = viewModelScope.launch {
+            val result = settings.save(user.userId, SettingsKind.MATCHING, target, etag)
+            val saved = (result as? ApiResult.Ok)?.value?.takeIf { it.values == target && validSettingsEtag(it.etag) }
+            // 실패 · 응답 유실이면 서버의 지금 값을 다시 받는다. 우리 저장이 실제로 됐는지, 다른 곳에서 바뀌었는지 여기서만 알 수 있다
+            val latest = if (saved == null && sameAccount()) (settings.get(user.userId, SettingsKind.MATCHING) as? ApiResult.Ok)?.value else null
+            val now = saved ?: latest?.takeIf { it.values == target && validSettingsEtag(it.etag) }
+            val changed = now != null || (latest != null && (latest.values != doc.values || latest.settingsVersion != doc.settingsVersion))
+            if (changed && sameAccount()) changes.saved(user.userId)
+            if (!valid(stamp)) return@launch
+            val shown = now ?: latest
+            if (shown != null) matching = shown
+            mutable.update { it.copy(home = it.home.copy(savingMatching = false, matchingSaveFailed = now == null,
+                matchingEnabled = (shown?.values as? ConflictValues.Matching)?.enabled ?: it.home.matchingEnabled)) }
+        }
     }
     fun account() = read { user, stamp ->
         mutable.update { it.copy(account = AccountMenuState()) }
         when (val result = profiles.get(user)) {
-            is ApiResult.Ok -> if (valid(stamp)) mutable.update { it.copy(account =
-                if (result.value.userId == user) AccountMenuState(AccountMenuLoad.Ready, result.value.nickname)
-                else AccountMenuState(AccountMenuLoad.Failed)) }
+            is ApiResult.Ok -> if (valid(stamp)) {
+                val mine = result.value.userId == user
+                // 사진은 메뉴를 먼저 보여 준 뒤 받는다. 받는 동안 busy 로 두면 로그아웃이 무시되므로 여기서 푼다
+                mutable.update { it.copy(busy = false, account = if (mine) AccountMenuState(AccountMenuLoad.Ready, result.value.nickname, result.value.hasProfilePhoto)
+                    else AccountMenuState(AccountMenuLoad.Failed)) }
+                // 실패(응답 · 디코드 오류)하면 기본 사진 그대로 둔다. 메뉴를 실패 화면으로 바꾸지 않는다
+                if (mine && result.value.hasProfilePhoto) try {
+                    (photos.photo(user) as? ApiResult.Ok)?.let { decodeProposalImage(it.value) }?.let { bitmap ->
+                        if (valid(stamp)) mutable.update { it.copy(account = it.account.copy(photo = bitmap)) }
+                    }
+                } catch (e: CancellationException) { throw e } catch (_: Exception) {}
+            }
             is ApiResult.Fail -> if (valid(stamp)) mutable.update { it.copy(account = AccountMenuState(AccountMenuLoad.Failed), error = result.error) }
         }
     }
@@ -79,3 +205,8 @@ class HomeSessionViewModel(private val profiles: ProfileRepository, private val 
     }
     fun logout() { if (!mutable.value.busy) viewModelScope.launch { auth.logout() } }
 }
+
+internal const val KEYRING_ALIAS_LIMIT = 20
+
+// 캐시와 다른 파일에 저장해 앱 재실행 뒤에도 남긴다. 로그아웃·계정 전환의 공통 정리 정책은 따른다.
+private fun aliasKey(deviceId: Long) = PrefKey("home.keyring.alias.$deviceId", String.serializer(), durable = true)

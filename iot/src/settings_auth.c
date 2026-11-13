@@ -1,5 +1,6 @@
 #include "registration.h"
 #include "profile.h"
+#include "policy.h"
 #include "monocypher-ed25519.h"
 #include <inttypes.h>
 #include <stdio.h>
@@ -16,13 +17,17 @@ const char *kr_verify_dev_settings(const struct kr_identity *id, const struct kr
 	const char *server_key_id, const uint8_t server_key[32], int64_t *verified_time)
 {
 	struct kr_profile_data profile;
+	struct kr_policy policy;
+	bool operational = kr_policy_format(next->format) && kr_policy_decode(next->payload, next->payload_size, &policy);
+	if (operational && next->payload[3] != (!strcmp(next->format, KR_POLICY_FORMAT) ? '3' : '2')) { return "INVALID_SETTINGS"; }
 	bool supported = !strcmp(next->format, KR_DEV_PAYLOAD_FORMAT) ?
 		next->payload_size == 1 && !(next->payload[0] & ~1u) :
-		!strcmp(next->format, KR_PROFILE_STORAGE_FORMAT) &&
-		kr_profile_data_decode(next->payload, next->payload_size, &profile);
+		operational || (!strcmp(next->format, KR_PROFILE_STORAGE_FORMAT) &&
+		kr_profile_data_decode(next->payload, next->payload_size, &profile));
 	if (!supported) {
 		return "UNSUPPORTED_SETTINGS_FORMAT";
 	}
+	if (operational && (!auth || !auth->version2)) { return "OWNERSHIP_EPOCH_REQUIRED"; }
 	const char *version = auth && auth->version2 ? KR_SETTINGS_PROOF_VERSION_2 : KR_SETTINGS_PROOF_VERSION;
 	if (!auth || !auth->protocol_version || strcmp(auth->protocol_version, version) ||
 		!auth->server_key_id || strcmp(auth->server_key_id, server_key_id)) {
@@ -54,6 +59,8 @@ const char *kr_verify_dev_settings(const struct kr_identity *id, const struct kr
 		return "INVALID_SERVER_PROOF";
 	}
 	challenge->deadline_ms = 0;
+	if (operational && (!kr_peer_grant(policy.grant, server_key, (uint64_t)epoch) ||
+		!kr_peer_grant_matches(id, next, auth, policy.grant))) { return "INVALID_PEER_GRANT"; }
 	*verified_time = epoch;
 	return NULL;
 }

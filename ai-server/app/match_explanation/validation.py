@@ -7,6 +7,7 @@ from .dto import (
     DisclosureScope, Evidence, ModelInput, ModelOutput, ResolvedContext,
     SemanticVerdict, SourceEvidence,
 )
+from .facts import fact_item, shared_phrasing
 
 # 미확정 주제 전체를 승인하는 목록이 아니라 이 구현이 처리하는 최소 범위다.
 # 실제 전송/표시 허용은 반드시 별도의 DisclosureScope를 통과해야 한다.
@@ -41,13 +42,26 @@ SHARED_ACTIONS = {
 }
 
 
-def supported_fact(item: Evidence) -> bool:
-    """종류·주제·방향과 일치하는 보수적인 요약 문법. 미지원은 추측하지 않는다."""
-    subject = FACT_SUBJECTS[item.topic]
+def supported_fact(item: Evidence, *, source_ref: str | None = None) -> bool:
+    """보수적인 문장 문법. 공개·전송 경로는 source_ref도 반드시 대조한다.
+
+    source_ref 생략은 이미 선택된 Evidence의 문장 렌더링용이다.
+    이것만으로 출처 인증이나 공개 권한을 승인하지 않는다.
+    """
+    spec = fact_item(item)
+    if spec is not None:
+        return source_ref is None or source_ref == spec.source_ref
+    # 새 설문 출처를 과거 topic 문법으로 우회하지 않는다.
+    if source_ref is not None and source_ref.startswith("survey:"):
+        return False
+    subject = FACT_SUBJECTS.get(item.topic)
+    if subject is None:
+        return False
     if item.kind == "ONE_WAY_PREFERENCE_FIT":
         if item.direction not in {"A_TO_B", "B_TO_A"}:
             return False
-        owner, other = ("A", "B") if item.direction == "A_TO_B" else ("B", "A")
+        # A_TO_B: A가 B의 선호에 맞음. 과거 반대 방향의 저장 근거는 거부한다.
+        owner, other = ("B", "A") if item.direction == "A_TO_B" else ("A", "B")
         patterns = (
             rf"{other}의 {subject}(?:이|가) {owner}의 (?:선호|허용 범위)에 (?:맞는다|들어간다)",
             rf"{owner}가\s*선호하는 {subject}(?:에| 범위에) {other}의 {subject}(?:이|가) (?:맞는다|들어간다)",
@@ -66,7 +80,7 @@ def supported_fact(item: Evidence) -> bool:
             rf"두 사람의 {subject}에 공통점이 있다",
             rf"(?:두 사람|A와 B) 모두 {SHARED_ACTIONS[item.topic]}",
         )
-    else:
+    elif item.kind == "DIFFERENCE":
         patterns = (rf"{subject}(?:에는|에) 차이가 있다",)
         if item.topic == "planning":
             patterns += (r"약속을 준비하는 시점에는 차이가 있다",)
@@ -75,6 +89,8 @@ def supported_fact(item: Evidence) -> bool:
                 r"A는 익숙한 활동을 주로 찾고 B는 새로운 활동을 찾는 편이어서 "
                 r"경험을 선택하는 방식에 차이가 있다",
             )
+    else:
+        return False
     return any(re.fullmatch(rf"(?:{pattern})\.", item.fact) for pattern in patterns)
 
 
@@ -139,7 +155,14 @@ def select_evidence(
             continue
         if item.id not in scope.display_evidence_ids:
             continue
-        if item.topic not in TOPICS or not safe_text(item.fact) or not supported_fact(item):
+        if not supported_fact(item, source_ref=record.source_ref):
+            continue
+        spec = fact_item(item)
+        # 승인된 SHARED 문장의 공개 표현도 동일한 안전성 검사를 통과해야 한다.
+        # 다른 숫자/자유 문장은 전체 문법 대조에서 거부되며 개인정보 검사는 유지한다.
+        safety_text = (shared_phrasing(item, spec)
+                       if spec and item.kind == "SHARED_REPORTED_BEHAVIOR" else item.fact)
+        if item.topic not in TOPICS or not safe_text(safety_text):
             continue
         display.append(item)
         seen_sources.add(source_key)
@@ -157,7 +180,7 @@ def select_evidence(
     return tuple(display), model, empty_reason
 
 
-def _unique_object(pairs: list[tuple[str, object]]) -> dict:
+def unique_json_object(pairs: list[tuple[str, object]]) -> dict[str, object]:
     result = {}
     for key, value in pairs:
         if key in result:
@@ -169,7 +192,7 @@ def _unique_object(pairs: list[tuple[str, object]]) -> dict:
 def parse_output(raw: str, request: ModelInput) -> ModelOutput:
     if not isinstance(raw, str) or len(raw) > 8_000:
         raise ValueError("INVALID_OUTPUT")
-    output = ModelOutput.model_validate(json.loads(raw, object_pairs_hook=_unique_object))
+    output = ModelOutput.model_validate(json.loads(raw, object_pairs_hook=unique_json_object))
     ids = output.evidenceIds
     evidence = {item.id: item for item in request.evidence}
     if len(ids) != len(set(ids)) or not set(ids) <= evidence.keys():
@@ -189,7 +212,7 @@ def parse_output(raw: str, request: ModelInput) -> ModelOutput:
 def validate_verdict(raw: str, output: ModelOutput) -> None:
     if not isinstance(raw, str) or len(raw) > 8_000:
         raise ValueError("INVALID_OUTPUT")
-    verdict = SemanticVerdict.model_validate(json.loads(raw, object_pairs_hook=_unique_object))
+    verdict = SemanticVerdict.model_validate(json.loads(raw, object_pairs_hook=unique_json_object))
     if not (verdict.supported and verdict.directionCorrect and verdict.privacySafe):
         raise ValueError("INVALID_OUTPUT")
     if len(verdict.evidenceIds) != len(set(verdict.evidenceIds)):

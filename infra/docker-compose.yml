@@ -77,6 +77,8 @@ services:
     environment: &back-env
       SPRING_PROFILES_ACTIVE: prod
       SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/tingle
+      # 환경별 가입 키링 요구값은 Jenkins tingle-app-env에서 관리한다.
+      TINGLE_SIGNUP_KEYRING_REQUIRED: "${TINGLE_PROD_SIGNUP_KEYRING_REQUIRED:-true}"
       SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER:?}
       SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:?}
       JWT_SECRET: ${JWT_SECRET:?}
@@ -97,6 +99,31 @@ services:
       TERMS_CONTENT_URL: https://${DOMAIN:?}/terms/
       PRIVACY_CONTENT_URL: https://${DOMAIN:?}/privacy/
       AI_RISK_CONTENT_URL: https://${DOMAIN:?}/ai-risk/
+      # 키링 구매 안내 링크(back application.yml keyring purchase-url). app.env 에 있으면 그 값, 없으면 빈 값 → 서버가 null → 앱이 구매하기 줄을 숨긴다(S15P31E106-308)
+      KEYRING_PURCHASE_URL: ${KEYRING_PURCHASE_URL:-}
+      # 키링 설정·명령 서명. 운영도 개발 서명 키를 같이 쓴다(11-11 결정 B, 펌웨어 고정 공개키). 1바이트 ON/OFF·TPS1은 운영에서 서버가 막는다.
+      # 키 파일·정책 값은 개발과 같은 이름을 쓴다. 켜는 값과 DB 행 값은 PROD_ 이름으로 따로 켠다(기본 OFF, /srv/tingle/.env).
+      KEYRING_DEV_SETTINGS_ENABLED: "${PROD_KEYRING_DEV_SETTINGS_ENABLED:-false}"
+      KEYRING_DEV_SETTINGS_PRIVATE_KEY_FILE: "${KEYRING_DEV_SETTINGS_PRIVATE_KEY_FILE:-/run/secrets/tingle/dev-settings-private.pem}"
+      KEYRING_DEV_SETTINGS_PUBLIC_KEY_FILE: "${KEYRING_DEV_SETTINGS_PUBLIC_KEY_FILE:-/run/secrets/tingle/dev-settings-public.pem}"
+      # TSV3·소유 세션·만남 접수(S15P31E106-270). 기본 OFF·빈 값이면 422 POLICY_UNRESOLVED.
+      # 켜기 전에 tingle · tingle_dev 에 infra/db/prod-changes/2026-11-06-peer-flow-270.sql 을 먼저 적용한다.
+      KEYRING_PEER_ENABLED: "${PROD_KEYRING_PEER_ENABLED:-false}"
+      KEYRING_PEER_ENCOUNTERS_ENABLED: "${PROD_KEYRING_PEER_ENCOUNTERS_ENABLED:-false}"
+      KEYRING_PEER_REVIEW_INTAKE_APPROVED: "${PROD_KEYRING_PEER_REVIEW_INTAKE_APPROVED:-false}"
+      KEYRING_PEER_BUSINESS_INTAKE_ENABLED: "${PROD_KEYRING_PEER_BUSINESS_INTAKE_ENABLED:-false}"
+      KEYRING_PEER_BUSINESS_RULE_RELEASE_ID: "${PROD_KEYRING_PEER_BUSINESS_RULE_RELEASE_ID:-}"
+      KEYRING_PEER_BUSINESS_RELEASE_HASH: "${PROD_KEYRING_PEER_BUSINESS_RELEASE_HASH:-}"
+      KEYRING_PEER_RELEASE_POLICY_APPROVED: "${PROD_KEYRING_PEER_RELEASE_POLICY_APPROVED:-false}"
+      KEYRING_PEER_POLICY_APPROVED: "${PROD_KEYRING_PEER_POLICY_APPROVED:-false}"
+      KEYRING_PEER_POLICY_VERSION: "${KEYRING_PEER_POLICY_VERSION:-0}"
+      KEYRING_PEER_RULE_VERSION: "${KEYRING_PEER_RULE_VERSION:-0}"
+      KEYRING_PEER_LEASE_SECONDS: "${KEYRING_PEER_LEASE_SECONDS:-0}"
+      KEYRING_PEER_OPPORTUNITY_SECONDS: "${KEYRING_PEER_OPPORTUNITY_SECONDS:-0}"
+      KEYRING_PEER_PRESENCE_GAP_SECONDS: "${KEYRING_PEER_PRESENCE_GAP_SECONDS:-0}"
+      KEYRING_PEER_SERVER_PUBLIC_KEY_HEX: "${KEYRING_PEER_SERVER_PUBLIC_KEY_HEX:-}"
+      # 키링 판정(KeyringVerdictEvaluator)으로 만남을 제안까지 잇는 평가 워커. 기본 OFF. 승인·게시된 키링 규칙 조합이 있어야 한다.
+      APP_ENCOUNTER_EVALUATION_ENABLED: "${PROD_APP_ENCOUNTER_EVALUATION_ENABLED:-false}"
     volumes: &back-volumes
       - /srv/tingle/secrets:/run/secrets/tingle:ro # Jenkins 가 쓰는 비밀 파일 (fcm.json)
       - /data/uploads/prod:/data/photos # 운영 사진. 블루 · 그린이 같은 폴더를 함께 쓴다. 호스트 폴더 소유자는 이미지 실행 사용자(uid 1000)
@@ -118,6 +145,7 @@ services:
       <<: *back-env
       SPRING_PROFILES_ACTIVE: dev
       SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/tingle_dev
+      TINGLE_SIGNUP_KEYRING_REQUIRED: "${TINGLE_DEV_SIGNUP_KEYRING_REQUIRED:-true}"
       TERMS_CONTENT_URL: https://${DOMAIN:?}/dev/terms/ # 개발은 develop 에 머지된 web-dev 페이지
       PRIVACY_CONTENT_URL: https://${DOMAIN:?}/dev/privacy/
       AI_RISK_CONTENT_URL: https://${DOMAIN:?}/dev/ai-risk/
@@ -131,11 +159,21 @@ services:
       # Q040 개발 릴리스는 외부 승인된 파일을 양쪽 서비스에 동일하게 등록한다.
       APP_ICEBREAKER_EXTERNAL_ENABLED: "${Q040_DEV_ENABLED:-false}"
       APP_ICEBREAKER_MANIFEST_LOCATION: file:/run/tingle/q040-dev-release-v1/be-descriptor.json
-      # 개발 1바이트 설정 서명. 실제 키 인계·공동 시험 승인 전에는 비활성이다.
+      # TPS1(196B 프로필) 허용 기기. 11-06 별도 override 파일로만 넣어 Jenkins 재배포 때 풀리던 값을 여기서 전달한다.
+      KEYRING_DEV_SETTINGS_PROFILE_DEVICE_SERIALS: "${KEYRING_DEV_SETTINGS_PROFILE_DEVICE_SERIALS:-}"
+      # 키링 ON/OFF·DB 행 값은 개발 이름 그대로 덮어쓴다(운영은 위 PROD_ 이름).
+      # 키링 초기화(app.keyring-reset)는 개발에만 둔다. 운영 DB 에는 keyring_reset_run 표가 없어 켜면 동기화가 500 이 된다.
       app.keyring-reset.enabled: "${KEYRING_RESET_DEV_ENABLED:-false}"
       KEYRING_DEV_SETTINGS_ENABLED: "${KEYRING_DEV_SETTINGS_ENABLED:-false}"
-      KEYRING_DEV_SETTINGS_PRIVATE_KEY_FILE: "${KEYRING_DEV_SETTINGS_PRIVATE_KEY_FILE:-/run/secrets/tingle/dev-settings-private.pem}"
-      KEYRING_DEV_SETTINGS_PUBLIC_KEY_FILE: "${KEYRING_DEV_SETTINGS_PUBLIC_KEY_FILE:-/run/secrets/tingle/dev-settings-public.pem}"
+      KEYRING_PEER_ENABLED: "${KEYRING_PEER_ENABLED:-false}"
+      KEYRING_PEER_ENCOUNTERS_ENABLED: "${KEYRING_PEER_ENCOUNTERS_ENABLED:-false}"
+      KEYRING_PEER_REVIEW_INTAKE_APPROVED: "${KEYRING_PEER_REVIEW_INTAKE_APPROVED:-false}"
+      KEYRING_PEER_BUSINESS_INTAKE_ENABLED: "${KEYRING_PEER_BUSINESS_INTAKE_ENABLED:-false}"
+      KEYRING_PEER_BUSINESS_RULE_RELEASE_ID: "${KEYRING_PEER_BUSINESS_RULE_RELEASE_ID:-}"
+      KEYRING_PEER_BUSINESS_RELEASE_HASH: "${KEYRING_PEER_BUSINESS_RELEASE_HASH:-}"
+      KEYRING_PEER_RELEASE_POLICY_APPROVED: "${KEYRING_PEER_RELEASE_POLICY_APPROVED:-false}"
+      KEYRING_PEER_POLICY_APPROVED: "${KEYRING_PEER_POLICY_APPROVED:-false}"
+      APP_ENCOUNTER_EVALUATION_ENABLED: "${APP_ENCOUNTER_EVALUATION_ENABLED:-false}"
       # 채팅 삭제 뒤 백업 사본 확인(S15P31E106-202 · 250). 서버 cron 이 1분마다 /srv/tingle/backup-evidence 에 쓰는 메타데이터만 읽는다(/backup 은 붙이지 않음).
       # 켜는 값은 서버 /srv/tingle/.env 의 BACKUP_EVIDENCE_ENABLED=true. 범위 · 승인 ID 는 공개 식별자(docs/specifications/functional-spec-v3/backup-evidence-v1.md)
       APP_BACKUP_EVIDENCE_ENABLED: "${BACKUP_EVIDENCE_ENABLED:-false}"
@@ -154,7 +192,7 @@ services:
     restart: unless-stopped
 
   # ai: 운영(ai-blue · ai-green 중 한쪽만 켬, back 은 http://ai:8000 → nginx 가 운영 색으로 전달) · 개발(ai-dev, back-dev 가 http://ai-dev:8000 으로 직접 호출).
-  # 외부에 열지 않는다. Dockerfile 기본값이 HOST=0.0.0.0 · PORT=8000 · APP_ENV=prod. GMS 키는 받으면 Credentials → app.env → 여기에 GMS_API_KEY 를 더한다.
+  # 외부에 열지 않는다. Dockerfile 기본값이 HOST=0.0.0.0 · PORT=8000 · APP_ENV=prod. GMS 키(GMS_API_KEY)는 Credentials → app.env 로 받고 지금은 ai-dev 에만 넘긴다.
   ai-blue:
     build: ../ai-server
     mem_limit: 512m
@@ -167,8 +205,16 @@ services:
 
   ai-dev:
     build: ../ai-server
+    # 개발 전용 구성(app.development): 아래 스위치가 켜진 기능만 GMS 로 생성하고, 나머지는 app.main 과 같다. 운영(ai-blue · ai-green)은 기본 CMD 그대로.
+    command: [python, -m, uvicorn, "app.development:create_app", --factory, --host, 0.0.0.0, --port, "8000"]
     environment:
       APP_ENV: dev
+      # GMS: 키는 Jenkins Credentials tingle-app-env(app.env)의 GMS_API_KEY. 스위치가 꺼져 있으면 키를 읽지 않고 app.main 과 똑같이 동작한다.
+      # 켜려면 서버 .env 에 ICEBREAKER_GMS_DEV_ENABLED=true 를 넣고 ai-dev 를 다시 띄운다(AI 담당과 Release 확인 후). 켰는데 키가 없으면 기동을 거절한다.
+      GMS_API_KEY: "${GMS_API_KEY:-}"
+      ICEBREAKER_GMS_DEV_ENABLED: "${ICEBREAKER_GMS_DEV_ENABLED:-false}"
+      # Match Insight GMS 는 개발용 Release(descriptor · artifact)를 서버에 둔 뒤 EXPLANATION_RELEASE_DESCRIPTOR_FILES 와 함께 켠다. 파일 없이 경로만 넣으면 기동이 실패한다.
+      MATCH_INSIGHT_GMS_DEV_ENABLED: "false"
       AI_SERVICE_PUBLIC_KEYS: '{"be-dev-1":"/run/ai-keys/be-dev-1.pub.pem"}' # back-dev 서명 키와 짝. 파일이 없으면 기동을 거절한다
       ICEBREAKER_DEV_ENABLED: "${Q040_DEV_ENABLED:-false}"
       ICEBREAKER_RELEASE_DESCRIPTOR_FILE: /run/tingle/q040-dev-release-v1/ai-descriptor.json

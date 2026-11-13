@@ -16,14 +16,21 @@ val keyringModule = module {
     single { KeyringRegistrationStore(get()) }
     single<KeyringSyncRepository> { HttpKeyringSyncRepository(get()) }
     single { KeyringSyncStore(get()) }
+    // 301 기록 흐름에서 같은 연결의 권한을 열 때만 사용한다. DI 등록만으로 허가를 발급하지 않는다.
+    single<KeyringOwnerSessionRepository> { HttpKeyringOwnerSessionRepository(get()) }
+    single { KeyringOwnerAuthorizer(get()) }
+    single { KeyringEncounterRepository(get()) }
+    single { KeyringEncounterJournal(get()) }
+    viewModel { com.ssafy.e106.features.keyring.ui.KeyringEncounterViewModel(get(), get(), get(), get(), get()) }
     // 초기화 복구도 계정별 내구 저장소를 사용한다. DI 등록만으로 서버/BLE 호출은 발생하지 않는다.
     single<KeyringResetRepository> { HttpKeyringResetRepository(get()) }
     single { KeyringResetStore(get()) }
     single { KeyringResetRecovery(get(), get(), get(), get(), get()) }
     viewModel { com.ssafy.e106.features.keyring.ui.KeyringResetViewModel(get(), get(), get(), get()) }
     single { com.ssafy.e106.features.keyring.data.KeyringSettingsChanges() }
-    viewModel { KeyringSyncViewModel(get(), get(), get(), get(), changes = get()) }
+    // 전경 동기화 모델이 연결 감시를 구독/해제하며 다른 기능의 요청을 일괄 재전송하지 않는다.
+    viewModel { KeyringSyncViewModel(get(), get(), get(), get(), changes = get(), network = get()) }
     viewModel { KeyringRegistrationViewModel(get(), get(), get(), get(), get(), get()) }
     viewModel { OwnedKeyringsViewModel(get(), get()) }
-    viewModel { BleProbeViewModel(get(), get()) }
+    viewModel { BleProbeViewModel(get(), get(), get()) }
 }

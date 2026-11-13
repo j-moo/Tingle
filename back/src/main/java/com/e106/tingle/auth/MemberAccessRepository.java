@@ -5,6 +5,8 @@ import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.List;
 
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.context.properties.bind.Bindable;
 import org.springframework.boot.context.properties.bind.Binder;
 import org.springframework.core.env.Environment;
@@ -12,6 +14,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
 import com.e106.tingle.agreement.AgreementPolicy;
+import com.e106.tingle.withdrawal.WithdrawalIdentityService;
 
 @Repository
 public class MemberAccessRepository {
@@ -20,10 +23,20 @@ public class MemberAccessRepository {
 		+ "and (m.max_age is null or m.max_age>=m.min_age)))";
 	private final JdbcTemplate jdbc;
 	private final Environment environment;
+	private final WithdrawalIdentityService withdrawalIdentities;
 
 	public MemberAccessRepository(JdbcTemplate jdbc, Environment environment) {
 		this.jdbc = jdbc;
 		this.environment = environment;
+		this.withdrawalIdentities = null;
+	}
+
+	@Autowired
+	public MemberAccessRepository(JdbcTemplate jdbc, Environment environment,
+		ObjectProvider<WithdrawalIdentityService> withdrawalIdentities) {
+		this.jdbc = jdbc;
+		this.environment = environment;
+		this.withdrawalIdentities = withdrawalIdentities.getIfAvailable();
 	}
 
 	// 가입 단계별 완료 여부 (OnboardingService.statusOf). 마지막 키링 반영까지 끝났는지는 ready 가 판단한다.
@@ -68,10 +81,14 @@ public class MemberAccessRepository {
 	}
 
 	public boolean ready(long userId, Instant now) {
+		return signupReady(userId, now, true);
+	}
+
+	public boolean signupReady(long userId, Instant now, boolean requireKeyring) {
 		if (!requiredAgreementsSatisfied(userId, signupCompleted(userId))) {
 			return false;
 		}
-		return matchingDataReady(userId, now);
+		return signupDataReady(userId, now, requireKeyring);
 	}
 
 	// 기존 제안 응답은 기기·현재 설문/설정 반영과 분리한다. 회원 행 잠금 후 최신 상태를 검사한다.
@@ -103,22 +120,25 @@ public class MemberAccessRepository {
 		return true;
 	}
 
-	private boolean matchingDataReady(long userId, Instant now) {
+	private boolean signupDataReady(long userId, Instant now, boolean requireKeyring) {
 		LocalDate adultBefore = now.atZone(ZoneId.of("Asia/Seoul")).toLocalDate().minusYears(19);
 		return Boolean.TRUE.equals(jdbc.queryForObject("select exists (select 1 from users u "
 			+ "join profile p on p.user_id=u.id join matching_preference m on m.user_id=u.id "
-			+ "join user_setting us on us.user_id=u.id "
 			+ "join personality a on a.id=p.active_personality_id join survey s on s.id=a.survey_id "
 			+ "where u.id=? and u.status='ACTIVE' and p.nickname is not null "
 			+ "and p.birth_date<=? and p.gender in ('MALE','FEMALE') and p.smoking_status is not null "
 			+ "and p.drinking_frequency is not null and p.completed_at is not null and " + AGE_SELECTED
 			+ " and s.user_id=u.id and s.completed_at is not null and a.status='SUCCEEDED' "
-			+ "and us.settings_version>0 and exists (select 1 from keyring k where k.owner_user_id=u.id "
-			+ "and k.state='REGISTERED' and k.synced_settings_version=us.settings_version))",
-			Boolean.class, userId, java.sql.Date.valueOf(adultBefore)));
+			+ "and (not ? or exists (select 1 from user_setting us join keyring k on k.owner_user_id=us.user_id "
+			+ "where us.user_id=u.id and us.settings_version>0 and k.state='REGISTERED' "
+			+ "and k.synced_settings_version=us.settings_version)))",
+			Boolean.class, userId, java.sql.Date.valueOf(adultBefore), requireKeyring));
 	}
 
 	public boolean restrictedPair(long first, long second) {
+		if (withdrawalIdentities != null && withdrawalIdentities.restrictedPair(first, second)) {
+			return true;
+		}
 		return Boolean.TRUE.equals(jdbc.queryForObject("select exists (select 1 from matching m "
 			+ "join matching_participant p on p.matching_id=m.id "
 			+ "where ((m.user_low_id=? and m.user_high_id=?) or (m.user_low_id=? and m.user_high_id=?)) "

@@ -24,16 +24,16 @@ PROBE = """
 import json, os, sys
 try:
     from app.main import app
+    from fastapi.testclient import TestClient
+    with TestClient(app) as client:
+        response = client.post('/internal/ai/risk-detections', json=json.loads(os.environ['SYNTHETIC_REQUEST']),
+                               headers={'Authorization': 'Bearer ' + os.environ['SYNTHETIC_TOKEN']})
+        print(json.dumps({'http': response.status_code, 'body': response.json(),
+                          'tokenizersLoaded': 'tokenizers' in sys.modules,
+                          'rulesLoaded': 'app.risk_detection.rule_engine' in sys.modules}))
 except Exception as error:
     print(json.dumps({'error': type(error).__name__, 'message': str(error)}))
     raise SystemExit(7)
-from fastapi.testclient import TestClient
-with TestClient(app) as client:
-    response = client.post('/internal/ai/risk-detections', json=json.loads(os.environ['SYNTHETIC_REQUEST']),
-                           headers={'Authorization': 'Bearer ' + os.environ['SYNTHETIC_TOKEN']})
-    print(json.dumps({'http': response.status_code, 'body': response.json(),
-                      'tokenizersLoaded': 'tokenizers' in sys.modules,
-                      'rulesLoaded': 'app.risk_detection.rule_engine' in sys.modules}))
 """
 SERVER = """
 import ipaddress, socket, sys

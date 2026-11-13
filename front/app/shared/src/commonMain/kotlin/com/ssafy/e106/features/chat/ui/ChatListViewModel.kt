@@ -35,10 +35,16 @@ class ChatListViewModel(private val api: ChatRepository, private val sessions: S
         mutable.update { it.copy(ui = ChatListState()) }; cursor = null }
     private fun load(next: String?) {
         val owner = mutable.value.owner ?: return
-        if (job?.isActive == true) return
+        if (job?.isActive == true) { if (next != null) return; job?.cancel() }
         visible = true
         val stamp = ++generation
-        mutable.update { it.copy(error = null, ui = if (next == null) ChatListState() else it.ui.copy(page = ChatListPage.Loading)) }
+        mutable.update { it.copy(error = null, ui = when {
+            next != null -> it.ui.copy(page = ChatListPage.Loading)
+            // 이미 목록이 보이면(당겨서 새로고침) 목록은 두고 위쪽 표시만 돌린다
+            it.ui.load == ChatListLoad.Ready && it.ui.rooms.isNotEmpty() -> it.ui.copy(refreshing = true, refreshFailed = false,
+                page = if (it.ui.page == ChatListPage.Loading) ChatListPage.More else it.ui.page)
+            else -> ChatListState()
+        }) }
         job = viewModelScope.launch {
             val requestStarted = now()
             val result = api.list(next)
@@ -55,22 +61,31 @@ class ChatListViewModel(private val api: ChatRepository, private val sessions: S
                     }
                     val rows = result.value.items.filter { it.chatRoomId > 0 }.map { room ->
                         lifetimes.getOrPut(room.chatRoomId) { ChatExpiry(now) }.observe(room, requestStarted)
-                        ChatListItem(
-                        chatRoomId = room.chatRoomId, hasNewMessages = room.hasNewMessage, closesAtLabel = room.expiresAt,
-                        access = when { room.status == "CLOSED" || lifetimes.getValue(room.chatRoomId).remaining() <= 0 -> ChatRoomAccess.Closed
+                        val access = when { room.status == "CLOSED" || lifetimes.getValue(room.chatRoomId).remaining() <= 0 -> ChatRoomAccess.Closed
                             room.status == "ACTIVE" && room.canRead -> ChatRoomAccess.Allowed
-                            else -> ChatRoomAccess.Unknown }) }
+                            else -> ChatRoomAccess.Unknown }
+                        // 권한이 미확인인 행에는 서버 값이 있어도 상대 닉네임을 보관하지 않는다.
+                        ChatListItem(chatRoomId = room.chatRoomId,
+                            nickname = room.partnerNickname?.takeIf { access == ChatRoomAccess.Allowed && it.isNotBlank() },
+                            hasNewMessages = room.hasNewMessage, closesAtLabel = room.expiresAt, access = access)
+                    }
                     cursor = result.value.nextCursor
+                    // 다음 쪽만 받은 것이면 새로고침 실패 안내는 그대로 둔다(첫 쪽은 아직 옛 내용)
                     mutable.update { it.copy(ui = ChatListState(ChatListLoad.Ready,
                         visibleChatRooms((if (next == null) emptyList() else it.ui.rooms) + rows),
-                        if (cursor == null) ChatListPage.End else ChatListPage.More)) }
+                        if (cursor == null) ChatListPage.End else ChatListPage.More,
+                        refreshFailed = next != null && it.ui.refreshFailed)) }
                     // 목록에 머물러도 만료 시각에 행을 지우며, 다른 페이지의 보관 방은 별도 권한 조회로 확인한다.
                     for (room in result.value.items.filter { it.chatRoomId > 0 }) scheduleExpiry(owner, room.chatRoomId)
                     if (next == null) checkStoredRooms(owner)
                 }
-                is ApiResult.Fail -> mutable.update { it.copy(error = result.error, ui =
-                    if (next == null || result.error.revokesChat()) ChatListState(load = ChatListLoad.Failed)
-                    else it.ui.copy(page = ChatListPage.Failed)) }
+                is ApiResult.Fail -> mutable.update { it.copy(error = result.error, ui = when {
+                    result.error.revokesChat() -> ChatListState(load = ChatListLoad.Failed)
+                    next != null -> it.ui.copy(page = ChatListPage.Failed)
+                    // 새로고침 실패: 보던 목록 + 안내 한 줄
+                    it.ui.refreshing -> it.ui.copy(refreshing = false, refreshFailed = true)
+                    else -> ChatListState(load = ChatListLoad.Failed)
+                }) }
             }
         }
     }

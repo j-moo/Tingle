@@ -35,6 +35,8 @@ fun ProfileEditScreen(
     optionalContent: (@Composable () -> Unit)? = null,
     header: @Composable () -> Unit = {},
     photoActionLabel: String? = null,
+    refreshing: Boolean = false,
+    onRefresh: (() -> Unit)? = null,
 ) {
     var selection by rememberSaveable { mutableStateOf<String?>(null) }
     val draft = state.draft
@@ -43,20 +45,21 @@ fun ProfileEditScreen(
         Column(Modifier.fillMaxSize().safeDrawingPadding().imePadding()) {
             // 결과 재조회가 필요해 입력을 잠근 경우에도 확인 후 나갈 수 있게 뒤로가기는 유지한다.
             AppTopBar(stringResource(Res.string.profile_edit_title), onBack = if (!state.saving) onBack else null)
-            Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.TopCenter) {
+            // 당겨서 새로고침은 호출부가 줄 때만 붙는다(서버 값을 다시 받아도 고치던 입력은 ViewModel 이 지킨다)
+            val body: @Composable BoxScope.() -> Unit = {
                 Column(Modifier.widthIn(max = 640.dp).fillMaxWidth().verticalScroll(rememberScrollState())
                     .padding(screenPaddingValues()), verticalArrangement = Arrangement.spacedBy(AppSpacing.Large)) {
                     Text(stringResource(Res.string.profile_edit_heading), style = MaterialTheme.typography.headlineMedium)
                     Text(stringResource(Res.string.profile_edit_help), color = AppColors.TextSecondary)
                     header()
-                    Text(stringResource(Res.string.profile_photo_title), style = MaterialTheme.typography.titleMedium)
+                    TagLabel(stringResource(Res.string.profile_photo_title), style = MaterialTheme.typography.titleMedium)
                     if (state.hasPhoto && photoContent != null) {
                         Box(Modifier.size(144.dp).align(Alignment.CenterHorizontally).clip(AppShapes.Card)) {
                             photoContent()
                         }
                     }
                     Text(stringResource(if (state.hasPhoto) Res.string.profile_edit_photo_registered else Res.string.profile_photo_empty))
-                    AppButton(photoActionLabel ?: stringResource(Res.string.profile_edit_photo_manage), variant = AppButtonVariant.Secondary,
+                    AppButton(photoActionLabel ?: stringResource(Res.string.profile_edit_photo_manage), Modifier.fillMaxWidth(), variant = AppButtonVariant.Secondary,
                         enabled = editable, onClick = onPhoto)
                     HorizontalDivider()
                     AppTextField(draft.nickname, { onChange(draft.copy(nickname = it)) },
@@ -80,14 +83,14 @@ fun ProfileEditScreen(
                     EditSelection(stringResource(Res.string.profile_edit_drinking), draft.drinking?.let { stringResource(it.label()) }, editable) { selection = "drinking" }
                     HorizontalDivider()
                     if (optionalContent != null) optionalContent() else {
-                    Text(stringResource(Res.string.profile_religion_title), style = MaterialTheme.typography.titleMedium)
+                    TagLabel(stringResource(Res.string.profile_religion_title), style = MaterialTheme.typography.titleMedium)
                     AppCheckbox(draft.religionConsent, { onChange(draft.copy(religionConsent = it,
                         religion = if (it) draft.religion else null)) }, stringResource(Res.string.profile_religion_consent), enabled = editable)
-                    EditSelection(stringResource(Res.string.profile_religion_title), draft.religion?.let { stringResource(it.label()) }
+                    EditSelection(stringResource(Res.string.profile_religion_title).withoutTag(), draft.religion?.let { stringResource(it.label()) }
                         ?: stringResource(Res.string.profile_religion_private), editable && draft.religionConsent) { selection = "religion" }
                     Text(stringResource(Res.string.profile_religion_private_help), style = MaterialTheme.typography.bodySmall)
                     HorizontalDivider()
-                    Text(stringResource(Res.string.profile_intro_title), style = MaterialTheme.typography.titleMedium)
+                    TagLabel(stringResource(Res.string.profile_intro_title), style = MaterialTheme.typography.titleMedium)
                     AppCheckbox(draft.introductionConsent, { onChange(draft.copy(introductionConsent = it,
                         introduction = if (it) draft.introduction else "")) }, stringResource(Res.string.profile_intro_consent), enabled = editable)
                     val intro = draft.details
@@ -99,7 +102,7 @@ fun ProfileEditScreen(
                     OutlinedTextField(draft.introduction, { onChange(draft.copy(introduction = it)) },
                         modifier = Modifier.fillMaxWidth(), minLines = 4, maxLines = 6, shape = AppShapes.Control,
                         enabled = editable && draft.introductionConsent, isError = introError != null,
-                        label = { Text(stringResource(Res.string.profile_intro_title)) },
+                        label = { Text(stringResource(Res.string.profile_intro_title).withoutTag()) },
                         placeholder = { Text(stringResource(Res.string.profile_intro_placeholder)) },
                         supportingText = { Column {
                             Text(stringResource(Res.string.profile_intro_count, intro.introductionLength))
@@ -108,11 +111,13 @@ fun ProfileEditScreen(
                     }
                 }
             }
+            if (onRefresh != null) PullDownRefreshBox(refreshing, onRefresh, Modifier.weight(1f).fillMaxWidth(), content = body)
+            else Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.TopCenter, content = body)
+            // 저장 실패: 입력은 그대로 두고 버튼 바로 위에 한 줄로 알린다. 버튼은 "다시 시도"가 되고 입력을 고치면 원래대로 돌아온다
             Column(Modifier.align(Alignment.CenterHorizontally).widthIn(max = 640.dp).fillMaxWidth()
-                .padding(horizontal = screenGutter(), vertical = AppSpacing.Medium)) {
-                state.saveError?.let { Text(it, color = AppColors.Error,
-                    modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite }) }
-                AppButton(stringResource(Res.string.profile_edit_save), Modifier.fillMaxWidth(),
+                .padding(horizontal = screenGutter(), vertical = AppSpacing.Medium), verticalArrangement = Arrangement.spacedBy(AppSpacing.Small)) {
+                state.saveError?.let { InlineError(it) }
+                AppButton(stringResource(if (state.saveError != null) Res.string.state_retry else Res.string.profile_edit_save), Modifier.fillMaxWidth(),
                     enabled = state.canSave, loading = state.saving, loadingText = stringResource(Res.string.profile_saving), onClick = onSave)
             }
         }
@@ -132,7 +137,7 @@ fun ProfileEditScreen(
             "smoking" -> Res.string.profile_edit_smoking
             "drinking" -> Res.string.profile_edit_drinking
             else -> Res.string.profile_religion_title
-        })
+        }).withoutTag()
         AlertDialog(onDismissRequest = { selection = null }, title = { Text(title) },
             text = { Column(Modifier.verticalScroll(rememberScrollState()).selectableGroup()) {
                 options.forEachIndexed { index, label -> AppRadio(selected == index, onSelect = {

@@ -1,6 +1,8 @@
 package com.ssafy.e106.core.push
 
 import kotlinx.coroutines.flow.Flow
+import kotlin.time.Clock
+import kotlin.time.Instant
 
 /** 이 기기 등록이 묶인 계정과 서버 bindingId(PUT push-installations 응답). 같은 사용자 · 같은 로그인 세션이면 서버가 같은 값을 준다 */
 internal class PushBinding(val userId: Long, val id: String)
@@ -25,16 +27,23 @@ internal interface PushDevice {
 }
 
 /** 서버가 보내는 data 전용 메시지 종류. 문구는 앱이 정한다(서버 payload 에 제목 · 본문이 없다) */
-internal enum class PushKind { CHAT_MESSAGE, ONE_HOUR_BEFORE_END, OTHER }
+internal enum class PushKind { CHAT_MESSAGE, ONE_HOUR_BEFORE_END, NEW_PROPOSAL, OTHER }
 
-/** 받은 data 메시지를 알림 하나로. [recipientUserId] 는 채팅 메시지에만 있다(B/chat/delivery/MessagePushState.java) */
-internal class PushMessage(val kind: PushKind, val target: PushTarget, val recipientUserId: Long?, val bindingId: String?) {
+/** 받은 data 메시지를 알림 하나로 변환한다. 제안 알림은 수신 계정과 설치를 모두 확인한다. */
+internal class PushMessage(val kind: PushKind, val target: PushTarget, val recipientUserId: Long?, val bindingId: String?,
+    private val installationId: String? = null, private val expiresAt: Instant? = null) {
     /**
      * 띄울지. 로그인돼 있고([userId]), 지금 계정으로 성공한 등록([binding])과 메시지의 bindingId 가 같아야 한다.
      * 종료 안내는 수신자 userId 가 없어 bindingId 로만 거른다 — 오프라인 로그아웃으로 서버에 이전 계정 연결이 남아도 그 계정 알림은 bindingId 가 달라 버려진다
      */
-    fun showTo(userId: Long?, binding: PushBinding?): Boolean =
-        userId != null && binding != null && binding.userId == userId && bindingId == binding.id && (recipientUserId == null || recipientUserId == userId)
+    fun showTo(userId: Long?, binding: PushBinding?, currentInstallation: String? = null,
+        now: Instant = Clock.System.now()): Boolean {
+        if (userId == null || binding == null || binding.userId != userId || bindingId != binding.id) return false
+        // 잘못된 새 제안은 일반 알림으로 대신 표시하지 않는다.
+        if (kind == PushKind.NEW_PROPOSAL) return target is PushTarget.Proposal && recipientUserId == userId &&
+            installationId != null && installationId == currentInstallation && expiresAt != null && expiresAt > now
+        return recipientUserId == null || recipientUserId == userId
+    }
 }
 
 /**
@@ -45,7 +54,11 @@ internal fun pushMessageOf(data: Map<String, String>): PushMessage {
     val kind = PushKind.entries.firstOrNull { it.name == data["type"] && it != PushKind.OTHER } ?: PushKind.OTHER
     val target = when (kind) {
         PushKind.CHAT_MESSAGE -> data["chatRoomId"]?.toLongOrNull()?.let { PushTarget.Chat(it) } ?: PushTarget.Home
+        PushKind.NEW_PROPOSAL -> data["proposalId"]?.toLongOrNull()?.takeIf { it > 0 }
+            ?.takeIf { data["noticeId"] == "proposal-$it" }?.let { PushTarget.Proposal(it) } ?: PushTarget.Home
         else -> PushTarget.Home
     }
-    return PushMessage(kind, target, data["recipientUserId"]?.toLongOrNull(), data["bindingId"])
+    val expiresAt = data["expiresAt"]?.let { runCatching { Instant.parse(it) }.getOrNull() }
+    return PushMessage(kind, target, data["recipientUserId"]?.toLongOrNull(), data["bindingId"],
+        data["installationId"]?.takeIf { it.isNotBlank() }, expiresAt)
 }

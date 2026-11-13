@@ -84,8 +84,10 @@ public class JpaHistoricalExplanationSource implements HistoricalExplanationSour
 				.filter(sourceRefs::contains).toList();
 			Map<String, Object> context = Map.of("reference", reference, "viewer", viewer, "evidence", records,
 				"conflicting_source_refs", conflicts);
+			// 화면에 보여 주는 근거(고정 문장)만 GMS 생성에 쓰도록 허용한다. 원응답은 근거에 없어 밖으로 나가지 않는다.
+			// AI 서버에 GMS가 꺼져 있으면 이 목록은 무시되고 규칙 설명이 온다.
 			Map<String, Object> scope = Map.of("reference", reference, "viewer", viewer,
-				"version", evidence.scopeVersion(), "model_evidence_ids", List.of(),
+				"version", evidence.scopeVersion(), "model_evidence_ids", displayed,
 				"display_evidence_ids", displayed);
 			Map<String, Object> manifest = new LinkedHashMap<>(evidence.manifest());
 			return Optional.of(new Source(input.viewerId(), Map.copyOf(manifest),

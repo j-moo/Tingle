@@ -15,14 +15,14 @@
 #define KR_CONFIRMED_LIMIT 12
 #define KR_REVIEW_LIMIT 12
 #define KR_PROFILE_BYTES (34 + KR_DATA_MAX)
-#define KR_FRAME_MAX 2500
+#define KR_BINARY_FRAME_MAX 2500
 
 enum kr_kind { KR_EMPTY, KR_MATCH, KR_CONFIRMED, KR_REVIEW };
 enum kr_phase { KR_NEW, KR_WAIT, KR_OFFER, KR_PREPARED, KR_COMMIT,
 	KR_DONE, KR_FINAL, KR_COMPLETE };
 enum kr_reason { KR_REASON_NONE, KR_BAD_DATA, KR_ALGORITHM_ERROR,
 	KR_ALGORITHM_REJECT, KR_VERSION_MISMATCH, KR_SETTINGS_CHANGED,
-	KR_RADIO_OVERFLOW };
+	KR_RADIO_OVERFLOW, KR_ACCOUNT_DUPLICATE, KR_PEER_OWNERSHIP_CHANGED, KR_PEER_SETTINGS_CHANGED };
 enum kr_result { KR_OK, KR_INVALID, KR_UNAUTHORIZED, KR_STALE,
 	KR_FULL, KR_STORAGE, KR_NOT_READY, KR_NOT_FOUND, KR_CONFLICT };
 enum kr_decision { KR_ACCEPT, KR_REJECT, KR_CALC_ERROR };
@@ -77,8 +77,14 @@ struct kr_io {
 	int (*config)(void *, const struct kr_config *);
 	int (*record)(void *, unsigned, const struct kr_record *);
 	int (*suppression)(void *, unsigned, const struct kr_suppression *);
+	/* Reserve the next unused number durably BEFORE publishing a new row. */
+	int (*sequence)(void *, uint32_t);
+	/* Match a frozen record/suppression to the authenticated remote owner. */
+	bool (*same_peer)(void *, unsigned, uint64_t);
+	bool (*candidate_ready)(void *, unsigned);
+	uint64_t (*error_key)(void *, uint64_t, const uint8_t *, size_t);
 	void (*random)(void *, uint8_t *, size_t);
-	void (*feedback)(void *, const uint8_t id[16]);
+	void (*feedback)(void *, const struct kr_record *, const struct kr_profile *peer);
 	enum kr_decision (*calculate)(void *, const struct kr_profile *,
 		const struct kr_profile *);
 	bool synthetic_only;
@@ -91,6 +97,7 @@ struct kr_engine {
 	struct kr_suppression suppressed[KR_SUPPRESSIONS];
 	struct kr_io io;
 	uint32_t next_sequence;
+	uint8_t cursor_epoch[16];
 	uint32_t overflow;
 	bool ready;
 	bool storage_error;
@@ -121,13 +128,18 @@ enum kr_result kr_radio_error(struct kr_engine *e, uint64_t source,
 	const uint8_t *raw, size_t len, enum kr_reason reason, uint64_t now);
 /* Run every runnable job immediately; radio-dependent phases never block others. */
 void kr_drain(struct kr_engine *e);
+enum kr_result kr_abandon_candidate(struct kr_engine *, unsigned, enum kr_reason);
+bool kr_retired_reason(unsigned);
 void kr_expire_candidates(struct kr_engine *e, uint64_t now);
 size_t kr_advertisement(struct kr_engine *e, unsigned *cursor, uint8_t *out,
 	int *sent_slot);
 void kr_sent(struct kr_engine *e, int slot);
+bool kr_sent_guarded(struct kr_engine *, int, uint32_t, const uint8_t[16]);
 enum kr_result kr_ack(struct kr_engine *e, const uint8_t id[16]);
 enum kr_result kr_release(struct kr_engine *e, const uint8_t id[16]);
 unsigned kr_count(const struct kr_engine *e, enum kr_kind kind);
+unsigned kr_pending(const struct kr_engine *);
+bool kr_can_insert(const struct kr_engine *, enum kr_kind);
 enum kr_decision kr_always_match(void *ctx, const struct kr_profile *a,
 	const struct kr_profile *b);
 

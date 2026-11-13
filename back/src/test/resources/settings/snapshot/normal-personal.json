@@ -1,0 +1,46 @@
+{
+  "actualAge": {
+    "state": "value",
+    "value": 27
+  },
+  "actualGender": {
+    "state": "value",
+    "value": "MALE"
+  },
+  "desiredGender": {
+    "state": "value",
+    "value": [
+      "FEMALE"
+    ]
+  },
+  "hasProfilePhoto": {
+    "state": "value",
+    "value": true
+  },
+  "requirePartnerPhoto": {
+    "state": "value",
+    "value": false
+  },
+  "smoking": {
+    "state": "value",
+    "value": "NON_SMOKER"
+  },
+  "drinking": {
+    "state": "value",
+    "value": "NEVER"
+  },
+  "religion": {
+    "state": "value",
+    "value": "UNDISCLOSED"
+  },
+  "desiredAge": {
+    "mode": "range",
+    "min": 25,
+    "max": 32
+  },
+  "deviceOptions": {
+    "matchingEnabled": true,
+    "vibrationEnabled": true,
+    "ledEnabled": true
+  }
+}

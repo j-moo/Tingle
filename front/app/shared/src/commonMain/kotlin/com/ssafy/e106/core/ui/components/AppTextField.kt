@@ -37,11 +37,13 @@ fun AppTextField(
     keyboardOptions: KeyboardOptions = KeyboardOptions.Default,
     keyboardActions: KeyboardActions = KeyboardActions.Default,
     visualTransformation: VisualTransformation = VisualTransformation.None,
+    isError: Boolean = false,   // 문구 없이 테두리만 빨갛게(여러 칸에 한 문구를 따로 둘 때)
 ) {
     val title = if (required) stringResource(Res.string.field_required_label, label) else label
     val readOnlyDescription = stringResource(Res.string.field_read_only)
     val issue = errorText?.takeIf { it.isNotBlank() && enabled }
     val helper = issue ?: supportingText?.takeIf { it.isNotBlank() }
+    val bad = issue != null || (isError && enabled)
     val focusManager = LocalFocusManager.current
     val keyboard = LocalSoftwareKeyboardController.current
     val intoView = remember { BringIntoViewRequester() }
@@ -81,21 +83,20 @@ fun AppTextField(
                 },
             enabled = enabled, readOnly = readOnly, singleLine = true,
             textStyle = MaterialTheme.typography.bodyLarge.copy(color = if (enabled) AppColors.TextPrimary else AppColors.TextDisabled),
-            cursorBrush = SolidColor(if (issue != null) AppColors.Error else AppColors.TextPrimary),
+            cursorBrush = SolidColor(if (bad) AppColors.Error else AppColors.TextPrimary),
             keyboardOptions = keyboardOptions, keyboardActions = keyboardActions,
             visualTransformation = visualTransformation, interactionSource = interaction,
         ) { innerTextField ->
             Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(AppSpacing.Small)) {
-                Text(title, style = MaterialTheme.typography.labelLarge,
-                    color = if (enabled) AppColors.TextPrimary else AppColors.TextDisabled)
+                TagLabel(title, color = if (enabled) AppColors.TextPrimary else AppColors.TextDisabled)
                 Box(Modifier.fillMaxWidth().heightIn(min = AppSpacing.InputMinHeight), propagateMinConstraints = true) {
                     OutlinedTextFieldDefaults.DecorationBox(
                         value = value, innerTextField = innerTextField, enabled = enabled, singleLine = true,
-                        visualTransformation = visualTransformation, interactionSource = interaction, isError = issue != null,
+                        visualTransformation = visualTransformation, interactionSource = interaction, isError = bad,
                         placeholder = if (placeholder.isEmpty()) null else ({ Text(placeholder, style = MaterialTheme.typography.bodyLarge) }),
                         colors = colors,
                         container = {
-                            OutlinedTextFieldDefaults.Container(enabled, issue != null, interaction, colors = colors, shape = AppShapes.Control)
+                            OutlinedTextFieldDefaults.Container(enabled, bad, interaction, colors = colors, shape = AppShapes.Control)
                         },
                     )
                 }

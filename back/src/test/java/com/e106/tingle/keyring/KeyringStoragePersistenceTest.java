@@ -10,9 +10,9 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.EnableAutoConfiguration;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
+import org.springframework.boot.jdbc.autoconfigure.JdbcConnectionDetails;
 import org.springframework.boot.persistence.autoconfigure.EntityScan;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Import;
@@ -20,7 +20,8 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
-import org.testcontainers.postgresql.PostgreSQLContainer;
+
+import com.e106.tingle.SharedPostgres;
 
 import jakarta.persistence.EntityManager;
 import tools.jackson.databind.json.JsonMapper;
@@ -38,9 +39,8 @@ class KeyringStoragePersistenceTest {
 	@Import({KeyringReadRepository.class, KeyringReadService.class})
 	static class Config {
 		@Bean
-		@ServiceConnection
-		PostgreSQLContainer postgresContainer() {
-			return new PostgreSQLContainer("postgres:17");
+		JdbcConnectionDetails postgresConnection() {
+			return SharedPostgres.newDatabase();
 		}
 	}
 
@@ -74,7 +74,9 @@ class KeyringStoragePersistenceTest {
 		assertThat(view.deviceId()).isEqualTo(id);
 		assertThat(view.firmwareVersion()).isEqualTo("test-firmware");
 		String body = JsonMapper.builder().build().writeValueAsString(view);
-		assertThat(body).doesNotContain(serial, "serial", "verification", "boundAt", "syncedAt", "ownerUserId");
+		// 내 기기 일련번호는 앱이 BLE 값과 대조하도록 준다. 자격 정보·소유자 번호는 여전히 주지 않는다.
+		assertThat(view.deviceSerial()).isEqualTo(serial);
+		assertThat(body).doesNotContain("verification", "credential", "boundAt", "syncedAt", "ownerUserId");
 	}
 
 	@Test

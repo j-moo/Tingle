@@ -1,7 +1,21 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
+    <!-- 약관 웹 문서(WebDocumentDeviceTest)가 실제 정적 페이지를 받는다. 테스트 APK 전용 -->
+    <uses-permission android:name="android.permission.INTERNET" />
     <application>
+        <!-- 가입 중 탈퇴 제한에서 실제 서비스 호스트·소유 키링 화면까지 이어지는 시험. -->
+        <activity android:name="com.ssafy.e106.features.account.WithdrawalSignupHostActivity" android:exported="true"
+            android:theme="@android:style/Theme.Material.Light.NoActionBar" />
+        <!-- 탈퇴로 SignedOut이 되어도 완료 화면이 유지되는 실제 인증 루트의 시험 호스트. -->
+        <activity android:name="com.ssafy.e106.features.account.WithdrawalRootTestActivity" android:exported="true"
+            android:theme="@android:style/Theme.Material.Light.NoActionBar" />
+        <!-- 회원탈퇴 후보 화면만 그리는 시험 호스트. API/세션/계정 삭제와 연결하지 않는다. -->
+        <activity android:name="com.ssafy.e106.features.account.WithdrawalTestActivity" android:exported="true"
+            android:theme="@android:style/Theme.Material.Light.NoActionBar" />
+        <!-- 약관 웹 문서 로딩 · 실패 판정을 실제 WebView 로 확인하는 테스트 호스트 -->
+        <activity android:name="com.ssafy.e106.core.ui.components.WebDocumentTestActivity" android:exported="true" />
+
         <!-- 차단/나가기 저장소 복구 실패 안내를 확인하는 별도 테스트 호스트. -->
         <activity android:name="com.ssafy.e106.features.safety.SafetyRestoreTestActivity" android:exported="true"
             android:theme="@android:style/Theme.Material.Light.NoActionBar" />

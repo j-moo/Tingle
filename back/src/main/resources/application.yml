@@ -64,6 +64,15 @@ management:
       show-details: never
 
 app:
+  # 신규 가입 키링 요구(서버 전체). false·off·no·0 이면 키링 없이 가입 완료를 허용한다. 그 밖에 불리언이 아닌 값이면 기동 실패.
+  signup:
+    keyring-required: ${TINGLE_SIGNUP_KEYRING_REQUIRED:true}
+  withdrawal:
+    enabled: ${WITHDRAWAL_ENABLED:false}
+    identity-secret: ${WITHDRAWAL_IDENTITY_SECRET:}
+    receipt-secret: ${WITHDRAWAL_RECEIPT_SECRET:}
+    scheduling-enabled: ${WITHDRAWAL_RETENTION_ENABLED:true}
+    photo-cleanup-scheduling-enabled: ${WITHDRAWAL_PHOTO_CLEANUP_ENABLED:true}
   # 인증 (팀 공유 인증 API 계약)
   auth:
     jwt-secret: ${JWT_SECRET:}
@@ -90,6 +99,24 @@ app:
       enabled: ${KEYRING_DEV_SETTINGS_ENABLED:false}
       private-key-file: ${KEYRING_DEV_SETTINGS_PRIVATE_KEY_FILE:}
       public-key-file: ${KEYRING_DEV_SETTINGS_PUBLIC_KEY_FILE:}
+      # TPS1 저장 지원을 확인한 기기 일련번호만 등록한다. 쉼표로 구분하며 기본값은 비어 있다.
+      profile-device-serials: ${KEYRING_DEV_SETTINGS_PROFILE_DEVICE_SERIALS:}
+    peer:
+      # New ownership tables, policy approval and compatible device provisioning are required before opt-in.
+      enabled: ${KEYRING_PEER_ENABLED:false}
+      encounters-enabled: ${KEYRING_PEER_ENCOUNTERS_ENABLED:false}
+      review-intake-approved: ${KEYRING_PEER_REVIEW_INTAKE_APPROVED:false}
+      business-intake-enabled: ${KEYRING_PEER_BUSINESS_INTAKE_ENABLED:false}
+      business-rule-release-id: ${KEYRING_PEER_BUSINESS_RULE_RELEASE_ID:}
+      business-release-hash: ${KEYRING_PEER_BUSINESS_RELEASE_HASH:}
+      release-policy-approved: ${KEYRING_PEER_RELEASE_POLICY_APPROVED:false}
+      policy-approved: ${KEYRING_PEER_POLICY_APPROVED:false}
+      policy-version: ${KEYRING_PEER_POLICY_VERSION:0}
+      rule-version: ${KEYRING_PEER_RULE_VERSION:0}
+      lease-seconds: ${KEYRING_PEER_LEASE_SECONDS:0}
+      opportunity-seconds: ${KEYRING_PEER_OPPORTUNITY_SECONDS:0}
+      presence-gap-seconds: ${KEYRING_PEER_PRESENCE_GAP_SECONDS:0}
+      server-public-key-hex: ${KEYRING_PEER_SERVER_PUBLIC_KEY_HEX:}
 
   # 새 설문 회차가 쓰는 설문 버전 (resources/survey/questionnaires/{버전}.json). 바꿔도 이미 시작한 회차는 원래 버전을 쓴다.
   survey:

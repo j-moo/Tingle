@@ -15,6 +15,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.e106.tingle.encounter.EncounterEvaluationGateway.ParticipantInput;
 import com.e106.tingle.keyring.proof.KeyringProofTranscript;
+import com.e106.tingle.keyring.proof.PeerSettingsCodec;
 import com.e106.tingle.proposal.evaluation.HistoricalEvaluationEvidence.Snapshot;
 import com.e106.tingle.settings.snapshot.SettingsSnapshotJson;
 
@@ -37,7 +38,8 @@ public class StoredEncounterInputLookup {
 		try {
 			List<StoredInput> rows = jdbc.query("""
 				select r.payload,r.payload_hash,r.payload_format,r.protocol_version,r.ack_proof_hash,
-				r.ack_request_key,r.created_at,r.acked_at,s.input_format,s.input_json,s.input_hash,s.captured_at
+				r.ack_request_key,r.created_at,r.acked_at,s.input_format,s.input_json,s.input_hash,s.captured_at,
+				s.redacted_at
 				from keyring_sync_run r join settings_snapshot s
 				on s.user_id=r.owner_user_id and s.settings_version=r.settings_version
 				where r.sync_run_id=? and r.owner_user_id=? and r.keyring_id=?
@@ -46,7 +48,8 @@ public class StoredEncounterInputLookup {
 				rs.getString("payload_format"), rs.getString("protocol_version"), rs.getString("ack_proof_hash"),
 				rs.getObject("ack_request_key", UUID.class), instant(rs.getTimestamp("created_at")),
 				instant(rs.getTimestamp("acked_at")), rs.getString("input_format"), rs.getString("input_json"),
-				rs.getString("input_hash"), instant(rs.getTimestamp("captured_at"))),
+				rs.getString("input_hash"), instant(rs.getTimestamp("captured_at")),
+				instant(rs.getTimestamp("redacted_at"))),
 				participant.settingsSnapshotId(), participant.userId(), participant.deviceId(),
 				participant.ownerGeneration(), participant.settingsVersion());
 			if (rows.size() != 1 || !valid(rows.getFirst(), participant.inputHash(), metAt)) {
@@ -65,7 +68,11 @@ public class StoredEncounterInputLookup {
 	}
 
 	private boolean valid(StoredInput stored, String expectedHash, Instant metAt) {
-		if (!KeyringProofTranscript.PROTOCOL_VERSION.equals(stored.protocolVersion())
+		boolean legacy = KeyringProofTranscript.PROTOCOL_VERSION.equals(stored.protocolVersion());
+		boolean peer = KeyringProofTranscript.PROTOCOL_VERSION_2.equals(stored.protocolVersion())
+			&& PeerSettingsCodec.FORMAT.equals(stored.payloadFormat())
+			&& PeerSettingsCodec.validPayloadFraming(stored.payload());
+		if ((!legacy && !peer) || stored.redactedAt() != null
 			|| !hash(stored.ackProofHash()) || stored.ackRequestKey() == null
 			|| stored.createdAt() == null || stored.ackedAt() == null || stored.capturedAt() == null
 			|| stored.ackedAt().isBefore(stored.createdAt()) || stored.ackedAt().isAfter(metAt)
@@ -99,6 +106,6 @@ public class StoredEncounterInputLookup {
 
 	private record StoredInput(byte[] payload, String payloadHash, String payloadFormat, String protocolVersion,
 		String ackProofHash, UUID ackRequestKey, Instant createdAt, Instant ackedAt, String inputFormat,
-		String inputJson, String inputHash, Instant capturedAt) {
+		String inputJson, String inputHash, Instant capturedAt, Instant redactedAt) {
 	}
 }

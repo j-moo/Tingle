@@ -9,7 +9,9 @@ import kotlinx.serialization.Serializable
 // 공개 계약의 필드만 받는다. 상대 읽음/회원 번호/마지막 메시지를 추정해 만들지 않는다.
 @Serializable data class ChatRoomRecord(val chatRoomId: Long, val status: String, val createdAt: String,
     val expiresAt: String, val closedAt: String?, val deleteAt: String?, val serverTime: String,
-    val canRead: Boolean, val canSend: Boolean, val hasNewMessage: Boolean)
+    val canRead: Boolean, val canSend: Boolean, val hasNewMessage: Boolean,
+    // 기존 서버와 방 상세 응답에는 닉네임이 없을 수 있다.
+    val partnerNickname: String? = null)
 @Serializable data class ChatRoomsPage(val items: List<ChatRoomRecord>, val nextCursor: String?, val serverTime: String)
 @Serializable data class ChatMessageRecord(val messageId: Long, val clientMessageId: String, val sender: String,
     val sequence: Long, val text: String, val createdAt: String)

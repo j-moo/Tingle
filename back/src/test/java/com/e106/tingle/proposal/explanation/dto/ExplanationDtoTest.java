@@ -76,6 +76,19 @@ class ExplanationDtoTest {
 	}
 
 	@Test
+	void acceptsGeneratedContentOnlyWithAHashPromptVersion() {
+		ExplanationStatus result = new ExplanationStatus("SUCCEEDED", "GENERATED", "생성된 설명", List.of(),
+			"a".repeat(64));
+		assertThat(result.source()).isEqualTo("GENERATED");
+		for (String version : new String[] {null, "", "rule-v1", "A".repeat(64), "a".repeat(63)}) {
+			assertThatThrownBy(() -> new ExplanationStatus("SUCCEEDED", "GENERATED", "설명", List.of(), version))
+				.isInstanceOf(IllegalArgumentException.class);
+		}
+		assertThatThrownBy(() -> new ExplanationStatus("SUCCEEDED", "OTHER", "설명", List.of(), null))
+			.isInstanceOf(IllegalArgumentException.class);
+	}
+
+	@Test
 	void rejectsMissingOrBlankSuccessfulTextAndInvalidVersion() {
 		for (String text : new String[] {null, "", " \n\t"}) {
 			assertThatThrownBy(() -> new ExplanationStatus("SUCCEEDED", "RULE_FALLBACK", text, List.of(), "rule-v1"))

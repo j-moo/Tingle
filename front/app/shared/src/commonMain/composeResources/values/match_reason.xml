@@ -2,9 +2,7 @@
 <resources>
     <string name="proposal_reason_unknown">매칭 이유의 처리 상태를 확인해야 해요.</string>
     <string name="proposal_reason_check">설명 상태 확인</string>
-    <string name="proposal_reason_retry">설명 생성 다시 시도</string>
     <string name="proposal_reason_no_retry">지금은 설명을 다시 생성할 수 없어요.</string>
     <string name="proposal_reason_busy">설명을 확인하고 있어요.</string>
     <string name="proposal_reason_unavailable">지금은 설명을 확인할 수 없어요.</string>
-    <string name="proposal_reason_rule">매칭 당시 확인된 근거를 바탕으로 한 설명이에요.</string>
 </resources>

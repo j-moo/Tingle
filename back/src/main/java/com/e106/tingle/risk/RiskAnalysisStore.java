@@ -42,6 +42,8 @@ public class RiskAnalysisStore {
 	private static final Duration LEASE = Duration.ofSeconds(30);
 	private static final int MAX_ATTEMPTS = 3;
 	private static final String STATE = "riskAnalysis";
+	// 입력 만들기 규칙(마스킹·건너뛰기)을 바꾸면 올린다. 이전 규칙으로 고정한 묶음은 해시가 달라도 실패로 닫지 않고 새 규칙으로 다시 분석한다.
+	private static final String INPUT_RULES = "risk-input-v3";
 
 	private final JdbcTemplate jdbc;
 	private final JsonMapper json;
@@ -160,6 +162,18 @@ public class RiskAnalysisStore {
 			save(room.id(), document);
 			continuing = false;
 		}
+		Input unchanged = null;
+		if (continuing && !INPUT_RULES.equals(state.get("inputRules"))) {
+			// 배포 전 규칙으로 고정한 묶음: 본문이 바뀐 것으로 오인해 AI 호출 없이 실패로 닫지 않는다.
+			// 실행 중이면 lease 동안 기다린다. 현재 규칙으로 만든 입력의 해시가 같으면 시도 횟수·기한을 그대로
+			// 이어 가고, 다르면 처리 위치(processedThroughSeq)부터 현재 본문으로 새로 분석한다.
+			if ("RUNNING".equals(state.get("status"))
+				&& now.isBefore(Instant.parse((String)state.get("startedAt")).plus(LEASE))) {
+				return null;
+			}
+			unchanged = inputIfUnchanged(room, state, configured);
+			continuing = unchanged != null;
+		}
 		Instant first = continuing ? Instant.parse((String)state.get("firstStartedAt")) : now;
 		int attempts = continuing ? (int)number(state.get("attempts")) : 0;
 		if (continuing && (attempts >= MAX_ATTEMPTS || !now.isBefore(first.plus(BUDGET)))) {
@@ -192,9 +206,15 @@ public class RiskAnalysisStore {
 		}
 		Input input;
 		try {
-			input = continuing ? pinnedInput(room, state, configured) : input(room, last, request);
+			input = unchanged != null ? unchanged
+				: continuing ? pinnedInput(room, state, configured) : input(room, last, request);
 		} catch (BusinessException exception) {
-			if (!continuing) {
+			if (!continuing && exception instanceof RiskInputBuilder.UnanalyzableMessage skipped) {
+				skipUnanalyzable(room, document, state, configured, consents, skipped.sequence());
+				return null;
+			}
+			// 토큰 계산 장애는 입력이 바뀐 것이 아니므로 묶음을 닫지 않고 이번 선점만 취소한다.
+			if (!continuing || exception.getErrorCode() == ErrorCode.SERVICE_UNAVAILABLE) {
 				throw exception;
 			}
 			terminal(room, document, state);
@@ -215,6 +235,7 @@ public class RiskAnalysisStore {
 		state.put("freshFrom", input.messages().stream().filter(Message::fresh)
 			.mapToLong(Message::sequence).min().orElseThrow());
 		state.put("inputHash", inputHash);
+		state.put("inputRules", INPUT_RULES);
 		state.put("generation", generation);
 		state.put("attemptId", attempt.toString());
 		state.put("signature", signature);
@@ -258,6 +279,20 @@ public class RiskAnalysisStore {
 		}
 	}
 
+	/** 현재 규칙으로 만든 고정 범위 입력이 저장된 해시와 같으면 그 입력을, 다르면 null을 돌려준다. */
+	private Input inputIfUnchanged(Room room, Map<String, Object> state, Manifest configured) {
+		try {
+			Input input = pinnedInput(room, state, configured);
+			return ChatText.hash(json.writeValueAsString(input)).equals(state.get("inputHash")) ? input : null;
+		} catch (BusinessException exception) {
+			// 토큰 계산 장애는 "입력이 다름"이 아니다. 시도 횟수를 되돌리지 않도록 이번 선점만 취소한다.
+			if (exception.getErrorCode() == ErrorCode.SERVICE_UNAVAILABLE) {
+				throw exception;
+			}
+			return null;
+		}
+	}
+
 	private Input pinnedInput(Room room, Map<String, Object> state, Manifest manifest) {
 		long freshFrom = number(state.get("freshFrom"));
 		List<Message> messages = jdbc.query("select cm.seq,cp.user_id,cm.body from chat_message cm "
@@ -287,6 +322,24 @@ public class RiskAnalysisStore {
 		save(room.id(), document);
 	}
 
+	/** 한도를 넘는 메시지 하나를 실패 범위로 남겨, 같은 메시지에서 매번 멈추지 않고 다음 메시지로 넘어간다. */
+	private void skipUnanalyzable(Room room, Map<String, Object> document, Map<String, Object> state,
+		Manifest configured, Consents consents, long sequence) {
+		// 영수증은 아래 terminal()이 실패 결과로 만든다. 이 시도 번호는 밖으로 나가지 않아 서명을 남길 필요가 없다.
+		String attempt = UUID.randomUUID().toString();
+		state.put("automatic", true);
+		state.put("manifest", configured);
+		state.put("attemptId", attempt);
+		state.put("firstSeq", sequence);
+		state.put("freshFrom", sequence);
+		state.put("throughSeq", sequence);
+		state.put("generation", number(state.get("generation")) + 1);
+		state.put("consentLow", consents.low());
+		state.put("consentHigh", consents.high());
+		state.remove("kind");
+		terminal(room, document, state);
+	}
+
 	private long processedThrough(Map<String, Object> state) {
 		return Math.max(number(state.get("lastAnalyzedSeq")), number(state.get("processedThroughSeq")));
 	}
@@ -312,6 +365,12 @@ public class RiskAnalysisStore {
 
 	@Transactional
 	public Response finish(Claim claim, Verdict result) {
+		return finish(claim, result, true);
+	}
+
+	/** retryable=false인 자동 실패는 남은 재시도 없이 바로 실패 범위로 확정한다. */
+	@Transactional
+	public Response finish(Claim claim, Verdict result, boolean retryable) {
 		Room room;
 		Consents current;
 		try {
@@ -356,6 +415,10 @@ public class RiskAnalysisStore {
 		receipts.put(claim.request().attemptId().toString(),
 			new LinkedHashMap<>(Map.of("signature", claim.signature(), "result", response)));
 		state.put("receipts", receipts);
+		if (!succeeded && !retryable && Boolean.TRUE.equals(state.get("automatic"))) {
+			terminal(room, document, state);
+			return response;
+		}
 		document.put(STATE, state);
 		save(room.id(), document);
 		return response;
@@ -482,10 +545,13 @@ public class RiskAnalysisStore {
 		List<Long> targets = finding.audience() == Audience.BOTH ? List.of(sender, recipient)
 			: List.of(finding.audience() == Audience.SENDER ? sender : recipient);
 		for (long userId : targets) {
-			jdbc.update("insert into chat_safety_notice(chat_participant_id,notice_type,created_at) "
-				+ "select id,cast(? as safety_notice_type),? from chat_participant where chat_id=? and user_id=? "
-				+ "on conflict(chat_participant_id,notice_type) do nothing", finding.noticeType().name(),
-				Timestamp.from(at), room.id(), userId);
+			// 같은 사람이 보낸 쪽인지 받은 쪽인지 남겨 앱이 안내 문구와 차단 버튼을 고른다
+			String audience = userId == sender ? Audience.SENDER.name() : Audience.RECIPIENT.name();
+			// 겹치는 칸을 적지 않는다. 적으면 그 칸과 똑같은 unique 인덱스가 없을 때(인덱스 교체 전 DB) 42P10 으로 실패한다
+			jdbc.update("insert into chat_safety_notice(chat_participant_id,notice_type,created_at,audience) "
+				+ "select id,cast(? as safety_notice_type),?,? from chat_participant where chat_id=? and user_id=? "
+				+ "on conflict do nothing", finding.noticeType().name(),
+				Timestamp.from(at), audience, room.id(), userId);
 		}
 	}
 

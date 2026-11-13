@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="sync_apply_checking">설정 저장 완료 · 적용 확인 중</string>
+    <string name="sync_apply_connect">설정은 저장됐어요. 적용 확인을 이어가려면 키링을 다시 연결해 주세요.</string>
+    <string name="sync_apply_confirming">키링의 적용 확인을 서버에 보내고 있어요.</string>
+    <string name="sync_apply_retry_message">설정은 저장됐어요. 적용 확인을 다시 시도해 주세요.</string>
+    <string name="sync_apply_failed">키링이 설정을 적용하지 못했어요. 적용 확인부터 다시 시도해 주세요.</string>
+    <string name="sync_apply_firmware">설정은 저장됐어요. 적용 확인에는 키링 펌웨어 업데이트가 필요해요.</string>
+    <string name="sync_apply_confirmed">설정 적용을 확인했어요. 서버에서 가입 상태를 확인해 주세요.</string>
+    <string name="sync_apply_retry_button">적용 확인 다시 시도</string>
+</resources>

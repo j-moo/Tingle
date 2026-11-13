@@ -1,0 +1,269 @@
+{
+  "surveyVersion": "SIS-Q-1.1-100",
+  "actual": {
+    "E": {
+      "state": "value",
+      "value": 31.25
+    },
+    "A": {
+      "state": "value",
+      "value": 68.75
+    },
+    "C": {
+      "state": "value",
+      "value": 68.75
+    },
+    "I": {
+      "state": "value",
+      "value": 31.25
+    },
+    "q30": {
+      "state": "value",
+      "value": 4
+    },
+    "q31": {
+      "state": "value",
+      "value": 2
+    },
+    "q32": {
+      "state": "value",
+      "value": 2
+    },
+    "q33": {
+      "state": "value",
+      "value": 4
+    },
+    "q34": {
+      "state": "value",
+      "value": 3
+    },
+    "q35": {
+      "state": "value",
+      "value": 4
+    },
+    "q36": {
+      "state": "value",
+      "value": 2
+    },
+    "q37": {
+      "state": "value",
+      "value": 2
+    },
+    "q38": {
+      "state": "value",
+      "value": 4
+    },
+    "q39": {
+      "state": "value",
+      "value": 2
+    },
+    "q40": {
+      "state": "value",
+      "value": [
+        "talk",
+        "walk"
+      ]
+    },
+    "q41": {
+      "state": "value",
+      "value": 2
+    },
+    "q42": {
+      "state": "value",
+      "value": 4
+    },
+    "q43": {
+      "state": "value",
+      "value": 4
+    },
+    "q44": {
+      "state": "value",
+      "value": "change"
+    },
+    "q45": {
+      "state": "value",
+      "value": "help"
+    },
+    "q46": {
+      "state": "value",
+      "value": 2
+    },
+    "q47": {
+      "state": "value",
+      "value": 2
+    },
+    "q48": {
+      "state": "value",
+      "value": 3
+    },
+    "q49": {
+      "state": "value",
+      "value": "alternate"
+    },
+    "q50": {
+      "state": "value",
+      "value": "experience"
+    },
+    "q51": {
+      "state": "value",
+      "value": 4
+    },
+    "q52": {
+      "state": "value",
+      "value": [
+        "afternoon",
+        "evening"
+      ]
+    },
+    "q53": {
+      "state": "value",
+      "value": "local"
+    },
+    "q54": {
+      "state": "value",
+      "value": 2
+    },
+    "q55": {
+      "state": "value",
+      "value": "none"
+    },
+    "q56": {
+      "state": "value",
+      "value": "none"
+    },
+    "q57": {
+      "state": "value",
+      "value": 3
+    },
+    "q58": {
+      "state": "value",
+      "value": "undecided"
+    },
+    "q59": {
+      "state": "value",
+      "value": 4
+    },
+    "q60": {
+      "state": "value",
+      "value": "none"
+    }
+  },
+  "wishes": {
+    "61": {
+      "state": "any"
+    },
+    "62": {
+      "state": "any"
+    },
+    "63": {
+      "state": "any"
+    },
+    "64": {
+      "state": "any"
+    },
+    "65": {
+      "state": "any"
+    },
+    "66": {
+      "state": "any"
+    },
+    "67": {
+      "state": "any"
+    },
+    "68": {
+      "state": "any"
+    },
+    "69": {
+      "state": "value",
+      "value": 3
+    },
+    "70": {
+      "state": "any"
+    },
+    "71": {
+      "state": "any"
+    },
+    "72": {
+      "state": "any"
+    },
+    "73": {
+      "state": "any"
+    },
+    "74": {
+      "state": "any"
+    },
+    "75": {
+      "state": "any"
+    },
+    "76": {
+      "state": "any"
+    },
+    "77": {
+      "state": "any"
+    },
+    "78": {
+      "state": "any"
+    },
+    "79": {
+      "state": "any"
+    },
+    "80": {
+      "state": "any"
+    },
+    "81": {
+      "state": "any"
+    },
+    "82": {
+      "state": "any"
+    },
+    "83": {
+      "state": "any"
+    },
+    "84": {
+      "state": "any"
+    },
+    "85": {
+      "state": "any"
+    },
+    "86": {
+      "state": "any"
+    },
+    "87": {
+      "state": "any"
+    },
+    "88": {
+      "state": "any"
+    },
+    "89": {
+      "state": "any"
+    },
+    "90": {
+      "state": "any"
+    },
+    "91": {
+      "state": "any"
+    },
+    "92": {
+      "state": "any"
+    },
+    "93": {
+      "state": "any"
+    },
+    "94": {
+      "state": "any"
+    },
+    "95": {
+      "state": "any"
+    }
+  },
+  "priority": {
+    "state": "any"
+  },
+  "strict": {
+    "state": "any"
+  },
+  "tolerance": {
+    "state": "value",
+    "value": "some"
+  }
+}

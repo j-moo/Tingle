@@ -21,6 +21,8 @@ import jakarta.servlet.http.HttpServletResponse;
  * 모든 요청에 추적 번호(X-Request-Id)를 붙여 응답 헤더와 그 요청의 로그에 같은 값을 남긴다.
  * 앱이 UUID 하나를 보내면 그대로 쓰고, 없거나 형식이 다르면 새로 만든다(로그에 임의 문자열이 들어가지 않게).
  * 보안 필터보다 먼저 돌아 401·403 응답에도 붙는다.
+ * 필터에서 던진 예외가 컨테이너를 거쳐 /error 로 다시 들어올 때(ERROR 디스패치)도 돌아,
+ * 처음 정한 번호를 응답 헤더에 유지하고 오류 로그에 같은 번호를 남긴다.
  */
 @Component
 @Order(Ordered.HIGHEST_PRECEDENCE)
@@ -35,7 +37,9 @@ public class RequestIdFilter extends OncePerRequestFilter {
 	@Override
 	protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
 		throws ServletException, IOException {
-		String requestId = requestId(request);
+		// ERROR 디스패치면 처음 요청 때 정한 번호가 응답 헤더에 이미 있다.
+		String issued = response.getHeader(HEADER);
+		String requestId = issued != null ? issued : requestId(request);
 		response.setHeader(HEADER, requestId);
 		MDC.put(MDC_KEY, requestId);
 		try {
@@ -43,6 +47,11 @@ public class RequestIdFilter extends OncePerRequestFilter {
 		} finally {
 			MDC.remove(MDC_KEY);
 		}
+	}
+
+	@Override
+	protected boolean shouldNotFilterErrorDispatch() {
+		return false;
 	}
 
 	private static String requestId(HttpServletRequest request) {

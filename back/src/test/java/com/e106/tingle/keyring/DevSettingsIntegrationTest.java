@@ -14,8 +14,10 @@ import java.security.KeyPair;
 import java.security.KeyPairGenerator;
 import java.security.Signature;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
 import java.util.Base64;
+import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -32,6 +34,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.ResultActions;
 
+import com.e106.tingle.ContractFixtures;
 import com.e106.tingle.IntegrationTestSupport;
 import com.e106.tingle.TestcontainersConfiguration;
 import com.e106.tingle.keyring.proof.KeyringProofTranscript;
@@ -40,11 +43,13 @@ import com.e106.tingle.keyring.proof.ServerSettingsSigner;
 import tools.jackson.databind.JsonNode;
 
 /** 합성 전용 서버·기기 키와 격리 PostgreSQL로 개발 설정 발급→STORED ACK를 검증한다. */
-@SpringBootTest
+@SpringBootTest(properties = "app.keyring.dev-settings.profile-device-serials=tps1-test-supported,tps1-test-unmeasured")
 @AutoConfigureMockMvc
 @ActiveProfiles({"test", "erd"})
 @Import({TestcontainersConfiguration.class, DevSettingsIntegrationTest.SigningConfiguration.class})
 class DevSettingsIntegrationTest extends IntegrationTestSupport {
+
+	private static final String NORMAL_SHA256 = "2a2259abe5a2f7ab37e12121b413d2d8edfd538dd28e5e8927865d89829cc41d";
 
 	@Autowired
 	private KeyPair settingsServerKeys;
@@ -57,6 +62,8 @@ class DevSettingsIntegrationTest extends IntegrationTestSupport {
 	@Test
 	void issuesOneByteOnPayloadBoundToActualDeviceAndChallenge() throws Exception {
 		Fixture fixture = syncPendingUser();
+		createProfileCall(fixture, UUID.randomUUID(), nonce(1)).andExpect(status().isUnprocessableContent())
+			.andExpect(jsonPath("$.code").value("POLICY_UNRESOLVED"));
 		String challenge = nonce(1);
 		JsonNode run = create(fixture, UUID.randomUUID(), challenge, 201);
 		assertThat(run.path("payload").asString()).isEqualTo("AQ");
@@ -154,6 +161,71 @@ class DevSettingsIntegrationTest extends IntegrationTestSupport {
 		assertThat(runCount(owner)).isZero();
 	}
 
+	@Test
+	void supportedDeviceGetsSignedNormalAndOnlyCurrentStoredProofIsAccepted() throws Exception {
+		Fixture fixture = memberWithKeyring("tps1-test-supported");
+		storeNormalProfileAndAnswers(fixture, false);
+		UUID firstKey = UUID.randomUUID();
+		JsonNode first = createProfile(fixture, firstKey, nonce(1), 201);
+		assertThat(first.path("payloadFormat").asString()).isEqualTo("tingle-profile-storage-v1");
+		assertThat(first.path("payloadHash").asString()).isEqualTo(NORMAL_SHA256);
+		try (var resource = getClass().getResourceAsStream("/settings/snapshot/normal-tps1.hex")) {
+			byte[] expected = HexFormat.of()
+				.parseHex(new String(resource.readAllBytes(), StandardCharsets.US_ASCII).strip());
+			assertThat(Base64.getUrlDecoder().decode(first.path("payload").asString()))
+				.hasSize(196).containsExactly(expected);
+		}
+		assertServerSignature(fixture, first);
+		assertThat(createProfile(fixture, firstKey, nonce(1), 200)).isEqualTo(first);
+		createCall(fixture, firstKey, nonce(1)).andExpect(status().isConflict())
+			.andExpect(jsonPath("$.code").value("IDEMPOTENCY_CONFLICT"));
+
+		// Reproduce a change in effective bytes at the same version.
+		jdbc.update("update profile set photo_url=null where user_id=?", fixture.userId());
+		createProfileCall(fixture, firstKey, nonce(1)).andExpect(status().isConflict())
+			.andExpect(jsonPath("$.code").value("SYNC_VERSION_STALE"));
+		perform(get(basePath(fixture) + "/" + first.path("syncRunId").asString()), fixture.tokens(), null)
+			.andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("SYNC_VERSION_STALE"));
+		ackCall(fixture, first, UUID.randomUUID(), ackBody(fixture, first)).andExpect(status().isConflict())
+			.andExpect(jsonPath("$.code").value("SYNC_VERSION_STALE"));
+
+		JsonNode next = createProfile(fixture, UUID.randomUUID(), nonce(2), 201);
+		assertThat(next.path("settingsVersion").asLong()).isEqualTo(first.path("settingsVersion").asLong() + 1);
+		assertThat(next.path("payloadHash")).isNotEqualTo(first.path("payloadHash"));
+		assertServerSignature(fixture, next);
+		String body = ackBody(fixture, next);
+		String incorrectHash = body.replace(next.path("payloadHash").asString(), NORMAL_SHA256);
+		ackCall(fixture, next, UUID.randomUUID(), incorrectHash).andExpect(status().isUnprocessableContent())
+			.andExpect(jsonPath("$.code").value("INVALID_DEVICE_PROOF"));
+		UUID ackKey = UUID.randomUUID();
+		ackCall(fixture, next, ackKey, body).andExpect(status().isOk()).andExpect(jsonPath("$.state").value("ACKED"));
+		ackCall(fixture, next, ackKey, body).andExpect(status().isOk()).andExpect(jsonPath("$.state").value("ACKED"));
+		assertThat(ackVersion(fixture)).isNull();
+		assertThat(runCount(fixture)).isEqualTo(2);
+
+		// 과거 발급본은 남았지만 현재 프로필 값은 이미 비워진 회원도 정리한다.
+		jdbc.update("update profile set religion=null where user_id=?", fixture.userId());
+		consentOptional(fixture.tokens(), "PROFILE_RELIGION", false).andExpect(status().isOk());
+		assertThat(runCount(fixture)).isZero();
+		ackCall(fixture, next, ackKey, body).andExpect(status().isNotFound());
+		JsonNode redacted = createProfile(fixture, UUID.randomUUID(), nonce(3), 201);
+		assertThat(redacted.path("settingsVersion").asLong()).isGreaterThan(next.path("settingsVersion").asLong());
+		assertThat(Base64.getUrlDecoder().decode(redacted.path("payload").asString())[184]).isZero();
+		consentOptional(fixture.tokens(), "PROFILE_RELIGION", false).andExpect(status().isOk());
+		assertThat(runCount(fixture)).isEqualTo(1);
+	}
+
+	@Test
+	void supportedDeviceWithUnmeasuredScaleDoesNotGetAFallbackRun() throws Exception {
+		Fixture fixture = memberWithKeyring("tps1-test-unmeasured");
+		storeNormalProfileAndAnswers(fixture, true);
+		createProfileCall(fixture, UUID.randomUUID(), nonce(1)).andExpect(status().isUnprocessableContent())
+			.andExpect(jsonPath("$.code").value("POLICY_UNRESOLVED"));
+		assertThat(runCount(fixture)).isZero();
+		JsonNode legacy = create(fixture, UUID.randomUUID(), nonce(2), 201);
+		assertThat(legacy.path("payloadFormat").asString()).isEqualTo("tingle-dev-settings-v1");
+	}
+
 	private void assertServerSignature(Fixture fixture, JsonNode run) throws Exception {
 		// Assemble the published IoT transcript independently from the production encoder.
 		String text = String.join("\n", "TINGLE-KEYRING-SERVER-SETTINGS", "tingle-dev-settings-proof-v1",
@@ -169,10 +241,16 @@ class DevSettingsIntegrationTest extends IntegrationTestSupport {
 	}
 
 	private Fixture syncPendingUser() throws Exception {
+		Fixture fixture = memberWithKeyring("sync-" + newSocialId());
+		finishSurvey(fixture.userId());
+		setPreferences(fixture.userId());
+		return fixture;
+	}
+
+	private Fixture memberWithKeyring(String serial) throws Exception {
 		JsonNode tokens = login("kakao", newSocialId());
 		agree(tokens).andExpect(status().isOk());
 		long userId = userIdOf(tokens);
-		String serial = "sync-" + newSocialId();
 		String keyId = "key-" + newSocialId();
 		KeyPair keys = KeyPairGenerator.getInstance("Ed25519").generateKeyPair();
 		long deviceId = jdbc.queryForObject("insert into keyring(serial_number,firmware_version,state,"
@@ -191,11 +269,48 @@ class DevSettingsIntegrationTest extends IntegrationTestSupport {
 			.andExpect(status().isCreated());
 		patchProfile(tokens, fullProfile(uniqueNickname())).andExpect(status().isOk());
 		completeProfile(tokens).andExpect(status().isOk());
-		finishSurvey(userId);
-		setPreferences(userId);
 		UUID generation = jdbc.queryForObject("select owner_generation from keyring where id=?", UUID.class,
 			deviceId);
 		return new Fixture(tokens, userId, deviceId, serial, keyId, generation, keys);
+	}
+
+	private void storeNormalProfileAndAnswers(Fixture fixture, boolean unmeasured) throws Exception {
+		consentOptional(fixture.tokens(), "PROFILE_RELIGION", true).andExpect(status().isOk());
+		consentOptional(fixture.tokens(), "PROFILE_PHOTO", true).andExpect(status().isOk());
+		LocalDate birth = LocalDate.ofInstant(clock.instant(), clock.getZone()).minusYears(27);
+		jdbc.update("""
+			update profile set birth_date=?, gender='MALE', drinking_frequency='NEVER',
+				religion='UNDISCLOSED', photo_url=?
+			where user_id=?
+			""", birth, "profile/" + fixture.userId() + "/" + UUID.randomUUID() + ".jpg", fixture.userId());
+		String version = "SIS-Q-1.1-100";
+		String sessions = "/api/survey-sessions";
+		String response = perform(post(sessions), fixture.tokens(), toJson(Map.of("surveyVersion", version)))
+			.andExpect(status().isCreated()).andReturn().getResponse().getContentAsString();
+		long surveyId = jsonMapper.readTree(response).path("sessionId").asLong();
+		assertThat(surveyId).isPositive();
+		String session = sessions + "/" + surveyId;
+
+		JsonNode answers = jsonMapper.readTree(ContractFixtures.mvpPolicyCases()).path("cases").valueStream()
+			.filter(testCase -> "NORMAL".equals(testCase.path("id").asString()))
+			.findFirst().orElseThrow().at("/input/left/answers");
+		for (var entry : answers.properties()) {
+			int ordinal = Integer.parseInt(entry.getKey());
+			JsonNode value = entry.getValue();
+			Object answer = unmeasured && ordinal == 1 ? "unknown" : value;
+			perform(put(session + "/answers/Q%03d".formatted(ordinal)), fixture.tokens(),
+				toJson(Map.of("value", answer)))
+				.andExpect(status().isOk());
+		}
+		perform(post(session + "/complete"), fixture.tokens(), null).andExpect(status().isOk());
+		assertThat(jdbc.queryForObject("select definition_snapshot::text from survey where id=?", String.class,
+			surveyId)).isNull();
+		// AI 분석 외부 호출은 합성 성공 결과로 대체한다. 설문 생성·원답·완료는 실제 API를 사용한다.
+		Long analysisId = jdbc.queryForObject("insert into personality(survey_id,analysis_version,status,result) "
+			+ "values (?,'SIS-A-1.0','SUCCEEDED','{}') returning id", Long.class, surveyId);
+		jdbc.update("update profile set active_personality_id=? where user_id=?", analysisId, fixture.userId());
+		setPreferences(fixture.userId());
+		jdbc.update("update matching_preference set min_age=25,max_age=32 where user_id=?", fixture.userId());
 	}
 
 	private String basePath(Fixture fixture) {
@@ -205,6 +320,16 @@ class DevSettingsIntegrationTest extends IntegrationTestSupport {
 	private ResultActions createCall(Fixture fixture, UUID key, String challenge) throws Exception {
 		return perform(post(basePath(fixture)).header("Idempotency-Key", key), fixture.tokens(),
 			toJson(Map.of("deviceNonce", challenge)));
+	}
+
+	private ResultActions createProfileCall(Fixture fixture, UUID key, String challenge) throws Exception {
+		return perform(post(basePath(fixture)).header("Idempotency-Key", key), fixture.tokens(),
+			toJson(Map.of("deviceNonce", challenge, "payloadFormat", "tingle-profile-storage-v1")));
+	}
+
+	private JsonNode createProfile(Fixture fixture, UUID key, String challenge, int code) throws Exception {
+		return jsonMapper.readTree(createProfileCall(fixture, key, challenge).andExpect(status().is(code))
+			.andExpect(header().string("Cache-Control", "no-store")).andReturn().getResponse().getContentAsString());
 	}
 
 	private JsonNode create(Fixture fixture, UUID key, String challenge, int code) throws Exception {

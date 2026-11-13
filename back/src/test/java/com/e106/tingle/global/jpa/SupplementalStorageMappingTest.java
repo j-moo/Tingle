@@ -16,13 +16,12 @@ import org.hibernate.boot.registry.StandardServiceRegistry;
 import org.hibernate.boot.registry.StandardServiceRegistryBuilder;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.springframework.boot.jdbc.autoconfigure.JdbcConnectionDetails;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
-import org.testcontainers.postgresql.PostgreSQLContainer;
 
+import com.e106.tingle.SharedPostgres;
 import com.e106.tingle.chat.ChatSafetyNotice;
 import com.e106.tingle.operator.OperatorAudit;
 import com.e106.tingle.personality.Personality;
@@ -34,14 +33,12 @@ import com.e106.tingle.support.ServiceCase;
 import com.e106.tingle.support.ServiceCaseHistory;
 
 /** 보조 9표의 실제 JPA 저장 증거다. 해당 API 구현 또는 전체 22표 통과로 계산하지 않는다. */
-@Testcontainers
 class SupplementalStorageMappingTest {
 	private static final List<String> TABLES = List.of("chat_report", "chat_report_message", "chat_safety_notice",
 		"matching_preference", "operator_audit", "personality", "service_case", "service_case_history", "user_setting");
 	private static final Instant NOW = Instant.parse("2026-10-28T00:00:00Z");
 
-	@Container
-	private static final PostgreSQLContainer POSTGRES = new PostgreSQLContainer("postgres:17");
+	private static final JdbcConnectionDetails POSTGRES = SharedPostgres.newDatabase();
 
 	@Test
 	@DisplayName("SQL 선생성 없이 9표를 만들고 분석·신고 연결·안전안내의 실제 유일성을 지킨다")
@@ -67,9 +64,11 @@ class SupplementalStorageMappingTest {
 				"insert into chat_report_message(report_id,message_id) values (100,200)"))
 				.isInstanceOf(DataIntegrityViolationException.class);
 			fixture.jdbc().update("insert into chat_safety_notice "
-				+ "(chat_participant_id,notice_type,created_at) values (100,'MONEY_REQUEST',?)", Timestamp.from(NOW));
+				+ "(chat_participant_id,notice_type,created_at,audience) "
+				+ "values (100,'MONEY_REQUEST',?,'RECIPIENT')", Timestamp.from(NOW));
 			assertThatThrownBy(() -> fixture.jdbc().update("insert into chat_safety_notice "
-				+ "(chat_participant_id,notice_type,created_at) values (100,'MONEY_REQUEST',?)", Timestamp.from(NOW)))
+				+ "(chat_participant_id,notice_type,created_at,audience) "
+				+ "values (100,'MONEY_REQUEST',?,'RECIPIENT')", Timestamp.from(NOW)))
 				.isInstanceOf(DataIntegrityViolationException.class);
 		}
 		assertThat(fixture.jdbc().queryForObject("select count(*) from information_schema.tables "
@@ -111,7 +110,7 @@ class SupplementalStorageMappingTest {
 			+ "where table_schema=current_schema() and table_type='BASE TABLE' order by table_name", String.class))
 			.isEqualTo(TABLES);
 		assertThat(jdbc.queryForObject("select count(*) from information_schema.columns "
-			+ "where table_schema=current_schema()", Integer.class)).isEqualTo(59);
+			+ "where table_schema=current_schema()", Integer.class)).isEqualTo(60);
 		assertThat(jdbc.queryForObject("select count(*) from information_schema.table_constraints "
 			+ "where constraint_schema=current_schema() and constraint_type='FOREIGN KEY'", Integer.class)).isZero();
 	}

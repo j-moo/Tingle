@@ -18,11 +18,13 @@ private class SettingsServer : MatchingSettingsRepository {
     var getError: AppError? = null
     var saveError: AppError? = null
     var pending: CompletableDeferred<ApiResult<SettingsDocument>>? = null
+    var gate: CompletableDeferred<Unit>? = null   // 취소 가능한 대기(실제 HTTP 처럼 취소되면 예외)
     var writes = 0
     var lastTag: String? = null
     override suspend fun get(userId: Long, kind: SettingsKind): ApiResult<SettingsDocument> = getError?.let { ApiResult.Fail(it) } ?: ApiResult.Ok(doc)
     override suspend fun save(userId: Long, kind: SettingsKind, values: ConflictValues, etag: String): ApiResult<SettingsDocument> {
         writes++; lastTag = etag
+        gate?.await()
         pending?.let { return withContext(NonCancellable) { it.await() } }
         saveError?.let { return ApiResult.Fail(it) }
         doc = doc.copy(values = values, etag = "\"2\"")
@@ -46,6 +48,17 @@ class SettingsFlowTest {
         m.change(); m.save(); m.save(); runCurrent()
         assertEquals(1, server.writes); assertTrue(m.state.value.saved); assertFalse(m.state.value.canSave)
         assertEquals("\"1\"", server.lastTag)
+    }
+    // 아직 고르지 않은 계정은 "상관없어요"가 기본으로 보이고 바로 저장할 수 있다. 이 기본값은 편집이 아니라서
+    // 손대지 않고 다시 불러와도(앱을 내렸다 올림 · 당겨서 새로고침) 충돌 화면으로 가지 않는다
+    @Test fun unselectedAgeDefaultsToAnyAndReloadIsNotAConflict() = runTest(dispatcher) {
+        val server = SettingsServer().apply { doc = SettingsDocument(ConflictValues.Age(selected = false), "\"1\"") }
+        val m = vm(server); m.load(); runCurrent()
+        assertEquals(AgePreferenceMode.Any, m.state.value.age.mode); assertTrue(m.state.value.canSave); assertEquals(0, server.writes)
+        m.load(); runCurrent()
+        assertNull(m.state.value.conflict); assertTrue(m.state.value.canSave)
+        m.save(); runCurrent()
+        assertEquals(1, server.writes); assertEquals(ConflictValues.Age(any = true), server.doc.values); assertTrue(m.state.value.saved)
     }
     @Test fun conflictRequiresGetAndExplicitReviewedChoice() = runTest(dispatcher) {
         val server = SettingsServer(); val m = vm(server); m.load(); runCurrent(); m.change()
@@ -92,6 +105,20 @@ class SettingsFlowTest {
         assertTrue(m.state.value.saving); assertNull(m.state.value.conflict)
         pending.complete(ApiResult.Ok(SettingsDocument(ConflictValues.Age(any = true), "\"2\""))); runCurrent()
         assertTrue(m.state.value.saved); assertEquals(1, server.writes); assertNull(m.state.value.conflict)
+    }
+    // 저장 응답 전에 뒤로 가고(leave) · 다시 열고(open → leave) · 백그라운드로 가도 저장은 취소되지 않는다.
+    // 대기는 취소 가능한 gate 라 실제 HTTP 처럼 취소되면 실패한다. 확정되면 키링에 알리고, 다시 연 화면은 저장 뒤 값을 받는다
+    @Test fun leaveReopenBackgroundDuringPutKeepRequestAndSignalKeyring() = runTest(dispatcher) {
+        val gate = CompletableDeferred<Unit>()
+        val server = SettingsServer().also { it.gate = gate }; val changes = KeyringSettingsChanges()
+        val m = MatchingSettingsViewModel(server, TestSession(OnboardingStatus.READY), SettingsAccess(true), changes).also { models.put("settings", it) }
+        m.load(); runCurrent(); m.change(); m.save(); runCurrent()
+        m.leave(); m.open(SettingsKind.AGE); runCurrent(); m.background(); m.save(); runCurrent()
+        assertEquals(1, server.writes)   // 저장 중 다시 저장하지 않는다
+        gate.complete(Unit); runCurrent()
+        assertEquals(1, server.writes); assertEquals(mapOf(1L to 1L), changes.state.value)
+        m.load(); runCurrent()
+        assertEquals(ConflictValues.Age(any = true), m.state.value.document?.values)
     }
     @Test fun productionEntryDoesNotAllowKeyringSkip() {
         val s = Session.SignedIn(1, OnboardingStatus.KEYRING_REQUIRED, false)

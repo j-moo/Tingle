@@ -79,8 +79,8 @@ class LandscapeImeDeviceTest {
             inputIsUsable(input)
             input.performTextReplacement("가로 입력\n여러 줄\n보존")
             // 표시 줄 수만 줄어야 하며 실제 여러 줄 초안은 보존한다. 전송 터치 영역도 확인한다.
-            inputIsUsable(compose.onNodeWithText("전송"))
-            compose.onNodeWithText("전송").assertIsEnabled()
+            inputIsUsable(compose.onNodeWithContentDescription("전송"))
+            compose.onNodeWithContentDescription("전송").assertIsEnabled()
             // 전송 콜백은 실행하지 않는다. 키보드 닫기가 입력을 지우지 않는지만 검사한다.
             Espresso.closeSoftKeyboard()
             awaitKeyboard(scenario, false)

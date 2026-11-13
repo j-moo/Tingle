@@ -1,5 +1,6 @@
 package com.ssafy.e106.features.profile.ui
 
+import com.ssafy.e106.core.ui.components.TagLabel
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -44,7 +45,6 @@ fun ProfileLifestyleScreen(
     onContinue: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val editable = !state.saving
     Surface(modifier.fillMaxSize(), color = AppColors.Background) {
         Column(Modifier.fillMaxSize().safeDrawingPadding()) {
             AppTopBar(stringResource(Res.string.profile_lifestyle_title))
@@ -60,25 +60,7 @@ fun ProfileLifestyleScreen(
                             modifier = Modifier.semantics { heading() })
                         HelpText(Res.string.profile_lifestyle_intro)
                     }
-                    LifestyleChoices(
-                        title = Res.string.profile_smoking_title,
-                        options = ProfileSmoking.entries,
-                        selected = state.smoking,
-                        label = { it.label() }, onSelect = onSmokingChange,
-                        enabled = editable, error = state.smokingError,
-                    )
-                    HelpText(Res.string.profile_smoking_help)
-                    LifestyleChoices(
-                        title = Res.string.profile_drinking_title,
-                        options = ProfileDrinking.entries,
-                        selected = state.drinking,
-                        label = { it.label() }, onSelect = onDrinkingChange,
-                        enabled = editable, error = state.drinkingError,
-                    )
-                    Column(verticalArrangement = Arrangement.spacedBy(AppSpacing.Small)) {
-                        HelpText(Res.string.profile_drinking_days_help)
-                        HelpText(Res.string.profile_drinking_special_help)
-                    }
+                    ProfileLifestyleFields(state, onSmokingChange, onDrinkingChange)
                 }
             }
             Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
@@ -94,6 +76,33 @@ fun ProfileLifestyleScreen(
     }
 }
 
+/** 흡연 · 음주 선택과 도움말. 한 화면(위)과 가입 아코디언이 같이 쓴다 */
+@Composable
+internal fun ProfileLifestyleFields(state: ProfileLifestyleState, onSmokingChange: (ProfileSmoking) -> Unit, onDrinkingChange: (ProfileDrinking) -> Unit) {
+    val editable = !state.saving
+    Column(verticalArrangement = Arrangement.spacedBy(AppSpacing.Section)) {
+        LifestyleChoices(
+            title = Res.string.profile_smoking_title,
+            options = ProfileSmoking.entries,
+            selected = state.smoking,
+            label = { it.label() }, onSelect = onSmokingChange,
+            enabled = editable, error = state.smokingError,
+        )
+        HelpText(Res.string.profile_smoking_help)
+        LifestyleChoices(
+            title = Res.string.profile_drinking_title,
+            options = ProfileDrinking.entries,
+            selected = state.drinking,
+            label = { it.label() }, onSelect = onDrinkingChange,
+            enabled = editable, error = state.drinkingError,
+        )
+        Column(verticalArrangement = Arrangement.spacedBy(AppSpacing.Small)) {
+            HelpText(Res.string.profile_drinking_days_help)
+            HelpText(Res.string.profile_drinking_special_help)
+        }
+    }
+}
+
 @Composable
 private fun <T> LifestyleChoices(
     title: StringResource,
@@ -105,9 +114,8 @@ private fun <T> LifestyleChoices(
     error: String?,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(AppSpacing.Small)) {
-        Text(stringResource(title), style = MaterialTheme.typography.titleMedium,
-            color = if (enabled) AppColors.TextPrimary else AppColors.TextDisabled,
-            modifier = Modifier.semantics { heading() })
+        TagLabel(stringResource(title), style = MaterialTheme.typography.titleMedium,
+            color = if (enabled) AppColors.TextPrimary else AppColors.TextDisabled, heading = true)
         Column(Modifier.selectableGroup(), verticalArrangement = Arrangement.spacedBy(AppSpacing.Small)) {
             options.forEach { option ->
                 val isSelected = selected == option

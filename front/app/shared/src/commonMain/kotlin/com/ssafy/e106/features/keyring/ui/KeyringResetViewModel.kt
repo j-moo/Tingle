@@ -37,15 +37,15 @@ class KeyringResetViewModel(private val recovery: KeyringResetRecovery, private 
                 val result = owned.list(); ensure(owner, stamp)
                 if (result is ApiResult.Fail) throw ResetApiException(result.error)
                 val belongs = (result as ApiResult.Ok).value.any { it.deviceId == deviceId }
-                mutable.value = KeyringResetState(stage = KeyringResetStage.Ready,
+                // 안내와 확인을 한 화면에서 한다 — 바로 확인 단계(체크 · 초기화 버튼)로 시작한다
+                mutable.value = KeyringResetState(stage = KeyringResetStage.Confirm,
                     deviceLabel = listOfNotNull("#$deviceId", connectedSerial).joinToString(" · "),
                     ownershipConfirmed = belongs, connected = this.connected)
             }
         }
     }
-    fun confirm() { if (pending == null && state.value.displayStage == KeyringResetStage.Ready) mutable.update { it.copy(stage = KeyringResetStage.Confirm) } }
     fun accepted(value: Boolean) { if (!state.value.busy) mutable.update { it.copy(accepted = value) } }
-    fun cancel() { if (!state.value.busy && pending == null) mutable.update { it.copy(stage = KeyringResetStage.Ready,
+    fun cancel() { if (!state.value.busy && pending == null) mutable.update { it.copy(stage = KeyringResetStage.Confirm,
         accepted = false, recordChoice = null, recordDeletionAccepted = false) } }
     /** 연결 대상 변경/끊김은 두 동의를 취소한다. 진행 중 실행의 내구 기록이나 서버 결과는 지우지 않는다. */
     fun connectionChanged(isConnected: Boolean, serial: String?) {

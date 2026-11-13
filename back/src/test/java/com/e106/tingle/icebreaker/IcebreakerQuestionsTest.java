@@ -125,7 +125,33 @@ class IcebreakerQuestionsTest {
 	void topicRequestRejectsLegacyGeneratedSourceButOrdinaryRequestsRemainCompatible() {
 		IcebreakerGateway.Generated result = generated(List.of("하나", "둘", "셋"));
 		assertThat(questions.validate(result, "rest")).isNull();
+		assertThat(questions.validate(new IcebreakerGateway.Generated(result.questions(), "GENERATED",
+			"icebreakers-shared-topic-ko-v1"), "rest")).isNull();
 		assertThat(questions.validate(result)).isEqualTo(result);
+	}
+
+	@Test
+	void topicRequestAcceptsGmsGeneratedQuestionsWithSameSafetyChecks() {
+		IcebreakerGateway.Generated gms = new IcebreakerGateway.Generated(List.of("하나", "둘", "셋"),
+			"GENERATED", IcebreakerQuestions.GMS_PROMPT_VERSION);
+		for (String key : List.of("rest", "talk", "culture", "walk", "active")) {
+			assertThat(questions.validate(gms, key)).isEqualTo(gms);
+		}
+		assertThat(questions.validate(gms, "unknown")).isNull();
+		// 접두어만 맞는 임의 버전·빈 버전은 승인 버전이 아니다.
+		for (String version : List.of("icebreakers-gms-invalid", "icebreakers-gms-0000000000000000",
+			"icebreakers-gms-", " ", "")) {
+			assertThat(questions.validate(new IcebreakerGateway.Generated(gms.questions(), "GENERATED", version),
+				"rest")).isNull();
+		}
+		assertThat(questions.validate(new IcebreakerGateway.Generated(gms.questions(), "GENERATED", null),
+			"rest")).isNull();
+		for (List<String> values : List.of(List.of("하나", "둘"), List.of("하나", "하나", "셋"),
+			List.of("하나", "종교가 같나요?", "셋"), List.of("하나", "연\u200B락처 알려주세요", "셋"),
+			List.of("하나", "\u2060둘", "셋"), List.of("하나", "\u200B둘", "셋"))) {
+			assertThat(questions.validate(new IcebreakerGateway.Generated(values, "GENERATED",
+				gms.promptVersion()), "walk")).isNull();
+		}
 	}
 
 	private IcebreakerGateway.Generated generated(List<String> values) {

@@ -14,6 +14,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
@@ -26,13 +28,16 @@ import com.ssafy.e106.core.ui.theme.AppColors
 import com.ssafy.e106.core.ui.theme.AppSpacing
 import com.ssafy.e106.resources.*
 import org.jetbrains.compose.resources.DrawableResource
+import org.jetbrains.compose.resources.Font
 import org.jetbrains.compose.resources.StringResource
 import org.jetbrains.compose.resources.painterResource
 import org.jetbrains.compose.resources.stringResource
 
+private const val BRAND = "tingle"   // 브랜드 이름(번역하지 않음)
+
 // 제공자 전용 팔레트. 공통 UI 기반의 테마·버튼 API를 바꾸지 않는다.
 private object LoginPalette {
-    val Background = Color(0xFFF5F0E7)
+    val Background = Color.White
     val GoogleSurface = Color.White
     val GoogleText = Color(0xFF1F1F1F)
     val GoogleBorder = Color(0xFF747775)
@@ -40,6 +45,9 @@ private object LoginPalette {
     val KakaoText = Color.Black.copy(alpha = 0.85f)
     val NaverSurface = Color(0xFF03A94D)
     val NaverText = Color.White
+    val Brand = Color(0xFF333039)          // 기존 워드마크 글자색
+    val RecentSurface = Brand
+    val RecentText = Color.White
 }
 
 /** 순수 로그인 UI. SDK·네트워크·세션·이동·타이머는 실행하지 않는다. */
@@ -59,15 +67,12 @@ fun SocialLoginScreen(
             Modifier.widthIn(max = 420.dp).fillMaxWidth().verticalScroll(rememberScrollState())
                 .heightIn(min = viewportHeight).padding(AppSpacing.Section),
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.SpaceBetween,
+            verticalArrangement = Arrangement.Center,     // 로고 · 문구 · 버튼을 한 덩어리로 화면 가운데에(길어지면 스크롤)
         ) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Image(
-                    painterResource(Res.drawable.tingle_wordmark_cream),
-                    contentDescription = stringResource(Res.string.startup_logo_description),
-                    modifier = Modifier.widthIn(max = 240.dp).fillMaxWidth().aspectRatio(1f),
-                    contentScale = ContentScale.Fit,
-                )
+                // 로고는 이미지 대신 글자(Nunito Black 900, OFL — font/OFL-Nunito.txt)
+                Text(BRAND, fontFamily = FontFamily(Font(Res.font.nunito_black, FontWeight.Black)), fontSize = 64.sp,
+                    color = LoginPalette.Brand, modifier = Modifier.padding(top = AppSpacing.ExtraLarge, bottom = AppSpacing.Large))
                 Text(stringResource(Res.string.login_heading),
                     style = MaterialTheme.typography.headlineMedium, color = AppColors.TextPrimary,
                     textAlign = TextAlign.Center, modifier = Modifier.semantics { heading() })
@@ -76,12 +81,12 @@ fun SocialLoginScreen(
                     color = AppColors.TextSecondary, textAlign = TextAlign.Center)
             }
             Column(
-                Modifier.padding(top = AppSpacing.ExtraLarge),
+                Modifier.padding(top = AppSpacing.Section),
                 verticalArrangement = Arrangement.spacedBy(AppSpacing.Medium),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 LoginProvider.entries.filter { it in state.availableProviders }.forEach { provider ->
-                    ProviderButton(provider, enabled = state.busyProvider == null && !state.completed,
+                    ProviderButton(provider, recent = provider == state.lastProvider, enabled = state.busyProvider == null && !state.completed,
                         onClick = { if (state.busyProvider == null && !state.completed) onLogin(provider) })
                 }
                 if (state.availableProviders.isEmpty()) {
@@ -112,8 +117,23 @@ fun SocialLoginScreen(
     }
 }
 
+// 마지막으로 쓴 버튼 오른쪽 위에 "최근 로그인" 말풍선
 @Composable
-private fun ProviderButton(provider: LoginProvider, enabled: Boolean, onClick: () -> Unit) {
+private fun ProviderButton(provider: LoginProvider, recent: Boolean, enabled: Boolean, onClick: () -> Unit) {
+    val recentLabel = stringResource(Res.string.login_recent)
+    Box(Modifier.fillMaxWidth()) {
+        // 화면 읽기는 말풍선을 따로 읽지 않고 버튼 상태로 "카카오 로그인, 최근 로그인" 처럼 함께 읽는다
+        ProviderButtonBody(provider, enabled, onClick,
+            Modifier.semantics { if (recent) stateDescription = recentLabel })
+        if (recent) Text(recentLabel,
+            Modifier.align(Alignment.TopEnd).offset(x = (-12).dp, y = (-10).dp).clearAndSetSemantics {}
+                .background(LoginPalette.RecentSurface, RoundedCornerShape(50)).padding(horizontal = 10.dp, vertical = 3.dp),
+            color = LoginPalette.RecentText, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+    }
+}
+
+@Composable
+private fun ProviderButtonBody(provider: LoginProvider, enabled: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
     val background = when (provider) {
         LoginProvider.Google -> LoginPalette.GoogleSurface
         LoginProvider.Kakao -> LoginPalette.KakaoSurface
@@ -126,7 +146,7 @@ private fun ProviderButton(provider: LoginProvider, enabled: Boolean, onClick: (
     }
     Button(
         onClick = { if (enabled) onClick() }, enabled = enabled,
-        modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp),
+        modifier = modifier.fillMaxWidth().heightIn(min = 56.dp),
         shape = RoundedCornerShape(12.dp), elevation = null,
         border = if (provider == LoginProvider.Google) BorderStroke(1.dp, LoginPalette.GoogleBorder) else null,
         colors = ButtonDefaults.buttonColors(containerColor = background, contentColor = foreground,

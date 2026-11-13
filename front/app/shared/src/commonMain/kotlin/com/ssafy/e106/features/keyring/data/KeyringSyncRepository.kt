@@ -36,7 +36,8 @@ import kotlin.time.Instant
     override fun toString() = "KeyringSyncAck(REDACTED)"
 }
 data class KeyringStoredResult(val ack: KeyringSyncAck, val applied: Boolean, val timeReady: Boolean)
-@Serializable data class SyncChallengeBody(val deviceNonce: String) {
+/** 구형 ON/OFF는 형식을 생략하고, 개인 데이터가 포함된 설정은 지원 형식을 명시한다. */
+@Serializable data class SyncChallengeBody(val deviceNonce: String, val payloadFormat: String? = null) {
     override fun toString() = "SyncChallengeBody(REDACTED)"
 }
 
@@ -44,9 +45,10 @@ interface KeyringSyncRepository {
     suspend fun create(deviceId: Long, key: String, body: SyncChallengeBody): ApiResult<KeyringSyncRun>
     suspend fun get(deviceId: Long, runId: String): ApiResult<KeyringSyncRun>
     suspend fun ack(deviceId: Long, runId: String, key: String, body: KeyringSyncAck): ApiResult<KeyringSyncRun>
+    suspend fun applied(deviceId: Long, runId: String, key: String, body: KeyringSyncAck): ApiResult<Unit>
 }
 
-/** 환경별 접두사는 공통 클라이언트 소유다. 최신 개발 서명 계약은 보드의 deviceNonce 한 필드를 요구한다. */
+/** 환경별 접두사는 공통 클라이언트 소유다. 저장해 둔 nonce·형식을 그대로 보내 멱등 재시도 본문을 유지한다. */
 class HttpKeyringSyncRepository(private val client: HttpClient) : KeyringSyncRepository {
     override suspend fun create(deviceId: Long, key: String, body: SyncChallengeBody) = client.call<KeyringSyncRun> {
         post("keyrings/$deviceId/sync-runs") { header("Idempotency-Key", key); setBody(body) }
@@ -57,11 +59,45 @@ class HttpKeyringSyncRepository(private val client: HttpClient) : KeyringSyncRep
     override suspend fun ack(deviceId: Long, runId: String, key: String, body: KeyringSyncAck) = client.call<KeyringSyncRun> {
         post("keyrings/$deviceId/sync-runs/$runId/ack") { header("Idempotency-Key", key); setBody(body) }
     }
+    // 두 증명은 JSON 모양만 같다. 저장 ACK의 경로나 멱등 키를 재사용하지 않는다.
+    override suspend fun applied(deviceId: Long, runId: String, key: String, body: KeyringSyncAck) = client.call<Unit> {
+        post("keyrings/$deviceId/sync-runs/$runId/applied") { header("Idempotency-Key", key); setBody(body) }
+    }
 }
 
 /** JSON 숫자를 Long으로 유지한다. 서버 payload를 재인코딩하거나 FE 설정으로 대체하지 않는다. */
 internal object KeyringSyncProtocol {
+    const val PROFILE_FORMAT = BleProfileStorageInfo.FORMAT
+    const val FULL_SETTINGS_FORMAT = BleOwnerFlowInfo.FULL_SETTINGS_FORMAT
+    const val APPLIED_COMMAND = "GET_SETTINGS_APPLIED_PROOF"
+    private const val APPLIED_VERSION = "tingle-settings-applied-v1"
+    private const val TSV3_HEADER_BYTES = 487
+    private const val TSV3_RESTRICTION_BYTES = 25
+    private const val TSV3_MAX_RESTRICTIONS = 60
     private val codec = Base64.UrlSafe.withPadding(Base64.PaddingOption.ABSENT)
+
+    // 최초 발급과 앱 재시작 복구가 같은 형식을 받아야 멱등 키에 묶인 본문을 재사용할 수 있다.
+    fun supportsIssuanceFormat(format: String?) = format == null || requiresProtectedTransport(format)
+
+    fun requiresProtectedTransport(format: String) = format == PROFILE_FORMAT || format == FULL_SETTINGS_FORMAT
+
+    // 서버 서명을 검증하는 보드가 내부 정책을 해석한다. 앱은 봉투의 버전과 길이만 대조한다.
+    private fun fullSettingsPayload(run: KeyringSyncRun): Boolean {
+        val maxLength = TSV3_HEADER_BYTES + TSV3_RESTRICTION_BYTES * TSV3_MAX_RESTRICTIONS
+        if (run.proofProtocolVersion != KeyringRegistrationProtocol.VERSION_2 ||
+            !encoded(run.payload, TSV3_HEADER_BYTES..maxLength)) return false
+        val bytes = codec.decode(run.payload)
+        return bytes.decodeToString(endIndex = 4) == "TSV3" &&
+            (bytes.size - TSV3_HEADER_BYTES) % TSV3_RESTRICTION_BYTES == 0
+    }
+    /** 형식과 길이만 검사하고 서버 바이트는 그대로 중계한다. 성향 해석·서명 검증은 보드 책임이다. */
+    private fun supportedPayload(run: KeyringSyncRun): Boolean = when (run.payloadFormat) {
+        "tingle-dev-settings-v1" -> run.payload == "AA" || run.payload == "AQ"
+        PROFILE_FORMAT -> encoded(run.payload, 196..196) &&
+            codec.decode(run.payload).take(4) == listOf(84, 80, 83, 49).map { it.toByte() }
+        FULL_SETTINGS_FORMAT -> fullSettingsPayload(run)
+        else -> false
+    }
     private fun encoded(value: String, length: IntRange) = runCatching {
         Regex("[A-Za-z0-9_-]+").matches(value) && codec.decode(value).size in length && codec.encode(codec.decode(value)) == value
     }.getOrDefault(false)
@@ -76,7 +112,7 @@ internal object KeyringSyncProtocol {
             ?.also { require(validDeviceNonce(it)) } ?: error("Missing device challenge")
     }
     fun signed(run: KeyringSyncRun, deviceNonce: String): Boolean = run.deviceNonce == deviceNonce && validDeviceNonce(deviceNonce) &&
-        run.payloadFormat == "tingle-dev-settings-v1" &&
+        supportedPayload(run) &&
         KeyringRegistrationProtocol.validEpoch(run.proofProtocolVersion, run.ownershipEpoch) &&
         run.serverProofProtocolVersion == (if (run.proofProtocolVersion == KeyringRegistrationProtocol.VERSION_2)
             "tingle-dev-settings-proof-v2" else "tingle-dev-settings-proof-v1") &&
@@ -97,7 +133,7 @@ internal object KeyringSyncProtocol {
         return (buildJsonObject {
             put("protocolVersion", 1); put("type", "SYNC_SETTINGS"); put("requestId", requestId)
             put("syncRunId", run.syncRunId); put("deviceId", run.deviceId); put("ownerGeneration", run.ownerGeneration)
-            // 서명 규격만 v2다. BLE 봉투 protocolVersion=1과 payloadFormat=v1은 바꾸지 않는다.
+            // BLE 봉투 버전은 1이다. payloadFormat과 서명된 설정은 서버 응답 그대로 쓴다.
             run.ownershipEpoch?.let { put("ownershipEpoch", it) }
             put("settingsVersion", run.settingsVersion); put("payload", run.payload); put("payloadEncoding", run.payloadEncoding)
             put("payloadFormat", run.payloadFormat); put("payloadHash", run.payloadHash); put("nonce", run.nonce)
@@ -118,4 +154,29 @@ internal object KeyringSyncProtocol {
         fun flag(name: String) = (value[name] as? JsonPrimitive)?.takeUnless { it.isString }?.booleanOrNull ?: error("Missing flag")
         return KeyringStoredResult(KeyringSyncAck(run.settingsVersion, run.payloadHash, proof), flag("applied"), flag("timeReady"))
     }
+
+    /** 저장된 동일 실행을 질의한다. 적용 증명은 상태 플래그로 만들거나 앱에서 서명하지 않는다. */
+    fun appliedRequest(identity: SyncIdentity, requestId: String): ByteArray {
+        require(identity.payloadFormat == FULL_SETTINGS_FORMAT && KeyringRegistrationProtocol.uuid(identity.syncRunId) &&
+            KeyringRegistrationProtocol.uuid(requestId))
+        return (buildJsonObject {
+            put("protocolVersion", 1); put("type", APPLIED_COMMAND); put("requestId", requestId)
+            put("syncRunId", identity.syncRunId)
+        }.toString() + "\n").encodeToByteArray()
+    }
+
+    fun appliedResponse(bytes: ByteArray, requestId: String, identity: SyncIdentity): KeyringSyncAck {
+        val value = BleProbeProtocol.response(bytes, requestId, "SETTINGS_APPLIED_PROOF")
+        require(value["syncRunId"] == JsonPrimitive(identity.syncRunId) &&
+            value["settingsVersion"] == JsonPrimitive(identity.settingsVersion) &&
+            value["payloadHash"] == JsonPrimitive(identity.payloadHash))
+        val proof = ApiJson.decodeFromJsonElement<KeyringProof>(value["proof"] ?: error("Missing application proof"))
+        return KeyringSyncAck(identity.settingsVersion, identity.payloadHash, proof)
+            .also { require(validApplied(identity, it)) }
+    }
+
+    fun validApplied(identity: SyncIdentity, body: KeyringSyncAck): Boolean =
+        identity.payloadFormat == FULL_SETTINGS_FORMAT && body.settingsVersion == identity.settingsVersion &&
+            body.payloadHash == identity.payloadHash && body.proof.keyId == identity.keyId &&
+            body.proof.protocolVersion == APPLIED_VERSION && encoded(body.proof.signature, 64..64)
 }

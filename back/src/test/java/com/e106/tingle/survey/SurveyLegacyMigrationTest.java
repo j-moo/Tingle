@@ -19,15 +19,14 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.springframework.boot.jdbc.autoconfigure.JdbcConnectionDetails;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import org.springframework.jdbc.datasource.init.ResourceDatabasePopulator;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
-import org.testcontainers.postgresql.PostgreSQLContainer;
 
-@Testcontainers
+import com.e106.tingle.SharedPostgres;
+
 class SurveyLegacyMigrationTest {
 
 	private static final Instant COMPLETED = Instant.parse("2026-10-27T03:04:05Z");
@@ -35,8 +34,7 @@ class SurveyLegacyMigrationTest {
 	private static final String RESPONSE = "{\"answers\":{\"Q001\":4,\"Q002\":\"4\",\"Q003\":false,\"Q004\":null},"
 		+ "\"metadata\":{\"ownAge\":25},\"audit\":{\"old\":\"keep\"}}";
 
-	@Container
-	private static final PostgreSQLContainer POSTGRES = new PostgreSQLContainer("postgres:17");
+	private static final JdbcConnectionDetails POSTGRES = SharedPostgres.newDatabase();
 
 	private static DriverManagerDataSource source;
 	private static JdbcTemplate jdbc;

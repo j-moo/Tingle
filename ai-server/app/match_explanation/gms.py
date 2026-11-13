@@ -5,7 +5,9 @@ from collections.abc import Mapping
 import httpx2 as httpx
 
 from .dto import ModelInput, ModelOutput
+from .grounding import _claim_phrasings
 from .prompts import GENERATION_PROMPT, VERIFICATION_PROMPT
+from .validation import unique_json_object
 
 ENDPOINT = "https://gms.ssafy.io/gmsapi/api.openai.com/v1/responses"
 MODEL = "gpt-6-luna"
@@ -13,6 +15,10 @@ MODEL = "gpt-6-luna"
 
 class GmsError(Exception):
     """비밀값이나 제공업체 응답을 포함하지 않는 내부 예외."""
+
+
+class GmsConfigurationError(GmsError):
+    """요청 설정이나 인증을 고쳐야 하는 오류."""
 
 
 class GmsClient:
@@ -37,15 +43,20 @@ class GmsClient:
         return cls(api_key) if api_key.strip() else None
 
     async def generate(self, request: ModelInput) -> str:
-        return await self._call(GENERATION_PROMPT, request.model_dump(mode="json"))
+        return await self.request_text(GENERATION_PROMPT, {
+            **request.model_dump(mode="json"),
+            "allowedPhrasings": {item.id: sorted(_claim_phrasings(request.viewer, item))
+                                 for item in request.evidence},
+        })
 
     async def verify(self, request: ModelInput, output: ModelOutput) -> str:
-        return await self._call(VERIFICATION_PROMPT, {
+        return await self.request_text(VERIFICATION_PROMPT, {
             **request.model_dump(mode="json"),
             "candidate": output.model_dump(mode="json"),
         })
 
-    async def _call(self, prompt: str, payload: dict) -> str:
+    async def request_text(self, prompt: str, payload: dict) -> str:
+        """Send an already prepared payload and return a single validated text part."""
         body = {
             "model": MODEL, "stream": False, "max_output_tokens": 2048,
             "input": [
@@ -62,18 +73,23 @@ class GmsClient:
                     "POST", ENDPOINT, json=body,
                     headers={"Authorization": f"Bearer {self._api_key}"},
                 ) as response:
-                    if response.status_code != 200:
+                    status = response.status_code
+                    if 300 <= status < 500 and status not in (408, 429):
+                        raise GmsConfigurationError("GMS authentication or configuration failed")
+                    if status != 200:
                         raise GmsError("GMS request failed")
                     data = bytearray()
                     async for chunk in response.aiter_bytes():
-                        data.extend(chunk)
-                        if len(data) > 32_768:
+                        if len(data) + len(chunk) > 32_768:
                             raise GmsError("GMS response limit exceeded")
-            envelope = json.loads(data)
+                        data.extend(chunk)
+            envelope = json.loads(data, object_pairs_hook=unique_json_object)
             return _response_text(envelope)
         except httpx.TimeoutException:
             raise TimeoutError("GMS timeout") from None
-        except (httpx.HTTPError, ValueError, KeyError, TypeError, AttributeError):
+        except (httpx.LocalProtocolError, UnicodeEncodeError):
+            raise GmsConfigurationError("Invalid GMS request configuration") from None
+        except (httpx.HTTPError, ValueError, KeyError, TypeError, AttributeError, RecursionError):
             raise GmsError("Invalid GMS response") from None
 
 
@@ -86,9 +102,13 @@ def _response_text(envelope: dict) -> str:
     for item in envelope["output"]:
         if item["type"] == "reasoning":
             continue
-        if item["type"] != "message" or item.get("role") != "assistant":
+        if (item["type"] != "message" or item.get("role") != "assistant"
+                or item.get("status", "completed") != "completed"):
             raise GmsError("Unexpected GMS output")
-        for part in item["content"]:
+        content = item["content"]
+        if type(content) is not list or not content:
+            raise GmsError("Unexpected GMS content")
+        for part in content:
             if part["type"] != "output_text" or not isinstance(part.get("text"), str):
                 raise GmsError("Unexpected GMS content")
             texts.append(part["text"])

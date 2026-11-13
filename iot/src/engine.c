@@ -151,17 +151,36 @@ unsigned kr_count(const struct kr_engine *e, enum kr_kind kind)
 static int existing(const struct kr_engine *e, uint64_t peer)
 {
 	for (unsigned i = 0; i < KR_RECORDS; ++i) {
-		if (e->records[i].kind && e->records[i].peer == peer) {
+		if (e->records[i].kind && e->records[i].peer == peer &&
+			(!e->io.same_peer || e->io.same_peer(e->io.ctx, i, peer))) {
 			return (int)i;
 		}
 	}
 	return -1;
 }
+unsigned kr_pending(const struct kr_engine *e)
+{ return KR_RECORDS - kr_count(e, KR_EMPTY); }
+bool kr_can_insert(const struct kr_engine *e, enum kr_kind kind)
+{
+	unsigned limit = kind == KR_MATCH ? KR_MATCH_LIMIT : kind == KR_REVIEW ? KR_REVIEW_LIMIT : 0;
+	if (!limit || e->storage_error || e->next_sequence == UINT32_MAX || !kr_count(e, KR_EMPTY) || kr_count(e, kind) >= limit) { return false; }
+	unsigned reserved = 1;
+	for (unsigned i = 0; i < KR_SUPPRESSIONS; ++i) { reserved += e->suppressed[i].peer != 0; }
+	for (unsigned i = 0; i < KR_RECORDS; ++i) {
+		const struct kr_record *r = &e->records[i]; if (!r->kind) { continue; }
+		bool covered = false;
+		for (unsigned j = 0; j < KR_SUPPRESSIONS; ++j) {
+			if (e->suppressed[j].peer && equal_id(e->suppressed[j].id, r->id)) { covered = true; break; }
+		}
+		reserved += !covered;
+	}
+	return reserved <= KR_SUPPRESSIONS;
+}
 
 static bool suppressed(const struct kr_engine *e, uint64_t peer)
 {
 	for (unsigned i = 0; i < KR_SUPPRESSIONS; ++i) {
-		if (e->suppressed[i].peer == peer) {
+		if (e->suppressed[i].peer == peer && (!e->io.same_peer || e->io.same_peer(e->io.ctx, KR_RECORDS + i, peer))) {
 			return true;
 		}
 	}
@@ -180,14 +199,15 @@ static enum kr_result save_suppression(struct kr_engine *e, unsigned slot,
 
 static enum kr_result insert(struct kr_engine *e, struct kr_record *r)
 {
-	unsigned limit = r->kind == KR_MATCH ? KR_MATCH_LIMIT : KR_REVIEW_LIMIT;
-	if (kr_count(e, (enum kr_kind)r->kind) >= limit ||
-		e->next_sequence == UINT32_MAX) {
+	if (!kr_can_insert(e, (enum kr_kind)r->kind)) {
 		++e->overflow;
 		return KR_FULL;
 	}
 	for (unsigned i = 0; i < KR_RECORDS; ++i) {
 		if (e->records[i].kind == KR_EMPTY) {
+			if (e->io.sequence && e->io.sequence(e->io.ctx, e->next_sequence + 1)) {
+				e->storage_error = true; e->ready = false; return KR_STORAGE;
+			}
 			r->format = KR_VERSION;
 			r->sequence = e->next_sequence;
 			enum kr_result result = save(e, i, r);
@@ -210,6 +230,7 @@ enum kr_result kr_radio_error(struct kr_engine *e, uint64_t source,
 	/* Error keys use a separate namespace; bad bytes are evidence, not identity. */
 	uint64_t key = (1ULL << 63) | ((uint64_t)kr_crc32(raw, len) << 16) |
 		(source & 0xffff);
+	if (e->io.error_key) { key = e->io.error_key(e->io.ctx, source, raw, len) | (1ULL << 63); }
 	if (existing(e, key) >= 0 || suppressed(e, key)) {
 		return KR_OK;
 	}
@@ -256,6 +277,13 @@ enum kr_decision kr_always_match(void *ctx, const struct kr_profile *a,
 	(void)b;
 	return KR_ACCEPT;
 }
+enum kr_result kr_abandon_candidate(struct kr_engine *e, unsigned slot, enum kr_reason reason)
+{
+	if (slot >= KR_RECORDS || e->records[slot].kind != KR_MATCH) { return KR_NOT_FOUND; }
+	struct kr_record copy = e->records[slot]; return review(e, slot, &copy, reason);
+}
+bool kr_retired_reason(unsigned reason)
+{ return reason == KR_ACCOUNT_DUPLICATE || reason == KR_PEER_OWNERSHIP_CHANGED || reason == KR_PEER_SETTINGS_CHANGED; }
 
 void kr_expire_candidates(struct kr_engine *e, uint64_t now)
 {
@@ -312,6 +340,7 @@ void kr_drain(struct kr_engine *e)
 			(void)review(e, (unsigned)slot, &r, KR_VERSION_MISMATCH);
 			continue;
 		}
+		if (e->io.candidate_ready && !e->io.candidate_ready(e->io.ctx, (unsigned)slot)) { continue; }
 		enum kr_decision decision = e->io.calculate(e->io.ctx, &r.own, &peer);
 		if (decision != KR_ACCEPT) {
 			(void)review(e, (unsigned)slot, &r, decision == KR_REJECT ?
@@ -340,7 +369,7 @@ static enum kr_result control(struct kr_engine *e, const uint8_t *p, size_t len,
 		/* A phone can upload/delete one side before the last over-air receipt arrives. */
 		for (unsigned i = 0; i < KR_SUPPRESSIONS; ++i) {
 			struct kr_suppression s = e->suppressed[i];
-			if (s.peer != peer_id || !equal_id(s.id, p + 16) ||
+			if (s.peer != peer_id || (e->io.same_peer && !e->io.same_peer(e->io.ctx, KR_RECORDS + i, peer_id)) || !equal_id(s.id, p + 16) ||
 				s.occurred_at != kr_get64(p + 32) || s.expires_at != kr_get64(p + 40) ||
 				s.peer_revision != kr_get32(p + 56) || s.own_revision != kr_get32(p + 60)) {
 				continue;
@@ -375,7 +404,7 @@ static enum kr_result control(struct kr_engine *e, const uint8_t *p, size_t len,
 	if (phase == KR_OFFER && !coordinator && r.phase == KR_WAIT) {
 		uint64_t occurred = kr_get64(p + 32);
 		uint64_t expires = kr_get64(p + 40);
-		if (!occurred || expires < occurred || expires - occurred != r.own.opportunity_sec ||
+		if (!occurred || (occurred > now && occurred - now > 300) || expires < occurred || expires - occurred != r.own.opportunity_sec ||
 			now >= expires) {
 			return KR_INVALID;
 		}
@@ -418,7 +447,7 @@ static enum kr_result control(struct kr_engine *e, const uint8_t *p, size_t len,
 	}
 	enum kr_result result = save(e, (unsigned)slot, &r);
 	if (result == KR_OK && confirm && e->io.feedback) {
-		e->io.feedback(e->io.ctx, r.id);
+		e->io.feedback(e->io.ctx, &r, &peer);
 	}
 	return result;
 }
@@ -476,7 +505,7 @@ size_t kr_advertisement(struct kr_engine *e, unsigned *cursor, uint8_t *out,
 		}
 		if (index > KR_RECORDS) {
 			const struct kr_suppression *s = &e->suppressed[index - KR_RECORDS - 1];
-			if (!s->peer || (s->phase != KR_DONE && s->phase != KR_FINAL)) {
+			if (!s->peer || (e->io.same_peer && !e->io.same_peer(e->io.ctx, index - 1, s->peer)) || (s->phase != KR_DONE && s->phase != KR_FINAL)) {
 				continue;
 			}
 			kr_put64(body, e->config.device);
@@ -492,7 +521,7 @@ size_t kr_advertisement(struct kr_engine *e, unsigned *cursor, uint8_t *out,
 			return kr_packet(2, body, 65, out);
 		}
 		const struct kr_record *r = &e->records[index - 1];
-		if (!r->kind || r->kind == KR_REVIEW || r->phase < KR_OFFER ||
+		if (!r->kind || r->kind == KR_REVIEW || (e->io.same_peer && !e->io.same_peer(e->io.ctx, index - 1, r->peer)) || r->phase < KR_OFFER ||
 			r->phase == KR_COMPLETE) {
 			continue;
 		}
@@ -529,6 +558,16 @@ void kr_sent(struct kr_engine *e, int slot)
 	}
 }
 
+bool kr_sent_guarded(struct kr_engine *e, int slot, uint32_t sequence, const uint8_t id[16])
+{
+	bool same = false;
+	if (slot >= 0 && slot < KR_RECORDS) {
+		const struct kr_record *r = &e->records[slot]; same = r->kind && r->sequence == sequence && equal_id(r->id, id);
+	} else if (slot >= KR_RECORDS && slot < KR_RECORDS + KR_SUPPRESSIONS) {
+		const struct kr_suppression *s = &e->suppressed[slot - KR_RECORDS]; same = s->peer && equal_id(s->id, id);
+	}
+	if (!same) { return false; } kr_sent(e, slot); return !e->storage_error;
+}
 enum kr_result kr_ack(struct kr_engine *e, const uint8_t id[16])
 {
 	int slot = -1;
@@ -584,8 +623,8 @@ enum kr_result kr_release(struct kr_engine *e, const uint8_t id[16])
 	for (unsigned i = 0; i < KR_SUPPRESSIONS; ++i) {
 		if (equal_id(e->suppressed[i].id, id) && e->suppressed[i].peer) {
 			/* Never release while a failed raw deletion still needs recovery. */
-			if (existing(e, e->suppressed[i].peer) >= 0) {
-				return KR_CONFLICT;
+			for (unsigned n = 0; n < KR_RECORDS; ++n) {
+				if (e->records[n].kind && equal_id(e->records[n].id, id)) { return KR_CONFLICT; }
 			}
 			if (e->suppressed[i].phase != KR_COMPLETE) {
 				return KR_NOT_READY;

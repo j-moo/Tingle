@@ -32,6 +32,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
 import com.e106.tingle.IntegrationTestSupport;
 import com.e106.tingle.TestcontainersConfiguration;
+import com.e106.tingle.global.ai.AiCallException;
 import com.e106.tingle.global.error.BusinessException;
 import com.e106.tingle.global.error.ErrorCode;
 import com.e106.tingle.risk.RiskAnalysisTypes.Audience;
@@ -100,6 +101,63 @@ class RiskAnalysisIntegrationTest extends IntegrationTestSupport {
 	}
 
 	@Test
+	void harassmentForBothIsStoredAsSenderAndRecipientRows() throws Exception {
+		Fixture room = room();
+		message(room, 1, room.firstParticipant(), SECRET_SENTENCE);
+		given(gateway.analyze(any(), any())).willAnswer(invocation -> harassment(invocation.getArgument(1)));
+		service.analyze(request(room));
+		// BOTH 판정은 두 줄로 나뉘어 각자 역할이 남는다. 앱은 BOTH 를 받지 않는다
+		assertThat(jdbc.queryForList("select n.chat_participant_id::text || ':' || n.audience "
+			+ "from chat_safety_notice n join chat_participant p on p.id=n.chat_participant_id where p.chat_id=?",
+			String.class, room.id()))
+			.containsExactlyInAnyOrder(room.firstParticipant() + ":SENDER", room.secondParticipant() + ":RECIPIENT");
+	}
+
+	@Test
+	void harassmentExchangedBothWaysGivesEachPersonBothNotices() throws Exception {
+		Fixture room = room();
+		given(gateway.analyze(any(), any())).willAnswer(invocation -> harassment(invocation.getArgument(1)));
+		message(room, 1, room.firstParticipant(), SECRET_SENTENCE);
+		service.analyze(request(room));
+		message(room, 2, room.secondParticipant(), "맞받은 가상 욕설");
+		service.analyze(request(room));
+		// 보낸 쪽 안내와 받은 쪽 안내는 서로 다른 안내라 한 사람이 각각 한 번씩 받는다
+		assertThat(jdbc.queryForList("select n.chat_participant_id::text || ':' || n.audience "
+			+ "from chat_safety_notice n join chat_participant p on p.id=n.chat_participant_id where p.chat_id=?",
+			String.class, room.id()))
+			.containsExactlyInAnyOrder(room.firstParticipant() + ":SENDER", room.secondParticipant() + ":RECIPIENT",
+				room.secondParticipant() + ":SENDER", room.firstParticipant() + ":RECIPIENT");
+		// 같은 방향이 되풀이되면 더 늘지 않는다
+		message(room, 3, room.firstParticipant(), "되풀이한 가상 욕설");
+		service.analyze(request(room));
+		assertThat(notices(room)).isEqualTo(4);
+	}
+
+	@Test
+	void noticeIsStoredWithoutErrorBeforeTheIndexIsReplaced() throws Exception {
+		// 새 버전을 먼저 배포하고 인덱스를 나중에 바꾸는 동안(옛 2칸 인덱스)에도 저장이 실패하지 않는다
+		// 다른 테스트가 남긴 줄(같은 사람·같은 유형 두 줄)이 있으면 옛 인덱스를 만들 수 없다
+		jdbc.update("delete from chat_safety_notice");
+		dropNoticeUniqueness();
+		jdbc.execute("create unique index uq_chat_safety_notice_once "
+			+ "on chat_safety_notice(chat_participant_id,notice_type)");
+		try {
+			Fixture room = room();
+			given(gateway.analyze(any(), any())).willAnswer(invocation -> harassment(invocation.getArgument(1)));
+			message(room, 1, room.firstParticipant(), SECRET_SENTENCE);
+			service.analyze(request(room));
+			message(room, 2, room.secondParticipant(), "맞받은 가상 욕설");
+			service.analyze(request(room));
+			// 옛 인덱스에서는 예전처럼 같은 사람·같은 유형 한 번만 남는다
+			assertThat(notices(room)).isEqualTo(2);
+		} finally {
+			dropNoticeUniqueness();
+			jdbc.execute("create unique index uq_chat_safety_notice_once "
+				+ "on chat_safety_notice(chat_participant_id,notice_type,audience)");
+		}
+	}
+
+	@Test
 	void riskMappingIsRecipientSpecificAndDuplicateAttemptsNeverCallTheModelTwice() throws Exception {
 		Fixture room = room();
 		message(room, 1, room.firstParticipant(), SECRET_SENTENCE);
@@ -112,6 +170,10 @@ class RiskAnalysisIntegrationTest extends IntegrationTestSupport {
 		assertThat(jdbc.queryForObject("select n.chat_participant_id from chat_safety_notice n "
 			+ "join chat_participant p on p.id=n.chat_participant_id where p.chat_id=?", Long.class, room.id()))
 			.isEqualTo(room.secondParticipant());
+		// 받은 사람 안내로 남는다(앱이 보호 문구·차단 버튼을 고른다)
+		assertThat(jdbc.queryForObject("select n.audience from chat_safety_notice n "
+			+ "join chat_participant p on p.id=n.chat_participant_id where p.chat_id=?", String.class, room.id()))
+			.isEqualTo("RECIPIENT");
 		verify(gateway, times(1)).analyze(any(), any());
 		message(room, 2, room.firstParticipant(), "추가 가상 송금 요구");
 		service.analyze(request(room));
@@ -514,6 +576,173 @@ class RiskAnalysisIntegrationTest extends IntegrationTestSupport {
 	}
 
 	@Test
+	void automaticSkipsAMessageThatExceedsTheLimitAloneAndAnalyzesTheNextOne() throws Exception {
+		Fixture room = room();
+		// 채팅은 600글자로 허용하지만 분석 입력에서는 4,200 코드 포인트다.
+		String family = "👨‍👩‍👧‍👦";
+		message(room, 1, room.firstParticipant(), family.repeat(600));
+		message(room, 2, room.secondParticipant(), "뒤에 도착한 가상 메시지");
+		given(gateway.analyze(any(), any(), any(Duration.class))).willReturn(normal());
+		Manifest manifest = manifest("synthetic-v1");
+
+		assertThat(service.analyzeNext(room.id(), manifest)).isFalse();
+		JsonNode skipped = jsonMapper.readTree(state(room)).path("riskAnalysis");
+		String attempt = skipped.path("attemptId").asString();
+		assertThat(skipped.path("terminalRanges").path(attempt).path("fromSeq").asLong()).isEqualTo(1);
+		assertThat(skipped.path("terminalRanges").path(attempt).path("throughSeq").asLong()).isEqualTo(1);
+		assertThat(skipped.path("terminalRanges").path(attempt).path("kind").asString()).isEqualTo("FAILED");
+		assertThat(skipped.path("processedThroughSeq").asLong()).isEqualTo(1);
+		assertThat(skipped.path("lastAnalyzedSeq").asLong()).isZero();
+		verify(gateway, never()).analyze(any(), any(), any(Duration.class));
+
+		assertThat(service.analyzeNext(room.id(), manifest)).isTrue();
+		ArgumentCaptor<Input> sent = ArgumentCaptor.forClass(Input.class);
+		verify(gateway).analyze(any(), sent.capture(), any(Duration.class));
+		assertThat(sent.getValue().messages()).extracting(Message::sequence).containsExactly(2L);
+		JsonNode next = jsonMapper.readTree(state(room)).path("riskAnalysis");
+		assertThat(next.path("lastAnalyzedSeq").asLong()).isEqualTo(2);
+		assertThat(next.path("terminalRanges").path(attempt))
+			.isEqualTo(skipped.path("terminalRanges").path(attempt));
+		assertThat(store.candidates(room.id() - 1, 20)).doesNotContain(room.id());
+	}
+
+	@Test
+	void automaticInputRejectedByTheAiServerIsFinalizedWithoutRetries() throws Exception {
+		Fixture room = room();
+		message(room, 1, room.firstParticipant(), "AI가 거절하는 가상 메시지");
+		given(gateway.analyze(any(), any(), any(Duration.class))).willThrow(new AiCallException(false, 400));
+		Manifest manifest = manifest("synthetic-v1");
+
+		assertThat(service.analyzeNext(room.id(), manifest)).isTrue();
+		JsonNode rejected = jsonMapper.readTree(state(room)).path("riskAnalysis");
+		String attempt = rejected.path("attemptId").asString();
+		assertThat(rejected.path("terminal").asBoolean()).isTrue();
+		assertThat(rejected.path("terminalRanges").path(attempt).path("throughSeq").asLong()).isEqualTo(1);
+		assertThat(rejected.path("processedThroughSeq").asLong()).isEqualTo(1);
+		assertThat(store.candidates(room.id() - 1, 20)).doesNotContain(room.id());
+
+		message(room, 2, room.secondParticipant(), "뒤에 도착한 가상 메시지");
+		given(gateway.analyze(any(), any(), any(Duration.class))).willReturn(normal());
+		given(testClock.instant()).willReturn(NOW.plusSeconds(1));
+		assertThat(service.analyzeNext(room.id(), manifest)).isTrue();
+		ArgumentCaptor<Input> sent = ArgumentCaptor.forClass(Input.class);
+		verify(gateway, times(2)).analyze(any(), sent.capture(), any(Duration.class));
+		assertThat(sent.getAllValues().getLast().messages().stream().filter(Message::fresh).map(Message::sequence))
+			.containsExactly(2L);
+	}
+
+	@Test
+	void automaticTransientAiFailureIsStillRetried() throws Exception {
+		Fixture room = room();
+		message(room, 1, room.firstParticipant(), "가상 메시지");
+		given(gateway.analyze(any(), any(), any(Duration.class))).willThrow(new AiCallException(true, 503));
+		Manifest manifest = manifest("synthetic-v1");
+		assertThat(service.analyzeNext(room.id(), manifest)).isTrue();
+		JsonNode failed = jsonMapper.readTree(state(room)).path("riskAnalysis");
+		assertThat(failed.path("terminal").asBoolean()).isFalse();
+		assertThat(failed.path("processedThroughSeq").asLong()).isZero();
+		given(testClock.instant()).willReturn(NOW.plusSeconds(1));
+		assertThat(service.analyzeNext(room.id(), manifest)).isTrue();
+		verify(gateway, times(2)).analyze(any(), any(), any(Duration.class));
+	}
+
+	@Test
+	void automaticPolicyRejectionFromTheAiServerIsAlsoFinalizedWithoutRetries() throws Exception {
+		Fixture room = room();
+		message(room, 1, room.firstParticipant(), "정책 미확정 가상 메시지");
+		given(gateway.analyze(any(), any(), any(Duration.class))).willThrow(new AiCallException(false, 422));
+		assertThat(service.analyzeNext(room.id(), manifest("synthetic-v1"))).isTrue();
+		JsonNode rejected = jsonMapper.readTree(state(room)).path("riskAnalysis");
+		assertThat(rejected.path("terminal").asBoolean()).isTrue();
+		assertThat(rejected.path("processedThroughSeq").asLong()).isEqualTo(1);
+		given(testClock.instant()).willReturn(NOW.plusSeconds(2));
+		assertThat(service.analyzeNext(room.id(), manifest("synthetic-v1"))).isFalse();
+		verify(gateway, times(1)).analyze(any(), any(), any(Duration.class));
+	}
+
+	@Test
+	void batchPinnedUnderOlderInputRulesIsReanalyzedInsteadOfClosedAsMutated() throws Exception {
+		Fixture room = room();
+		message(room, 1, room.firstParticipant(), "배포 전에 고정된 가상 메시지");
+		message(room, 2, room.secondParticipant(), "그 뒤 위협 가상 메시지");
+		Manifest manifest = manifest("synthetic-v1");
+		given(gateway.analyze(any(), any(), any(Duration.class))).willThrow(new AiCallException(true, 503));
+		assertThat(service.analyzeNext(room.id(), manifest)).isTrue();
+		// 이전 버전이 남긴 상태처럼: 규칙 표시가 없고 해시가 이전 마스킹 결과다.
+		jdbc.update("update chat set ai_state=jsonb_set(ai_state #- '{riskAnalysis,inputRules}', "
+			+ "'{riskAnalysis,inputHash}', '\"old-masking-hash\"') where id=?", room.id());
+
+		given(gateway.analyze(any(), any(), any(Duration.class))).willReturn(normal());
+		given(testClock.instant()).willReturn(NOW.plusSeconds(2));
+		assertThat(service.analyzeNext(room.id(), manifest)).isTrue();
+		JsonNode state = jsonMapper.readTree(state(room)).path("riskAnalysis");
+		assertThat(state.path("terminalRanges").isEmpty()).isTrue();
+		assertThat(state.path("lastAnalyzedSeq").asLong()).isEqualTo(2);
+		verify(gateway, times(2)).analyze(any(), any(), any(Duration.class));
+	}
+
+	@Test
+	void batchPinnedUnderOlderInputRulesWithTheSameHashKeepsItsAttemptsAndBudget() throws Exception {
+		Fixture room = room();
+		message(room, 1, room.firstParticipant(), "배포 전에 세 번 실패한 가상 메시지");
+		Manifest manifest = manifest("synthetic-v1");
+		given(gateway.analyze(any(), any(), any(Duration.class))).willThrow(new AiCallException(true, 503));
+		for (int attempt = 0; attempt < 3; attempt++) {
+			given(testClock.instant()).willReturn(NOW.plusSeconds(attempt));
+			assertThat(service.analyzeNext(room.id(), manifest)).isTrue();
+		}
+		// 이전 버전이 남긴 상태처럼 규칙 표시만 없고, 입력 해시는 현재 규칙으로 만든 것과 같다.
+		jdbc.update("update chat set ai_state=ai_state #- '{riskAnalysis,inputRules}' where id=?", room.id());
+
+		// 같은지 확인하는 중 토큰 계산이 한 번 실패해도 "입력이 다름"으로 보고 횟수를 0으로 되돌리지 않는다.
+		given(gateway.countTokens(any())).willThrow(new IllegalStateException("synthetic outage")).willReturn(100);
+		given(testClock.instant()).willReturn(NOW.plusSeconds(3));
+		assertCode(() -> service.analyzeNext(room.id(), manifest), ErrorCode.SERVICE_UNAVAILABLE);
+		assertThat(service.analyzeNext(room.id(), manifest)).isFalse();
+		JsonNode state = jsonMapper.readTree(state(room)).path("riskAnalysis");
+		assertThat(state.path("terminal").asBoolean()).isTrue();
+		assertThat(state.path("processedThroughSeq").asLong()).isEqualTo(1);
+		verify(gateway, times(3)).analyze(any(), any(), any(Duration.class));
+	}
+
+	@Test
+	void batchPinnedUnderOlderInputRulesWithTheSameHashContinuesItsAttempts() throws Exception {
+		Fixture room = room();
+		message(room, 1, room.firstParticipant(), "배포 전에 한 번 실패한 가상 메시지");
+		Manifest manifest = manifest("synthetic-v1");
+		given(gateway.analyze(any(), any(), any(Duration.class))).willThrow(new AiCallException(true, 503));
+		assertThat(service.analyzeNext(room.id(), manifest)).isTrue();
+		jdbc.update("update chat set ai_state=ai_state #- '{riskAnalysis,inputRules}' where id=?", room.id());
+
+		given(testClock.instant()).willReturn(NOW.plusSeconds(1));
+		assertThat(service.analyzeNext(room.id(), manifest)).isTrue();
+		JsonNode state = jsonMapper.readTree(state(room)).path("riskAnalysis");
+		assertThat(state.path("attempts").asInt()).isEqualTo(2);
+		assertThat(state.path("firstStartedAt").asString()).isEqualTo(NOW.toString());
+		assertThat(state.path("inputRules").asString()).isNotBlank();
+		verify(gateway, times(2)).analyze(any(), any(), any(Duration.class));
+	}
+
+	@Test
+	void tokenizerOutageWhileRebuildingAPinnedBatchCancelsOnlyThisClaim() throws Exception {
+		Fixture room = room();
+		message(room, 1, room.firstParticipant(), "재시도 중 토큰 계산 장애 가상 메시지");
+		Manifest manifest = manifest("synthetic-v1");
+		given(gateway.analyze(any(), any(), any(Duration.class))).willThrow(new AiCallException(true, 503));
+		assertThat(service.analyzeNext(room.id(), manifest)).isTrue();
+
+		given(gateway.countTokens(any())).willThrow(new IllegalStateException("synthetic outage")).willReturn(100);
+		given(testClock.instant()).willReturn(NOW.plusSeconds(1));
+		assertCode(() -> service.analyzeNext(room.id(), manifest), ErrorCode.SERVICE_UNAVAILABLE);
+		JsonNode state = jsonMapper.readTree(state(room)).path("riskAnalysis");
+		assertThat(state.path("terminal").asBoolean()).isFalse();
+		assertThat(state.path("attempts").asInt()).isEqualTo(1);
+
+		assertThat(service.analyzeNext(room.id(), manifest)).isTrue();
+		verify(gateway, times(2)).analyze(any(), any(), any(Duration.class));
+	}
+
+	@Test
 	void automaticReceiptsBeyond128RemainReplayableAfterReleaseChanges() throws Exception {
 		Fixture room = room();
 		Manifest original = manifest("synthetic-v1");
@@ -851,6 +1080,19 @@ class RiskAnalysisIntegrationTest extends IntegrationTestSupport {
 
 	private static Verdict failed() {
 		return new Verdict(Kind.FAILED, List.of(), null, "synthetic-model-v1", "synthetic-prompt-v1");
+	}
+
+	/** 운영 SQL 과 같은 두 문장. Hibernate 가 만든 스키마는 제약, schema.sql 로 만든 스키마는 인덱스다. */
+	private void dropNoticeUniqueness() {
+		jdbc.execute("alter table chat_safety_notice drop constraint if exists uq_chat_safety_notice_once");
+		jdbc.execute("drop index if exists uq_chat_safety_notice_once");
+	}
+
+	private static Verdict harassment(Input input) {
+		long sequence = input.messages().stream().filter(Message::fresh).mapToLong(Message::sequence).max()
+			.orElseThrow();
+		return new Verdict(Kind.RISK, List.of(new Finding(sequence, Category.HARASSMENT, NoticeType.HARASSMENT,
+			Audience.BOTH)), 0.8, "synthetic-model-v1", "synthetic-prompt-v1");
 	}
 
 	private static Verdict money(Input input) {

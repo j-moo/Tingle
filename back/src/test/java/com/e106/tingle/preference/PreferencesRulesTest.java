@@ -63,7 +63,9 @@ class PreferencesRulesTest {
 			Arguments.of("\"RANGE\"", "\"25\"", "null", ErrorCode.INVALID_AGE_RANGE),
 			Arguments.of("\"RANGE\"", "25.0", "null", ErrorCode.INVALID_AGE_RANGE),
 			Arguments.of("\"RANGE\"", "true", "null", ErrorCode.INVALID_AGE_RANGE),
-			Arguments.of("\"RANGE\"", "2147483648", "null", ErrorCode.INVALID_AGE_RANGE));
+			Arguments.of("\"RANGE\"", "2147483648", "null", ErrorCode.INVALID_AGE_RANGE),
+			Arguments.of("\"RANGE\"", "65536", "null", ErrorCode.INVALID_AGE_RANGE),
+			Arguments.of("\"RANGE\"", "25", "65536", ErrorCode.INVALID_AGE_RANGE));
 	}
 
 	@Test

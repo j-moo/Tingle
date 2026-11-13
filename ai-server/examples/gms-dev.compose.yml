@@ -1,0 +1,20 @@
+# Integration example for ai-dev only; merge this service configuration into
+# infra/docker-compose.yml so the existing Jenkins command picks it up.
+# Do not include production services or replace the existing withdrawal override.
+services:
+  ai-dev:
+    command: [python, -m, uvicorn, "app.development:create_app", --factory, --host, 0.0.0.0, --port, "8000"]
+    environment:
+      APP_ENV: dev
+      MATCH_INSIGHT_GMS_DEV_ENABLED: "${MATCH_INSIGHT_GMS_DEV_ENABLED:-false}"
+      ICEBREAKER_GMS_DEV_ENABLED: "${ICEBREAKER_GMS_DEV_ENABLED:-false}"
+      GMS_API_KEY: "${GMS_API_KEY:-}"
+      AI_SERVICE_PUBLIC_KEYS: '{"be-dev-1":"/run/ai-keys/be-dev-1.pub.pem"}'
+      EXPLANATION_RELEASE_DESCRIPTOR_FILES: '["/run/tingle/match-dev/ai-descriptor.json"]'
+      ICEBREAKER_DEV_ENABLED: "${Q040_DEV_ENABLED:-false}"
+      ICEBREAKER_RELEASE_DESCRIPTOR_FILE: /run/tingle/q040-dev-release-v1/ai-descriptor.json
+      RISK_LOCAL_RULES_ENABLED: "false"
+    volumes:
+      - /srv/tingle/ai-keys/dev:/run/ai-keys:ro
+      - ${MATCH_DEV_RELEASE_DIR:-/srv/tingle/releases/match-dev}:/run/tingle/match-dev:ro
+      - ${Q040_DEV_RELEASE_DIR:-/srv/tingle/releases/q040-dev-release-v1}:/run/tingle/q040-dev-release-v1:ro

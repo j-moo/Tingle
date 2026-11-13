@@ -1,6 +1,8 @@
 #include "registration.h"
+#include "service.h"
 #include "monocypher-ed25519.h"
 #include <assert.h>
+#include <errno.h>
 #include <inttypes.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -22,6 +24,10 @@ struct fixture {
 	unsigned erased;
 	bool user_data, bonds, blocked;
 	int64_t now;
+	uint32_t generation;
+	int radio_failure, phone_failure;
+	unsigned stop_calls, finish_calls;
+	bool stale_once, reset_on_apply;
 };
 
 static int save_settings(void *ctx, const struct kr_settings *next)
@@ -56,6 +62,7 @@ static const char *begin_reset(void *ctx, const struct kr_reset_record *next)
 	if (f->pending < 0) { return "RECORD_STATE_UNKNOWN"; }
 	if (f->pending && next->policy == KR_RESET_REQUIRE_SYNCED) { return "PENDING_RECORDS"; }
 	f->blocked = true;
+	++f->generation;
 	if (f->fail_intent == 1) { return "STORAGE_ERROR"; }
 	f->journal = *next;
 	return f->fail_intent == 2 ? "STORAGE_ERROR" : NULL;
@@ -119,6 +126,7 @@ static void init(struct fixture *f)
 	uint8_t digest[32]; kr_hash(f->disk.payload, 1, digest); kr_hex(digest, 32, f->disk.hash);
 	assert(kr_settings_valid(&f->disk));
 	f->now = 1000;
+	f->generation = 7;
 	f->user_data = f->bonds = true;
 	reboot(f);
 }
@@ -182,6 +190,64 @@ static void query(struct fixture *f, char out[KR_RESPONSE_MAX])
 	snprintf(frame, sizeof(frame), "{\"protocolVersion\":1,\"type\":\"GET_RESET_RESULT\","
 		"\"requestId\":\"q\",\"resetRunId\":\"%s\",\"resetNonce\":\"%s\"}", run, nonce);
 	request(f, frame, out);
+}
+
+static bool service_pending(void *ctx) { return ((struct fixture *)ctx)->core.reset.phase == KR_RESETTING; }
+static uint32_t service_block(void *ctx)
+{
+	struct fixture *f = ctx; f->blocked = true; ++f->stop_calls; return ++f->generation;
+}
+static int service_apply(void *ctx, const struct kr_peer_plan *plan)
+{
+	struct fixture *f = ctx;
+	if (f->stale_once) { ++f->generation; f->stale_once = false; }
+	if (plan->generation != f->generation) { return -EAGAIN; }
+	if (service_pending(f)) { assert(!plan->length && !plan->peer.valid && !plan->verified_time); }
+	if (f->reset_on_apply) {
+		f->reset_on_apply = false; char frame[KR_FRAME_MAX + 1]; start(f, frame);
+	}
+	return f->radio_failure;
+}
+static int service_phone(void *ctx) { return ((struct fixture *)ctx)->phone_failure; }
+static const char *service_finish(void *ctx)
+{ struct fixture *f = ctx; ++f->finish_calls; return kr_reset_resume(&f->core); }
+static struct kr_service_io service_io(struct fixture *f)
+{
+	return (struct kr_service_io){.ctx = f, .reset_pending = service_pending, .block_reset = service_block,
+		.apply = service_apply, .refresh_phone = service_phone, .finish_reset = service_finish};
+}
+static void service_loop_recovery(void)
+{
+	/* Use the same step called by main.c, the real signed RESET_DEVICE parser
+	 * and durable reset core. Only radio/flash adapters are fake on the host. */
+	for (unsigned recovery = 0; recovery < 2; ++recovery) {
+		struct fixture f; init(&f); struct kr_identity id = f.core.identity;
+		char frame[KR_FRAME_MAX + 1], out[KR_RESPONSE_MAX]; start(&f, frame);
+		if (recovery) { reboot(&f); f.generation = 0; }
+		struct kr_peer_plan plan = {.length = 32, .generation = 99, .verified_time = 123, .peer.valid = true}; bool update = true;
+		struct kr_service_io io = service_io(&f); struct kr_service_progress p = kr_service_step(&plan, &update, &io);
+		assert(p.reset_pending && p.applied && p.reset_attempted && !p.radio_error && !p.reset_error && !update);
+		assert(plan.generation == f.generation && plan.generation && f.stop_calls == 1 && f.finish_calls == 1);
+		query(&f, out); assert(strstr(out, "CLEARED") && f.core.reset.ownership_epoch == 1);
+		assert(!f.disk.magic && !f.user_data && !f.bonds && !memcmp(&id, &f.core.identity, sizeof(id)));
+		p = kr_service_step(&plan, &update, &io); assert(!p.reset_attempted && f.erased == 1 && f.finish_calls == 1);
+	}
+	for (unsigned failure = 0; failure < 3; ++failure) {
+		struct fixture f; init(&f); char frame[KR_FRAME_MAX + 1]; start(&f, frame);
+		f.radio_failure = failure == 0 ? -EIO : 0; f.phone_failure = failure == 1 ? -ENOMEM : 0; f.stale_once = failure == 2;
+		struct kr_peer_plan plan = {0}; bool update = false; struct kr_service_io io = service_io(&f);
+		struct kr_service_progress p = kr_service_step(&plan, &update, &io);
+		assert(p.radio_error && update && !p.reset_attempted && !f.erased && !f.finish_calls && f.user_data);
+		f.radio_failure = f.phone_failure = 0;
+		p = kr_service_step(&plan, &update, &io);
+		assert(p.applied && p.reset_attempted && !p.reset_error && f.core.reset.phase == KR_RESET_DONE);
+	}
+	struct fixture f; init(&f); f.reset_on_apply = true;
+	struct kr_peer_plan plan = {.length = 32, .generation = f.generation}; bool update = true; struct kr_service_io io = service_io(&f);
+	struct kr_service_progress p = kr_service_step(&plan, &update, &io);
+	assert(p.applied && !p.reset_attempted && f.core.reset.phase == KR_RESETTING && !f.erased);
+	p = kr_service_step(&plan, &update, &io); assert(p.reset_attempted && !p.reset_error && f.erased == 1);
+	puts("PASS: main service stop generation, signed reset/reboot completion, failed stop retries and concurrent reset gate");
 }
 
 static void normal_and_retries(void)
@@ -384,7 +450,7 @@ static void challenge_and_bounds(void)
 int main(int argc, char **argv)
 {
 	assert(argc == 2);
-	normal_and_retries(); power_cuts(); refusals(); challenge_and_bounds(); v2_binding_and_vectors(argv[1]);
+	normal_and_retries(); power_cuts(); refusals(); challenge_and_bounds(); v2_binding_and_vectors(argv[1]); service_loop_recovery();
 	puts("PASS: signed reset, key preservation, power cuts, replay/new owner, record gates, epoch v2, maximum frames");
 	return 0;
 }

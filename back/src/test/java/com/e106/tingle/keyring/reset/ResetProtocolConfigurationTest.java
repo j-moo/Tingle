@@ -28,11 +28,12 @@ class ResetProtocolConfigurationTest {
 	}
 
 	@Test
-	void developmentResetSigningCannotBeEnabledInAProductionProfile() {
-		context("dev", "prod").run(context -> {
+	void productionResetSigningUsesConfiguredKeysAndFailsClosedWithoutThem() {
+		// 11-11 결정 B: 운영도 같은 키 파일을 읽는다. 파일이 없으면 임의 키 없이 기동을 거절한다.
+		context("prod").run(context -> {
 			assertThat(context).hasFailed();
 			assertThat(context.getStartupFailure()).hasRootCauseMessage(
-				"Development settings signing requires dev/test profile");
+				"Dedicated development settings signing keys unavailable");
 		});
 	}
 

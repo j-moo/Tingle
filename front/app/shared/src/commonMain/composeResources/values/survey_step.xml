@@ -1,0 +1,26 @@
+<resources>
+    <!-- 성향테스트 문항 밖 화면(시안 01): 시작 · 다 답함 · 분석 -->
+    <string name="survey_step_intro_title">나와 잘 맞는 사람을 찾기 위한 질문이에요</string>
+    <string name="survey_step_intro_body">정답은 없어요. 평소의 나에 가깝게 고르면 돼요.</string>
+    <string name="survey_step_count">%1$d문항</string>
+    <string name="survey_step_resumable">중간에 나가도 이어서</string>
+    <string name="survey_step_start">시작하기</string>
+    <string name="survey_step_done_title">%1$d문항을 모두 답했어요</string>
+    <string name="survey_step_done_body">제출하면 답을 바꿀 수 없어요. 제출하면 바로 성향 분석을 시작해요.</string>
+    <string name="survey_step_submit">제출하고 분석하기</string>
+    <string name="survey_step_submitted_title">제출을 마쳤어요</string>
+    <string name="survey_step_submitted_body">저장된 답으로 성향 분석을 요청해 주세요.</string>
+    <string name="survey_step_analyze">분석 요청하기</string>
+    <string name="survey_step_pending_title">성향을 분석하고 있어요</string>
+    <string name="survey_step_pending_body">잠시 후 분석 상태를 확인해 주세요. 이 화면을 나가도 분석은 계속돼요.</string>
+    <string name="survey_step_check">분석 상태 확인</string>
+    <string name="survey_step_succeeded_title">분석이 끝났어요</string>
+    <string name="survey_step_succeeded_body">이 결과로 나와 잘 맞는 사람을 찾아요.</string>
+    <string name="survey_step_next">다음 단계로</string>
+    <string name="survey_step_insufficient_title">분석에 필요한 답이 부족해요</string>
+    <string name="survey_step_insufficient_body">제출한 답은 그대로 보관돼요. 다시 하기로 새로 답할 수 있어요.</string>
+    <string name="survey_step_failed_title">분석하지 못했어요</string>
+    <string name="survey_step_failed_body">다시 답하지 않아도 돼요. 저장된 답으로 다시 분석을 요청할 수 있어요.</string>
+    <string name="survey_step_unconfirmed_title">저장 결과를 확인하지 못했어요</string>
+    <string name="survey_step_recheck">다시 확인</string>
+</resources>

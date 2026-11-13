@@ -11,6 +11,7 @@ import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
 
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -19,6 +20,7 @@ import com.e106.tingle.global.error.BusinessException;
 import com.e106.tingle.global.error.ErrorCode;
 import com.e106.tingle.keyring.dto.KeyringView;
 import com.e106.tingle.keyring.dto.RegisterKeyringRequest;
+import com.e106.tingle.keyring.ownership.PeerOwnershipService;
 import com.e106.tingle.keyring.proof.RegistrationProofVerifier;
 import com.e106.tingle.user.OnboardingService;
 import com.e106.tingle.user.OnboardingStatus;
@@ -38,6 +40,7 @@ public class KeyringRegistrationService {
 	private final KeyringRegistrationRepository keyrings;
 	private final KeyringReadRepository reads;
 	private final Clock clock;
+	private final ObjectProvider<PeerOwnershipService> peerOwnership;
 	private final RegistrationProofVerifier verifier = new RegistrationProofVerifier();
 
 	@Transactional
@@ -104,6 +107,10 @@ public class KeyringRegistrationService {
 		}
 		device.register(userId, generation);
 		keyrings.saveAndFlush(device);
+		PeerOwnershipService history = peerOwnership.getIfAvailable();
+		if (history != null && epochBound) {
+			history.current(device, now);
+		}
 		KeyringView result = reads.findOwned(userId).stream().filter(view -> view.deviceId() == device.getId())
 			.findFirst().orElseThrow(() -> new IllegalStateException("Registered device is unavailable"));
 		challenge.consume(device.getId(), generation, device.getCredentialKeyId(), proofHash, now,
@@ -124,7 +131,8 @@ public class KeyringRegistrationService {
 			|| challenge.getRegisteredStatus() == null || challenge.getRegisteredFirmwareVersion() == null) {
 			throw new BusinessException(ErrorCode.IDEMPOTENCY_CONFLICT);
 		}
-		return new KeyringView(challenge.getRegisteredKeyringId(), challenge.getRegisteredStatus(),
+		return new KeyringView(challenge.getRegisteredKeyringId(), device.getSerialNumber(),
+			challenge.getRegisteredStatus(),
 			challenge.getRegisteredFirmwareVersion());
 	}
 

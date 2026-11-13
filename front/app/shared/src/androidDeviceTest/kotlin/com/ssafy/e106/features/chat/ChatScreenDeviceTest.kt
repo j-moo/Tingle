@@ -29,8 +29,6 @@ class ChatScreenTestActivity : ComponentActivity() {
             AppTheme {
                 if(page) SafetyActionScreen(SafetyActionState(SafetyOperation.Block,SafetyContext.Chat,phase,true)) {
                     when(it) {
-                        SafetyUiAction.OpenConfirmation -> phase = SafetyPhase.Confirm
-                        SafetyUiAction.Cancel -> phase = SafetyPhase.Overview
                         SafetyUiAction.Confirm -> { writes++; phase = SafetyPhase.Processing }
                         else -> page = false
                     }
@@ -48,8 +46,8 @@ class ChatScreenDeviceTest {
         ActivityScenario.launch<ChatScreenTestActivity>(Intent(context,ChatScreenTestActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)).use { scenario ->
             compose.waitForIdle()
             scenario.onActivity { assertTrue(it.displayed.isNotEmpty()); assertFalse(it.displayed.contains(1)); assertTrue(it.displayed.contains(40)) }
-            compose.onNodeWithText("더보기").performClick()
-            compose.onNodeWithText("확인하고 계속").performClick()
+            // 더보기는 아이콘의 접근성 이름으로 찾고, 새 차단 화면에서 바로 최종 확인을 누른다.
+            compose.onNodeWithContentDescription("더보기").performClick()
             scenario.onActivity { assertEquals(0,it.writes) }
             compose.onNodeWithText("차단하기").performClick()
             scenario.onActivity { assertEquals(1,it.writes) }

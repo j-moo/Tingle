@@ -48,7 +48,7 @@ internal class DefaultSessionStore(
     private val tokenStore: TokenStore,
     private val scope: CoroutineScope,
     private val now: () -> Instant = { Clock.System.now() },
-) : SessionStore, SessionAuth {
+) : SessionStore, SessionAuth, WithdrawalSessionEnd {
     lateinit var client: HttpClient
 
     private val _state = MutableStateFlow<Session>(Session.Restoring)
@@ -166,6 +166,28 @@ internal class DefaultSessionStore(
 
     /** 지금 세션 세대. 로그아웃은 잠금을 기다리기 전에 이것부터 잡는다 — 취소 정리 때도 "로그아웃을 누른 그 세션"인지 비교할 수 있게 */
     val currentGeneration: Long get() = generation
+
+    /** 탈퇴 실행 직전만 캡처한다. 같은 회원의 재로그인도 새 세대이므로 이전 결과와 구별한다. */
+    override suspend fun capture(userId: Long): WithdrawalSessionHandle? = lock.withLock {
+        if ((_state.value as? Session.SignedIn)?.userId != userId) return@withLock null
+        if (tokenStore.load()?.userId != userId) return@withLock null
+        WithdrawalSessionHandle(userId, generation)
+    }
+
+    /**
+     * 서버가 이미 세션을 폐기한 탈퇴 완료 경로라 logout POST/재전송을 만들지 않는다.
+     * 토큰 디스크 삭제 실패는 삼키지 않아 호출자가 로컬 정리 대기를 표시할 수 있게 한다.
+     * SignedOut 구독자가 기존 계정 캐시·푸시 대기·실시간 연결을 정리한다. 보호 복구 저장소는 독립적이다.
+     */
+    override suspend fun finish(handle: WithdrawalSessionHandle): Boolean = withContext(NonCancellable) {
+        lock.withLock {
+            if (generation != handle.generation || (_state.value as? Session.SignedIn)?.userId != handle.userId)
+                return@withLock false
+            tokenStore.clear()
+            signOutLocked(announce = false)
+            true
+        }
+    }
 
     /** 로그아웃 시작: 지금 토큰(서버 로그아웃 요청용). 잠금을 기다리는 사이 [startedAt] 세대가 끝났으면(만료 · 다른 로그인) null — 할 일이 없다 */
     suspend fun beginSignOut(startedAt: Long): StoredTokens? = lock.withLock { if (generation == startedAt) tokenStore.load() else null }

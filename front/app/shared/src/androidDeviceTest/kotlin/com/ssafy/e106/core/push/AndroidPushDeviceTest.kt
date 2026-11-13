@@ -40,6 +40,12 @@ class AndroidPushDeviceTest {
     }
 
     @Test
+    fun proposalNotificationTapKeepsItsTargetAndAccount() {
+        val target = PushTarget.Proposal(42)
+        assertEquals(target to 7L, PushTapActivity.targetOf(PushTapActivity.intent(context, target, 7)))
+    }
+
+    @Test
     fun bindingSavedAndCleared() = runTest {
         val device = AndroidPushDevice(prefs)
         assertNull(device.binding())

@@ -6,6 +6,7 @@ import java.util.List;
 
 import org.springframework.stereotype.Service;
 
+import com.e106.tingle.global.ai.AiCallException;
 import com.e106.tingle.global.error.BusinessException;
 import com.e106.tingle.global.error.ErrorCode;
 import com.e106.tingle.risk.RiskAnalysisTypes.Kind;
@@ -59,6 +60,7 @@ public class RiskAnalysisService {
 	private Response execute(RiskAnalysisStore.Claim claim, boolean automatic) {
 		Request request = claim.request();
 		Verdict result;
+		boolean retryable = true;
 		try {
 			if (automatic && (!store.canTransmit(claim) || !manifests.supports(request.manifest()))) {
 				throw new BusinessException(ErrorCode.SERVICE_UNAVAILABLE);
@@ -73,7 +75,11 @@ public class RiskAnalysisService {
 		} catch (RuntimeException exception) {
 			// 공급자 오류·원응답·대화 본문을 로그나 영속 상태로 복사하지 않는다.
 			result = new Verdict(Kind.FAILED, List.of(), null, "unavailable", "unavailable");
+			// AI와 합의한 계약: 400(입력 거절)·422(정책 미확정)는 같은 입력을 다시 보내도 결과가 같아 1회 후 종결.
+			// 503·429·시간 초과는 기존대로 최대 3회 재시도한다.
+			retryable = !(exception instanceof AiCallException call && call.httpStatus() != null
+				&& (call.httpStatus() == 400 || call.httpStatus() == 422));
 		}
-		return store.finish(claim, result);
+		return store.finish(claim, result, retryable);
 	}
 }
