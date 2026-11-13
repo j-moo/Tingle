@@ -101,8 +101,73 @@ class BleProbeViewModel(
         }
     }
 
+    /** 등록 목록에서 고른 실물만 연결한다. 광고 이름이나 주소 대신 연결 후 읽은 일련번호를 대조한다. */
+    fun connectOwned(target: OwnedKeyring) {
+        val serial = target.deviceSerial?.takeIf { it.isNotBlank() } ?: return
+        val owner = (sessions.state.value as? Session.SignedIn)?.userId ?: return
+        if (state.value.connected && state.value.info?.serial == serial) return
+        val previous = work
+        val previousReconnect = reconnect
+        leave()
+        val stamp = generation
+        mutable.value = BleProbeState(scanning = true)
+        work = viewModelScope.launch {
+            var matched: Pair<BleConnection, BleDeviceInfo>? = null
+            try {
+                previous?.join()
+                previousReconnect?.join()
+                var nearby = emptyList<BleCandidate>()
+                // 플랫폼이 스캔을 정리한 뒤에만 후보를 확인한다. 목록에는 계정에서 고른 기기만 표시한다.
+                withTimeoutOrNull(15_000) { ble.scan().collect { nearby = it } }
+                mutable.update { it.copy(scanning = false, busy = true) }
+                withTimeoutOrNull(32_000) {
+                    for (candidate in nearby.sortedByDescending { it.rssi }) {
+                        withTimeoutOrNull(8_000) { matched = probeOwnedCandidate(candidate.id, serial) }
+                        if (matched != null) break
+                    }
+                }
+                val (channel, info) = matched ?: throw BleException(BleFailure.NotFound)
+                verifyOwnership(info, owner, registrationMode = false, expectedDeviceId = target.deviceId)
+                if (stamp != generation) return@launch
+                if (channel.state.value == BleLinkState.Closed) throw BleException(BleFailure.Disconnected)
+                connection = channel
+                mutable.value = BleProbeState(connected = true, info = info, connectionGeneration = stamp)
+                watch(channel, stamp, serial, registrationMode = false, expectedDeviceId = target.deviceId)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                if (stamp == generation) showFailure(failure)
+            } finally {
+                matched?.first?.takeUnless { it === connection }?.close()
+                if (stamp == generation) mutable.update { it.copy(scanning = false, busy = false) }
+            }
+        }
+    }
+
+    private suspend fun probeOwnedCandidate(id: String, serial: String): Pair<BleConnection, BleDeviceInfo>? {
+        var channel: BleConnection? = null
+        var matched = false
+        try {
+            channel = ble.connect(id)
+            val info = readInfo(channel)
+            if (info.serial != serial) return null
+            matched = true
+            return channel to info
+        } catch (failure: BleException) {
+            // 후보 하나의 연결 실패는 다음 후보에서 복구할 수 있다. 권한과 무선 설정 오류는 즉시 표시한다.
+            if (failure.reason in setOf(BleFailure.PermissionRequired, BleFailure.BluetoothOff,
+                    BleFailure.LocationOff, BleFailure.Unsupported)) throw failure
+            return null
+        } catch (_: BleCommandException) {
+            return null
+        } finally {
+            if (!matched) channel?.close()
+        }
+    }
+
     /** 재부팅으로 링크가 끊긴 경우에만 이전 선택 기기를 제한적으로 다시 찾는다. 이름이 같은 다른 보드는 선택하지 않는다. */
-    private fun watch(channel: BleConnection, stamp: Long, serial: String, registrationMode: Boolean) {
+    private fun watch(channel: BleConnection, stamp: Long, serial: String, registrationMode: Boolean,
+        expectedDeviceId: Long? = null) {
         watcher = viewModelScope.launch {
             channel.state.first { it == BleLinkState.Closed }
             if (stamp != generation || channel !== connection) return@launch
@@ -140,7 +205,7 @@ class BleProbeViewModel(
                             if (info.serial != serial) {
                                 next.close(); showFailure(BleException(BleFailure.InvalidFrame)); return@launch
                             }
-                            verifyOwnership(info, owner, registrationMode)
+                            verifyOwnership(info, owner, registrationMode, expectedDeviceId)
                             if (stamp != generation || !foreground) { next.close(); return@launch }
                             if (next.state.value == BleLinkState.Closed) throw BleException(BleFailure.Disconnected)
                             // 새 연결의 세대를 올려 이전 작업의 실패 정리와 finally가 새 작업 상태를 건드리지 않게 한다.
@@ -148,7 +213,7 @@ class BleProbeViewModel(
                             connection = next
                             mutable.update { it.copy(connected = true, busy = false, info = info, error = null, commandError = null,
                                 connectionGeneration = nextStamp) }
-                            watch(next, nextStamp, serial, registrationMode)
+                            watch(next, nextStamp, serial, registrationMode, expectedDeviceId)
                             return@launch
                         } catch (cancelled: CancellationException) { next?.close(); throw cancelled }
                         catch (failure: Exception) {
@@ -165,7 +230,8 @@ class BleProbeViewModel(
         }
     }
 
-    private suspend fun verifyOwnership(info: BleDeviceInfo, owner: Long, registrationMode: Boolean) {
+    private suspend fun verifyOwnership(info: BleDeviceInfo, owner: Long, registrationMode: Boolean,
+        expectedDeviceId: Long? = null) {
         val session = sessions.state.value as? Session.SignedIn
             ?: throw BleException(BleFailure.OwnershipUnverified)
         if (session.userId != owner) throw BleException(BleFailure.OwnershipUnverified)
@@ -182,7 +248,8 @@ class BleProbeViewModel(
             throw BleException(BleFailure.OwnershipUnverified)
         }
         val items = (response as? ApiResult.Ok)?.value ?: throw BleException(BleFailure.OwnershipUnverified)
-        if (items.count { it.deviceSerial == info.serial } == 1) return
+        val match = items.singleOrNull { it.deviceSerial == info.serial }
+        if (match != null && (expectedDeviceId == null || match.deviceId == expectedDeviceId)) return
 
         // 서버가 식별자를 아직 보내지 않는 환경에서 소유하지 않았다고 잘못 안내하지 않는다.
         val reason = if (items.any { it.deviceSerial.isNullOrBlank() } || items.any { it.deviceSerial == info.serial }) {

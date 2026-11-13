@@ -11,6 +11,7 @@ import com.ssafy.e106.features.profile.data.OptionalProfileRepository
 import com.ssafy.e106.features.proposals.ui.decodeProposalImage
 import com.ssafy.e106.features.account.ui.*
 import com.ssafy.e106.features.keyring.data.KeyringSettingsChanges
+import com.ssafy.e106.features.keyring.data.OwnedKeyring
 import com.ssafy.e106.features.keyring.data.OwnedKeyringRepository
 import com.ssafy.e106.features.onboarding.data.OnboardingRepository
 import com.ssafy.e106.features.profile.data.ProfileRepository
@@ -76,12 +77,16 @@ class HomeSessionViewModel(private val profiles: ProfileRepository, private val 
             is ApiResult.Fail -> HomeKeyringState.Unknown
         }
         val devices = (list as? ApiResult.Ok)?.value.orEmpty()
-        val aliases = devices.mapNotNull { device ->
-            (prefs.read(aliasKey(device.deviceId), user) as? PrefRead.Found)?.value?.let { device.deviceId to it }
-        }.toMap()
+        val aliases = readKeyringAliases(user, devices)
         // 계정 전환이나 화면 이탈 뒤 도착한 응답은 현재 화면에 반영하지 않는다.
         if (valid(stamp)) mutable.update { it.copy(home = it.home.copy(keyring = keyring, keyrings = devices, keyringAliases = aliases)) }
     }
+
+    /** 홈과 동기화 목록에서 이 계정의 휴대폰 별명을 같은 방식으로 읽는다. */
+    internal suspend fun readKeyringAliases(user: Long, devices: List<OwnedKeyring>): Map<Long, String> =
+        devices.mapNotNull { device ->
+            (prefs.read(aliasKey(device.deviceId), user) as? PrefRead.Found)?.value?.let { device.deviceId to it }
+        }.toMap()
 
     /** 별명은 계정과 등록 기기 번호로 구분한다. 서버나 블루투스로 보내지 않는다. */
     suspend fun saveKeyringAlias(deviceId: Long, alias: String): Boolean {
