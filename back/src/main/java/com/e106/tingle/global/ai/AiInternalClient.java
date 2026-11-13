@@ -36,6 +36,13 @@ public class AiInternalClient {
 	private static final Set<String> PATHS = Set.of("/internal/ai/personal-analyses", "/internal/ai/explanations",
 		"/internal/ai/icebreakers", "/internal/ai/risk-detections");
 	private static final String MATCHING_PATH = "/internal/matching/evaluations";
+	private static final String EXPLANATION_PATH = "/internal/ai/explanations";
+	private static final Duration LIMIT = Duration.ofSeconds(10);
+	/**
+	 * 매칭 이유는 AI 서버가 GMS 생성·검증에 최대 9초를 쓴 뒤 규칙 설명으로 넘어가므로 그보다 넉넉히 기다린다.
+	 * 앱의 요청 제한이 15초(front HttpClientFactory)라 그보다 짧아야 한다. 둘 중 하나를 바꾸면 이 값도 다시 본다.
+	 */
+	private static final Duration EXPLANATION_LIMIT = Duration.ofSeconds(13);
 	private static final Map<String, String> INTERNAL_HOSTS = Map.of("dev", "ai-dev", "prod", "ai");
 	private static final int MAX_RESPONSE_BYTES = 1_048_576;
 	private final AiServiceTokenProvider tokens;
@@ -59,7 +66,7 @@ public class AiInternalClient {
 	}
 
 	public <T> T post(String path, Object body, Class<T> responseType, UUID requestId) {
-		return post(path, body, responseType, requestId, Duration.ofSeconds(10), MAX_RESPONSE_BYTES);
+		return post(path, body, responseType, requestId, limit(path), MAX_RESPONSE_BYTES);
 	}
 
 	/** 호출자의 남은 전체 기한을 인증 갱신과 본문 수신에도 동일하게 적용한다. */
@@ -101,7 +108,7 @@ public class AiInternalClient {
 				|| maxResponseBytes < 1 || maxResponseBytes > MAX_RESPONSE_BYTES) {
 				throw new AiCallException(false);
 			}
-			Duration bounded = budget.compareTo(Duration.ofSeconds(10)) > 0 ? Duration.ofSeconds(10) : budget;
+			Duration bounded = budget.compareTo(limit(path)) > 0 ? limit(path) : budget;
 			long deadline = System.nanoTime() + bounded.toNanos();
 			String serialized = json.writeValueAsString(body);
 			for (int attempt = 0; attempt < 2; attempt++) {
@@ -174,6 +181,10 @@ public class AiInternalClient {
 		} catch (RuntimeException exception) {
 			return false;
 		}
+	}
+
+	private static Duration limit(String path) {
+		return EXPLANATION_PATH.equals(path) ? EXPLANATION_LIMIT : LIMIT;
 	}
 
 	private long remaining(long deadline) {

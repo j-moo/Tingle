@@ -63,8 +63,10 @@ public class HistoricalRuleExplanationProvider implements RuleExplanationProvide
 			}
 			ExplanationStatus result = transport.explain(new RuleExplanationTransport.Request(input.attemptId(),
 				input.proposalId(), manifest, bundle)).orElseGet(RuleExplanationProvider::unavailable);
-			if (!"SUCCEEDED".equals(result.status()) || !"RULE_FALLBACK".equals(result.source())
-				|| result.promptVersion() != null || !result.evidenceKeys().isEmpty()) {
+			// 규칙 설명은 버전이 없어야 한다. GMS 생성 설명의 버전 형식은 ExplanationStatus가 이미 확인했다.
+			boolean generated = ExplanationStatus.GENERATED.equals(result.source());
+			boolean rule = ExplanationStatus.RULE_FALLBACK.equals(result.source()) && result.promptVersion() == null;
+			if (!"SUCCEEDED".equals(result.status()) || !(rule || generated) || !result.evidenceKeys().isEmpty()) {
 				return unavailable();
 			}
 			return result;
@@ -93,8 +95,7 @@ public class HistoricalRuleExplanationProvider implements RuleExplanationProvide
 			|| !reference.path("version_ref").equals(manifest.get("releaseId"))
 			|| !reference.equals(scope.get("reference")) || !context.get("viewer").equals(scope.get("viewer"))
 			|| !context.get("viewer").isString() || !Set.of("A", "B").contains(context.get("viewer").asString())
-			|| !text(scope.get("version"), 200) || !scope.get("model_evidence_ids").isArray()
-			|| !scope.get("model_evidence_ids").isEmpty()) {
+			|| !text(scope.get("version"), 200)) {
 			return false;
 		}
 		JsonNode evidence = context.get("evidence");
@@ -122,7 +123,10 @@ public class HistoricalRuleExplanationProvider implements RuleExplanationProvide
 			}
 		}
 		Set<String> display = strings(scope.get("display_evidence_ids"));
+		// 모델(GMS)로 보내도 되는 근거는 화면에 보여 주기로 한 근거의 일부여야 한다. 그 밖의 근거는 밖으로 나가지 않는다.
+		Set<String> model = strings(scope.get("model_evidence_ids"));
 		return display != null && !display.isEmpty() && ids.containsAll(display)
+			&& model != null && display.containsAll(model)
 			&& strings(context.get("conflicting_source_refs")) != null;
 	}
 

@@ -95,9 +95,16 @@ class HistoricalRuleExplanationProviderTest {
 		ObjectNode topic = fixture.bundle().deepCopy();
 		((ObjectNode)topic.path("context").path("evidence").get(0).path("evidence")).put("topic", "identity");
 		assertFailed(fixture, topic);
+		// 모델로 보낼 근거는 화면 표시 근거 안에 있어야 한다. 밖의 ID·중복·배열 아님은 전송 전에 거절한다.
 		ObjectNode model = fixture.bundle().deepCopy();
-		((ObjectNode)model.path("scope")).putArray("model_evidence_ids").add("e1");
+		((ObjectNode)model.path("scope")).putArray("model_evidence_ids").add("e2");
 		assertFailed(fixture, model);
+		ObjectNode duplicated = fixture.bundle().deepCopy();
+		((ObjectNode)duplicated.path("scope")).putArray("model_evidence_ids").add("e1").add("e1");
+		assertFailed(fixture, duplicated);
+		ObjectNode notArray = fixture.bundle().deepCopy();
+		((ObjectNode)notArray.path("scope")).put("model_evidence_ids", "e1");
+		assertFailed(fixture, notArray);
 		ObjectNode viewer = fixture.bundle().deepCopy();
 		((ObjectNode)viewer.path("scope")).put("viewer", "B");
 		assertFailed(fixture, viewer);
@@ -204,6 +211,22 @@ class HistoricalRuleExplanationProviderTest {
 			});
 		assertThat(catalog.supports(mapper.valueToTree(fixture.manifest()))).isFalse();
 		assertThat(reads).containsExactly("approved/descriptor.json");
+	}
+
+	@Test
+	void displayedEvidenceMayGoToTheModelAndGeneratedResultsArePublishedWithTheirVersion() {
+		Fixture fixture = fixture(new byte[] {1});
+		ObjectNode bundle = fixture.bundle().deepCopy();
+		((ObjectNode)bundle.path("scope")).putArray("model_evidence_ids").add("e1");
+		ExplanationStatus generated = new ExplanationStatus("SUCCEEDED", "GENERATED", "두 분 다 자주 연락하는 게 좋대요.",
+			List.of(), "7bc00713".repeat(8));
+		assertThat(provider(fixture, bundle, request -> Optional.of(generated)).explain(input()))
+			.isEqualTo(generated);
+		// 버전이 붙은 규칙 설명은 공개하지 않는다.
+		ExplanationStatus versionedRule = new ExplanationStatus("SUCCEEDED", "RULE_FALLBACK", "설명", List.of(),
+			"rule-v1");
+		assertThat(provider(fixture, bundle, request -> Optional.of(versionedRule)).explain(input()).status())
+			.isEqualTo("FAILED");
 	}
 
 	private void assertFailed(Fixture fixture, ObjectNode bundle) {
