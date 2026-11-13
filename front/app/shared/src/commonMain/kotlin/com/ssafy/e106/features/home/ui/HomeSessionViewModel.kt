@@ -56,30 +56,53 @@ class HomeSessionViewModel(private val profiles: ProfileRepository, private val 
             finally { if (valid(stamp)) mutable.update { it.copy(busy = false) } }
         }
     }
-    fun home() = read { user, stamp ->
-        mutable.update { it.copy(home = HomeState()) }
-        matching = null
-        saving?.join()   // 저장 중에 홈을 다시 열었으면 저장이 끝난 뒤의 값을 받는다
-        when (val result = settings.get(user, SettingsKind.MATCHING)) {
-            is ApiResult.Ok -> if (valid(stamp)) mutable.update { matching = result.value; it.copy(home = HomeState(HomeLoadState.Ready,
-                matchingEnabled = (result.value.values as? ConflictValues.Matching)?.enabled,
-                keyring = HomeKeyringState.Checking)) }
-            is ApiResult.Fail -> {
-                if (valid(stamp)) mutable.update { it.copy(home = HomeState(HomeLoadState.Failed), error = result.error) }
-                return@read
+    fun home() = loadHome(refresh = false)
+
+    fun refreshHome() {
+        val current = mutable.value
+        if (current.busy || current.home.savingMatching || current.session == null) return
+        loadHome(refresh = true)
+    }
+
+    private fun loadHome(refresh: Boolean) = read { user, stamp ->
+        val keepCurrent = refresh && mutable.value.home.load == HomeLoadState.Ready
+        // 당겨서 갱신하는 동안 목록을 비우면 살아 있는 BLE 연결이 잠깐 빨간색으로 바뀐다.
+        mutable.update { it.copy(home = if (keepCurrent) it.home.copy(refreshing = true) else HomeState(refreshing = refresh)) }
+        if (!keepCurrent) matching = null
+        try {
+            saving?.join() // 저장 중에 홈을 다시 열었으면 저장이 끝난 뒤의 값을 받는다.
+            val settingsResult = settings.get(user, SettingsKind.MATCHING)
+            if (!valid(stamp)) return@read
+            when (settingsResult) {
+                is ApiResult.Ok -> {
+                    matching = settingsResult.value
+                    mutable.update { it.copy(home = it.home.copy(load = HomeLoadState.Ready,
+                        matchingEnabled = (settingsResult.value.values as? ConflictValues.Matching)?.enabled,
+                        keyring = if (keepCurrent) it.home.keyring else HomeKeyringState.Checking)) }
+                }
+                is ApiResult.Fail -> {
+                    mutable.update { it.copy(home = if (keepCurrent) it.home else HomeState(HomeLoadState.Failed),
+                        error = settingsResult.error) }
+                    if (!keepCurrent) return@read
+                }
             }
+            // 서버 목록으로 등록 기기를 갱신한다. 현재 연결은 화면의 BLE 모델에서 확인한다.
+            when (val list = ownedKeyrings.list()) {
+                is ApiResult.Ok -> {
+                    val devices = list.value
+                    val aliases = readKeyringAliases(user, devices)
+                    val keyring = if (devices.isEmpty()) HomeKeyringState.Missing else HomeKeyringState.Registered
+                    if (valid(stamp)) mutable.update { it.copy(home = it.home.copy(keyring = keyring,
+                        keyrings = devices, keyringAliases = aliases)) }
+                }
+                is ApiResult.Fail -> if (valid(stamp)) mutable.update {
+                    if (keepCurrent) it.copy(error = list.error) else it.copy(home = it.home.copy(keyring = HomeKeyringState.Unknown))
+                }
+            }
+        } finally {
+            // 계정 전환과 화면 이탈 뒤 도착한 응답은 현재 화면에 반영하지 않는다.
+            if (valid(stamp)) mutable.update { it.copy(home = it.home.copy(refreshing = false)) }
         }
-        if (!valid(stamp)) return@read
-        // 서버 목록으로는 등록 여부만 확인한다. 연결·매칭 준비 상태는 기기에서 직접 확인한다.
-        val list = ownedKeyrings.list()
-        val keyring = when (list) {
-            is ApiResult.Ok -> if (list.value.isEmpty()) HomeKeyringState.Missing else HomeKeyringState.Registered
-            is ApiResult.Fail -> HomeKeyringState.Unknown
-        }
-        val devices = (list as? ApiResult.Ok)?.value.orEmpty()
-        val aliases = readKeyringAliases(user, devices)
-        // 계정 전환이나 화면 이탈 뒤 도착한 응답은 현재 화면에 반영하지 않는다.
-        if (valid(stamp)) mutable.update { it.copy(home = it.home.copy(keyring = keyring, keyrings = devices, keyringAliases = aliases)) }
     }
 
     /** 홈과 동기화 목록에서 이 계정의 휴대폰 별명을 같은 방식으로 읽는다. */

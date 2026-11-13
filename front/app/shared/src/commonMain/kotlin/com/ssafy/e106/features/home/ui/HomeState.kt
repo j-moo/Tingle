@@ -15,6 +15,7 @@ data class HomeState(
     /** 서버 등록 목록과 앱 내부 별명을 분리한다. 기본 이름은 목록 순서로 표시한다. */
     val keyrings: List<com.ssafy.e106.features.keyring.data.OwnedKeyring> = emptyList(),
     val keyringAliases: Map<Long, String> = emptyMap(),
+    val refreshing: Boolean = false,
 )
 
 enum class HomeAction { Refresh, Proposals, Chats, Profile, Keyring }

@@ -7,6 +7,7 @@
     <string name="owned_keyrings_empty">등록된 키링이 없어요.</string>
     <string name="owned_keyrings_reset">초기화</string>
     <string name="owned_keyrings_reset_for">%1$s 초기화</string>
+    <string name="owned_keyrings_firmware_unknown">펌웨어 미확인</string>
     <string name="owned_keyrings_status_disconnected">연결하면 상태를 확인할 수 있어요.</string>
     <string name="owned_keyrings_status_loading">키링 상태를 확인하고 있어요.</string>
     <string name="owned_keyrings_status_failed">키링 상태를 불러오지 못했어요.</string>

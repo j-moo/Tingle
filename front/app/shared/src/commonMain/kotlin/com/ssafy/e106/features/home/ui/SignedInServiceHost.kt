@@ -124,15 +124,21 @@ internal enum class ServicePage { Home, Proposals, Menu, Chats, Safety, Report, 
         }
         Box(Modifier.weight(1f)) {
             when (page) {
-                ServicePage.Home -> HomeScreen(state.home, model::setMatching, onAction = { action -> when (action) {
-                    HomeAction.Refresh -> model.home()
-                    HomeAction.Proposals -> proposals()
-                    HomeAction.Profile -> go(ServicePage.Menu)
-                    HomeAction.Chats -> chats()
-                    HomeAction.Keyring -> { keyringFromMenu = false; go(ServicePage.Keyrings) }
-                } }, onSaveKeyringAlias = model::saveKeyringAlias, keyringStatus = {
-                    observeOwnedKeyringConnection(session, state.home.keyrings, koinViewModel<BleProbeViewModel>()).liveStatus
-                })
+                ServicePage.Home -> {
+                    // 카드가 접혀 있어도 기기 연결이 끊기거나 복구되면 바로 표시한다.
+                    val connection = observeOwnedKeyringConnection(session, state.home.keyrings, koinViewModel<BleProbeViewModel>())
+                    HomeScreen(state.home, model::setMatching, onAction = { action -> when (action) {
+                        HomeAction.Refresh -> {
+                            connection.refresh?.invoke()
+                            model.refreshHome()
+                        }
+                        HomeAction.Proposals -> proposals()
+                        HomeAction.Profile -> go(ServicePage.Menu)
+                        HomeAction.Chats -> chats()
+                        HomeAction.Keyring -> { keyringFromMenu = false; go(ServicePage.Keyrings) }
+                    } }, onSaveKeyringAlias = model::saveKeyringAlias, keyringStatus = { connection.liveStatus },
+                        connectedKeyringId = connection.deviceId, checkingKeyringStatus = connection.liveStatus?.loading == true)
+                }
                 ServicePage.Proposals -> ConnectedProposalRoute(session, { go(ServicePage.Home) }, { go(ServicePage.Menu) },
                     { chats() }, { chats(it) }, pushes = pushes)
                 ServicePage.Chats -> ConnectedChatRoute(session, roomId, { go(ServicePage.Home) }, { proposals() }, { go(ServicePage.Menu) },

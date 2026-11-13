@@ -55,9 +55,18 @@ class CompactLayoutTestActivity : ComponentActivity() {
                     var draft by rememberSaveable { mutableStateOf("테스트 입력") }
                     var selected by remember { mutableStateOf<SurveyAnswer?>(null) }
                     var aliases by remember { mutableStateOf(mapOf(7L to "초록 키링")) }
+                    var connectedKeyringId by remember { mutableStateOf<Long?>(7) }
                     AppTheme {
                         when (intent.getStringExtra("screen")) {
                             "home" -> HomeScreen(HomeState(HomeLoadState.Ready), {}, {})
+                            "home_connection" -> HomeScreen(
+                                HomeState(HomeLoadState.Ready, keyring = HomeKeyringState.Registered, keyrings = listOf(
+                                    OwnedKeyring(7, "REGISTERED", "0.1.0-registration"),
+                                    OwnedKeyring(8, "REGISTERED", "0.1.0-registration"),
+                                )), {}, { if (it == HomeAction.Refresh) connectedKeyringId = null },
+                                // 등록 목록은 그대로 두고, 새로고침 때 연결만 사라진 상황을 재현한다.
+                                connectedKeyringId = connectedKeyringId,
+                            )
                             "home_keyrings" -> HomeScreen(
                                 HomeState(HomeLoadState.Ready, keyring = HomeKeyringState.Registered, keyrings = listOf(
                                     OwnedKeyring(7, "REGISTERED", "0.1.0-registration"),
@@ -112,6 +121,23 @@ class CompactLayoutDeviceTest {
             compose.onNode(hasText("초록 키링") and hasText("배터리 약 72%")).assertExists()
             compose.onNode(hasText("내 키링 2") and hasText("배터리 미확인")).assertExists()
             compose.onNodeWithText("0.1.0-registration", substring = true).assertDoesNotExist()
+        }
+    }
+
+    @Test fun homePullRefreshUpdatesConnectionWhileKeepingRegisteredKeyrings() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        ActivityScenario.launch<CompactLayoutTestActivity>(Intent(context, CompactLayoutTestActivity::class.java)
+            .putExtra("screen", "home_connection").putExtra("full", true).putExtra("fontScale", 1f)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)).use {
+            compose.onNodeWithText("연결됨").assertIsDisplayed()
+            compose.onNodeWithTag("viewport").performTouchInput {
+                swipeDown(startY = height * 0.38f, endY = height * 0.78f)
+            }
+            compose.onNodeWithText("연결 안 됨").assertIsDisplayed()
+            compose.onNodeWithText("연결됨").assertDoesNotExist()
+            compose.onNodeWithText("내 키링").performClick()
+            compose.onNodeWithText("내 키링 1").assertExists()
+            compose.onNodeWithText("내 키링 2").assertExists()
         }
     }
 

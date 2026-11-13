@@ -16,6 +16,9 @@
     <string name="home_matching_saving">변경 내용을 저장하고 있어요.</string>
     <string name="home_matching_failed">변경 내용을 저장하지 못했어요. 마지막으로 확인한 설정을 표시하고 있어요.</string>
     <string name="home_keyring_title">내 키링</string>
+    <string name="home_refresh">홈 새로고침</string>
+    <string name="home_keyring_connected">연결됨</string>
+    <string name="home_keyring_disconnected">연결 안 됨</string>
     <string name="home_unknown">미확인</string>
     <string name="home_device_pending_help">앱에 저장한 변경 사항이 키링에는 아직 반영되지 않았어요. 다시 연결되면 최신 설정을 동기화해요.</string>
     <string name="home_device_failed_help">최신 설정이 반영됐는지 확인이 필요해요. 키링 상태 화면에서 다시 시도해 주세요.</string>
