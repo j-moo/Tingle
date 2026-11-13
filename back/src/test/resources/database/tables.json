@@ -1,7 +1,7 @@
 {
   "version": "1.9.0-keyring-ownership-epoch",
   "total_tables": 35,
-  "total_columns": 297,
+  "total_columns": 298,
   "physical_foreign_keys": false,
   "tables": {
     "personality": {
@@ -2330,7 +2330,7 @@
     },
     "chat_safety_notice": {
       "name": "chat_safety_notice",
-      "purpose": "AI 위험 안내 — AI가 위험한 대화를 감지했을 때 한 사람에게 보여 준 안내. 같은 사람·같은 유형은 방마다 한 번만",
+      "purpose": "AI 위험 안내 — AI가 위험한 대화를 감지했을 때 한 사람에게 보여 준 안내. 같은 사람·같은 유형·같은 대상(보낸 쪽/받은 쪽)은 방마다 한 번만",
       "columns": [
         {
           "name": "id",
@@ -2383,7 +2383,19 @@
         {
           "name": "displayed_at",
           "type": "timestamptz",
-          "meaning": "안내 표시 시각 — 이 사람 화면에 실제로 보여 준 시각. NULL이면 아직 안 봄",
+          "meaning": "안내 확인 시각 — 이 사람이 앱에서 안내를 확인(닫음)한 시각. NULL이면 아직 확인 안 함(안내가 계속 보임)",
+          "nullable": true,
+          "pk": false,
+          "increment": false,
+          "unique": false,
+          "reference": null,
+          "default": null,
+          "json_shape": null
+        },
+        {
+          "name": "audience",
+          "type": "varchar(16)",
+          "meaning": "안내 대상 — SENDER(위험한 말을 보낸 사람) / RECIPIENT(받은 사람). NULL이면 이전 기록(구분 없음)",
           "nullable": true,
           "pk": false,
           "increment": false,
@@ -2397,7 +2409,8 @@
         {
           "columns": [
             "chat_participant_id",
-            "notice_type"
+            "notice_type",
+            "audience"
           ],
           "primary_key": false,
           "unique": true,

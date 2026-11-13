@@ -485,15 +485,18 @@ CREATE TABLE "chat_safety_notice" (
     "notice_type" "safety_notice_type" NOT NULL,
     "created_at" timestamptz NOT NULL,
     "displayed_at" timestamptz,
-    CONSTRAINT "pk_chat_safety_notice" PRIMARY KEY ("id")
+    "audience" varchar(16),
+    CONSTRAINT "pk_chat_safety_notice" PRIMARY KEY ("id"),
+    CONSTRAINT "ck_chat_safety_notice_audience" CHECK ("audience" IN ('SENDER', 'RECIPIENT'))
 );
-COMMENT ON TABLE "chat_safety_notice" IS 'AI 위험 안내 — AI가 위험한 대화를 감지했을 때 한 사람에게 보여 준 안내. 같은 사람·같은 유형은 방마다 한 번만';
+COMMENT ON TABLE "chat_safety_notice" IS 'AI 위험 안내 — AI가 위험한 대화를 감지했을 때 한 사람에게 보여 준 안내. 같은 사람·같은 유형·같은 대상(보낸 쪽/받은 쪽)은 방마다 한 번만';
 COMMENT ON COLUMN "chat_safety_notice"."id" IS '위험 안내 번호';
 COMMENT ON COLUMN "chat_safety_notice"."chat_participant_id" IS '안내를 받은 사람(채팅 참여자 번호) — chat_participant.id';
 COMMENT ON COLUMN "chat_safety_notice"."notice_type" IS '위험 유형 — 예: MONEY_REQUEST(금전 요구) / PERSONAL_INFO(개인정보 요구) / OFF_PLATFORM(외부 연락 유도) / HARASSMENT(괴롭힘)';
 COMMENT ON COLUMN "chat_safety_notice"."created_at" IS '안내 생성 시각 — AI가 감지해 안내를 만든 시각';
-COMMENT ON COLUMN "chat_safety_notice"."displayed_at" IS '안내 표시 시각 — 이 사람 화면에 실제로 보여 준 시각. NULL이면 아직 안 봄';
-CREATE UNIQUE INDEX "uq_chat_safety_notice_once" ON "chat_safety_notice" ("chat_participant_id", "notice_type");
+COMMENT ON COLUMN "chat_safety_notice"."displayed_at" IS '안내 확인 시각 — 이 사람이 앱에서 안내를 확인(닫음)한 시각. NULL이면 아직 확인 안 함(안내가 계속 보임)';
+COMMENT ON COLUMN "chat_safety_notice"."audience" IS '안내 대상 — SENDER(위험한 말을 보낸 사람) / RECIPIENT(받은 사람). NULL이면 이전 기록(구분 없음)';
+CREATE UNIQUE INDEX "uq_chat_safety_notice_once" ON "chat_safety_notice" ("chat_participant_id", "notice_type", "audience");
 
 -- 설문 문항별 답 — 설문 한 번에 문항 수만큼 줄. 문항·보기 내용은 설문 파일(survey/{버전}.json)에 있고 여기엔 고른 값만
 CREATE TABLE "survey_answer" (

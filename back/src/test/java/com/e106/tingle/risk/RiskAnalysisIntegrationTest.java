@@ -101,6 +101,63 @@ class RiskAnalysisIntegrationTest extends IntegrationTestSupport {
 	}
 
 	@Test
+	void harassmentForBothIsStoredAsSenderAndRecipientRows() throws Exception {
+		Fixture room = room();
+		message(room, 1, room.firstParticipant(), SECRET_SENTENCE);
+		given(gateway.analyze(any(), any())).willAnswer(invocation -> harassment(invocation.getArgument(1)));
+		service.analyze(request(room));
+		// BOTH 판정은 두 줄로 나뉘어 각자 역할이 남는다. 앱은 BOTH 를 받지 않는다
+		assertThat(jdbc.queryForList("select n.chat_participant_id::text || ':' || n.audience "
+			+ "from chat_safety_notice n join chat_participant p on p.id=n.chat_participant_id where p.chat_id=?",
+			String.class, room.id()))
+			.containsExactlyInAnyOrder(room.firstParticipant() + ":SENDER", room.secondParticipant() + ":RECIPIENT");
+	}
+
+	@Test
+	void harassmentExchangedBothWaysGivesEachPersonBothNotices() throws Exception {
+		Fixture room = room();
+		given(gateway.analyze(any(), any())).willAnswer(invocation -> harassment(invocation.getArgument(1)));
+		message(room, 1, room.firstParticipant(), SECRET_SENTENCE);
+		service.analyze(request(room));
+		message(room, 2, room.secondParticipant(), "맞받은 가상 욕설");
+		service.analyze(request(room));
+		// 보낸 쪽 안내와 받은 쪽 안내는 서로 다른 안내라 한 사람이 각각 한 번씩 받는다
+		assertThat(jdbc.queryForList("select n.chat_participant_id::text || ':' || n.audience "
+			+ "from chat_safety_notice n join chat_participant p on p.id=n.chat_participant_id where p.chat_id=?",
+			String.class, room.id()))
+			.containsExactlyInAnyOrder(room.firstParticipant() + ":SENDER", room.secondParticipant() + ":RECIPIENT",
+				room.secondParticipant() + ":SENDER", room.firstParticipant() + ":RECIPIENT");
+		// 같은 방향이 되풀이되면 더 늘지 않는다
+		message(room, 3, room.firstParticipant(), "되풀이한 가상 욕설");
+		service.analyze(request(room));
+		assertThat(notices(room)).isEqualTo(4);
+	}
+
+	@Test
+	void noticeIsStoredWithoutErrorBeforeTheIndexIsReplaced() throws Exception {
+		// 새 버전을 먼저 배포하고 인덱스를 나중에 바꾸는 동안(옛 2칸 인덱스)에도 저장이 실패하지 않는다
+		// 다른 테스트가 남긴 줄(같은 사람·같은 유형 두 줄)이 있으면 옛 인덱스를 만들 수 없다
+		jdbc.update("delete from chat_safety_notice");
+		dropNoticeUniqueness();
+		jdbc.execute("create unique index uq_chat_safety_notice_once "
+			+ "on chat_safety_notice(chat_participant_id,notice_type)");
+		try {
+			Fixture room = room();
+			given(gateway.analyze(any(), any())).willAnswer(invocation -> harassment(invocation.getArgument(1)));
+			message(room, 1, room.firstParticipant(), SECRET_SENTENCE);
+			service.analyze(request(room));
+			message(room, 2, room.secondParticipant(), "맞받은 가상 욕설");
+			service.analyze(request(room));
+			// 옛 인덱스에서는 예전처럼 같은 사람·같은 유형 한 번만 남는다
+			assertThat(notices(room)).isEqualTo(2);
+		} finally {
+			dropNoticeUniqueness();
+			jdbc.execute("create unique index uq_chat_safety_notice_once "
+				+ "on chat_safety_notice(chat_participant_id,notice_type,audience)");
+		}
+	}
+
+	@Test
 	void riskMappingIsRecipientSpecificAndDuplicateAttemptsNeverCallTheModelTwice() throws Exception {
 		Fixture room = room();
 		message(room, 1, room.firstParticipant(), SECRET_SENTENCE);
@@ -113,6 +170,10 @@ class RiskAnalysisIntegrationTest extends IntegrationTestSupport {
 		assertThat(jdbc.queryForObject("select n.chat_participant_id from chat_safety_notice n "
 			+ "join chat_participant p on p.id=n.chat_participant_id where p.chat_id=?", Long.class, room.id()))
 			.isEqualTo(room.secondParticipant());
+		// 받은 사람 안내로 남는다(앱이 보호 문구·차단 버튼을 고른다)
+		assertThat(jdbc.queryForObject("select n.audience from chat_safety_notice n "
+			+ "join chat_participant p on p.id=n.chat_participant_id where p.chat_id=?", String.class, room.id()))
+			.isEqualTo("RECIPIENT");
 		verify(gateway, times(1)).analyze(any(), any());
 		message(room, 2, room.firstParticipant(), "추가 가상 송금 요구");
 		service.analyze(request(room));
@@ -1019,6 +1080,19 @@ class RiskAnalysisIntegrationTest extends IntegrationTestSupport {
 
 	private static Verdict failed() {
 		return new Verdict(Kind.FAILED, List.of(), null, "synthetic-model-v1", "synthetic-prompt-v1");
+	}
+
+	/** 운영 SQL 과 같은 두 문장. Hibernate 가 만든 스키마는 제약, schema.sql 로 만든 스키마는 인덱스다. */
+	private void dropNoticeUniqueness() {
+		jdbc.execute("alter table chat_safety_notice drop constraint if exists uq_chat_safety_notice_once");
+		jdbc.execute("drop index if exists uq_chat_safety_notice_once");
+	}
+
+	private static Verdict harassment(Input input) {
+		long sequence = input.messages().stream().filter(Message::fresh).mapToLong(Message::sequence).max()
+			.orElseThrow();
+		return new Verdict(Kind.RISK, List.of(new Finding(sequence, Category.HARASSMENT, NoticeType.HARASSMENT,
+			Audience.BOTH)), 0.8, "synthetic-model-v1", "synthetic-prompt-v1");
 	}
 
 	private static Verdict money(Input input) {

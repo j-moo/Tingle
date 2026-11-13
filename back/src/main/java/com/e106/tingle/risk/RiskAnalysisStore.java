@@ -545,10 +545,13 @@ public class RiskAnalysisStore {
 		List<Long> targets = finding.audience() == Audience.BOTH ? List.of(sender, recipient)
 			: List.of(finding.audience() == Audience.SENDER ? sender : recipient);
 		for (long userId : targets) {
-			jdbc.update("insert into chat_safety_notice(chat_participant_id,notice_type,created_at) "
-				+ "select id,cast(? as safety_notice_type),? from chat_participant where chat_id=? and user_id=? "
-				+ "on conflict(chat_participant_id,notice_type) do nothing", finding.noticeType().name(),
-				Timestamp.from(at), room.id(), userId);
+			// 같은 사람이 보낸 쪽인지 받은 쪽인지 남겨 앱이 안내 문구와 차단 버튼을 고른다
+			String audience = userId == sender ? Audience.SENDER.name() : Audience.RECIPIENT.name();
+			// 겹치는 칸을 적지 않는다. 적으면 그 칸과 똑같은 unique 인덱스가 없을 때(인덱스 교체 전 DB) 42P10 으로 실패한다
+			jdbc.update("insert into chat_safety_notice(chat_participant_id,notice_type,created_at,audience) "
+				+ "select id,cast(? as safety_notice_type),?,? from chat_participant where chat_id=? and user_id=? "
+				+ "on conflict do nothing", finding.noticeType().name(),
+				Timestamp.from(at), audience, room.id(), userId);
 		}
 	}
 
