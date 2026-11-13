@@ -15,7 +15,8 @@ if TYPE_CHECKING:
     from app.risk_detection.gms_runtime import GmsPrimaryConfiguration
 
 def create_app(app_settings: Settings | None = None, *, _risk_engine_factory: Callable | None = None,
-               _risk_gms_primary: "GmsPrimaryConfiguration | None" = None) -> FastAPI:
+               _risk_gms_primary: "GmsPrimaryConfiguration | None" = None,
+               _match_gms_client=None, _icebreaker_gms_client=None) -> FastAPI:
     """Build the real application with explicit Python-only dependency injection.
 
     No setting or HTTP input selects a model. The default application keeps
@@ -57,6 +58,7 @@ def create_app(app_settings: Settings | None = None, *, _risk_engine_factory: Ca
     ))
     application.include_router(create_runtime_router(
         service_auth, configured.explanation_release_descriptor_files,
+        gms_client=_match_gms_client if configured.app_env in {"local", "test", "dev"} else None,
     ))
 
     def authorize_personal_analysis(request: Request) -> bool:

@@ -20,7 +20,7 @@ def run(awaitable):
 
 def make_evidence(
     id="e1", *, topic="contact", kind="ONE_WAY_PREFERENCE_FIT",
-    direction="B_TO_A", fact="A의 실제 연락 빈도가 B의 허용 범위에 들어간다.",
+    direction="A_TO_B", fact="A의 실제 연락 빈도가 B의 허용 범위에 들어간다.",
 ):
     return Evidence(id=id, direction=direction, kind=kind, topic=topic, fact=fact)
 
@@ -136,7 +136,7 @@ def test_generation_synthesizes_multiple_facts_and_a_difference():
         make_evidence("e2", kind="DIFFERENCE", direction="BOTH", topic="planning",
                       fact="약속을 준비하는 시점에는 차이가 있다."),
     )
-    text = "두 분 모두 산책을 즐긴다는 연결점이 있어요. 약속을 준비하는 시점에는 차이가 있어 함께 맞춰 보면 좋겠어요."
+    text = "두 분 모두 산책을 선호한다는 공통점이 있어요. 약속을 준비하는 시점에는 차이가 있어 함께 맞춰 보면 좋겠어요."
     model = FakeModel(raw=json.dumps({"text": text, "evidenceIds": ["e1", "e2"]}))
     result = explain(context, scope, model)
     assert result.explanation.source == "GENERATED"
@@ -164,13 +164,13 @@ def test_fallback_without_model_or_credentials_is_deterministic():
 
 
 @pytest.mark.parametrize("viewer,direction,expected", [
-    ("A", "A_TO_B", "상대의 연락 방식이 당신의 선호와 맞아요."),
-    ("B", "B_TO_A", "상대의 연락 방식이 당신의 선호와 맞아요."),
-    ("B", "A_TO_B", "당신의 연락 방식이 상대의 선호와 맞아요."),
-    ("A", "B_TO_A", "당신의 연락 방식이 상대의 선호와 맞아요."),
+    ("A", "B_TO_A", "상대의 연락 방식이 당신의 선호와 맞아요."),
+    ("B", "A_TO_B", "상대의 연락 방식이 당신의 선호와 맞아요."),
+    ("B", "B_TO_A", "당신의 연락 방식이 상대의 선호와 맞아요."),
+    ("A", "A_TO_B", "당신의 연락 방식이 상대의 선호와 맞아요."),
 ])
 def test_fallback_preserves_one_way_direction(viewer, direction, expected):
-    owner, other = ("A", "B") if direction == "A_TO_B" else ("B", "A")
+    owner, other = ("A", "B") if direction == "B_TO_A" else ("B", "A")
     item = make_evidence(direction=direction,
                          fact=f"{other}의 실제 연락 빈도가 {owner}의 허용 범위에 들어간다.")
     context, scope = setup_context(item, viewer=viewer)
@@ -406,9 +406,9 @@ def test_independent_safe_evidence_survives_excluded_private_evidence():
 
 @pytest.mark.parametrize("direction,kind", [
     ("BOTH", "ONE_WAY_PREFERENCE_FIT"),
-    ("B_TO_A", "MUTUAL_PREFERENCE_FIT"),
-    ("A_TO_B", "SHARED_REPORTED_BEHAVIOR"),
-    ("B_TO_A", "DIFFERENCE"),
+    ("A_TO_B", "MUTUAL_PREFERENCE_FIT"),
+    ("B_TO_A", "SHARED_REPORTED_BEHAVIOR"),
+    ("A_TO_B", "DIFFERENCE"),
 ])
 def test_inconsistent_kind_and_direction_are_excluded(direction, kind):
     context, scope = setup_context(make_evidence(kind=kind, direction=direction))
@@ -426,7 +426,7 @@ def test_unsupported_topic_is_not_generalized_into_a_reason():
     ("SHARED_REPORTED_BEHAVIOR", "두 사람의 연락 방식에 공통점이 없다."),
 ])
 def test_summary_that_negates_its_kind_cannot_produce_positive_fallback(kind, fact):
-    direction = "B_TO_A" if kind == "ONE_WAY_PREFERENCE_FIT" else "BOTH"
+    direction = "A_TO_B" if kind == "ONE_WAY_PREFERENCE_FIT" else "BOTH"
     context, scope = setup_context(make_evidence(kind=kind, direction=direction, fact=fact))
     assert explain(context, scope).explanation is None
 
@@ -596,7 +596,7 @@ def test_explicit_score_meeting_or_identity_claim_skips_even_positive_verifier(t
     ("contact", "SHARED_REPORTED_BEHAVIOR", "두 사람 모두 여유 있게 연락하는 편이라고 응답했다.",
      "두 분은 여유 있게 연락하는 편이라는 공통점이 있어요."),
     ("contact", "SHARED_REPORTED_BEHAVIOR", "두 사람 모두 여유 있게 연락하는 편이라고 응답했다.",
-     "두 분 모두 여유 있게 연락해요. 공통점은 바로 이 점이에요."),
+     "두 분 모두 여유 있게 연락하는 편이라고 해요. 공통점은 바로 이 점이에요."),
     ("experience", "SHARED_REPORTED_BEHAVIOR", "두 사람 모두 새로운 활동을 찾는 편이다.",
      "두 분은 새로운 활동을 찾는 편이라는 공통점이 있어요."),
 ])

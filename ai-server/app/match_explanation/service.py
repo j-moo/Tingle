@@ -32,14 +32,16 @@ class MatchExplanationService:
     def __init__(
         self, *, generator: Generator | None = None, verifier: Verifier | None = None,
         authorize: Callable[[ResolvedContext], bool] | None = None,
-        timeout_seconds: float = 8.0,
+        timeout_seconds: float = 9.0,
     ) -> None:
         if not math.isfinite(timeout_seconds) or timeout_seconds <= 0:
             raise ValueError("timeout_seconds must be finite and positive")
         self.generator = generator
         self.verifier = verifier
         self.authorize = authorize
-        # 생성+의미 검토 전체에 적용하는 개발용 한도. 운영 SLA 확정값이 아니다.
+        # 생성·검토는 순차 실행되며 전체 기한을 공유한다. BE 내부 클라이언트의
+        # 10초 상한 안에서 fallback을 반환하도록 전체 9초를 적용한다.
+        # 개별 GMS 호출의 8초 제한은 유지한다. 운영 SLA 확정값이 아니다.
         self.timeout_seconds = timeout_seconds
 
     def _authorized(self, context: ResolvedContext) -> bool:

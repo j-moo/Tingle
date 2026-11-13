@@ -23,7 +23,7 @@ def test_viewer_a_receives_b_planning_fit_via_runtime_route(configured, private_
     context["viewer"] = scope["viewer"] = "A"
     record = context["evidence"][0]
     record["evidence"] = {
-        "id": "e1", "direction": "A_TO_B", "kind": "ONE_WAY_PREFERENCE_FIT",
+        "id": "e1", "direction": "B_TO_A", "kind": "ONE_WAY_PREFERENCE_FIT",
         "topic": "planning", "fact": "B의 실제 약속 준비 방식이 A의 선호에 맞는다.",
     }
     context["evidence"] = [record]

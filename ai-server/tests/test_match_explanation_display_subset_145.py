@@ -41,9 +41,9 @@ def shared_request(tmp_path_factory, private_key):
     reference = {"encounter_id": 1001, "evaluation_ref": "c" * 64,
                  "version_ref": manifest["releaseId"]}
     evidence = [
-        {"id": "e1", "direction": "B_TO_A", "kind": "ONE_WAY_PREFERENCE_FIT",
+        {"id": "e1", "direction": "A_TO_B", "kind": "ONE_WAY_PREFERENCE_FIT",
          "topic": "contact", "fact": "A의 연락 방식이 B의 선호에 맞는다."},
-        {"id": "e2", "direction": "B_TO_A", "kind": "ONE_WAY_PREFERENCE_FIT",
+        {"id": "e2", "direction": "A_TO_B", "kind": "ONE_WAY_PREFERENCE_FIT",
          "topic": "planning", "fact": "A의 약속 준비 방식이 B의 선호에 맞는다."},
     ]
     bundle = {

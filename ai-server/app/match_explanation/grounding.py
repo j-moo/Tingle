@@ -4,6 +4,8 @@ import re
 
 from .dto import Evidence, ModelInput, ModelOutput, Viewer
 from .fallback import rule_fallback
+from .facts import fact_item
+from .validation import supported_fact
 
 
 SHARED_ACTIVITY_FACT = re.compile(
@@ -26,7 +28,7 @@ DETAIL_PHRASINGS = {
         (
             r"(?:두 사람|A와 B) 모두 (짧게 자주|여유 있게) 연락하는 편(?:이다|이라고 응답했다)\.",
             ("두 분은 {} 연락하는 편이라는 공통점이 있어요.",
-             "두 분 모두 {} 연락해요. 공통점은 바로 이 점이에요."),
+             "두 분 모두 {} 연락하는 편이라고 해요. 공통점은 바로 이 점이에요."),
         ),
     ),
     ("SHARED_REPORTED_BEHAVIOR", "planning"): (
@@ -46,6 +48,7 @@ DETAIL_PHRASINGS = {
         (
             r"약속을 준비하는 시점에는 차이가 있다\.",
             ("약속을 준비하는 시점에는 차이가 있어요.",
+             "약속 준비 시점이 달라요.",
              "약속을 준비하는 시점에는 차이가 있어 함께 맞춰 보면 좋겠어요."),
         ),
     ),
@@ -60,8 +63,20 @@ DETAIL_PHRASINGS = {
 
 
 def _claim_phrasings(viewer: Viewer, item: Evidence) -> set[str]:
+    if not supported_fact(item):
+        return set()
     canonical, _ = rule_fallback(viewer, (item,))
     phrases = {canonical}
+    # BE 신규 문법은 정확한 항목의 정규 문장만 제공한다. 같은 planning의
+    # 빈도/계획/시간대가 과거 약속 준비 방식으로 확장되지 않게 한다.
+    if fact_item(item) is not None:
+        return phrases
+    # D01: this exact public fact entails reading enjoyment, not preference alone.
+    if (item.kind, item.topic, item.direction, item.fact) == (
+        "SHARED_REPORTED_BEHAVIOR", "activity", "BOTH",
+        "두 사람 모두 독서를 즐긴다고 응답했다.",
+    ):
+        phrases.add("두 분 모두 책 읽는 활동을 즐겨요.")
     for pattern, variants in DETAIL_PHRASINGS.get((item.kind, item.topic), ()):
         match = re.fullmatch(pattern, item.fact)
         if match:
@@ -73,13 +88,13 @@ def _claim_phrasings(viewer: Viewer, item: Evidence) -> set[str]:
             activity, verb = match.groups()
             phrases.add(f"두 분 모두 {activity} {verb}다는 공통점이 있어요.")
             # Preserve the existing variants for each activity and response.
-            if activity == "산책을":
+            if (activity, verb) == ("산책을", "즐긴"):
                 phrases.add("두 분 모두 산책을 즐긴다는 연결점이 있어요.")
             elif (activity, verb) == ("공원 산책을", "즐긴"):
                 phrases.add("두 분은 공원에서 산책하는 활동을 즐긴다는 공통점이 있어요.")
 
     if item.kind == "ONE_WAY_PREFERENCE_FIT":
-        owner, other = ("A", "B") if item.direction == "A_TO_B" else ("B", "A")
+        owner, other = ("B", "A") if item.direction == "A_TO_B" else ("A", "B")
         preference, behavior = ("당신", "상대") if viewer == owner else ("상대", "당신")
         if item.topic == "contact" and re.search(rf"{other}의 (?:실제 )?연락 빈도가 ", item.fact):
             phrases.add(f"{behavior}의 연락 빈도가 {preference}의 선호와 맞아요.")
