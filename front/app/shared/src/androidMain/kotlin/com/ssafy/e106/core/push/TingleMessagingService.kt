@@ -22,6 +22,8 @@ import com.ssafy.e106.resources.push_new_proposal
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.flow.first
 import org.jetbrains.compose.resources.getString
 import org.koin.android.ext.android.inject
 
@@ -33,6 +35,8 @@ class TingleMessagingService : FirebaseMessagingService() {
     private val device: PushDevice by inject()
     private val tokens: TokenStore by inject()
     private val events: DefaultPushEvents by inject()
+    private val inbox: NotificationInbox by inject()
+    private val sessions: com.ssafy.e106.core.auth.SessionStore by inject()
 
     override fun onNewToken(token: String) { (device as? AndroidPushDevice)?.onNewToken() }
 
@@ -55,7 +59,16 @@ class TingleMessagingService : FirebaseMessagingService() {
                 PushKind.NEW_PROPOSAL -> Res.string.push_new_proposal
                 PushKind.OTHER -> Res.string.push_other
             }
-            userId to getString(res)
+            val text = getString(res)
+            // 홈 종 모양 알림 모음에 남긴다(시스템 알림이 꺼져 있어도). FCM이 앱을 막 깨운 경우 로그인 복원을 잠깐 기다린다
+            // ponytail: 5초 안에 복원되지 않으면 모음에는 빠진다(시스템 알림은 그대로 뜬다)
+            val restored = withTimeoutOrNull(5_000) { sessions.state.first { it !is com.ssafy.e106.core.auth.Session.Restoring } }
+            if ((restored as? com.ssafy.e106.core.auth.Session.SignedIn)?.userId == userId) runCatching {
+                inbox.add(userId, InboxItem(id = message.messageId ?: "${msg.kind}-${System.currentTimeMillis()}",
+                    title = msg.title, body = msg.body ?: text, atMillis = System.currentTimeMillis(),
+                    roomId = (msg.target as? PushTarget.Chat)?.roomId, proposalId = (msg.target as? PushTarget.Proposal)?.proposalId))
+            }
+            userId to text
         } ?: return
         val manager = NotificationManagerCompat.from(this)
         if (!manager.areNotificationsEnabled()) return
@@ -100,6 +113,8 @@ class TingleMessagingService : FirebaseMessagingService() {
 /** 알림 탭만 받는 화면(exported=false — 다른 앱이 띄우거나 extras 를 위조할 수 없다). 대상을 [DefaultPushEvents] 에 담고 앱을 앞으로 가져온 뒤 닫힌다 */
 class PushTapActivity : Activity() {
     private val events: DefaultPushEvents by inject()
+    private val inbox: NotificationInbox by inject()
+    private val sessions: com.ssafy.e106.core.auth.SessionStore by inject()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)

@@ -50,7 +50,9 @@ fun HomeScreen(state: HomeState, onMatchingChange: (Boolean) -> Unit, onAction: 
     onSaveKeyringAlias: (suspend (Long, String) -> Boolean)? = null,
     keyringStatus: @Composable () -> OwnedKeyringLiveStatus? = { null },
     connectedKeyringId: Long? = null, checkingKeyringStatus: Boolean = false,
-    keyringPublicName: (@Composable (Long, String) -> Unit)? = null, error: AppError? = null) {
+    keyringPublicName: (@Composable (Long, String) -> Unit)? = null, error: AppError? = null,
+    /** 안 읽은 알림이 있으면 종 모양에 점 */
+    unreadNotifications: Boolean = false) {
     val refreshing = state.refreshing || checkingKeyringStatus
     val refreshLabel = stringResource(Res.string.home_refresh)
     val refresh = {
@@ -58,9 +60,10 @@ fun HomeScreen(state: HomeState, onMatchingChange: (Boolean) -> Unit, onAction: 
     }
     Surface(modifier.fillMaxSize(), color = AppColors.Background) {
         Column(Modifier.fillMaxSize().safeDrawingPadding()) {
-            // 오른쪽 위 "키링 설정" = 키링 화면(내 키링 목록 · 초기화)
-            AppTopBar(stringResource(Res.string.home_brand), actionText = stringResource(Res.string.home_keyring_settings),
-                onAction = { onAction(HomeAction.Keyring) })
+            // 오른쪽 위 종 모양 = 받은 알림 모음(키링 관리는 마이 → 내 키링)
+            AppTopBar(stringResource(Res.string.home_brand), trailing = {
+                NotificationBell(unreadNotifications) { onAction(HomeAction.Notifications) }
+            })
             // 가운데: 큰 매칭 원 · 문구 · 내 키링 한 장을 한 덩어리로(길어지면 스크롤)
             // 내용이 짧아도 화면 가운데에서 당길 수 있게 스크롤 영역을 채운다.
             PullToRefreshBox(refreshing, refresh, Modifier.weight(1f).fillMaxWidth()
@@ -127,7 +130,7 @@ private fun MatchingPower(state: HomeState, onMatchingChange: (Boolean) -> Unit,
 
 /**
  * 내 키링을 펼치면 이 휴대폰의 별명과 해당 기기에서 직접 읽은 배터리 상태가 보인다.
- * 손볼 일이 있으면 노란 바탕과 할 일 한 줄은 접혀 있어도 보인다. 키링 설정 화면은 오른쪽 위 "키링 설정"으로 간다
+ * 손볼 일이 있으면 노란 바탕과 할 일 한 줄은 접혀 있어도 보인다. 키링 관리 화면은 마이 → 내 키링으로 간다
  */
 @Composable
 private fun KeyringSummary(state: HomeState, connectedKeyringId: Long?, keyringStatus: @Composable () -> OwnedKeyringLiveStatus?,
@@ -265,4 +268,16 @@ private fun keyringTodo(state: HomeKeyringState): StringResource? = when (state)
     HomeKeyringState.RecheckRequired -> Res.string.home_device_recheck_help
     HomeKeyringState.StorageFull -> Res.string.home_device_full_help
     else -> null
+}
+
+/** 종 모양 버튼. 안 읽은 알림이 있으면 오른쪽 위에 초록 점(화면 리더엔 "새 알림 있음") */
+@Composable private fun NotificationBell(unread: Boolean, onClick: () -> Unit) {
+    val label = stringResource(if (unread) Res.string.notifications_open_unread else Res.string.notifications_open)
+    // 48dp 칸을 직접 잡아야 점이 종의 오른쪽 위 모서리에 붙는다(최소 터치 크기 수정자는 내용 크기를 24dp로 둔다)
+    Box(Modifier.size(48.dp).clip(CircleShape).clickable(role = Role.Button, onClick = onClick)
+        .semantics { contentDescription = label }, contentAlignment = Alignment.Center) {
+        Icon(painterResource(Res.drawable.ic_permission_notifications), null, Modifier.size(24.dp), tint = AppColors.TextPrimary)
+        if (unread) Box(Modifier.align(Alignment.TopEnd).padding(top = 11.dp, end = 11.dp).size(8.dp).clip(CircleShape)
+            .background(AppColors.SelectionBorder))
+    }
 }

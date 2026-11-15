@@ -38,11 +38,11 @@ import org.koin.compose.koinInject
 import org.koin.compose.viewmodel.koinViewModel
 
 // Keyrings는 서버의 등록 목록을 확인하는 경로이며 BLE 등록/초기화 경로와 구분한다.
-internal enum class ServicePage { Home, Proposals, Menu, Chats, Safety, Report, AiConsent, Profile, Survey, Settings, Help, HelpHub, Keyrings, BleProbe, KeyringRegistration, KeyringReset, KeyringSync, Preparing }
+internal enum class ServicePage { Home, Proposals, Menu, Chats, Safety, Report, AiConsent, Profile, Survey, Settings, Help, HelpHub, Keyrings, BleProbe, KeyringRegistration, KeyringReset, KeyringSync, Preparing, Notifications }
 
 /** 가입 중에는 가입 화면을 유지하되, 탈퇴 제한을 해소할 소유 키링 관리 경로만 허용한다. */
 @Composable fun SignedInServiceHost(session: Session.SignedIn, access: ProposalAccess = koinInject(),
-    model: HomeSessionViewModel = koinViewModel(), pushes: PushEvents = koinInject(),
+    model: HomeSessionViewModel = koinViewModel(), pushes: PushEvents = koinInject(), inbox: NotificationInbox = koinInject(),
     // 기기 시험에서 BLE 부작용만 분리한다. 제품에서는 기존 Activity 범위의 자동 동기화를 사용한다.
     foregroundSync: @Composable (Boolean) -> Unit = { KeyringForegroundSync(suspendSync = it, allowEncounter = session.isReady) }) {
     val withdrawal: WithdrawalCoordinator = koinInject()
@@ -124,7 +124,8 @@ internal enum class ServicePage { Home, Proposals, Menu, Chats, Safety, Report, 
                 ServicePage.Home -> {
                     // 카드가 접혀 있어도 기기 연결이 끊기거나 복구되면 바로 표시한다.
                     val connection = observeOwnedKeyringConnection(session, state.home.keyrings, keyringBleModel())
-                    HomeScreen(state.home, model::setMatching, onAction = { action -> when (action) {
+                    val unread by inbox.items.collectAsStateWithLifecycle(emptyList())
+                    HomeScreen(state.home, model::setMatching, unreadNotifications = unread.any { !it.read }, onAction = { action -> when (action) {
                         HomeAction.Refresh -> {
                             connection.refresh?.invoke()
                             model.refreshHome()
@@ -132,7 +133,7 @@ internal enum class ServicePage { Home, Proposals, Menu, Chats, Safety, Report, 
                         HomeAction.Proposals -> proposals()
                         HomeAction.Profile -> go(ServicePage.Menu)
                         HomeAction.Chats -> chats()
-                        HomeAction.Keyring -> { keyringFromMenu = false; go(ServicePage.Keyrings) }
+                        HomeAction.Notifications -> go(ServicePage.Notifications)
                     } }, onSaveKeyringAlias = model::saveKeyringAlias, keyringStatus = { connection.liveStatus },
                         connectedKeyringId = connection.deviceId, checkingKeyringStatus = connection.liveStatus?.loading == true,
                         keyringPublicName = { id, name ->
@@ -161,6 +162,14 @@ internal enum class ServicePage { Home, Proposals, Menu, Chats, Safety, Report, 
                     if(consentFromChat) chats() else go(ServicePage.Menu)
                 })
                 ServicePage.Profile -> ProfileManagementRoute(session, { go(ServicePage.Menu) })
+                // 알림을 누르면 알림이 왔을 때와 같은 곳으로 간다(상세 화면이 최신 권한을 다시 확인한다)
+                ServicePage.Notifications -> NotificationsRoute(session, { go(ServicePage.Home) }, onOpen = { target ->
+                    when (target) {
+                        is PushTarget.Chat -> chats(target.roomId)
+                        is PushTarget.Proposal -> proposals()
+                        PushTarget.Home -> go(ServicePage.Home)
+                    }
+                })
                 ServicePage.Survey -> SurveyRoute(session, { go(ServicePage.Menu) })
                 ServicePage.Settings -> ConnectedSettingsRoute(session, { go(ServicePage.Menu) })
                 // 소유 정보 확인만 수행하므로 메뉴를 열었다고 등록/동기화를 요청하지 않는다.

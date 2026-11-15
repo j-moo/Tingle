@@ -18,4 +18,4 @@ data class HomeState(
     val refreshing: Boolean = false,
 )
 
-enum class HomeAction { Refresh, Proposals, Chats, Profile, Keyring }
+enum class HomeAction { Refresh, Proposals, Chats, Profile, Notifications }
