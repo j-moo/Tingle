@@ -1,7 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<resources>
-    <string name="keyring_auto_enable">이 키링 자동 연결 켜기</string>
-    <string name="keyring_auto_disable">자동 연결 끄기</string>
-    <string name="keyring_auto_enabled">키링이 가까이 오면 자동으로 연결하고, 전송할 만남 기록을 확인해요.</string>
-    <string name="keyring_auto_unavailable">자동 연결을 켜지 못했어요. 키링 설정 동기화를 마친 뒤 다시 시도해 주세요.</string>
-</resources>

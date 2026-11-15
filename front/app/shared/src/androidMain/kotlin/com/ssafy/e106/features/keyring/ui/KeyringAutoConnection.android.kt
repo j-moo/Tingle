@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.Intent
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.material3.Text
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.mutableStateOf
@@ -26,10 +27,6 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import org.koin.core.context.GlobalContext
 import com.ssafy.e106.core.ui.components.AppButton
 import com.ssafy.e106.resources.Res
-import com.ssafy.e106.resources.keyring_auto_disable
-import com.ssafy.e106.resources.keyring_auto_enable
-import com.ssafy.e106.resources.keyring_auto_enabled
-import com.ssafy.e106.resources.keyring_auto_unavailable
 import org.jetbrains.compose.resources.stringResource
 
 internal data class AutoKeyring(
@@ -134,17 +131,11 @@ internal actual fun managesKeyringAutoConnection(serial: String): Boolean {
     val enabled = target?.owner == session.userId
     val connected = selected != null && link.connected && link.info?.serial == selected.deviceSerial
     if (!session.isReady || (!enabled && !connected)) return
-    val unavailable = remember(session.userId, selected?.deviceId) { mutableStateOf(false) }
-    if (enabled) {
-        Text(stringResource(Res.string.keyring_auto_enabled))
-        AppButton(stringResource(Res.string.keyring_auto_disable), Modifier.fillMaxWidth()) {
-            KeyringAutoConnection.forget(context)
-            context.stopService(Intent(context, KeyringAutoConnectionService::class.java))
+    // 자동 연결은 기본으로 켠다. 버튼 없이, 내 키링이 연결되고 소유 확인이 끝나면 한 번 켠다
+    // (설정 동기화 전이라 소유 상태가 확인되지 않으면 켜지지 않고, 다음 연결 · 상태 변화 때 다시 시도한다)
+    if (!enabled && connected && selected != null && !link.busy) {
+        LaunchedEffect(session.userId, selected.deviceId, link.connectionGeneration, link.info?.ownerState) {
+            KeyringAutoConnection.enable(context, session.userId, selected, link)
         }
-    } else if (selected != null) {
-        AppButton(stringResource(Res.string.keyring_auto_enable), Modifier.fillMaxWidth(), enabled = !link.busy) {
-            unavailable.value = !KeyringAutoConnection.enable(context, session.userId, selected, link)
-        }
-        if (unavailable.value) Text(stringResource(Res.string.keyring_auto_unavailable))
     }
 }

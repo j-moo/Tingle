@@ -9,6 +9,8 @@ import androidx.compose.ui.semantics.Role
 import org.jetbrains.compose.resources.painterResource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.fillMaxSize
@@ -95,18 +97,23 @@ import org.koin.compose.viewmodel.koinViewModel
     Surface(Modifier.fillMaxSize(), color = AppColors.Background) {
         Column(Modifier.fillMaxSize().safeDrawingPadding(), horizontalAlignment = Alignment.CenterHorizontally) {
             BackArrowBar(onBack)
-            Column(Modifier.widthIn(max = 640.dp).fillMaxWidth().verticalScroll(rememberScrollState())
+            // 키링 연결 화면처럼 제목 · 목록 · 버튼 묶음을 남은 공간 가운데에 둔다(넘치면 스크롤)
+            BoxWithConstraints(Modifier.weight(1f).widthIn(max = 640.dp).fillMaxWidth()) {
+            val viewport = maxHeight
+            Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).heightIn(min = viewport)
                 .padding(horizontal = screenGutter(), vertical = AppSpacing.Large),
-                verticalArrangement = Arrangement.spacedBy(AppSpacing.Medium)) {
-                Text(stringResource(Res.string.sync_pick_title), style = MaterialTheme.typography.headlineSmall,
-                    fontWeight = FontWeight.Bold, modifier = Modifier.semantics { heading() })
+                horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(AppSpacing.Medium)) {
+                Spacer(Modifier.weight(1f))
+                Text(stringResource(Res.string.sync_pick_title), style = MaterialTheme.typography.headlineMedium,
+                    fontWeight = FontWeight.Bold, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().semantics { heading() })
                 when {
                     // 불러오는 중: 카드 자리만 회색으로. 실패: 짧은 제목 한 줄 + 작은 "다시 시도"(다른 화면과 같은 상태 표시)
                     list.loading || (list.items == null && list.error == null) -> SkeletonGroup(spacing = AppSpacing.Medium) {
                         repeat(2) { SkeletonBone(height = 72.dp, shape = RoundedCornerShape(16.dp)) }
                     }
                     list.error != null -> StateView(list.error.stateKind(), list.error.stateTitle(), onRetry = onRefresh)
-                    list.items.isNullOrEmpty() -> Text(stringResource(Res.string.owned_keyrings_empty))
+                    list.items.isNullOrEmpty() -> Text(stringResource(Res.string.owned_keyrings_empty), style = MaterialTheme.typography.bodyLarge,
+                        color = AppColors.TextSecondary, textAlign = TextAlign.Center)
                     else -> list.items.orEmpty().forEachIndexed { index, item ->
                         KeyringCard(aliases[item.deviceId]?.takeIf { it.isNotBlank() }
                             ?: stringResource(Res.string.sync_live_device, (index + 1).toString()),
@@ -134,9 +141,12 @@ import org.koin.compose.viewmodel.koinViewModel
                         link.error != null -> Res.string.sync_manual_connection_failed
                         else -> null
                     }
-                    if (hint != null) Text(stringResource(hint), color = AppColors.TextSecondary)
+                    if (hint != null) Text(stringResource(hint), style = MaterialTheme.typography.bodyLarge,
+                        color = AppColors.TextSecondary, textAlign = TextAlign.Center)
                 }
                 result()
+                Spacer(Modifier.weight(1f))
+            }
             }
         }
     }
@@ -321,7 +331,7 @@ import org.koin.compose.viewmodel.koinViewModel
         // [numbers] 가 있으면 그 번호(카드와 같은 "내 키링 N"), 없으면 키링이 여럿일 때만 순번을 붙인다(서버 번호는 보여주지 않는다)
         val number = if (numbers != null) numbers[item.deviceId] else (index + 1).takeIf { state.items.size > 1 }
         if (number != null) Text(stringResource(Res.string.sync_live_device, number.toString()),
-            style = MaterialTheme.typography.titleSmall, textAlign = TextAlign.Center)
+            style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
         Text(stringResource(when (item.phase) {
             SyncPhase.WaitingStage -> Res.string.sync_live_stage
             SyncPhase.Issuing -> Res.string.sync_live_issuing
@@ -344,7 +354,7 @@ import org.koin.compose.viewmodel.koinViewModel
             SyncPhase.ApplyFailed -> Res.string.sync_apply_failed
             SyncPhase.ApplyFirmwareRequired -> Res.string.sync_apply_firmware
             SyncPhase.ApplyConfirmed -> Res.string.sync_apply_confirmed
-        }), textAlign = TextAlign.Center)
+        }), style = MaterialTheme.typography.bodyLarge, textAlign = TextAlign.Center)
         if (item.phase == SyncPhase.Confirmed && item.confirmedTsv3Version == null && (item.applied == false || item.timeReady == false))
             Text(stringResource(Res.string.sync_live_not_applied), color = AppColors.TextSecondary, textAlign = TextAlign.Center)
         if (item.phase == SyncPhase.Failed) item.error?.let { Text(it.message, color = MaterialTheme.colorScheme.error, textAlign = TextAlign.Center) }
