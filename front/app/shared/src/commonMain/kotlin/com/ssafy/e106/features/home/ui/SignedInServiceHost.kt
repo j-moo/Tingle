@@ -152,7 +152,7 @@ internal enum class ServicePage { Home, Proposals, Menu, Chats, Safety, Report, 
                         }
                     }, onConsent = { consentFromChat = true; go(ServicePage.AiConsent) },
                     // 실제 초안을 전달해야 추천 선택 시 기존 입력의 교체 확인을 받을 수 있다.
-                    support = { id, readable, editable, draft, insert, block, latest -> ConnectedChatExtras(id, readable, editable, insert, draft = draft, onBlock = block, latestMessage = latest) })
+                    support = { id, readable, editable, draft, insert, block, latest, used -> ConnectedChatExtras(id, readable, editable, insert, draft = draft, onBlock = block, latestMessage = latest, used = used) })
                 ServicePage.Safety -> roomId?.let { id -> ConnectedSafetyRoute(session, id, safetyOperation,
                     onBack = { chats(id) }, onClosed = { chats() }) }
                 ServicePage.Report -> roomId?.let { id -> ConnectedReportRoute(session, id, onBack = { chats(id) },

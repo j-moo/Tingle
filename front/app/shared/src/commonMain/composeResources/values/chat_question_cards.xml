@@ -1,6 +1,7 @@
 <resources>
     <string name="chat_questions_expand">대화 주제 추천</string>
     <string name="chat_questions_collapse">추천 질문 접기</string>
+    <string name="chat_questions_once">추천 질문은 채팅방마다 한 번만 받을 수 있어요. 보낸 질문은 목록에서 빠지고, 세 개를 모두 쓰면 추천 칸이 사라져요.</string>
     <string name="chat_questions_help">질문을 골라 입력창에 넣어 보세요. 수정한 뒤 직접 전송할 수 있어요.</string>
     <string name="chat_questions_general">가볍게 나눌 수 있는 일반 질문이에요. 골라서 입력창에 넣고 직접 보내 주세요.</string>
     <string name="chat_questions_topic_switch">설문에서 고른 관심 주제로 추천받기</string>
