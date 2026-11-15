@@ -22,7 +22,8 @@ fun ChatQuestionCards(state: ChatExtrasState, editable: Boolean, draft: String,
     // 같은 방의 화면 재생성에서는 여닫기를 복원하되 다른 계정/방으로 넘기지 않는다.
     var expanded by rememberSaveable(state.owner?.userId, state.room) { mutableStateOf(false) }
     // 확인 중 권한·질문·초안이 달라지면 오래된 선택을 폐기한다. 질문 본문은 저장하지 않는다.
-    var candidate by remember(state.owner?.userId, state.room, state.questions, editable, draft, used) {
+    // 상대 메시지가 와도 열린 확인 창은 닫지 않는다(이미 쓴 질문인지는 확인 버튼이 다시 본다)
+    var candidate by remember(state.owner?.userId, state.room, state.questions, editable, draft) {
         mutableStateOf<String?>(null)
     }
     Surface(color = AppColors.SurfaceMuted, shape = AppShapes.Control) {

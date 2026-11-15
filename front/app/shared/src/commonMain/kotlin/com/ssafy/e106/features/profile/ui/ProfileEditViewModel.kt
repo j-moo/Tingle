@@ -66,7 +66,8 @@ class ProfileEditViewModel(
         // 화면 구성 해제(dispose)가 아니라 사용자의 실제 이탈에서만 요청을 취소한다.
         val uncertain = writing
         generation++; job?.cancel(); writing = false
-        mutable.update { it.copy(busy = false, photo = null, saveCompleted = false, recoveryRequired = it.recoveryRequired || uncertain,
+        // 사진은 지우지 않는다: 다시 들어올 때 같은 사진을 처음부터 그리지 않게(계정이 바뀌면 상태 전체가 초기화된다)
+        mutable.update { it.copy(busy = false, saveCompleted = false, recoveryRequired = it.recoveryRequired || uncertain,
             editor = it.editor?.copy(confirmDiscard = false)) }
     }
     private fun unexpected() = AppError.Unknown(IllegalStateException("Invalid profile response"))

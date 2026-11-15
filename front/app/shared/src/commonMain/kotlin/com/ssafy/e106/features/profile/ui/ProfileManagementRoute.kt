@@ -173,7 +173,7 @@ fun ProfileConnectedEditScreen(
         onChange, onSave, onBack, onDiscard, onKeep, onOptional, onCorrection,
         photoContent = { state.photo?.let { ProfilePhotoBytes(it) } ?: Text(stringResource(Res.string.optional_photo_unavailable)) },
         optionalContent = {
-            OptionalProfileSummary(state)
+            OptionalProfileSummary(state, viewing = false)
             Text(stringResource(Res.string.profile_manage_optional_help), style = MaterialTheme.typography.bodySmall)
         },
         photoActionLabel = stringResource(Res.string.profile_manage_optional),
@@ -193,11 +193,21 @@ private val ProfileManagementState.unknown get() = recoveryRequired || problem =
         barTitle = title, onBack = onBack, refreshing = state.busy, onRefresh = onReload)
 }
 
-@Composable private fun OptionalProfileSummary(state: ProfileManagementState) {
+@Composable private fun OptionalProfileSummary(state: ProfileManagementState, viewing: Boolean = true) {
     val p = state.profile ?: return
+    val intro = p.introduction?.takeIf { it.isNotBlank() }
+    val religion = p.religion.religion()?.let { stringResource(it.label()) }
+    if (!viewing) {
+        // 수정 화면은 입력 항목답게 "선택" 표시를 그대로 둔다
+        TagLabel(stringResource(Res.string.profile_intro_title), style = MaterialTheme.typography.titleMedium)
+        Text(intro ?: stringResource(Res.string.profile_manage_none))
+        TagLabel(stringResource(Res.string.profile_religion_title), style = MaterialTheme.typography.titleMedium)
+        Text(religion ?: stringResource(Res.string.profile_manage_none))
+        return
+    }
     // 보기 화면이라 입력 화면의 "선택" 표시는 빼고, 입력한 값은 상자에 담아 제목과 구분한다
-    SummaryField(Res.string.profile_view_intro, p.introduction?.takeIf { it.isNotBlank() })
-    SummaryField(Res.string.profile_view_religion, p.religion.religion()?.let { stringResource(it.label()) })
+    SummaryField(Res.string.profile_view_intro, intro)
+    SummaryField(Res.string.profile_view_religion, religion)
 }
 
 @Composable private fun SummaryField(title: StringResource, value: String?) {

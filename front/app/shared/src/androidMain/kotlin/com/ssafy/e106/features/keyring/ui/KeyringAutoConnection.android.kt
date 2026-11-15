@@ -85,6 +85,16 @@ internal object KeyringAutoConnection {
         prefs(context).edit().clear().apply()
         target.value = null
     }
+
+    /** 알림의 "끄기": 자동 연결을 끄고, 같은 키링이 다시 연결돼도 자동으로 켜지 않게 기억한다 */
+    fun stopByUser(context: Context) {
+        val stopped = target.value ?: read(context)
+        forget(context)
+        if (stopped != null) prefs(context).edit().putLong("stoppedOwner", stopped.owner).putLong("stoppedDevice", stopped.deviceId).apply()
+    }
+
+    fun stoppedByUser(context: Context, owner: Long, deviceId: Long) =
+        prefs(context).let { it.getLong("stoppedOwner", 0) == owner && it.getLong("stoppedDevice", 0) == deviceId }
 }
 
 @Composable internal actual fun keyringBleModel(): BleProbeViewModel = KeyringAutoConnection.ble
@@ -120,12 +130,14 @@ internal actual fun managesKeyringAutoConnection(serial: String): Boolean {
 ) {
     val context = LocalContext.current
     val target = KeyringAutoConnection.target.collectAsStateWithLifecycle().value
-    val enabled = target?.owner == session.userId
+    // 지금 고른 키링이 자동 연결 대상인지(다른 키링을 연결하면 그 키링으로 바꾼다)
+    val enabled = target?.owner == session.userId && target.deviceId == selected?.deviceId
     val connected = selected != null && link.connected && link.info?.serial == selected.deviceSerial
     if (!session.isReady || (!enabled && !connected)) return
     // 자동 연결은 기본으로 켠다. 버튼 없이, 내 키링이 연결되고 소유 확인이 끝나면 한 번 켠다
     // (설정 동기화 전이라 소유 상태가 확인되지 않으면 켜지지 않고, 다음 연결 · 상태 변화 때 다시 시도한다)
-    if (!enabled && connected && selected != null && !link.busy) {
+    if (!enabled && connected && selected != null && !link.busy &&
+        !KeyringAutoConnection.stoppedByUser(context, session.userId, selected.deviceId)) {
         LaunchedEffect(session.userId, selected.deviceId, link.connectionGeneration, link.info?.ownerState, link.info?.ownershipEpoch) {
             KeyringAutoConnection.enable(context, session.userId, selected, link)
         }
