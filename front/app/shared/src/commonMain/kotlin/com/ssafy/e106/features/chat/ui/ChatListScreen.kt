@@ -137,7 +137,7 @@ private fun ChatCard(room: ChatListItem, onOpenChat: (Long) -> Unit) {
                 maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
         if (allowed) Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(AppSpacing.Small)) {
-            room.lastMessageTimeLabel?.takeIf { it.isNotBlank() && room.lastMessageKind == LastMessageKind.Text }?.let {
+            room.lastMessageTimeLabel?.takeIf { room.lastMessageKind == LastMessageKind.Text }?.let { listTimeLabel(it) }?.let {
                 Text(it, style = MaterialTheme.typography.bodySmall, color = AppColors.TextSecondary, maxLines = 1)
             }
             // 새 메시지가 있으면 초록 점(화면 리더엔 "새 메시지"). 모르면 표시하지 않는다
@@ -145,4 +145,13 @@ private fun ChatCard(room: ChatListItem, onOpenChat: (Long) -> Unit) {
                 .semantics { contentDescription = newLabel })
         }
     }
+}
+
+/** 마지막 메시지 시각: 오늘이면 "오후 3:05", 아니면 "11월 15일". 서버 시각을 못 읽으면 표시하지 않는다 */
+@Composable private fun listTimeLabel(iso: String): String? {
+    val t = chatTimeParts(iso) ?: return null
+    val today = chatTimeParts(kotlin.time.Clock.System.now().toString())
+    return if (today != null && today.month == t.month && today.day == t.day)
+        stringResource(if (t.afternoon) Res.string.chat_time_pm else Res.string.chat_time_am, t.hour12, t.minute.toString().padStart(2, '0'))
+    else stringResource(Res.string.chat_date, t.month, t.day)
 }
