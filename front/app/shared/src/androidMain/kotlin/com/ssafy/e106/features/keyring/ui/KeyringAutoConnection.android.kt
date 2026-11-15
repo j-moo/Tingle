@@ -86,15 +86,21 @@ internal object KeyringAutoConnection {
         target.value = null
     }
 
-    /** 알림의 "끄기": 자동 연결을 끄고, 같은 키링이 다시 연결돼도 자동으로 켜지 않게 기억한다 */
+    /**
+     * 알림의 "끄기": 자동 연결을 끈다. 지금 이어진 연결 동안에는 화면이 다시 켜지 않게 그 연결 세대를 기억한다.
+     * 사용자가 키링을 다시 연결하면(새 세대) 기본값대로 다시 켠다 — 끈 채로 영영 못 켜는 상태를 만들지 않는다
+     */
     fun stopByUser(context: Context) {
         val stopped = target.value ?: read(context)
+        val generation = ble.state.value.connectionGeneration
         forget(context)
-        if (stopped != null) prefs(context).edit().putLong("stoppedOwner", stopped.owner).putLong("stoppedDevice", stopped.deviceId).apply()
+        if (stopped != null && generation != null) prefs(context).edit().putLong("stoppedOwner", stopped.owner)
+            .putLong("stoppedDevice", stopped.deviceId).putLong("stoppedGeneration", generation).apply()
     }
 
-    fun stoppedByUser(context: Context, owner: Long, deviceId: Long) =
-        prefs(context).let { it.getLong("stoppedOwner", 0) == owner && it.getLong("stoppedDevice", 0) == deviceId }
+    fun stoppedByUser(context: Context, owner: Long, deviceId: Long, generation: Long?) = generation != null &&
+        prefs(context).let { it.getLong("stoppedOwner", 0) == owner && it.getLong("stoppedDevice", 0) == deviceId &&
+            it.contains("stoppedGeneration") && it.getLong("stoppedGeneration", 0) == generation }
 }
 
 @Composable internal actual fun keyringBleModel(): BleProbeViewModel = KeyringAutoConnection.ble
@@ -137,7 +143,7 @@ internal actual fun managesKeyringAutoConnection(serial: String): Boolean {
     // 자동 연결은 기본으로 켠다. 버튼 없이, 내 키링이 연결되고 소유 확인이 끝나면 한 번 켠다
     // (설정 동기화 전이라 소유 상태가 확인되지 않으면 켜지지 않고, 다음 연결 · 상태 변화 때 다시 시도한다)
     if (!enabled && connected && selected != null && !link.busy &&
-        !KeyringAutoConnection.stoppedByUser(context, session.userId, selected.deviceId)) {
+        !KeyringAutoConnection.stoppedByUser(context, session.userId, selected.deviceId, link.connectionGeneration)) {
         LaunchedEffect(session.userId, selected.deviceId, link.connectionGeneration, link.info?.ownerState, link.info?.ownershipEpoch) {
             KeyringAutoConnection.enable(context, session.userId, selected, link)
         }
