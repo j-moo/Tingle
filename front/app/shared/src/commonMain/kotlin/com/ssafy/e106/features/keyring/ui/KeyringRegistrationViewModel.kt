@@ -27,7 +27,7 @@ data class LiveRegistrationState(val owner: Long? = null, val loaded: Boolean = 
 
 /**
  * 등록 HTTP와 기기 통신을 조정한다. BLE 연결은 별도 모델 소유이며, 이 모델은 응답 유실 복구 기록을 관리한다.
- * 화면 중지/회전은 작업을 취소하지만 이미 저장한 요청은 지우지 않는다. 복귀 후 사용자가 같은 요청을 재시도한다.
+ * 화면 중지/회전은 작업을 취소하지만 이미 저장한 요청은 지우지 않는다. 증명을 보낸 요청은 화면이 자동으로 한 번 이어서 하고, 실패하면 사용자가 다시 시도한다.
  */
 @OptIn(ExperimentalUuidApi::class)
 class KeyringRegistrationViewModel(private val api: KeyringRegistrationRepository,
@@ -132,7 +132,6 @@ class KeyringRegistrationViewModel(private val api: KeyringRegistrationRepositor
         val response = api.register(pending.registerKey, requireNotNull(pending.body))
         operation.ensure()
         if (response is ApiResult.Fail) {
-            // 입력 · 기기 귀속의 명시적 거절은 사용자가 기록을 정리하고 다른 보드를 고를 수 있다(증명 거절은 아래에서 바로 지운다).
             // 모든 409를 거절로 취급하지 않는다. 멱등 충돌·5xx·통신 단절은 기존 요청을 보존한다.
             val code = (response.error as? AppError.Server)?.code
             // 입력 · 귀속 · 증명의 명시적 거절은 같은 요청을 다시 보내도 결과가 같다. 기록을 지워 다음 시도가

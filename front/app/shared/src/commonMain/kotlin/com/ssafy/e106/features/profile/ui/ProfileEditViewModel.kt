@@ -102,7 +102,9 @@ class ProfileEditViewModel(
                 mutable.update { it.copy(recoveryRequired = false, savedNotice = it.savedNotice || confirmed) }
                 if (result.value.hasProfilePhoto) {
                     val image = (optional.photo(user) as? ApiResult.Ok)?.value
-                    if (valid(stamp)) mutable.update { it.copy(photo = image ?: it.photo, photoFailed = image == null && it.photo == null) }
+                    // 같은 사진이면 그대로 둬 다시 그리지 않는다. 못 받으면 옛 사진(바뀌었을 수 있다)을 남기지 않고 실패로 둔다
+                    if (valid(stamp)) mutable.update { it.copy(photo = if (image != null && it.photo?.contentEquals(image) == true) it.photo else image,
+                        photoFailed = image == null) }
                 } else mutable.update { it.copy(photo = null, photoFailed = false) }
             }
         }

@@ -17,12 +17,12 @@ fun ChatQuestionCards(state: ChatExtrasState, editable: Boolean, draft: String,
     /** 대화에 이미 보낸 메시지 본문. 같은 질문은 목록에서 빼고, 세 개를 다 쓰면 추천 칸을 숨긴다 */
     used: Set<String> = emptySet()) {
     // 추천 질문은 방마다 한 번만 받는다. 보낸 질문을 빼고 남은 게 없으면 다시 받을 수 없으니 칸을 보이지 않는다
-    val remaining = state.questions.filter { it.trim() !in used }
+    val remaining = remainingQuestions(state.questions, used)
     if (state.questions.isNotEmpty() && remaining.isEmpty()) return
     // 같은 방의 화면 재생성에서는 여닫기를 복원하되 다른 계정/방으로 넘기지 않는다.
     var expanded by rememberSaveable(state.owner?.userId, state.room) { mutableStateOf(false) }
     // 확인 중 권한·질문·초안이 달라지면 오래된 선택을 폐기한다. 질문 본문은 저장하지 않는다.
-    var candidate by remember(state.owner?.userId, state.room, state.questions, editable, draft) {
+    var candidate by remember(state.owner?.userId, state.room, state.questions, editable, draft, used) {
         mutableStateOf<String?>(null)
     }
     Surface(color = AppColors.SurfaceMuted, shape = AppShapes.Control) {
@@ -73,8 +73,8 @@ fun ChatQuestionCards(state: ChatExtrasState, editable: Boolean, draft: String,
         AlertDialog(onDismissRequest = { candidate = null },
             title = { Text(stringResource(Res.string.chat_questions_replace_title)) },
             text = { Text(stringResource(Res.string.chat_questions_replace_help)) },
-            confirmButton = { TextButton(enabled = editable && question in state.questions, onClick = {
-                if (editable && question in state.questions) { insert(question); expanded = false }
+            confirmButton = { TextButton(enabled = editable && question in remaining, onClick = {
+                if (editable && question in remaining) { insert(question); expanded = false }
                 candidate = null
             }) { Text(stringResource(Res.string.chat_questions_replace)) } },
             dismissButton = { TextButton(onClick = { candidate = null }) {
@@ -82,3 +82,6 @@ fun ChatQuestionCards(state: ChatExtrasState, editable: Boolean, draft: String,
             } })
     }
 }
+
+/** 대화에 이미 나온(앞뒤 공백 무시) 추천 질문을 뺀다 */
+internal fun remainingQuestions(questions: List<String>, used: Set<String>) = questions.filter { it.trim() !in used }

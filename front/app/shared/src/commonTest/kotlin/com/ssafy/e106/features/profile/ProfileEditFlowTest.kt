@@ -54,6 +54,18 @@ class ProfileEditFlowTest {
     private fun vm(server: EditServer, session: TestSession = TestSession(OnboardingStatus.READY), dev: Boolean = false) =
         ProfileEditViewModel(server, server, session, DevelopmentProfileAccess(dev)).also { store.put("edit", it); it.load() }
 
+    // 프로필 보기 사진: 다시 받을 때 같은 사진이면 그대로, 못 받으면 실패(옛 사진을 남기지 않음), 사진을 지우면 비움
+    @Test fun overviewPhotoKeepsSameBytesAndClearsOnFailureOrDeletion() = runTest(dispatcher) {
+        val server = EditServer(); val m = vm(server); runCurrent()
+        val first = m.state.value.photo; assertNotNull(first); assertFalse(m.state.value.photoFailed)
+        m.load(); runCurrent()
+        assertSame(first, m.state.value.photo)
+        server.photoFailure = true; m.load(); runCurrent()
+        assertNull(m.state.value.photo); assertTrue(m.state.value.photoFailed)
+        server.photoFailure = false; server.data = server.data.copy(hasProfilePhoto = false); m.load(); runCurrent()
+        assertNull(m.state.value.photo); assertFalse(m.state.value.photoFailed)
+    }
+
     // 완료 이동은 화면이 다시 붙을 때까지 보관하며, 재개 조회가 저장을 취소하지 않아야 한다.
     @Test fun saveCompletionSurvivesReattachmentAndIsConsumedOnce() = runTest(dispatcher) {
         val server = EditServer(); val pending = CompletableDeferred<Unit>()

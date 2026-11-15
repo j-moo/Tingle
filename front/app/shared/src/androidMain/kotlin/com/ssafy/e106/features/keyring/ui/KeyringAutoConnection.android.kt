@@ -20,7 +20,6 @@ import com.ssafy.e106.features.keyring.data.KeyringRegistrationProtocol
 import com.ssafy.e106.features.keyring.data.OwnedKeyring
 import kotlinx.coroutines.flow.MutableStateFlow
 import org.koin.core.context.GlobalContext
-import com.ssafy.e106.resources.Res
 
 internal data class AutoKeyring(
     val owner: Long, val deviceId: Long, val serial: String, val ownershipEpoch: Long, val address: String,

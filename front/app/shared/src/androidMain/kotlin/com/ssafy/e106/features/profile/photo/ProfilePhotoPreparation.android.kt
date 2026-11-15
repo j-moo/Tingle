@@ -124,8 +124,9 @@ internal val PhotoEditorSaver = listSaver<PhotoEditorState, Any>(
     // 디코딩은 화면 그리기를 막지 않도록 백그라운드에서 수행한다.
     // 키가 바뀌면 상태도 분리하여 이전 사용자의 이미지가 새 입력에 잠시 표시되지 않게 한다.
     key(bytes) {
-        val bitmap by produceState<Bitmap?>(null) {
-            value = withContext(Dispatchers.Default) {
+        // 디코딩 중(아직 결과 없음)과 실패를 구분한다. 디코딩하는 동안 실패 문구를 잠깐 띄우지 않는다
+        val decoded by produceState<Result<Bitmap?>?>(null) {
+            value = Result.success(withContext(Dispatchers.Default) {
                 try {
                     val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
                     BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
@@ -133,9 +134,11 @@ internal val PhotoEditorSaver = listSaver<PhotoEditorState, Any>(
                     while (bounds.outWidth / sample > 1024 || bounds.outHeight / sample > 1024) sample *= 2   // 사진 칸이 화면 폭만큼 커서 512로는 흐리다
                     BitmapFactory.decodeByteArray(bytes, 0, bytes.size, BitmapFactory.Options().apply { inSampleSize = sample })
                 } catch (_: Exception) { null } catch (_: OutOfMemoryError) { null }
-            }
+            })
         }
-        bitmap?.let { ProfilePhotoImage(it.asImageBitmap()) }
-            ?: Text(stringResource(Res.string.optional_photo_unavailable))
+        decoded?.let { result ->
+            result.getOrNull()?.let { ProfilePhotoImage(it.asImageBitmap()) }
+                ?: Text(stringResource(Res.string.optional_photo_unavailable))
+        }
     }
 }

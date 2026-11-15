@@ -221,6 +221,17 @@ class KeyringRegistrationTest {
         m.start("XIAO-test") { proofBody(it) }; runCurrent()
         assertEquals(2, server.challenges.distinct().size); assertEquals(server.receipt, m.state.value.confirmed)
     }
+    @Test fun challengeExpiringDuringProofClearsRequestAndNeverPosts() = runTest(dispatcher) {
+        val server = RegistrationServer(); val prefs = RegistrationPrefs()
+        var now = Instant.parse("2026-11-04T12:00:00Z")
+        val m = KeyringRegistrationViewModel(server, server, KeyringRegistrationStore(prefs), TestSession(OnboardingStatus.KEYRING_REQUIRED),
+            KeyringSyncStore(prefs), KeyringResetStore(prefs), { now }).also { models.put("late", it) }
+        runCurrent()
+        // 증명을 받는 사이 5분이 지나면 보내지 않고 기록을 지운다
+        m.start("XIAO-test") { now = Instant.parse("2026-11-04T12:06:00Z"); proofBody(it) }; runCurrent()
+        assertEquals(RegistrationIssue.ExpiredChallenge, m.state.value.issue)
+        assertTrue(server.sent.isEmpty()); assertNull(m.state.value.pending)
+    }
     @Test fun invalidRequestRejectionClearsStoredRequest() = runTest(dispatcher) {
         val server = RegistrationServer().apply { onSend = { ApiResult.Fail(AppError.Server(400, "INVALID_REQUEST", "bad")) } }
         val prefs = RegistrationPrefs(); val m = model(server, prefs); runCurrent()
