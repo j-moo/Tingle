@@ -1,5 +1,9 @@
 package com.ssafy.e106.features.profile.ui
 
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.foundation.background
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -24,6 +28,7 @@ import com.ssafy.e106.features.account.ui.HelpGuideScreen
 import com.ssafy.e106.features.account.ui.HelpGuideState
 import com.ssafy.e106.features.profile.photo.ProfilePhotoBytes
 import com.ssafy.e106.resources.*
+import org.jetbrains.compose.resources.StringResource
 import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.viewmodel.koinViewModel
 
@@ -103,8 +108,25 @@ private fun ProfileOverviewScreen(state: ProfileManagementState, devNotice: Bool
                     verticalArrangement = Arrangement.spacedBy(AppSpacing.Large)) {
                     if (devNotice) Text(stringResource(Res.string.profile_manage_dev_notice), style = MaterialTheme.typography.bodySmall, color = AppColors.TextSecondary)
                     ProfileManagementNotice(state, onReload)
+                    // 사진은 마이가 아니라 여기서 크게 보여 준다. 없으면 기본 사람 모양, 받는 중이면 회색 칸
+                    Box(Modifier.align(Alignment.CenterHorizontally).widthIn(max = 360.dp).fillMaxWidth().aspectRatio(1f)
+                        .clip(AppShapes.Card).background(AppColors.SurfaceMuted), contentAlignment = Alignment.Center) {
+                        when {
+                            state.photo != null -> ProfilePhotoBytes(state.photo)
+                            !profile.hasProfilePhoto -> Canvas(Modifier.fillMaxSize()) {
+                                val w = size.width
+                                drawCircle(PhotoSilhouette, radius = w * 0.17f, center = Offset(w / 2, w * 0.38f))
+                                drawOval(PhotoSilhouette, topLeft = Offset(w * 0.16f, w * 0.62f), size = Size(w * 0.68f, w * 0.8f))
+                            }
+                        }
+                    }
                     Text(profile.nickname.orEmpty(), style = MaterialTheme.typography.headlineMedium, modifier = Modifier.semantics { heading() })
-                    state.photo?.let { Box(Modifier.size(144.dp).clip(AppShapes.Card)) { ProfilePhotoBytes(it) } }
+                    // 상대에게 보이는 것처럼 나이(만) · 성별을 닉네임 아래에. 모르는 값은 빼고 보여 준다
+                    val age = profile.birthDate?.let { internationalAge(it, todayKst()) }?.let { stringResource(Res.string.profile_view_age, it) }
+                    val gender = when (profile.gender) { "MALE" -> stringResource(Res.string.profile_male); "FEMALE" -> stringResource(Res.string.profile_female); else -> null }
+                    listOfNotNull(age, gender).takeIf { it.isNotEmpty() }?.let {
+                        Text(it.joinToString(" · "), style = MaterialTheme.typography.bodyLarge, color = AppColors.TextSecondary)
+                    }
                     OptionalProfileSummary(state)
                 }
             }
@@ -171,10 +193,18 @@ private val ProfileManagementState.unknown get() = recoveryRequired || problem =
 
 @Composable private fun OptionalProfileSummary(state: ProfileManagementState) {
     val p = state.profile ?: return
-    TagLabel(stringResource(Res.string.profile_intro_title), style = MaterialTheme.typography.titleMedium)
-    Text(p.introduction?.takeIf { it.isNotBlank() } ?: stringResource(Res.string.profile_manage_none))
-    TagLabel(stringResource(Res.string.profile_religion_title), style = MaterialTheme.typography.titleMedium)
-    Text(p.religion.religion()?.let { stringResource(it.label()) } ?: stringResource(Res.string.profile_manage_none))
+    // 보기 화면이라 입력 화면의 "선택" 표시는 빼고, 입력한 값은 상자에 담아 제목과 구분한다
+    SummaryField(Res.string.profile_view_intro, p.introduction?.takeIf { it.isNotBlank() })
+    SummaryField(Res.string.profile_view_religion, p.religion.religion()?.let { stringResource(it.label()) })
+}
+
+@Composable private fun SummaryField(title: StringResource, value: String?) {
+    Column(verticalArrangement = Arrangement.spacedBy(AppSpacing.Small)) {
+        Text(stringResource(title), style = MaterialTheme.typography.titleMedium)
+        Text(value ?: stringResource(Res.string.profile_manage_none), Modifier.fillMaxWidth().clip(AppShapes.Control)
+            .background(AppColors.SurfaceMuted).padding(AppSpacing.Medium),
+            style = MaterialTheme.typography.bodyLarge, color = if (value == null) AppColors.TextSecondary else AppColors.TextPrimary)
+    }
 }
 
 /** 저장했어요 · 결과 미확인 안내. 결과 미확인 문구는 같은 내용을 두 번 저장하지 않게 하는 설명이라 줄이지 않는다 */
@@ -184,4 +214,30 @@ private val ProfileManagementState.unknown get() = recoveryRequired || problem =
         Text(stringResource(Res.string.profile_manage_unknown), style = MaterialTheme.typography.bodyMedium, color = AppColors.Error)
         TextAction(stringResource(Res.string.profile_state_recheck), onReload, enabled = !state.busy)
     }
+}
+
+/** 사진이 없을 때 기본 사람 모양 색(회색 바탕 위에서 보이는 정도). */
+private val PhotoSilhouette = androidx.compose.ui.graphics.Color(0xFFD4D4D4)
+
+/** 오늘 날짜(한국 시간) 연 · 월 · 일. */
+internal fun todayKst(nowMillis: Long = kotlin.time.Clock.System.now().toEpochMilliseconds()): Triple<Int, Int, Int> {
+    // 1970-01-01부터 지난 날수 → 그레고리력 날짜(Howard Hinnant의 civil_from_days)
+    val days = (nowMillis + 9 * 3_600_000L).floorDiv(86_400_000L) + 719_468
+    val era = days.floorDiv(146_097L)
+    val doe = days - era * 146_097
+    val yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365
+    val doy = doe - (365 * yoe + yoe / 4 - yoe / 100)
+    val mp = (5 * doy + 2) / 153
+    val day = (doy - (153 * mp + 2) / 5 + 1).toInt()
+    val month = (if (mp < 10) mp + 3 else mp - 9).toInt()
+    return Triple((yoe + era * 400 + if (month <= 2) 1 else 0).toInt(), month, day)
+}
+
+/** 만 나이. 생년월일("yyyy-MM-dd")을 읽지 못하면 null. */
+internal fun internationalAge(birthDate: String, today: Triple<Int, Int, Int>): Int? {
+    val parts = birthDate.split("-").mapNotNull { it.toIntOrNull() }
+    if (parts.size != 3) return null
+    val (y, m, d) = parts
+    val (ty, tm, td) = today
+    return (ty - y - if (tm < m || (tm == m && td < d)) 1 else 0).takeIf { it >= 0 }
 }
