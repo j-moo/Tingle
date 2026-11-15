@@ -59,7 +59,7 @@ class ProposalPushNotifierTest {
 		assertThat(data.getValue()).containsExactlyInAnyOrderEntriesOf(Map.of("type", "NEW_PROPOSAL",
 			"noticeId", "proposal-9", "proposalId", "9", "recipientUserId", "89",
 			"bindingId", candidate.bindingId().toString(), "installationId", candidate.installationId().toString(),
-			"expiresAt", deadline.toString()));
+			"expiresAt", deadline.toString(), "title", "새 매칭 제안", "body", "가까이에서 만난 사람과 매칭 제안이 도착했어요."));
 		verify(deliveries, never()).invalidate(any());
 	}
 

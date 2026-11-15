@@ -12,6 +12,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
+import com.e106.tingle.global.i18n.Messages;
 import com.e106.tingle.push.PushDeliveryLookup;
 import com.e106.tingle.push.PushDeliveryTarget;
 import com.e106.tingle.push.PushGateway;
@@ -22,7 +23,8 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
 /**
- * 새 제안이 커밋되면 두 사람에게 NEW_PROPOSAL 푸시를 한 번 보낸다(data 전용, 문구는 앱이 정한다).
+ * 새 제안이 커밋되면 두 사람에게 NEW_PROPOSAL 푸시를 한 번 보낸다(data 전용). 앱은 title · body가 있으면 그 문구를 쓴다.
+ * 제안 화면을 열기 전이라 상대 닉네임은 넣지 않는다.
  * 제안 목록이 원본이라 푸시가 빠져도 제안은 그대로 보인다.
  */
 // ponytail: 커밋 뒤 1회 전송, 재시도 큐 없음. FCM 일시 오류로 빠지는 알림이 문제가 되면 채팅 푸시처럼 작업 테이블로 옮긴다
@@ -87,6 +89,8 @@ public class ProposalPushNotifier {
 		}
 		PushGateway.Result result = gateway.send(target.token(), noticeId, Map.of(
 			"type", PushNotificationKind.NEW_PROPOSAL.name(),
+			"title", Messages.get("push.proposal.title"),
+			"body", Messages.get("push.proposal.body"),
 			"noticeId", noticeId,
 			"proposalId", Long.toString(proposalId),
 			"recipientUserId", Long.toString(userId),
