@@ -128,7 +128,9 @@ class ChatMessagePushIntegrationTest extends IntegrationTestSupport {
 			.containsEntry("recipientUserId", Long.toString(secondId))
 			.containsEntry("chatRoomId", room.getPublicId().toString())
 			.containsEntry("messageId", sent.messageId().toString());
-		assertThat(payload.getValue()).doesNotContainKeys("body", "text", "partnerProfile", "token");
+		// 알림에는 보낸 사람 닉네임 · 메시지 미리보기를 싣되, 작업 기록(push_state)에는 본문을 남기지 않는다
+		assertThat(payload.getValue()).containsEntry("body", "private message body").containsKey("title")
+			.doesNotContainKeys("text", "partnerProfile", "token");
 		assertThat(state(sent)).doesNotContain("synthetic-recipient-token", "private message body");
 		assertThat(jdbc.queryForObject("select read_state from chat_participant where chat_id=? and user_id=?",
 			String.class, room.getId(), secondId)).isEqualTo("{}");

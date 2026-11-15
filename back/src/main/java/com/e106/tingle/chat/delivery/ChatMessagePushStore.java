@@ -79,10 +79,14 @@ public class ChatMessagePushStore {
 			return List.of();
 		}
 		Instant deadline = deadline(job, room);
+		// 알림 제목 · 본문(보낸 사람 닉네임 · 메시지 미리보기)은 보내는 순간에 읽는다. 차단 · 종료된 방은 위에서 이미 걸렀다.
+		// 기록(push_state)에는 남기지 않고 FCM 데이터에만 싣는다. 본문은 저장할 때 주소 가리기를 마친 값이다
+		Preview preview = preview(job.id());
 		return MessagePushState.candidates(job.state()).stream()
 			.filter(c -> !MessagePushState.results(job.state()).containsKey(c.bindingId().toString()))
 			.map(c -> new Target(c, (String)job.state().get("eventId"),
-				MessagePushState.payload(job.id(), room.getPublicId(), job.sequence(), job.state(), c, deadline),
+				MessagePushState.payload(job.id(), room.getPublicId(), job.sequence(), job.state(), c, deadline,
+					preview.title(), preview.body()),
 				deadline)).toList();
 	}
 
@@ -202,5 +206,20 @@ public class ChatMessagePushStore {
 	}
 
 	private record Job(long id, long roomId, long sequence, Map<String, Object> state) {
+	}
+
+	private Preview preview(long messageId) {
+		return jdbc.query("select profile.nickname, m.body from chat_message m "
+			+ "join chat_participant sender on sender.id=m.sender_participant_id "
+			+ "left join profile on profile.user_id=sender.user_id and profile.birth_date is not null where m.id=?",
+			rs -> rs.next() ? new Preview(blankToNull(rs.getString(1)), MessagePushState.preview(rs.getString(2)))
+				: new Preview(null, null), messageId);
+	}
+
+	private static String blankToNull(String value) {
+		return value == null || value.isBlank() ? null : value;
+	}
+
+	private record Preview(String title, String body) {
 	}
 }
