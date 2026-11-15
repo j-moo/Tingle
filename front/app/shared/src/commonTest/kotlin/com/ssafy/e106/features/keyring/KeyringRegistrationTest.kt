@@ -70,14 +70,12 @@ class KeyringRegistrationTest {
         val m = model(server, prefs); runCurrent()
         m.start("XIAO-test") { throw BleCommandException("DEVICE_ALREADY_BOUND") }; runCurrent()
         assertEquals(RegistrationIssue.DeviceBound, m.state.value.issue)
-        assertTrue(m.state.value.canRestart); assertNull(m.state.value.pending?.body)
+        assertNull(m.state.value.pending?.body)
         assertTrue(server.sent.isEmpty()); assertNull(m.state.value.confirmed)
-        m.restart(); runCurrent()
-        assertNull(m.state.value.pending); assertNull(m.state.value.issue)
         assertEquals(4L, sync.read(1).single().deviceId)
+        // 증명 전에 멈춘 요청은 "이 키링 등록하기"로 다시 시작한다(같은 보드면 같은 challenge 키)
         m.start("XIAO-test") { throw BleCommandException("OWNER_MISMATCH") }; runCurrent()
         assertEquals(RegistrationIssue.DeviceBound, m.state.value.issue)
-        m.restart(); runCurrent()
         m.start("XIAO-test") { throw BleCommandException("RESET_IN_PROGRESS") }; runCurrent()
         assertEquals(RegistrationIssue.ResetPending, m.state.value.issue)
         assertTrue(server.sent.isEmpty())
@@ -214,7 +212,7 @@ class KeyringRegistrationTest {
         val server = RegistrationServer(); val m = model(server); runCurrent()
         m.start("XIAO-test") { proofBody(it, "XIAO-other") }; runCurrent()
         assertEquals(RegistrationIssue.InvalidResponse, m.state.value.issue); assertTrue(server.sent.isEmpty())
-        m.restart(); runCurrent(); server.challenge = challengeValue.copy(expiresAt = "2026-11-04T11:59:59Z")
+        server.challenge = challengeValue.copy(expiresAt = "2026-11-04T11:59:59Z")
         m.start("XIAO-test") { error("Expired challenge") }; runCurrent()
         assertEquals(RegistrationIssue.ExpiredChallenge, m.state.value.issue); assertTrue(server.sent.isEmpty())
     }
@@ -239,25 +237,25 @@ class KeyringRegistrationTest {
     @Test fun serverFiveHundredKeepsRequestButExplicitProofRejectionClearsIt() = runTest(dispatcher) {
         val server = RegistrationServer(); val m = model(server); runCurrent()
         server.onSend = { ApiResult.Fail(AppError.Server(503, "SERVICE_UNAVAILABLE", "retry")) }
-        m.start("XIAO-test") { proofBody(it) }; runCurrent(); m.restart(); runCurrent()
-        assertNotNull(m.state.value.pending); assertFalse(m.state.value.canRestart)
+        m.start("XIAO-test") { proofBody(it) }; runCurrent()
+        // 5xx는 같은 요청으로 다시 시도할 수 있게 증명까지 보존한다. 새 등록으로 덮어쓰지 않는다
+        val kept = m.state.value.pending; assertNotNull(kept?.body)
+        m.start("XIAO-test") { error("No new proof") }; runCurrent(); assertEquals(kept, m.state.value.pending)
         server.onSend = { ApiResult.Fail(AppError.Server(422, "INVALID_DEVICE_PROOF", "proof")) }
         // 증명 거절은 다시 보내도 같다. "다시 시작"을 누르지 않아도 기록을 지워 다음 시도가 새 요청으로 시작된다
         m.retry { error("No new proof") }; runCurrent()
-        assertNull(m.state.value.pending); assertFalse(m.state.value.canRestart); assertNotNull(m.state.value.error)
+        assertNull(m.state.value.pending); assertNotNull(m.state.value.error)
     }
-    @Test fun boundDeviceRejectionAllowsExplicitRestartWithAnotherBoard() = runTest(dispatcher) {
+    @Test fun boundDeviceRejectionClearsRequestSoAnotherBoardCanRegister() = runTest(dispatcher) {
         val server = RegistrationServer(); val prefs = RegistrationPrefs(); val m = model(server, prefs); runCurrent()
         val existing = OwnedKeyring(2, "REGISTERED", "test")
         server.items = listOf(existing)
         server.onSend = { ApiResult.Fail(AppError.Server(409, "DEVICE_ALREADY_BOUND", "bound")) }
         m.start("XIAO-bound") { proofBody(it, "XIAO-bound") }; runCurrent()
         val rejected = server.sent.single()
-        // 명시적 귀속 거절은 성공 미확인과 다르다. 사용자가 재시작하기 전까지 기록은 보존한다.
-        assertTrue(m.state.value.canRestart); assertNotNull(m.state.value.pending)
+        // 명시적 귀속 거절은 다시 보내도 같다. 기록을 바로 지워 다른 보드로 새로 등록할 수 있게 한다
         assertEquals(RegistrationIssue.DeviceBound, m.state.value.issue)
         assertNull(m.state.value.confirmed)
-        m.restart(); runCurrent()
         assertNull(m.state.value.pending); assertEquals(PrefRead.Found(null), KeyringRegistrationStore(prefs).read(1))
         server.onSend = { server.items = server.items + server.receipt; ApiResult.Ok(server.receipt) }
         m.start("XIAO-new") { proofBody(it, "XIAO-new") }; runCurrent()
@@ -265,6 +263,18 @@ class KeyringRegistrationTest {
         assertEquals("XIAO-new", server.sent.last().second.deviceSerial)
         assertEquals(listOf(existing, server.receipt), server.items)
         assertEquals(server.receipt, m.state.value.confirmed)
+    }
+    @Test fun unprovedRequestResumesOnSameBoardAndRestartsOnAnotherBoard() = runTest(dispatcher) {
+        val server = RegistrationServer(); val m = model(server); runCurrent()
+        m.start("XIAO-first") { error("BLE disconnected") }; runCurrent()
+        val first = m.state.value.pending; assertNotNull(first); assertNull(first.body)
+        // 같은 보드: 같은 challenge 키로 이어서
+        m.start("XIAO-first") { error("BLE disconnected") }; runCurrent()
+        assertEquals(first, m.state.value.pending); assertEquals(1, server.challenges.distinct().size)
+        // 다른 보드: 앞 요청을 버리고 새 키로 등록
+        m.start("XIAO-second") { proofBody(it, "XIAO-second") }; runCurrent()
+        assertEquals(2, server.challenges.distinct().size); assertNotEquals(first.registerKey, server.sent.single().first)
+        assertEquals("XIAO-second", server.sent.single().second.deviceSerial); assertEquals(server.receipt, m.state.value.confirmed)
     }
     @Test fun protocolPreservesChallengeAndRejectsWrongRequestIdOrSignature() {
         val id = "22222222-2222-4222-8222-222222222222"

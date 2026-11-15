@@ -341,7 +341,8 @@ private fun step(availability: BleAvailability, state: BleProbeState, searched: 
                 color = AppColors.TextSecondary)
         }
     }
-    if (state.busy) Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(AppSpacing.Small)) {
+    // 등록 화면은 아래 등록 패널이 진행 상태를 보여 준다. 같은 자리에 기기 응답 문구를 겹쳐 띄우지 않는다
+    if (state.busy && !registrationMode) Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(AppSpacing.Small)) {
         Spinner()
         Text(stringResource(if (syncBusy) Res.string.sync_live_sending else Res.string.ble_connecting), style = MaterialTheme.typography.bodyMedium)
     }
