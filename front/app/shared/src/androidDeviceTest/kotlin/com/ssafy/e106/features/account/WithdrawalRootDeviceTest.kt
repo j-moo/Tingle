@@ -184,6 +184,7 @@ class WithdrawalSignupHostActivity : ComponentActivity() {
         testKoin = koinApplication { modules(module {
             single { controller }
             single { KeyringResetStore(ChatMemoryPrefs()) }
+            single { com.ssafy.e106.core.push.NotificationInbox(ChatMemoryPrefs()) }
             factory { OwnedKeyringsViewModel(owned, sessions) }
         }) }
         setContent {

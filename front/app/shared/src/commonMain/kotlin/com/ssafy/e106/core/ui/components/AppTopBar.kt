@@ -38,6 +38,8 @@ fun AppTopBar(
     backText: String = stringResource(Res.string.button_previous),
     actionText: String? = null,
     onAction: (() -> Unit)? = null,
+    /** 글자 동작 대신 오른쪽에 둘 아이콘 버튼 등 */
+    trailing: (@Composable () -> Unit)? = null,
 ) {
     Row(
         modifier = modifier.fillMaxWidth().heightIn(min = AppSizes.TopBarMinHeight).padding(horizontal = AppSpacing.Section),
@@ -51,6 +53,7 @@ fun AppTopBar(
             modifier = Modifier.weight(1f).semantics { heading() },
         )
         if (actionText != null && onAction != null) BarAction(actionText, onAction)
+        trailing?.invoke()
     }
 }
 
