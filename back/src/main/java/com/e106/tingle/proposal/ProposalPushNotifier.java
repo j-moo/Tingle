@@ -68,7 +68,8 @@ public class ProposalPushNotifier {
 			@Override
 			public void afterCommit() {
 				try {
-					worker.execute(() -> sendMatched(matchingId, recipientUserId, roomId, roomExpiresAt, partnerNickname));
+					worker.execute(() ->
+						sendMatched(matchingId, recipientUserId, roomId, roomExpiresAt, partnerNickname));
 				} catch (RejectedExecutionException exception) {
 					log.warn("event=match_push_skipped reason=shutdown");
 				}
@@ -82,9 +83,11 @@ public class ProposalPushNotifier {
 				return;
 			}
 			String noticeId = "match-" + matchingId;
-			String body = partnerNickname == null || partnerNickname.isBlank() ? Messages.get("push.matched.body.noName")
+			String body = partnerNickname == null || partnerNickname.isBlank()
+				? Messages.get("push.matched.body.noName")
 				: Messages.get("push.matched.body", partnerNickname);
-			for (PushDeliveryLookup.Candidate candidate : deliveries.candidates(userId, PushNotificationKind.CHAT_ROOM_CREATED)) {
+			var candidates = deliveries.candidates(userId, PushNotificationKind.CHAT_ROOM_CREATED);
+			for (PushDeliveryLookup.Candidate candidate : candidates) {
 				try {
 					PushDeliveryTarget target = deliveries.resolve(candidate).orElse(null);
 					if (target == null) {

@@ -65,7 +65,8 @@ class MemberAccessReadinessPersistenceTest {
 	@DisplayName("마지막 키링을 초기화한 가입 완료 회원은 기존 제안 응답은 되지만 새 제안은 받지 않는다(키링 필수일 때만)")
 	void keyringlessCompletedMemberGetsNoNewProposals() {
 		Evidence evidence = readyMember();
-		jdbc.update("update users set signup_completed_at=? where id=?", java.sql.Timestamp.from(NOW), evidence.userId());
+		jdbc.update("update users set signup_completed_at=? where id=?",
+			java.sql.Timestamp.from(NOW), evidence.userId());
 		assertThat(members.canReceiveNewProposal(evidence.userId())).isTrue();
 		jdbc.update("update keyring set owner_user_id=null,state='UNBOUND' where owner_user_id=?", evidence.userId());
 		assertThat(members.canRespondToProposal(evidence.userId())).isTrue();

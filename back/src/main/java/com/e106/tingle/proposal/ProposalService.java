@@ -214,7 +214,8 @@ public class ProposalService {
 		// 이 응답으로 매칭이 성사됐으면, 먼저 수락하고 기다리던 상대에게 알린다(나는 앱이 바로 채팅방을 연다). 커밋 뒤 한 번만
 		if (room != null && pushes != null) {
 			String nickname = profiles.findById(userId).map(PublicProfile::getNickname).orElse(null);
-			pushes.afterCommitMatched(proposal.getId(), pair.partnerOf(userId), room.getPublicId(), room.getExpiresAt(), nickname);
+			pushes.afterCommitMatched(proposal.getId(), pair.partnerOf(userId), room.getPublicId(),
+				room.getExpiresAt(), nickname);
 		}
 		return view(proposal, pair, userId);
 	}
