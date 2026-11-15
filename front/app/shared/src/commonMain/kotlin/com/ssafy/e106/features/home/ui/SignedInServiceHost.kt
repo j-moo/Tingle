@@ -57,8 +57,6 @@ internal enum class ServicePage { Home, Proposals, Menu, Chats, Safety, Report, 
     val pendingPush by pushes.pending.collectAsStateWithLifecycle()
     var help by rememberSaveable { mutableStateOf(HelpGuideKind.Terms) }
     val openNotificationSettings = rememberOpenNotificationSettings()
-    // 키링 정보를 홈/마이 어느 쪽에서 열었는지 보존해 같은 메뉴로 돌아간다.
-    var keyringFromMenu by rememberSaveable(session.userId) { mutableStateOf(false) }
     var resetDeviceId by rememberSaveable(session.userId) { mutableStateOf<Long?>(null) }
     // 초기화하려다 키링 연결 화면으로 왔으면, 연결되는 대로 초기화 화면으로 돌려보낸다
     var connectForReset by rememberSaveable(session.userId) { mutableStateOf(false) }
@@ -75,7 +73,6 @@ internal enum class ServicePage { Home, Proposals, Menu, Chats, Safety, Report, 
     WithdrawalKeyringNavigation(session.userId, withdrawal) {
         // 탈퇴 제한 안내의 버튼도 메뉴와 같은 키링 관리 화면으로 이동한다. 다른 계정의 늦은 이동은 소비하지 않는다.
         opened = true
-        keyringFromMenu = true
         go(ServicePage.Keyrings)
     }
     // 알림은 이 화면에서만 소비한다. 입력/저장 중 화면을 빼앗지 않고 홈·마이 복귀 후 이동한다.
@@ -174,7 +171,7 @@ internal enum class ServicePage { Home, Proposals, Menu, Chats, Safety, Report, 
                 ServicePage.Survey -> SurveyRoute(session, { go(ServicePage.Menu) })
                 ServicePage.Settings -> ConnectedSettingsRoute(session, { go(ServicePage.Menu) })
                 // 소유 정보 확인만 수행하므로 메뉴를 열었다고 등록/동기화를 요청하지 않는다.
-                ServicePage.Keyrings -> ConnectedOwnedKeyringsRoute(session, { go(if (keyringFromMenu) ServicePage.Menu else ServicePage.Home) },
+                ServicePage.Keyrings -> ConnectedOwnedKeyringsRoute(session, { go(ServicePage.Menu) },
                     onReset = { id -> resetDeviceId = id; connectForReset = false; go(ServicePage.KeyringReset) },
                     onConnectForRecords = { connectForReset = false; go(ServicePage.BleProbe) }, ble = keyringBleModel(),
                     onRegister = if (session.isReady) ({ go(ServicePage.KeyringRegistration) }) else null,
@@ -214,7 +211,7 @@ internal enum class ServicePage { Home, Proposals, Menu, Chats, Safety, Report, 
                     AccountMenuAction.Matching -> go(ServicePage.Settings)
                     // 한 번 거절된 알림은 앱이 다시 켤 수 없어 휴대폰 설정의 이 앱 알림 화면으로 바로 보낸다
                     AccountMenuAction.Permissions -> openNotificationSettings()
-                    AccountMenuAction.Keyring -> { keyringFromMenu = true; go(ServicePage.Keyrings) }
+                    AccountMenuAction.Keyring -> go(ServicePage.Keyrings)
                     AccountMenuAction.Logout -> logoutPrompt = true
                     // 확인 화면으로만 진입한다. 메뉴 터치가 준비/탈퇴 POST를 실행하지 않는다.
                     AccountMenuAction.Withdrawal -> withdrawal.open(session.userId)
@@ -239,7 +236,8 @@ internal enum class ServicePage { Home, Proposals, Menu, Chats, Safety, Report, 
 }
 
 /** 편집·전송·신고 확인 화면에서는 알림 이동을 보류한다. */
-internal fun canOpenServicePush(page: ServicePage) = page in setOf(ServicePage.Home, ServicePage.Menu, ServicePage.Preparing)
+// 알림 모음은 입력 중인 내용이 없는 읽기 화면이라 바로 이동해도 된다
+internal fun canOpenServicePush(page: ServicePage) = page in setOf(ServicePage.Home, ServicePage.Menu, ServicePage.Preparing, ServicePage.Notifications)
 
 /** 약관 동의 이후의 가입 중 계정도 등록된 실물 키링을 해제할 수 있어야 한다. 서버 소유 검증은 각 API가 담당한다. */
 internal fun canManageOwnedKeyring(session: Session.SignedIn, page: ServicePage): Boolean =

@@ -12,6 +12,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -34,13 +36,14 @@ import kotlin.time.Instant
 @Composable internal fun NotificationsRoute(session: Session.SignedIn, onBack: () -> Unit, onOpen: (PushTarget) -> Unit,
     inbox: NotificationInbox = koinInject()) {
     val items by inbox.items.collectAsState(emptyList())
-    var unreadAtOpen by remember(session.userId) { mutableStateOf<Set<String>?>(null) }
+    // 이 화면에서 처음 본 알림(열 때 안 읽음이었거나 보는 중에 새로 온 것). 읽음으로 바꾸기 전에 모아 둔다
+    var fresh by remember(session.userId) { mutableStateOf(emptySet<String>()) }
     LaunchedEffect(session.userId, items) {
-        if (unreadAtOpen == null && items.isNotEmpty()) unreadAtOpen = items.filterNot { it.read }.mapTo(HashSet()) { it.id }
-        if (items.any { !it.read }) inbox.markAllRead(session.userId)
+        val unread = items.filterNot { it.read }
+        if (unread.isNotEmpty()) { fresh = fresh + unread.map { it.id }; inbox.markAllRead(session.userId) }
     }
     ProfileBackHandler(true, onBack)
-    NotificationsScreen(items, unreadAtOpen.orEmpty(), onBack, onOpen)
+    NotificationsScreen(items, fresh, onBack, onOpen)
 }
 
 @Composable internal fun NotificationsScreen(items: List<InboxItem>, fresh: Set<String>, onBack: () -> Unit, onOpen: (PushTarget) -> Unit) {
@@ -65,7 +68,10 @@ import kotlin.time.Instant
 }
 
 @Composable private fun InboxRow(item: InboxItem, fresh: Boolean, onClick: () -> Unit) {
-    Row(Modifier.fillMaxWidth().clip(AppShapes.Card).clickable(role = Role.Button, onClick = onClick).padding(vertical = AppSpacing.Medium),
+    val freshLabel = stringResource(Res.string.notifications_new)
+    // 초록 점은 눈으로만 보이므로 화면 리더에는 "새 알림"을 함께 읽힌다
+    Row(Modifier.fillMaxWidth().clip(AppShapes.Card).clickable(role = Role.Button, onClick = onClick)
+        .semantics(mergeDescendants = true) { if (fresh) stateDescription = freshLabel }.padding(vertical = AppSpacing.Medium),
         horizontalArrangement = Arrangement.spacedBy(AppSpacing.Medium), verticalAlignment = Alignment.Top) {
         // 이번에 처음 본 알림은 초록 점
         Box(Modifier.padding(top = 6.dp).size(8.dp).clip(CircleShape).background(if (fresh) AppColors.SelectionBorder else AppColors.Background))

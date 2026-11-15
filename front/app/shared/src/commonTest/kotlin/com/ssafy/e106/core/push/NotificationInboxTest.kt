@@ -25,12 +25,14 @@ class NotificationInboxTest {
     @Test fun keepsNewestFirstUpToMaxAndMarksRead() = runTest {
         val prefs = InboxPrefs(); val inbox = NotificationInbox(prefs)
         repeat(NotificationInbox.MAX + 3) { inbox.add(1, item("m$it")) }
-        inbox.add(1, item("m5"))   // 같은 알림이 다시 오면 맨 위로 하나만
         val list = ids(prefs)
-        assertEquals("m5", list.first()); assertEquals(NotificationInbox.MAX, list.size); assertEquals(1, list.count { it == "m5" })
+        assertEquals("m52", list.first()); assertEquals(NotificationInbox.MAX, list.size)
         assertFalse("m0" in list)   // 가장 오래된 것은 밀려남
         inbox.markAllRead(1)
         assertFalse(prefs.values.values.single().toString().contains("read=false"))
+        // 같은 알림이 다시 와도 읽은 항목을 되살리거나 맨 위로 올리지 않는다
+        inbox.add(1, item("m10"))
+        assertEquals("m52", ids(prefs).first()); assertFalse(prefs.values.values.single().toString().contains("read=false"))
     }
 
     @Test fun unreadableStoreIsNotOverwritten() = runTest {

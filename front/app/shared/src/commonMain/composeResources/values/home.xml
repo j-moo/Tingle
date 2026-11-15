@@ -57,6 +57,7 @@
     <string name="notifications_open">알림</string>
     <string name="notifications_open_unread">알림, 새 알림 있음</string>
     <string name="notifications_title">알림</string>
+    <string name="notifications_new">새 알림</string>
     <string name="notifications_empty">아직 받은 알림이 없어요.</string>
     <string name="notifications_help">이 휴대폰에서 받은 최근 알림 50개까지 보여요.</string>
 </resources>
