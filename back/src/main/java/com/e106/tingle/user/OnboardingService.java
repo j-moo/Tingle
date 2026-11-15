@@ -107,9 +107,11 @@ public class OnboardingService {
 
 	/**
 	 * required 단계부터 쓸 수 있는 API를 지금 호출할 수 있는지.
-	 * 가입을 한 번 마친 회원은 마지막 키링 초기화·재검사 등으로 단계가 뒤로 가도 기존 기능(홈·기존 제안·채팅·탈퇴)을
-	 * 계속 쓴다. 새 매칭만 matchingReady=false 로 보류된다(기능 명세 AUTH-02).
-	 * AI 동의 철회는 가입 완료 회원의 제안·매칭 권한을 막지 않으며, 그 외 필수 약관 재동의는 먼저 받는다.
+	 * 가입을 한 번 마친 회원은 재검사 등으로 단계가 뒤로 가도 기존 기능(홈·기존 제안·채팅·탈퇴)을 계속 쓴다.
+	 * 단, 필수 약관 재동의와 키링 없음(마지막 키링 초기화)은 가입 때처럼 먼저 해결해야 한다. 키링 없음일 때는
+	 * 키링 단계까지의 API(키링 등록·초기화·조회, 약관, 탈퇴 등)만 통과한다. 키링 없이 가입을 허용하는 환경
+	 * (keyring-required=false)에서는 키링 단계가 나오지 않으므로 지금처럼 동작한다.
+	 * AI 동의 철회는 가입 완료 회원의 제안·매칭 권한을 막지 않는다.
 	 */
 	@Transactional(readOnly = true)
 	public boolean canAccess(long userId, OnboardingStatus required) {
@@ -117,7 +119,8 @@ public class OnboardingService {
 		if (status == required) {
 			return true;
 		}
-		return status != OnboardingStatus.AGREEMENT_REQUIRED && signupCompleted(userId);
+		return status != OnboardingStatus.AGREEMENT_REQUIRED && status != OnboardingStatus.KEYRING_REQUIRED
+			&& signupCompleted(userId);
 	}
 
 	@Transactional(readOnly = true)

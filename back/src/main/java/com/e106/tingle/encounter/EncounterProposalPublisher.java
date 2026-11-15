@@ -92,7 +92,7 @@ public class EncounterProposalPublisher {
 				+ "where user_id in (?,?) order by user_id for update", (rs, row) -> rs.getBoolean(1),
 				pair.low(), pair.high());
 			if (enabled.size() != 2 || enabled.stream().anyMatch(value -> !value)
-				|| !members.canRespondToProposal(pair.low()) || !members.canRespondToProposal(pair.high())
+				|| !members.canReceiveNewProposal(pair.low()) || !members.canReceiveNewProposal(pair.high())
 				|| members.restrictedPair(pair.low(), pair.high())
 				|| Boolean.TRUE.equals(jdbc.queryForObject("select exists (select 1 from chat where matching_id=?)",
 					Boolean.class, matchingId))) {

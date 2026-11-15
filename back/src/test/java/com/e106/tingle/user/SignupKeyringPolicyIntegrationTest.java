@@ -98,7 +98,10 @@ class SignupKeyringPolicyIntegrationTest extends IntegrationTestSupport {
 		assertDeviceOperationsDenied(tokens, foreignDevice);
 		setRequired(true);
 		assertCompletedAccessWithRequiredPolicy(tokens, completedAt);
-		assertDeviceOperationsDenied(tokens, foreignDevice);
+		// 키링 단계로 막힌 동안 설정 동기화(키링 다음 단계)도 막혀 남의 기기를 조작할 수 없다
+		perform(post("/api/keyrings/{deviceId}/sync-runs", foreignDevice)
+			.header("Idempotency-Key", UUID.randomUUID()), tokens, null)
+			.andExpect(status().isForbidden());
 	}
 
 	@Test
@@ -189,7 +192,8 @@ class SignupKeyringPolicyIntegrationTest extends IntegrationTestSupport {
 	private void assertCompletedAccessWithRequiredPolicy(JsonNode tokens, Instant completedAt) throws Exception {
 		onboarding(tokens, "REQUIRED", "KEYRING_REQUIRED", true)
 			.andExpect(jsonPath("$.matchingReady").value(false));
-		perform(get("/api/v1/test/protected"), tokens, null).andExpect(status().isOk());
+		// 키링이 필수가 되면 가입을 마친 회원도 키링을 등록할 때까지 서비스 API가 막힌다(가입 완료 기록은 그대로)
+		perform(get("/api/v1/test/protected"), tokens, null).andExpect(status().isForbidden());
 		assertThat(completedAt(userIdOf(tokens))).isEqualTo(completedAt);
 	}
 

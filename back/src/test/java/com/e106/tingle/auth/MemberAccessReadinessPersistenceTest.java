@@ -62,6 +62,26 @@ class MemberAccessReadinessPersistenceTest {
 	}
 
 	@Test
+	@DisplayName("마지막 키링을 초기화한 가입 완료 회원은 기존 제안 응답은 되지만 새 제안은 받지 않는다(키링 필수일 때만)")
+	void keyringlessCompletedMemberGetsNoNewProposals() {
+		Evidence evidence = readyMember();
+		jdbc.update("update users set signup_completed_at=? where id=?", java.sql.Timestamp.from(NOW), evidence.userId());
+		assertThat(members.canReceiveNewProposal(evidence.userId())).isTrue();
+		jdbc.update("update keyring set owner_user_id=null,state='UNBOUND' where owner_user_id=?", evidence.userId());
+		assertThat(members.canRespondToProposal(evidence.userId())).isTrue();
+		assertThat(members.canReceiveNewProposal(evidence.userId())).isFalse();
+		MockEnvironment optional = new MockEnvironment();
+		for (int index = 0; index < REQUIRED.size(); index++) {
+			String prefix = "app.agreement.items[" + index + "].";
+			optional.setProperty(prefix + "type", REQUIRED.get(index));
+			optional.setProperty(prefix + "version", VERSION);
+			optional.setProperty(prefix + "required", "true");
+		}
+		optional.setProperty("app.signup.keyring-required", "false");
+		assertThat(new MemberAccessRepository(jdbc, optional).canReceiveNewProposal(evidence.userId())).isTrue();
+	}
+
+	@Test
 	@DisplayName("다른 회원의 적용 포인터나 PENDING·FAILED·INSUFFICIENT 분석은 성공 증거가 아니다")
 	void rejectsForeignOrUnsuccessfulActivePersonality() {
 		Evidence owner = readyMember();
