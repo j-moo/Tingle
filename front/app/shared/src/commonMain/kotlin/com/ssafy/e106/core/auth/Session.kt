@@ -19,8 +19,13 @@ sealed interface Session {
         val status: OnboardingStatus,
         val signupCompleted: Boolean,
     ) : Session {
-        /** 서버 B/user/OnboardingService.canAccess 와 같은 규칙. 가입을 마쳤어도 약관 미동의면 막힌다. READY 판단은 이것만 쓴다 */
-        val isReady get() = status == OnboardingStatus.READY || (signupCompleted && status != OnboardingStatus.AGREEMENT_REQUIRED)
+        /**
+         * 서비스를 쓸 수 있는지. READY 판단은 이것만 쓴다. 가입을 마쳤어도 약관 미동의면 막히고,
+         * 키링을 모두 초기화해 키링이 없으면(KEYRING_REQUIRED) 가입 때처럼 키링 등록 화면으로 막는다.
+         * 서버 canAccess 는 가입 완료 회원을 키링 없이도 통과시키므로 이 차단은 앱 화면에서만 한다(back 체크리스트 4번)
+         */
+        val isReady get() = status == OnboardingStatus.READY ||
+            (signupCompleted && status != OnboardingStatus.AGREEMENT_REQUIRED && status != OnboardingStatus.KEYRING_REQUIRED)
     }
 }
 
