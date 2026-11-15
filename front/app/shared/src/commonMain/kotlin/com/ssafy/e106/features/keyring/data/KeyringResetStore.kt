@@ -42,6 +42,12 @@ class KeyringResetStore(private val prefs: AppPrefs) {
         check(old.run?.state != "COMPLETED" || ticket.run?.state == "COMPLETED")
         write(owner, list.filterNot { it.deviceId == ticket.deviceId } + ticket)
     }
+    /** 끝난(COMPLETED) 실행만 지운다. 진행 중 기록은 절대 지우지 않는다 */
+    suspend fun removeCompleted(owner: Long, deviceId: Long) = lock.withLock {
+        val list = read(owner); val done = list.single { it.deviceId == deviceId }
+        check(done.run?.state == "COMPLETED")
+        write(owner, list - done)
+    }
     private suspend fun write(owner: Long, tickets: List<ResetTicket>) {
         check(tickets.all(::valid))
         val journal = ResetJournal(tickets)
