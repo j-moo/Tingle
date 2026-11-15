@@ -6,12 +6,14 @@ import io.ktor.client.request.*
 import io.ktor.http.*
 import kotlinx.serialization.Serializable
 
-// 공개 계약의 필드만 받는다. 상대 읽음/회원 번호/마지막 메시지를 추정해 만들지 않는다.
+// 공개 계약의 필드만 받는다. 상대 읽음/회원 번호는 받지 않고, 마지막 메시지는 서버가 준 값만 쓴다(추정하지 않는다).
 @Serializable data class ChatRoomRecord(val chatRoomId: Long, val status: String, val createdAt: String,
     val expiresAt: String, val closedAt: String?, val deleteAt: String?, val serverTime: String,
     val canRead: Boolean, val canSend: Boolean, val hasNewMessage: Boolean,
     // 기존 서버와 방 상세 응답에는 닉네임이 없을 수 있다.
-    val partnerNickname: String? = null)
+    val partnerNickname: String? = null,
+    // 마지막 메시지. 순번이 없으면 옛 서버(모름), 0이면 아직 메시지 없음. 본문은 서버가 주소 가리기를 마친 값
+    val lastMessageSeq: Long? = null, val lastMessage: String? = null, val lastMessageAt: String? = null)
 @Serializable data class ChatRoomsPage(val items: List<ChatRoomRecord>, val nextCursor: String?, val serverTime: String)
 @Serializable data class ChatMessageRecord(val messageId: Long, val clientMessageId: String, val sender: String,
     val sequence: Long, val text: String, val createdAt: String)

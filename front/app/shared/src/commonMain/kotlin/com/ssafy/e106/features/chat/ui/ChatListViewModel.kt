@@ -65,9 +65,18 @@ class ChatListViewModel(private val api: ChatRepository, private val sessions: S
                             room.status == "ACTIVE" && room.canRead -> ChatRoomAccess.Allowed
                             else -> ChatRoomAccess.Unknown }
                         // 권한이 미확인인 행에는 서버 값이 있어도 상대 닉네임을 보관하지 않는다.
+                        val allowed = access == ChatRoomAccess.Allowed
+                        val kind = when {
+                            !allowed || room.lastMessageSeq == null -> LastMessageKind.Unknown
+                            room.lastMessageSeq == 0L -> LastMessageKind.None
+                            !room.lastMessage.isNullOrBlank() -> LastMessageKind.Text
+                            else -> LastMessageKind.Unknown
+                        }
                         ChatListItem(chatRoomId = room.chatRoomId,
-                            nickname = room.partnerNickname?.takeIf { access == ChatRoomAccess.Allowed && it.isNotBlank() },
-                            hasNewMessages = room.hasNewMessage, closesAtLabel = room.expiresAt, access = access)
+                            nickname = room.partnerNickname?.takeIf { allowed && it.isNotBlank() },
+                            hasNewMessages = room.hasNewMessage, closesAtLabel = room.expiresAt, access = access,
+                            lastMessageKind = kind, lastMessage = room.lastMessage.takeIf { kind == LastMessageKind.Text },
+                            lastMessageTimeLabel = room.lastMessageAt.takeIf { kind == LastMessageKind.Text })
                     }
                     cursor = result.value.nextCursor
                     // 다음 쪽만 받은 것이면 새로고침 실패 안내는 그대로 둔다(첫 쪽은 아직 옛 내용)
