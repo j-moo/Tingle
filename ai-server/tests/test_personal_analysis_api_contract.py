@@ -18,7 +18,7 @@ from app.personal_analysis.service import analyze_personal
 from app.personal_analysis_api import adapter as module
 from app.personal_analysis_api.adapter import (
     APPROVED_DATA_HASHES, APPROVED_VERSION_BINDING, APPROVED_VERSION_BINDINGS,
-    PersonalAnalysisAdapter, PresentationPolicy, PresentationUnavailable,
+    FormatterEvidenceMismatch, PersonalAnalysisAdapter, PresentationPolicy, PresentationUnavailable,
     VersionBinding, VersionUnsupported, format_expression_reading, reference_evidence, to_core_input,
     verify_reference_binding,
 )
@@ -117,7 +117,7 @@ def test_data_binding_drift_fails_503_before_core(proposal_client, monkeypatch, 
 
 
 @pytest.mark.parametrize("case", BRANCH_CASES, ids=lambda c: c["templateId"])
-def test_fifteen_branches_keep_text_priority_and_evidence(proposal_adapter, case):
+def test_fifteen_branches_keep_core_and_apply_v2_text_only(proposal_adapter, case):
     request = request_for_patch({int(k): v for k, v in case["patch"].items()})
     before = request.model_dump()
     raw = raw_result(request)
@@ -126,8 +126,19 @@ def test_fifteen_branches_keep_text_priority_and_evidence(proposal_adapter, case
     assert len(raw.readings) == len(converted.readings) == 1
     row = converted.readings[0]
     assert raw.readings[0]["title"] == case["title"]
+    assert raw.readings[0]["text"] == case["text"]  # The calculation snapshot is unchanged.
+    v2_text = {
+        "PA-R-EXPRESSION-01": "호감이 생기면 먼저 마음을 표현하는 편이라고 답했어요. 연인에게 좋아한다는 말은 가끔 한다고 답했어요.",
+        "PA-R-CONFLICT-01": "서운한 일이 생겼을 때 대화를 시작하는 시점에 대한 답변은 ‘비교적 빨리 이야기해요’입니다. 대화 중 감정이 격해졌을 때 필요한 방식에 대한 답변은 ‘잠시 쉬는 쪽이 편해요’입니다.",
+        "PA-R-CONFLICT-03": "서운한 일이 생겼을 때 대화를 시작하는 시점에 대한 답변은 ‘상황에 따라 달라요’입니다. 대화 중 감정이 격해졌을 때 필요한 방식에 대한 답변은 ‘상황에 따라 달라요’입니다.",
+        "PA-R-EXPERIENCE-02": "데이트 시간과 장소를 미리 정하는 방식에 대한 답변은 ‘대부분 미리 정해요’입니다. 익숙한 곳과 새로운 곳을 고르는 경향에 대한 답변은 ‘그때그때 비슷해요’입니다.",
+        "PA-R-EXPERIENCE-03": "데이트 시간과 장소를 미리 정하는 방식에 대한 답변은 ‘큰 방향만 정하고 당일에 골라요’입니다. 익숙한 곳과 새로운 곳을 고르는 경향에 대한 답변은 ‘그때그때 비슷해요’입니다.",
+        "PA-R-EXPERIENCE-04": "데이트 시간과 장소를 미리 정하는 방식에 대한 답변은 ‘상황에 따라 달라요’입니다. 익숙한 곳과 새로운 곳을 고르는 경향에 대한 답변은 ‘그때그때 비슷해요’입니다.",
+        "PA-R-TIME-02": "특별한 일이 없는 날 원하는 연락 빈도에 대한 답변은 ‘하루 몇 번’입니다. 서로 시간이 될 때 원하는 만남 빈도에 대한 답변은 ‘주 2회’입니다.",
+        "PA-R-SUPPORT-01": "가까운 사람이 힘들다고 할 때 먼저 하는 일에 대한 답변은 ‘끝까지 듣기’입니다. 연인과 다툰 뒤 먼저 하는 화해 행동에 대한 답변은 ‘이유 설명’입니다.",
+    }
     assert row.model_dump() == dict(
-        key=case["key"], templateId=case["templateId"], text=case["text"],
+        key=case["key"], templateId=case["templateId"], text=v2_text.get(case["templateId"], case["text"]),
         priority=case["priority"], evidenceQuestionIds=case["evidenceQuestionIds"],
     )
     assert request.model_dump() == before
@@ -139,7 +150,10 @@ def test_fifteen_branches_keep_text_priority_and_evidence(proposal_adapter, case
 ])
 def test_expression_reading_reflects_q032_without_changing_other_fields(proposal_client, q030, approach_text):
     legacy_adapter = PersonalAnalysisAdapter(presentation=replace(
-        proposed_label_only_policy(), reading_text_formatters={},
+        proposed_label_only_policy(), reading_text_formatters={
+            key: value for key, value in proposed_label_only_policy().reading_text_formatters.items()
+            if key != EXPRESSION_TEMPLATE_ID
+        },
     ))
     baselines = []
     for q032, frequency_text in [
@@ -187,13 +201,14 @@ def test_expression_reading_requires_both_measured_answers(proposal_client, qid)
 
 
 @pytest.mark.parametrize("answers", [{30: 4}, {30: 4, 32: 0}, {30: 6, 32: 2}, {30: 4, 32: True}])
-def test_expression_formatter_falls_back_for_unverified_codes(answers):
+def test_expression_formatter_rejects_unverified_codes(answers):
     row = core.readings({30: 4, 32: 2})[0]
-    assert format_expression_reading(row, answers) == row["text"]
+    with pytest.raises(FormatterEvidenceMismatch):
+        format_expression_reading(row, answers)
 
 
 @pytest.mark.parametrize("evidence_issue", ["missing-question", "missing-answer", "mismatched-answer"])
-def test_expression_reading_falls_back_when_evidence_is_unusable(proposal_adapter, evidence_issue):
+def test_expression_reading_rejects_unusable_evidence(proposal_adapter, evidence_issue):
     request = PersonalAnalysisRequest.model_validate(synthetic_request("succeeded"))
     raw = raw_result(request)
     row = next(row for row in raw.readings if row["key"] == "expression")
@@ -203,10 +218,8 @@ def test_expression_reading_falls_back_when_evidence_is_unusable(proposal_adapte
         del row["evidence"][1]["answer"]
     else:
         row["evidence"][1]["answer"] = core.answer_label(32, 1)
-    actual = module.to_be_response(raw, APPROVED_VERSION_BINDING, proposal_adapter.presentation, context(request))
-    reading = next(reading for reading in actual.readings if reading.templateId == EXPRESSION_TEMPLATE_ID)
-    assert reading.text == row["text"]
-    assert reading.evidenceQuestionIds == [f"Q{item['id']:03}" for item in row["evidence"]]
+    with pytest.raises(FormatterEvidenceMismatch):
+        module.to_be_response(raw, APPROVED_VERSION_BINDING, proposal_adapter.presentation, context(request))
 
 
 @pytest.mark.parametrize("q,actual,wish,tolerance", product(
@@ -219,10 +232,16 @@ def test_gap_boundaries_keep_core_fit_order_but_omit_fit_text(proposal_adapter, 
     assert len(converted.selfPreferenceDifferences) == len(raw.selfPreferenceDifferences)
     for index, (item, original) in enumerate(zip(converted.selfPreferenceDifferences, raw.selfPreferenceDifferences, strict=True)):
         assert 0 <= original["fit"] < 1
-        assert item.text == (
-            f"{original['label']}: 나의 응답은 ‘{original['self']}’이고, "
-            f"상대에게 바라는 응답은 ‘{original['wish']}’입니다."
-        )
+        if q == 89:
+            assert item.text == (
+                f"{original['label']}: 나의 음주 빈도에 대한 답변은 ‘{original['self']}’입니다. "
+                f"상대의 음주 빈도에 대해 받아들일 수 있는 상한으로 선택한 답변은 ‘{original['wish']}’입니다."
+            )
+        else:
+            assert item.text == (
+                f"{original['label']}: 나의 응답은 ‘{original['self']}’이고, "
+                f"상대에게 바라는 응답은 ‘{original['wish']}’입니다."
+            )
         assert "적합도" not in item.text and "fit" not in item.text
         assert item.priority == 2 - index
         expected = [f"Q{q-35:03}", f"Q{q:03}"] + (["Q098"] if tolerance != "unknown" else [])
@@ -320,7 +339,7 @@ def test_all_js_synthetic_cases_keep_core_fields_and_order(js_reference, proposa
             assert reading.templateId == CANDIDATE_READING_TEMPLATE_IDS[(row["key"], row["title"])]
             assert reading.priority == row["priority"]
             assert reading.evidenceQuestionIds == [f"Q{item['id']:03}" for item in row["evidence"]]
-            if converted.status == "SUCCEEDED" and reading.templateId == EXPRESSION_TEMPLATE_ID:
+            if reading.templateId in proposal_adapter.presentation.reading_text_formatters:
                 assert reading.text != row["text"]
             else:
                 assert reading.text == row["text"]

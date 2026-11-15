@@ -2,6 +2,40 @@
 
 # S15P31E106-146 BE 확정 계약과 검토 샘플
 
+## 미승인 문구 v2 후속 수정안 — 2026-11-15
+
+MR !357은 2026-11-15 14:29:44(Asia/Seoul)에 `a8d5fc31`로 develop에 머지됐다.
+초기 검토는 해당 머지 커밋에서 분리했고, 현재 MR 준비 기준은 !358을 포함한 develop
+`19eddf45f310745080160e68f01ee432a7e9122a`다. 기존 MR의 코드 승인을 문구
+승인으로 해석하지 않는다. `mr357-wording-review-20261115-v2`는 **UNAPPROVED 검토 버전**이다.
+운영 정책 연결과 게이트·계산·DTO·성공 상태 계약은 변경하지 않는다.
+
+선택된 표시 formatter는 SUCCEEDED와 INSUFFICIENT 모두에서 검증된 답변을 재진술한다.
+reading formatter의 근거/답변이 맞지 않으면 `FormatterEvidenceMismatch`로 구분하여
+기존 `500 INTERNAL_ERROR`로 거부한다. 추론 원문 fallback을 반환하지 않는다.
+참조 파일·정책 매핑·차이/추천 근거 등 기존 `PresentationUnavailable`은 503을 유지한다.
+이는 성공 문장 text와 별개의 오류 처리 변경이며, 새 외부 오류 코드나 DTO를 추가하지 않는다.
+오류 로그에는 검증된 requestId·서버가 선택한 templateId·고정 errorType만 기록한다.
+503처럼 templateId가 결정되지 않은 경우 `UNRESOLVED`를 사용한다. 원문·회원정보·JWT·
+요청 본문·예외 메시지/traceback은 로그에 담지 않는다.
+BE는 `AI_HTTP_500`과 `AI_HTTP_503`을 모두 재시도한다. 따라서 분류 변경으로 재시도가
+없어지지는 않는다. 저장소 기본은 최초 포함 최대 3회, 간격 1분이며 운영 설정·DB는 미확인이다.
+CONFLICT·SUPPORT의 일반 조언은 사실 재진술 후보와 분리한 보류 대안으로 기록한다.
+조사 오류, 음주 선호의 설문상 상한 의미와 irregular 제외 안내도 문구에만 반영한다.
+
+기존 [presentation-review.json](presentation-review.json)은 v1 스냅샷으로 보존한다.
+새 완성 문장·경계 사례·v1/v2 비교·기준 커밋·미커밋 diff는
+`scripts/export_personal_wording_review.py --output-dir <저장소 밖 경로>`로 생성한다.
+상세 범위와 검증 결과는 [WORDING_REVIEW_V2.md](WORDING_REVIEW_V2.md)를 따른다.
+여기에 정확한 HTTP 경로·본문, BE 처리 근거, 최초 Luna 실패 traceback과 재실행 결과,
+고유 문장 수와 비교·경계 사례 수의 차이도 기록한다. 최초 실패 원인은 미확정이다.
+사용자 최종 승인란은 생성 도구가 채우지 않는다.
+
+local/test/dev는 해당 코드가 실제 실행되는 앱을 `create_app()`으로 구성할 때 후보 정책을
+연결한다. 배포/재시작 후 새로 요청하는 SUCCEEDED와 INSUFFICIENT 분석에 v2 문구가 적용된다.
+develop 머지 자체로 이미 실행 중인 서버나 BE의 저장 결과가 바뀌지는 않는다. AI는 DB를
+갱신하거나 과거 분석을 재처리하지 않는다. 명시적 재분석·저장 정책은 BE의 별도 책임이다.
+
 ## MR !357 미승인 운영 표시 정책 차단 — 2026-11-15
 
 이 절이 아래 과거 운영 연결 설명보다 우선한다. 최신 `develop@2692eff0`과
@@ -186,7 +220,7 @@ AI 응답은 아래 **11개 필드**다. BE 공개 envelope의 resultId/sessionI
 | --- | --- | --- |
 | key | nonempty string | 기존 reading key / 차이는 실제 자기·선호 ID 쌍의 제안 key |
 | templateId | nonempty string | 분기 고정 ID 후보. title 해시로 만들지 않음 |
-| text | nonempty string | readings는 기본적으로 기존 텍스트를 사용한다. 표시 정책에서 활성화된 `PA-R-EXPRESSION-01`의 정상(`SUCCEEDED`) 결과는 검증된 Q030/Q032 답변으로 `Reading.text`를 구성한다. 근거를 확인할 수 없으면 기존 텍스트를 사용한다. 차이는 label/self/wish만 넣는 미승인 제안 |
+| text | nonempty string | v2 미승인 제안은 등록한 formatter를 정상/정보 부족 양쪽에 적용한다. 검증 실패는 기존 503이며 추론 원문 fallback은 없다. 음주 차이는 선택한 설문상 상한을 명시하고 irregular가 포함된 차이는 계산에서 제외한 보기를 알린다. 점수·ID·priority·근거·선정 순서는 보존한다. |
 | evidenceQuestionIds | array<string> | 실제 카탈로그 ID, 의미 있는 원래 순서 유지 |
 | priority | strict integer | readings 원래 값 / 차이 첫 행 2·둘째 행 1은 미승인 표시 순위 |
 

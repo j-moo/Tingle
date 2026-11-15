@@ -100,8 +100,7 @@ def test_prod_opt_in_executes_real_adapter_and_preserves_response(host, headers,
     expected = json.loads((FIXTURES / f"{kind}.response.proposal.json").read_bytes())
     for row in expected["readings"]:
         row["templateId"] = "TEST-ONLY-" + row["key"]
-        if status == "SUCCEEDED":
-            row["text"] = "Synthetic policy boundary test."
+        row["text"] = "Synthetic policy boundary test."
     for row in expected["selfPreferenceDifferences"]:
         row.update(templateId="TEST-ONLY-DIFFERENCE", text="Synthetic policy boundary test.")
     with host() as client:

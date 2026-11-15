@@ -33,6 +33,11 @@ from app.personal_analysis import core
 from app.personal_analysis_api.adapter import PersonalAnalysisAdapter
 from app.personal_analysis_api.review_samples import synthetic_request
 with TestClient(app) as client:
+    diagnostic_request_ids = []
+    def observe_personal_unavailable(response):
+        if response.request.url.path == '/internal/ai/personal-analyses' and response.status_code == 503:
+            diagnostic_request_ids.append(response.headers['X-Request-Id'])
+    client.event_hooks['response'].append(observe_personal_unavailable)
     paths = client.get('/openapi.json').json()['paths']
     health = client.get('/health')
     denied = client.post('/internal/ai/risk-detections', json={})
@@ -113,6 +118,7 @@ with TestClient(app) as client:
         after_personal = client.post('/internal/ai/personal-analyses', json={})
         result['afterPersonalStatus'] = after_personal.status_code
         result['afterPersonal'] = after_personal.json()
+    result['personalDiagnosticRequestIds'] = diagnostic_request_ids
     print(json.dumps(result))
 """
 
@@ -159,8 +165,17 @@ def probe(tmp_path, private, keys, *, environment="test", reload=False):
         [sys.executable, "-c", PROBE], cwd=tmp_path, env=env,
         capture_output=True, text=True, encoding="utf-8", timeout=30, check=False,
     )
-    assert completed.stderr == ""
-    return completed.returncode, json.loads(completed.stdout)
+    result = json.loads(completed.stdout)
+    request_ids = result.get("personalDiagnosticRequestIds", [])
+    assert len(request_ids) == len(set(request_ids))
+    assert all(str(UUID(value)) == value for value in request_ids)
+    assert completed.stderr.splitlines() == [
+        f"personal_analysis_error requestId={value} templateId=UNRESOLVED errorType=AUTH_VERIFIER_UNAVAILABLE"
+        for value in request_ids
+    ]
+    for secret in (env["STARTUP_TEST_TOKEN"], env["STARTUP_TEST_FORBIDDEN_TOKEN"], "synthetic-sensitive-sentinel"):
+        assert secret not in completed.stdout + completed.stderr
+    return completed.returncode, result
 
 
 def assert_live(result, *, personal_enabled=True):
