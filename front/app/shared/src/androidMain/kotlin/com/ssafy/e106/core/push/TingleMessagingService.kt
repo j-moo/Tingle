@@ -113,8 +113,6 @@ class TingleMessagingService : FirebaseMessagingService() {
 /** 알림 탭만 받는 화면(exported=false — 다른 앱이 띄우거나 extras 를 위조할 수 없다). 대상을 [DefaultPushEvents] 에 담고 앱을 앞으로 가져온 뒤 닫힌다 */
 class PushTapActivity : Activity() {
     private val events: DefaultPushEvents by inject()
-    private val inbox: NotificationInbox by inject()
-    private val sessions: com.ssafy.e106.core.auth.SessionStore by inject()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)

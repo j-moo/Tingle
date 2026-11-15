@@ -26,7 +26,8 @@ import kotlinx.serialization.Serializable
  * ponytail: 이 폰에서 받은 것만 — 다른 기기 · 앱 삭제 전 알림은 없다. 서버에 알림 목록이 생기면 그걸로 바꾼다
  */
 class NotificationInbox(private val prefs: AppPrefs) {
-    private val key = PrefKey("push.inbox.v1", Inbox.serializer(), durable = true)
+    // 메시지 미리보기가 들어가므로 오래 남는 durable 파일이 아니라 캐시에 둔다(로그아웃 · 계정 전환 때는 둘 다 지워진다)
+    private val key = PrefKey("push.inbox.v1", Inbox.serializer())
     private val lock = Mutex()
 
     /** 지금 로그인한 계정의 알림(최신순). 로그아웃이면 빈 목록 */
@@ -34,7 +35,9 @@ class NotificationInbox(private val prefs: AppPrefs) {
 
     suspend fun add(user: Long, item: InboxItem) = lock.withLock {
         val list = read(user) ?: return@withLock
-        prefs.set(key, Inbox((listOf(item) + list.filterNot { it.id == item.id }).take(MAX)), user)
+        // FCM이 같은 메시지를 다시 보내도 이미 있는(읽었을 수 있는) 항목을 되살리지 않는다
+        if (list.any { it.id == item.id }) return@withLock
+        prefs.set(key, Inbox((listOf(item) + list).take(MAX)), user)
     }
 
     suspend fun markAllRead(user: Long) = lock.withLock {
