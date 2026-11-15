@@ -183,6 +183,13 @@ class KeyringResetRecoveryTest {
         f.server.run = resetRun; f.start()
         assertEquals(1, f.server.starts.size)
     }
+    @Test fun completedResetIsShownWhenOwnedListFails() = runTest {
+        val f = ResetFixture(); f.seed(run = resetDone()); f.server.run = resetDone()
+        f.server.registeredAgain = true; f.server.ownershipFailure = AppError.Offline
+        // 목록을 못 읽으면 지우지 않고 완료를 그대로 보인다(오류 · 부분 완료로 바꾸지 않음)
+        assertEquals("COMPLETED", f.model().inspect(1, resetRun.deviceId)?.run?.state)
+        assertEquals(1, f.store.read(1).size)
+    }
     @Test fun completedResetStaysWhileKeyringIsNotRegistered() = runTest {
         val f = ResetFixture(); f.seed(run = resetDone()); f.server.run = resetDone()
         assertEquals("COMPLETED", f.model().inspect(1, resetRun.deviceId)?.run?.state)
