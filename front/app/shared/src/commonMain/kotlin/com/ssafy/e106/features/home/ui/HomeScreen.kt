@@ -276,7 +276,7 @@ private fun keyringTodo(state: HomeKeyringState): StringResource? = when (state)
     // 48dp 칸을 직접 잡아야 점이 종의 오른쪽 위 모서리에 붙는다(최소 터치 크기 수정자는 내용 크기를 24dp로 둔다)
     Box(Modifier.size(48.dp).clip(CircleShape).clickable(role = Role.Button, onClick = onClick)
         .semantics { contentDescription = label }, contentAlignment = Alignment.Center) {
-        Icon(painterResource(Res.drawable.ic_permission_notifications), null, Modifier.size(24.dp), tint = AppColors.TextPrimary)
+        Icon(painterResource(Res.drawable.ic_notifications), null, Modifier.size(24.dp), tint = AppColors.TextPrimary)
         if (unread) Box(Modifier.align(Alignment.TopEnd).padding(top = 11.dp, end = 11.dp).size(8.dp).clip(CircleShape)
             .background(AppColors.SelectionBorder))
     }
