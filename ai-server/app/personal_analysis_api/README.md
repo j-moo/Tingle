@@ -2,6 +2,35 @@
 
 # S15P31E106-146 BE 확정 계약과 검토 샘플
 
+## MR !357 미승인 운영 표시 정책 차단 — 2026-11-15
+
+이 절이 아래 과거 운영 연결 설명보다 우선한다. 최신 `develop@2692eff0`과
+MR 원본 `dc5289e0`에는 승인된 운영 `PresentationPolicy`나 등록 체계가 없다.
+버전 조합·참조 데이터 승인은 표시 문구 승인을 뜻하지 않는다.
+
+| 환경·설정 | 현재 동작 |
+| --- | --- |
+| prod, `PERSONAL_ANALYSIS_PROD_ENABLED=false` (기본) | 개인분석 import/runtime/라우터 없음, POST 404, 기존 health·다른 라우터 유지 |
+| prod, `PERSONAL_ANALYSIS_PROD_ENABLED=true`, 승인 정책 없음 | 앱 생성 단계에서 `RuntimeError`로 기동 거부. 제안 정책·계산 데이터·개인분석 라우터를 로드하지 않음 |
+| prod ON, 승인 정책 연결 후 | 기존 실제 adapter·서비스 JWT·버전·참조 해시 경로 사용. 현재 저장소에는 해당 승인 정책이 없으며 테스트에서만 합성 정책으로 연결 경계를 검증 |
+| local/test/dev | 기존 `proposed_label_only_policy()` 사용, prod 플래그와 관계없이 기존 결과 유지 |
+
+[production.py](production.py)는 현재 `None`을 반환하는 연결점이다. 환경변수·요청·
+임의 SHA 또는 승인 boolean으로 정책을 승인하는 통로는 없다. 정책 담당자의 실제
+승인 출처와 표시 버전을 확정한 뒤, 별도 리뷰 변경으로 승인본을 연결해야 한다.
+서비스 RS256 JWT, 정확한 `ai:execute`, prod issuer/audience, 버전 및 참조 해시
+검증은 그대로다. 개인분석에 GMS를 추가하지 않았다.
+
+[presentation-review.json](presentation-review.json)은 **UNAPPROVED 검토 자료**다.
+15개 reading ID·원문 템플릿·priority·근거, 정상 expression-01의 실제 4개 문구,
+INSUFFICIENT의 원문 fallback, 차이 ID/key·priority 2/1·문구와 31개 비교쌍,
+동적 표현이 사용하는 62개 문항의 실제 보기·스키마를 기록한다. 운영 코드는 이 파일을
+읽지 않는다. title은 내부 매핑에만 쓰이며 공개 DTO에 추가하지 않는다.
+검증 명령·결과·미확인은 [운영 정책 검증 기록](PRODUCTION_POLICY_VERIFICATION.md)을 따른다.
+
+**문구 승인과 승인본 연결 전에는 운영 활성화가 차단된다.** 이 수정만으로 실제 가입
+진행 문제가 해결되었다고 볼 수 없다. 서버 설정 변경·재기동·배포는 수행하지 않는다.
+
 ## MR !161 리뷰 보완 — 2026-11-03
 
 이 절은 아래 과거 작업 이력보다 우선한다. `main.py`는 `local/test/dev`에서만
