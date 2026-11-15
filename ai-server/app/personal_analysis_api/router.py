@@ -3,6 +3,7 @@
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from inspect import isawaitable
+import logging
 
 from fastapi import APIRouter, Request, Response
 from fastapi.exceptions import RequestValidationError
@@ -16,7 +17,9 @@ from app.middleware.request_id import request_id_from_headers
 from app.personal_analysis.service import CalculationFailure
 from app.personal_analysis.validation import AnalysisInputError
 
-from .adapter import PersonalAnalysisAdapter, PresentationUnavailable, VersionUnsupported
+from .adapter import (
+    FormatterEvidenceMismatch, PersonalAnalysisAdapter, PresentationUnavailable, VersionUnsupported,
+)
 from .dto import ErrorResponse, PersonalAnalysisRequest, PersonalAnalysisResponse
 
 MESSAGES = {
@@ -27,6 +30,16 @@ MESSAGES = {
     "SERVICE_UNAVAILABLE": "개인 분석 서비스의 계약 또는 인증 설정을 확인해야 합니다.",
     "INTERNAL_ERROR": "개인 분석 처리 중 오류가 발생했습니다.",
 }
+logger = logging.getLogger(__name__)
+
+
+def log_failure(request: Request, error_type: str, template_id: str = "UNRESOLVED") -> None:
+    """Only correlation, server-selected template ID and fixed internal type."""
+    fields = dict(requestId=request.state.request_id, templateId=template_id, errorType=error_type)
+    logger.error(
+        "personal_analysis_error requestId=%s templateId=%s errorType=%s",
+        fields["requestId"], fields["templateId"], fields["errorType"], extra=fields,
+    )
 
 # Defensive transport ceiling candidate, not a new DTO/version contract.
 # Largest canonical 100-answer JSON: 4,650 B; pretty JSON: 7,970 B.
@@ -111,6 +124,7 @@ class PersonalAnalysisRoute(APIRoute):
             # Authenticate before FastAPI parses/validates the sensitive body.
             runtime = get_runtime(request)
             if runtime.authorize is None:
+                log_failure(request, "AUTH_NOT_CONFIGURED")
                 return error_response(503, "SERVICE_UNAVAILABLE")
             try:
                 authorized = runtime.authorize(request)
@@ -119,10 +133,13 @@ class PersonalAnalysisRoute(APIRoute):
                 if authorized is not True:
                     return error_response(401, "AUTH_REQUIRED")
             except ServiceAuthError as error:
+                if error.status_code == 503:
+                    log_failure(request, "AUTH_VERIFIER_UNAVAILABLE")
                 return error.response()
             except InternalAPIError as error:
                 return error_response(error.status_code, error.code)
             except Exception:
+                log_failure(request, "AUTH_VERIFIER_UNAVAILABLE")
                 return error_response(503, "SERVICE_UNAVAILABLE")
             try:
                 response = await original_handler(limited_body_request(request))
@@ -134,6 +151,7 @@ class PersonalAnalysisRoute(APIRoute):
                 if error.status_code == 400:
                     return error_response(400, "INVALID_REQUEST")
                 if error.status_code == 503:
+                    log_failure(request, "HTTP_SERVICE_UNAVAILABLE")
                     return error_response(503, "SERVICE_UNAVAILABLE")
                 # Unexpected framework/dependency errors are not client JSON errors.
                 return error_response(500, "INTERNAL_ERROR")
@@ -143,7 +161,11 @@ class PersonalAnalysisRoute(APIRoute):
                 if error.code in ("UNSUPPORTED_SURVEY_VERSION", "UNSUPPORTED_CALCULATION_VERSION"):
                     return error_response(409, "ANALYSIS_VERSION_UNSUPPORTED")
                 return error_response(422, "INVALID_REQUEST")
+            except FormatterEvidenceMismatch as error:
+                log_failure(request, "FORMATTER_EVIDENCE_MISMATCH", error.template_id or "UNRESOLVED")
+                return error_response(500, "INTERNAL_ERROR")
             except PresentationUnavailable:
+                log_failure(request, "PRESENTATION_UNAVAILABLE")
                 return error_response(503, "SERVICE_UNAVAILABLE")
             except CalculationFailure:
                 return error_response(500, "INTERNAL_ERROR")
