@@ -42,7 +42,7 @@ def http(base, path, *, payload=None, token=None):
 
 
 def check(image, environment, damage=None, *, personal_prod_enabled=False):
-    enabled = environment == "dev" or (environment == "prod" and personal_prod_enabled)
+    enabled = environment == "dev"
     private = rsa.generate_private_key(public_exponent=65537, key_size=2048)
     name = "personal-review-161-" + uuid4().hex[:12]
     with tempfile.TemporaryDirectory(prefix="personal-review-161-") as temporary:
@@ -60,10 +60,23 @@ def check(image, environment, damage=None, *, personal_prod_enabled=False):
                 reference.write_text("{}", encoding="utf-8")
             mounts += ["--mount", f"type=bind,source={root / 'app'},target=/app/app,readonly"]
         try:
-            docker("run", "--rm", "-d", "--name", name, "-p", "127.0.0.1::8000", *mounts,
+            docker("run", "-d", "--name", name, "-p", "127.0.0.1::8000", *mounts,
                    "-e", "APP_ENV=" + environment,
                    "-e", "PERSONAL_ANALYSIS_PROD_ENABLED=" + str(personal_prod_enabled).lower(), "-e",
                    'AI_SERVICE_PUBLIC_KEYS={"synthetic-smoke-key":"/review/public.pem"}', image)
+            if environment == "prod" and personal_prod_enabled:
+                # This repository has no approved production presentation policy.
+                # Check the real image/CMD refuses startup, rather than serving a proposal.
+                assert docker("wait", name) != "0"
+                # Python tracebacks are written to stderr, so inspect both streams.
+                completed = subprocess.run(["docker", "logs", name], check=True, capture_output=True,
+                                           encoding="utf-8", timeout=30)
+                logs = completed.stdout + completed.stderr
+                assert "production presentation policy is not approved" in logs
+                assert "proposals.py" not in logs
+                print(json.dumps({"environment": environment, "personalProdEnabled": True,
+                                  "activation": "REFUSED_UNAPPROVED_PRESENTATION"}), flush=True)
+                return
             port = docker("port", name, "8000/tcp").rsplit(":", 1)[1]
             base = "http://127.0.0.1:" + port
             for attempt in range(40):

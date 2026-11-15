@@ -28,6 +28,18 @@ with TestClient(app) as client:
     }))
 """
 
+REJECTION_PROBE = """
+import json
+import sys
+try:
+    from app.main import app
+except RuntimeError as error:
+    print(json.dumps({'error': str(error), 'modules': [
+        name for name in sys.modules if name.startswith('app.personal_analysis')]}))
+else:
+    raise AssertionError('Unapproved production started')
+"""
+
 
 @pytest.mark.parametrize("environment,enabled", [
     ("prod", False), ("prod", True), ("local", False), ("test", False), ("dev", False),
@@ -45,9 +57,18 @@ def test_broken_personal_data_is_isolated_only_when_disabled(tmp_path, environme
     env.update(APP_ENV=environment, AI_SERVICE_PUBLIC_KEYS="{}", RISK_RELEASE_DESCRIPTOR_FILE="",
                EXPLANATION_RELEASE_DESCRIPTOR_FILES="[]", PYTHONPATH=str(tmp_path), PYTHONIOENCODING="utf-8",
                PERSONAL_ANALYSIS_PROD_ENABLED="true" if enabled else "false")
-    completed = subprocess.run([sys.executable, "-B", "-c", PROBE], cwd=tmp_path, env=env,
+    probe = REJECTION_PROBE if environment == "prod" and enabled else PROBE
+    completed = subprocess.run([sys.executable, "-B", "-c", probe], cwd=tmp_path, env=env,
                                capture_output=True, encoding="utf-8", timeout=30)
-    if environment != "prod" or enabled:
+    if environment == "prod" and enabled:
+        assert completed.returncode == 0, completed.stderr
+        result = json.loads(completed.stdout)
+        assert "production presentation policy is not approved" in result["error"]
+        assert set(result["modules"]) == {
+            "app.personal_analysis_api", "app.personal_analysis_api.production",
+        }
+        return
+    if environment != "prod":
         assert completed.returncode != 0
         assert ("FileNotFoundError" if damage == "missing" else "reference integrity check failed") in completed.stderr
         return
