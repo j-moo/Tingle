@@ -43,7 +43,7 @@ class HomeKeyringSummaryTest {
             }
             val prefs = HomeTestPrefs()
             val vm = HomeSessionViewModel(HttpProfileRepository(client), settings, HttpOnboardingRepository(client),
-                session, auth, owned, photos = HttpOptionalProfileRepository(client), prefs = prefs).also { models.put("home", it) }
+                session, auth, owned, prefs = prefs).also { models.put("home", it) }
 
             // 조회 중에도 매칭 설정을 표시하고, 서버의 READY를 현재 BLE 연결 상태로 해석하지 않는다.
             vm.home()
