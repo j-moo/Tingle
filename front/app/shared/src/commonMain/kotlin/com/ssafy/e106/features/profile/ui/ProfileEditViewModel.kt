@@ -21,6 +21,8 @@ data class ProfileManagementState(
     val recoveryRequired: Boolean = false,
     val savedNotice: Boolean = false,
     val photo: ByteArray? = null,
+    // 사진이 있다는데 받지 못함(보기 화면은 빈 칸 대신 기본 사람 모양)
+    val photoFailed: Boolean = false,
     // 저장 성공 후 이동은 현재 화면이 소비한다. 회전 전 화면의 콜백을 붙잡지 않는다.
     val saveCompleted: Boolean = false,
 ) {
@@ -86,7 +88,7 @@ class ProfileEditViewModel(
         }
     }
     fun load() = work { user, stamp ->
-        mutable.update { it.copy(photo = null) }
+        // 다시 불러오는 동안 보던 사진은 지우지 않는다(돌아올 때마다 사진 칸이 깜빡이지 않게). 새 사진이 오면 바꾼다
         when (val result = profiles.get(user)) {
             is ApiResult.Fail -> if (valid(stamp)) mutable.update { it.copy(error = result.error) }
             is ApiResult.Ok -> if (valid(stamp)) {
@@ -99,9 +101,9 @@ class ProfileEditViewModel(
                 pending = null
                 mutable.update { it.copy(recoveryRequired = false, savedNotice = it.savedNotice || confirmed) }
                 if (result.value.hasProfilePhoto) {
-                    val image = optional.photo(user)
-                    if (valid(stamp)) mutable.update { it.copy(photo = (image as? ApiResult.Ok)?.value) }
-                }
+                    val image = (optional.photo(user) as? ApiResult.Ok)?.value
+                    if (valid(stamp)) mutable.update { it.copy(photo = image ?: it.photo, photoFailed = image == null && it.photo == null) }
+                } else mutable.update { it.copy(photo = null, photoFailed = false) }
             }
         }
     }

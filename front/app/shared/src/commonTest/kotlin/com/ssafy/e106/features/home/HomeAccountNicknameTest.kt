@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModelStore
 import com.ssafy.e106.core.auth.*
 import com.ssafy.e106.core.network.*
 import com.ssafy.e106.features.account.ui.AccountMenuLoad
+import com.ssafy.e106.features.home.ui.HomeLoadState
 import com.ssafy.e106.features.home.ui.HomeSessionViewModel
 import com.ssafy.e106.features.keyring.data.OwnedKeyringRepository
 import com.ssafy.e106.features.onboarding.TestSession
@@ -65,6 +66,13 @@ class HomeAccountNicknameTest {
             vm.account(); runCurrent()
             assertEquals(AccountMenuLoad.Ready, vm.state.value.account.load)
             assertEquals("새닉네임", vm.state.value.account.nickname)
+
+            // 다시 받기 중 예외도 보이던 닉네임 유지(공용 실패 처리로 홈까지 실패로 바꾸지 않는다)
+            reply = CompletableDeferred<ApiResult<ProfileResponse>>().apply { completeExceptionally(IllegalStateException("broken")) }
+            vm.account(); runCurrent()
+            assertEquals(AccountMenuLoad.Ready, vm.state.value.account.load)
+            assertEquals("새닉네임", vm.state.value.account.nickname)
+            assertNotEquals(HomeLoadState.Failed, vm.state.value.home.load)
         } finally {
             models.clear()
             client.close()

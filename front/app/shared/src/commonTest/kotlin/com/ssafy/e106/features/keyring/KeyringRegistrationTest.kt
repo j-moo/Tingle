@@ -215,6 +215,17 @@ class KeyringRegistrationTest {
         server.challenge = challengeValue.copy(expiresAt = "2026-11-04T11:59:59Z")
         m.start("XIAO-test") { error("Expired challenge") }; runCurrent()
         assertEquals(RegistrationIssue.ExpiredChallenge, m.state.value.issue); assertTrue(server.sent.isEmpty())
+        // 만료된 증명 전 요청은 지워져 같은 보드도 새 키로 다시 등록할 수 있다(같은 만료 challenge에 갇히지 않는다)
+        assertNull(m.state.value.pending)
+        server.challenge = challengeValue
+        m.start("XIAO-test") { proofBody(it) }; runCurrent()
+        assertEquals(2, server.challenges.distinct().size); assertEquals(server.receipt, m.state.value.confirmed)
+    }
+    @Test fun invalidRequestRejectionClearsStoredRequest() = runTest(dispatcher) {
+        val server = RegistrationServer().apply { onSend = { ApiResult.Fail(AppError.Server(400, "INVALID_REQUEST", "bad")) } }
+        val prefs = RegistrationPrefs(); val m = model(server, prefs); runCurrent()
+        m.start("XIAO-test") { proofBody(it) }; runCurrent()
+        assertNull(m.state.value.pending); assertEquals(PrefRead.Found(null), KeyringRegistrationStore(prefs).read(1))
     }
     @Test fun screenStopDuringPostKeepsRecoveryRequest() = runTest(dispatcher) {
         val server = RegistrationServer(); val prefs = RegistrationPrefs(); val m = model(server, prefs); runCurrent()

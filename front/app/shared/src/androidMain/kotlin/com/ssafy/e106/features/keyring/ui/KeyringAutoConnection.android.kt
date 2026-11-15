@@ -3,14 +3,9 @@ package com.ssafy.e106.features.keyring.ui
 import android.bluetooth.BluetoothAdapter
 import android.content.Context
 import android.content.Intent
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.material3.Text
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.SideEffect
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.ui.Modifier
 import androidx.lifecycle.ViewModelStore
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.Lifecycle
@@ -25,9 +20,7 @@ import com.ssafy.e106.features.keyring.data.KeyringRegistrationProtocol
 import com.ssafy.e106.features.keyring.data.OwnedKeyring
 import kotlinx.coroutines.flow.MutableStateFlow
 import org.koin.core.context.GlobalContext
-import com.ssafy.e106.core.ui.components.AppButton
 import com.ssafy.e106.resources.Res
-import org.jetbrains.compose.resources.stringResource
 
 internal data class AutoKeyring(
     val owner: Long, val deviceId: Long, val serial: String, val ownershipEpoch: Long, val address: String,
@@ -134,7 +127,7 @@ internal actual fun managesKeyringAutoConnection(serial: String): Boolean {
     // 자동 연결은 기본으로 켠다. 버튼 없이, 내 키링이 연결되고 소유 확인이 끝나면 한 번 켠다
     // (설정 동기화 전이라 소유 상태가 확인되지 않으면 켜지지 않고, 다음 연결 · 상태 변화 때 다시 시도한다)
     if (!enabled && connected && selected != null && !link.busy) {
-        LaunchedEffect(session.userId, selected.deviceId, link.connectionGeneration, link.info?.ownerState) {
+        LaunchedEffect(session.userId, selected.deviceId, link.connectionGeneration, link.info?.ownerState, link.info?.ownershipEpoch) {
             KeyringAutoConnection.enable(context, session.userId, selected, link)
         }
     }

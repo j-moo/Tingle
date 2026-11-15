@@ -150,8 +150,10 @@ private fun ChatCard(room: ChatListItem, onOpenChat: (Long) -> Unit) {
 /** 마지막 메시지 시각: 오늘이면 "오후 3:05", 아니면 "11월 15일". 서버 시각을 못 읽으면 표시하지 않는다 */
 @Composable private fun listTimeLabel(iso: String): String? {
     val t = chatTimeParts(iso) ?: return null
-    val today = chatTimeParts(kotlin.time.Clock.System.now().toString())
-    return if (today != null && today.month == t.month && today.day == t.day)
+    // 한국 날짜(일 수)로 비교해 1년 전 같은 날을 오늘로 보지 않는다
+    fun kstDay(instant: kotlin.time.Instant) = (instant.epochSeconds + 9 * 3600).floorDiv(86_400L)
+    val sameDay = runCatching { kstDay(kotlin.time.Instant.parse(iso)) == kstDay(kotlin.time.Clock.System.now()) }.getOrDefault(false)
+    return if (sameDay)
         stringResource(if (t.afternoon) Res.string.chat_time_pm else Res.string.chat_time_am, t.hour12, t.minute.toString().padStart(2, '0'))
     else stringResource(Res.string.chat_date, t.month, t.day)
 }

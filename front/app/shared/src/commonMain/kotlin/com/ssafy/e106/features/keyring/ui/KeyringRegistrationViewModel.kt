@@ -97,7 +97,7 @@ class KeyringRegistrationViewModel(private val api: KeyringRegistrationRepositor
         proof: suspend (KeyringChallenge) -> RegisterKeyringBody) {
         val challenge = operation.unwrap(api.challenge(pending.challengeKey))
         if (!KeyringRegistrationProtocol.validChallenge(challenge)) throw RegistrationProblem(RegistrationIssue.InvalidResponse)
-        if (Instant.parse(challenge.expiresAt) <= now()) throw RegistrationProblem(RegistrationIssue.ExpiredChallenge)
+        expireIfLate(operation, challenge)
         val body = try { proof(challenge) } catch (cancelled: CancellationException) { throw cancelled }
             // 이미 저장된 소유 설정은 재부팅으로 풀리지 않는다. 정상적인 정책 거절을 통신 오류와 구분한다.
             catch (failure: BleCommandException) { throw RegistrationProblem(when (failure.code) {
@@ -113,11 +113,18 @@ class KeyringRegistrationViewModel(private val api: KeyringRegistrationRepositor
         if (body.deviceSerial != pending.serial || body.challengeId != challenge.challengeId ||
             body.proof.protocolVersion != challenge.proofProtocolVersion || !KeyringRegistrationProtocol.validBody(body))
             throw RegistrationProblem(RegistrationIssue.InvalidResponse)
-        if (Instant.parse(challenge.expiresAt) <= now()) throw RegistrationProblem(RegistrationIssue.ExpiredChallenge)
+        expireIfLate(operation, challenge)
         // 등록 POST보다 먼저 디스크에 본문과 키를 기록한다. 이 지점부터는 새 challenge를 발급하지 않는다.
         val ready = pending.copy(body = body)
         operation.save(ready)
         send(operation, ready)
+    }
+
+    /** 같은 키로 다시 받은 challenge는 만료 후에도 같은 값이다. 만료되면 증명 전 기록을 지워 다음 "이 키링 등록하기"가 새 요청으로 시작되게 한다 */
+    private suspend fun expireIfLate(operation: Operation, challenge: KeyringChallenge) {
+        if (Instant.parse(challenge.expiresAt) > now()) return
+        operation.save(null)
+        throw RegistrationProblem(RegistrationIssue.ExpiredChallenge)
     }
 
     private suspend fun send(operation: Operation, pending: PendingKeyringRegistration) {

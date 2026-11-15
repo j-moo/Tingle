@@ -64,5 +64,12 @@ internal fun pushMessageOf(data: Map<String, String>): PushMessage {
     val expiresAt = data["expiresAt"]?.let { runCatching { Instant.parse(it) }.getOrNull() }
     return PushMessage(kind, target, data["recipientUserId"]?.toLongOrNull(), data["bindingId"],
         data["installationId"]?.takeIf { it.isNotBlank() }, expiresAt,
-        data["title"]?.trim()?.takeIf { it.isNotEmpty() }?.take(80), data["body"]?.trim()?.takeIf { it.isNotEmpty() }?.take(300))
+        data["title"].clip(80), data["body"].clip(300))
+}
+
+/** 앞뒤 공백을 빼고 [max] 글자에서 자른다. 이모지(서로게이트 쌍)를 반으로 자르지 않는다 */
+internal fun String?.clip(max: Int): String? {
+    val text = this?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+    if (text.length <= max) return text
+    return text.take(if (text[max - 1].isHighSurrogate()) max - 1 else max)
 }

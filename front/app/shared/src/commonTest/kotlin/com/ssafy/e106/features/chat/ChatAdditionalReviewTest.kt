@@ -205,6 +205,7 @@ class ChatAdditionalReviewTest {
                 roomRecord.copy(chatRoomId = 21, lastMessageSeq = 0),
                 roomRecord.copy(chatRoomId = 22),   // 옛 서버: 필드 없음
                 roomRecord.copy(chatRoomId = 23, canRead = false, lastMessageSeq = 2, lastMessage = "숨김"),
+                roomRecord.copy(chatRoomId = 24, lastMessageSeq = 3, lastMessage = " "),   // 순번은 있는데 본문이 비었으면 모름
             ), null, now))
         }
         val m = ChatListViewModel(api, TestSession(OnboardingStatus.READY), ChatLocalStorage(ChatMemoryPrefs()))
@@ -217,6 +218,7 @@ class ChatAdditionalReviewTest {
         assertEquals(LastMessageKind.None, rooms.getValue(21).lastMessageKind)
         assertEquals(LastMessageKind.Unknown, rooms.getValue(22).lastMessageKind)
         assertEquals(LastMessageKind.Unknown, rooms.getValue(23).lastMessageKind); assertNull(rooms.getValue(23).lastMessage)
+        assertEquals(LastMessageKind.Unknown, rooms.getValue(24).lastMessageKind); assertNull(rooms.getValue(24).lastMessageTimeLabel)
     }
 
     @Test fun absentClosedRoomIsRecheckedAndCleanedAfterStorageRecreation() = test {

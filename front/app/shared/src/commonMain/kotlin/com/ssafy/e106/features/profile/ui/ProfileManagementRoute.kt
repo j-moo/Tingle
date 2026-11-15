@@ -91,10 +91,12 @@ private fun ProfileOverviewScreen(state: ProfileManagementState, devNotice: Bool
         if (state.loadFailed) ProfileLoadFailed(state, title, onBack, onReload)
         else ProfileSkeletonFrame(title, stringResource(Res.string.profile_edit_title)) {
             SkeletonGroup {
+                // 실제 화면 순서(큰 사진 · 닉네임 · 나이 성별 · 자기소개 · 종교)대로
+                SkeletonBone(Modifier.align(Alignment.CenterHorizontally).widthIn(max = 360.dp).fillMaxWidth().aspectRatio(1f), shape = AppShapes.Card)
                 SkeletonBone(width = 160.dp, height = 28.dp)
-                SkeletonBone(width = 144.dp, height = 144.dp, shape = AppShapes.Card)
-                BoneField(Res.string.profile_intro_title) { SkeletonBone(Modifier.fillMaxWidth(0.7f)) }
-                BoneField(Res.string.profile_religion_title) { SkeletonBone(Modifier.fillMaxWidth(0.4f)) }
+                SkeletonBone(width = 120.dp)
+                BoneField(Res.string.profile_view_intro) { SkeletonBone(Modifier.fillMaxWidth(0.7f)) }
+                BoneField(Res.string.profile_view_religion) { SkeletonBone(Modifier.fillMaxWidth(0.4f)) }
             }
         }
         return
@@ -113,7 +115,7 @@ private fun ProfileOverviewScreen(state: ProfileManagementState, devNotice: Bool
                         .clip(AppShapes.Card).background(AppColors.SurfaceMuted), contentAlignment = Alignment.Center) {
                         when {
                             state.photo != null -> ProfilePhotoBytes(state.photo)
-                            !profile.hasProfilePhoto -> Canvas(Modifier.fillMaxSize()) {
+                            !profile.hasProfilePhoto || state.photoFailed -> Canvas(Modifier.fillMaxSize()) {
                                 val w = size.width
                                 drawCircle(PhotoSilhouette, radius = w * 0.17f, center = Offset(w / 2, w * 0.38f))
                                 drawOval(PhotoSilhouette, topLeft = Offset(w * 0.16f, w * 0.62f), size = Size(w * 0.68f, w * 0.8f))

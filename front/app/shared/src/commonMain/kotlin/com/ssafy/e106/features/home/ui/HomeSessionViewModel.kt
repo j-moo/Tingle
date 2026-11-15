@@ -166,7 +166,10 @@ class HomeSessionViewModel(private val profiles: ProfileRepository, private val 
         // 다시 받기가 실패해도 보이던 닉네임을 실패 화면으로 바꾸지 않는다
         val shown = mutable.value.account.load == AccountMenuLoad.Ready
         if (!shown) mutable.update { it.copy(account = AccountMenuState()) }
-        when (val result = profiles.get(user)) {
+        // 공용 실패 처리(홈까지 실패로 바꿈) 대신 여기서 받아 보이던 닉네임을 지킨다
+        val result = try { profiles.get(user) } catch (e: CancellationException) { throw e }
+            catch (_: Exception) { ApiResult.Fail(AppError.Unknown(IllegalStateException("Account unavailable"))) }
+        when (result) {
             is ApiResult.Ok -> if (valid(stamp)) {
                 val mine = result.value.userId == user
                 // 마이에는 사진을 두지 않는다(사진은 프로필 보기에서). 닉네임만 받는다

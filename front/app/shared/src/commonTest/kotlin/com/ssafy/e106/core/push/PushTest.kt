@@ -94,6 +94,9 @@ class PushMessageTest {
         assertEquals("초록", m.title)
         assertEquals(300, m.body?.length)
         assertNull(pushMessageOf(mapOf("type" to "CHAT_MESSAGE", "title" to "  ", "body" to "")).title)
+        // 자르는 자리에 이모지가 걸리면 반쪽을 남기지 않는다
+        assertEquals("가".repeat(79), ("가".repeat(79) + "😀").clip(80))
+        assertEquals("가".repeat(78) + "😀", ("가".repeat(78) + "😀😀").clip(80))
     }
 
     @Test
