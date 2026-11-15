@@ -70,7 +70,9 @@ def create_app(app_settings: Settings | None = None, *, _risk_engine_factory: Ca
             raise ServiceAuthError(error.detail["code"]) from None
         return True
 
-    if configured.app_env in {"local", "test", "dev"}:
+    personal_development = configured.app_env in {"local", "test", "dev"}
+    personal_production = configured.app_env == "prod" and configured.personal_analysis_prod_enabled
+    if personal_development or personal_production:
         # Importing the adapter loads and verifies personal-only reference data.
         from app.personal_analysis_api.adapter import PersonalAnalysisAdapter
         from app.personal_analysis_api.proposals import proposed_label_only_policy
@@ -79,7 +81,7 @@ def create_app(app_settings: Settings | None = None, *, _risk_engine_factory: Ca
         application.state.personal_analysis_runtime = PersonalAnalysisRuntime(
             authorize=authorize_personal_analysis,
             adapter=PersonalAnalysisAdapter(
-                # Explicit candidate for development E2E; wording/template approval is still pending.
+                # Existing candidate; opt-in does not itself approve wording/templates.
                 presentation=proposed_label_only_policy(),
             ),
         )

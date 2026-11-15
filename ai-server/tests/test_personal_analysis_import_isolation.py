@@ -29,9 +29,11 @@ with TestClient(app) as client:
 """
 
 
-@pytest.mark.parametrize("environment", ["prod", "local", "test", "dev"])
+@pytest.mark.parametrize("environment,enabled", [
+    ("prod", False), ("prod", True), ("local", False), ("test", False), ("dev", False),
+])
 @pytest.mark.parametrize("damage", ["missing", "integrity"])
-def test_broken_personal_data_is_isolated_only_when_disabled(tmp_path, environment, damage):
+def test_broken_personal_data_is_isolated_only_when_disabled(tmp_path, environment, enabled, damage):
     shutil.copytree(ROOT / "app", tmp_path / "app", ignore=shutil.ignore_patterns("__pycache__"))
     reference = tmp_path / "app/personal_analysis/data/reference.json"
     if damage == "missing":
@@ -41,10 +43,11 @@ def test_broken_personal_data_is_isolated_only_when_disabled(tmp_path, environme
     env = {key: value for key, value in os.environ.items()
            if key.upper() in {"SYSTEMROOT", "WINDIR", "PATH", "TEMP", "TMP"}}
     env.update(APP_ENV=environment, AI_SERVICE_PUBLIC_KEYS="{}", RISK_RELEASE_DESCRIPTOR_FILE="",
-               EXPLANATION_RELEASE_DESCRIPTOR_FILES="[]", PYTHONPATH=str(tmp_path), PYTHONIOENCODING="utf-8")
+               EXPLANATION_RELEASE_DESCRIPTOR_FILES="[]", PYTHONPATH=str(tmp_path), PYTHONIOENCODING="utf-8",
+               PERSONAL_ANALYSIS_PROD_ENABLED="true" if enabled else "false")
     completed = subprocess.run([sys.executable, "-B", "-c", PROBE], cwd=tmp_path, env=env,
                                capture_output=True, encoding="utf-8", timeout=30)
-    if environment != "prod":
+    if environment != "prod" or enabled:
         assert completed.returncode != 0
         assert ("FileNotFoundError" if damage == "missing" else "reference integrity check failed") in completed.stderr
         return

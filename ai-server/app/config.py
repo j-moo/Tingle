@@ -14,6 +14,8 @@ class Settings(BaseSettings):
     risk_local_rules_enabled: bool = False
     risk_local_rules_descriptor_sha256: str = ""
     explanation_release_descriptor_files: list[str] = []
+    # Reuse the current presentation candidate only after operational review.
+    personal_analysis_prod_enabled: bool = False
 
     model_config = SettingsConfigDict(
         env_file=".env",

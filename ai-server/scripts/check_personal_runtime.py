@@ -41,7 +41,8 @@ def http(base, path, *, payload=None, token=None):
         return response.status, json.load(response)
 
 
-def check(image, environment, damage=None):
+def check(image, environment, damage=None, *, personal_prod_enabled=False):
+    enabled = environment == "dev" or (environment == "prod" and personal_prod_enabled)
     private = rsa.generate_private_key(public_exponent=65537, key_size=2048)
     name = "personal-review-161-" + uuid4().hex[:12]
     with tempfile.TemporaryDirectory(prefix="personal-review-161-") as temporary:
@@ -60,7 +61,8 @@ def check(image, environment, damage=None):
             mounts += ["--mount", f"type=bind,source={root / 'app'},target=/app/app,readonly"]
         try:
             docker("run", "--rm", "-d", "--name", name, "-p", "127.0.0.1::8000", *mounts,
-                   "-e", "APP_ENV=" + environment, "-e",
+                   "-e", "APP_ENV=" + environment,
+                   "-e", "PERSONAL_ANALYSIS_PROD_ENABLED=" + str(personal_prod_enabled).lower(), "-e",
                    'AI_SERVICE_PUBLIC_KEYS={"synthetic-smoke-key":"/review/public.pem"}', image)
             port = docker("port", name, "8000/tcp").rsplit(":", 1)[1]
             base = "http://127.0.0.1:" + port
@@ -83,14 +85,26 @@ def check(image, environment, damage=None):
             for kind, expected in (("succeeded", "SUCCEEDED"), ("insufficient", "INSUFFICIENT")):
                 payload = (ROOT / f"tests/fixtures/personal-analysis-api/{kind}.request.json").read_bytes()
                 status, result = http(base, PATH, payload=payload, token=token)
-                assert status == (200 if environment == "dev" else 404)
-                if environment == "dev":
+                assert status == (200 if enabled else 404)
+                if enabled:
                     assert result["status"] == expected
+                    proposal = json.loads((ROOT / f"tests/fixtures/personal-analysis-api/{kind}.response.proposal.json")
+                                          .read_bytes())
+                    assert result == proposal
                 outcomes[kind] = {"http": status, "status": result.get("status")}
-            if environment == "dev":
+            if enabled:
                 assert PATH in paths
                 assert http(base, PATH, payload=b" " * 16385, token=token)[0] == 400
                 assert http(base, PATH, payload=b" " * 16385)[0] == 401
+                forbidden = jwt.encode({
+                    "iss": f"urn:tingle:be:{environment}", "aud": f"urn:tingle:ai:{environment}",
+                    "sub": "tingle-be", "iat": now, "nbf": now, "exp": now + 300,
+                    "jti": str(uuid4()), "scope": "other",
+                }, private, algorithm="RS256", headers={"kid": "synthetic-smoke-key", "typ": "tingle-service+jwt"})
+                assert http(base, PATH, payload=b"not-json", token=forbidden)[0] == 403
+                invalid = json.loads((ROOT / "tests/fixtures/personal-analysis-api/succeeded.request.json").read_bytes())
+                invalid["analysisVersion"] = "unsupported-version"
+                assert http(base, PATH, payload=json.dumps(invalid).encode(), token=token)[0] == 409
             else:
                 assert PATH not in paths
             for path in ("/internal/ai/risk-detections", "/internal/ai/explanations"):
@@ -101,10 +115,11 @@ def check(image, environment, damage=None):
                 "import json,sys; from app.main import app; print(json.dumps({"
                 "'runtime':hasattr(app.state,'personal_analysis_runtime'),"
                 "'modules':[n for n in sys.modules if n.startswith('app.personal_analysis')]}))"))
-            assert state["runtime"] is (environment == "dev")
-            if environment == "prod":
+            assert state["runtime"] is enabled
+            if not enabled:
                 assert state["modules"] == []
-            print(json.dumps({"environment": environment, "damage": damage, "health": 200,
+            print(json.dumps({"environment": environment, "personalProdEnabled": personal_prod_enabled,
+                              "damage": damage, "health": 200,
                               "outcomes": outcomes, **state}), flush=True)
         finally:
             subprocess.run(["docker", "rm", "-f", name], capture_output=True, timeout=30)
@@ -116,3 +131,4 @@ if __name__ == "__main__":
     args = parser.parse_args()
     for environment, damage in (("dev", None), ("prod", None), ("prod", "missing"), ("prod", "integrity")):
         check(args.image, environment, damage)
+    check(args.image, "prod", personal_prod_enabled=True)
