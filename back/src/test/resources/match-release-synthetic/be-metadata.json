@@ -1,0 +1,30 @@
+{
+  "artifacts": [
+    {
+      "contentHash": "9bcfb91fa3582e50a7eb28ab6ca28c9a488b86be859cb2d51fb4d2a857455d5f",
+      "id": "6999125c-bb2e-5915-bf07-86ca691d99b2",
+      "kind": "PRODUCT_POLICY",
+      "revision": 0
+    },
+    {
+      "contentHash": "d5d5a0ade9f607d9834d213613b5557e2c28a2e6aeccf289d5796f8f007ce390",
+      "id": "8b3d4dd0-75d1-5429-b686-27a6a0470500",
+      "kind": "MATCHING",
+      "revision": 0
+    }
+  ],
+  "engineVersion": "tingle-rules-1",
+  "manifest": {
+    "analysisVersion": "NOT_USED",
+    "contentHash": "8b8139559a9313a9acb88123fd616d517f293ac4a6af2ccd43775a7009087fa6",
+    "engineVersion": "tingle-rules-1",
+    "matchingVersion": "r2-c-20261106",
+    "productPolicyVersion": "tingle-policy-v2",
+    "releaseId": "f73ba248-c5f7-531e-938f-f60962bcc57b",
+    "scoringVersion": "NOT_USED",
+    "surveyVersion": "NOT_USED",
+    "typeModelVersion": "NOT_USED",
+    "typeReferenceVersion": "NOT_USED",
+    "wordingVersion": "NOT_USED"
+  }
+}
