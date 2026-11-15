@@ -31,7 +31,9 @@ internal enum class PushKind { CHAT_MESSAGE, ONE_HOUR_BEFORE_END, NEW_PROPOSAL, 
 
 /** 받은 data 메시지를 알림 하나로 변환한다. 제안 알림은 수신 계정과 설치를 모두 확인한다. */
 internal class PushMessage(val kind: PushKind, val target: PushTarget, val recipientUserId: Long?, val bindingId: String?,
-    private val installationId: String? = null, private val expiresAt: Instant? = null) {
+    private val installationId: String? = null, private val expiresAt: Instant? = null,
+    /** 서버가 보낸 알림 제목 · 본문(채팅은 보낸 사람 닉네임 · 메시지). 없으면 앱의 기본 문구를 쓴다 */
+    val title: String? = null, val body: String? = null) {
     /**
      * 띄울지. 로그인돼 있고([userId]), 지금 계정으로 성공한 등록([binding])과 메시지의 bindingId 가 같아야 한다.
      * 종료 안내는 수신자 userId 가 없어 bindingId 로만 거른다 — 오프라인 로그아웃으로 서버에 이전 계정 연결이 남아도 그 계정 알림은 bindingId 가 달라 버려진다
@@ -60,5 +62,6 @@ internal fun pushMessageOf(data: Map<String, String>): PushMessage {
     }
     val expiresAt = data["expiresAt"]?.let { runCatching { Instant.parse(it) }.getOrNull() }
     return PushMessage(kind, target, data["recipientUserId"]?.toLongOrNull(), data["bindingId"],
-        data["installationId"]?.takeIf { it.isNotBlank() }, expiresAt)
+        data["installationId"]?.takeIf { it.isNotBlank() }, expiresAt,
+        data["title"]?.trim()?.takeIf { it.isNotEmpty() }?.take(80), data["body"]?.trim()?.takeIf { it.isNotEmpty() }?.take(300))
 }
