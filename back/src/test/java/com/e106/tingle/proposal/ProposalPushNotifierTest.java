@@ -64,6 +64,20 @@ class ProposalPushNotifierTest {
 	}
 
 	@Test
+	@DisplayName("매칭 성사 알림은 채팅방 번호와 상대 닉네임 문구를 싣는다")
+	void matchedPushCarriesRoomAndPartnerName() {
+		PushDeliveryLookup.Candidate candidate = reachable(89, "fcm-token", PushGateway.Result.ACCEPTED);
+		Instant deadline = PROPOSED.plusSeconds(7 * 86400);
+		notifier.sendMatched(9, 89, 31, deadline, "초록");
+		@SuppressWarnings("unchecked")
+		ArgumentCaptor<Map<String, String>> data = ArgumentCaptor.forClass(Map.class);
+		verify(gateway).send(eq("fcm-token"), eq("match-9"), data.capture(), eq(deadline));
+		assertThat(data.getValue()).containsEntry("type", "CHAT_ROOM_CREATED").containsEntry("chatRoomId", "31")
+			.containsEntry("recipientUserId", "89").containsEntry("title", "우연한 만남이 있었어요!")
+			.containsEntry("body", "초록님과 대화를 시작할 수 있어요.");
+	}
+
+	@Test
 	@DisplayName("지워진 토큰이면 그 기기 연결을 지운다")
 	void dropsUnregisteredToken() {
 		PushDeliveryLookup.Candidate candidate = reachable(98, "old-token", PushGateway.Result.INVALID_TOKEN);
@@ -133,6 +147,7 @@ class ProposalPushNotifierTest {
 		given(target.token()).willReturn(token);
 		given(gateway.ready()).willReturn(true);
 		given(deliveries.candidates(userId, PushNotificationKind.NEW_PROPOSAL)).willReturn(List.of(candidate));
+		given(deliveries.candidates(userId, PushNotificationKind.CHAT_ROOM_CREATED)).willReturn(List.of(candidate));
 		given(deliveries.resolve(candidate)).willReturn(Optional.of(target));
 		given(gateway.send(eq(token), anyString(), anyMap(), any())).willReturn(result);
 		return candidate;

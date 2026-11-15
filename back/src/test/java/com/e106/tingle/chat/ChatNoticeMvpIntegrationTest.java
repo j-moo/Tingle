@@ -64,6 +64,9 @@ class ChatNoticeMvpIntegrationTest extends IntegrationTestSupport {
 	private Clock testClock;
 	@MockitoBean
 	private PushGateway gateway;
+	// 준비 단계에서 서로 수락하면 매칭 성사 알림이 비동기로 같은 gateway를 건드린다. 이 시험은 종료 안내만 본다
+	@MockitoBean
+	private com.e106.tingle.proposal.ProposalPushNotifier proposalPushes;
 	private long firstId;
 	private long secondId;
 	private ChatRoom room;

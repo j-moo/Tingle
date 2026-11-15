@@ -54,6 +54,14 @@ public class ProposalService {
 		this.chats = chats;
 	}
 
+	// 매칭 성사 알림. 알림 설정이 없는 테스트 구성에서는 빠진다
+	private ProposalPushNotifier pushes;
+
+	@org.springframework.beans.factory.annotation.Autowired(required = false)
+	void setPushes(ProposalPushNotifier pushes) {
+		this.pushes = pushes;
+	}
+
 	@Transactional(readOnly = true)
 	public ProposalView get(long id, long userId) {
 		Owned owned = findOwned(id, userId);
@@ -202,14 +210,17 @@ public class ProposalService {
 		MatchingParticipant partner = participant(id, pair.partnerOf(userId));
 		own.decide(choice, requestKey, now);
 		proposal.recordResponses(own.decision(), partner.decision());
-		connectChat(proposal, pair);
+		ChatRoom room = connectChat(proposal, pair);
+		// 이 응답으로 매칭이 성사됐으면, 먼저 수락하고 기다리던 상대에게 알린다(나는 앱이 바로 채팅방을 연다). 커밋 뒤 한 번만
+		if (room != null && pushes != null) {
+			String nickname = profiles.findById(userId).map(PublicProfile::getNickname).orElse(null);
+			pushes.afterCommitMatched(proposal.getId(), pair.partnerOf(userId), room.getPublicId(), room.getExpiresAt(), nickname);
+		}
 		return view(proposal, pair, userId);
 	}
 
-	private void connectChat(MatchProposal proposal, PairRelation pair) {
-		if (proposal.getStatus() == MatchProposal.Status.ACCEPTED) {
-			chats.connect(proposal, pair);
-		}
+	private ChatRoom connectChat(MatchProposal proposal, PairRelation pair) {
+		return proposal.getStatus() == MatchProposal.Status.ACCEPTED ? chats.connect(proposal, pair) : null;
 	}
 
 	private boolean restricted(PairRelation pair) {

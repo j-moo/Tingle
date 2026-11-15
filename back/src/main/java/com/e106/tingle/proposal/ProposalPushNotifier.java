@@ -58,6 +58,60 @@ public class ProposalPushNotifier {
 		});
 	}
 
+	/**
+	 * 서로 수락해 채팅방이 생겼을 때 먼저 수락하고 기다리던 사람에게 CHAT_ROOM_CREATED 를 커밋 뒤 한 번 보낸다.
+	 * 롤백되면 보내지 않는다. 같은 매칭은 noticeId 로 기기에서 하나로 합쳐진다.
+	 */
+	public void afterCommitMatched(long matchingId, long recipientUserId, long roomId, Instant roomExpiresAt,
+		String partnerNickname) {
+		TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+			@Override
+			public void afterCommit() {
+				try {
+					worker.execute(() -> sendMatched(matchingId, recipientUserId, roomId, roomExpiresAt, partnerNickname));
+				} catch (RejectedExecutionException exception) {
+					log.warn("event=match_push_skipped reason=shutdown");
+				}
+			}
+		});
+	}
+
+	void sendMatched(long matchingId, long userId, long roomId, Instant deadline, String partnerNickname) {
+		try {
+			if (!gateway.ready()) {
+				return;
+			}
+			String noticeId = "match-" + matchingId;
+			String body = partnerNickname == null || partnerNickname.isBlank() ? Messages.get("push.matched.body.noName")
+				: Messages.get("push.matched.body", partnerNickname);
+			for (PushDeliveryLookup.Candidate candidate : deliveries.candidates(userId, PushNotificationKind.CHAT_ROOM_CREATED)) {
+				try {
+					PushDeliveryTarget target = deliveries.resolve(candidate).orElse(null);
+					if (target == null) {
+						continue;
+					}
+					PushGateway.Result result = gateway.send(target.token(), noticeId, Map.of(
+						"type", PushNotificationKind.CHAT_ROOM_CREATED.name(),
+						"title", Messages.get("push.matched.title"),
+						"body", body,
+						"noticeId", noticeId,
+						"chatRoomId", Long.toString(roomId),
+						"recipientUserId", Long.toString(userId),
+						"bindingId", candidate.bindingId().toString(),
+						"installationId", candidate.installationId().toString(),
+						"expiresAt", deadline.toString()), deadline);
+					if (result == PushGateway.Result.INVALID_TOKEN) {
+						deliveries.invalidate(candidate);
+					}
+				} catch (RuntimeException exception) {
+					warn(exception);
+				}
+			}
+		} catch (RuntimeException exception) {
+			warn(exception);
+		}
+	}
+
 	/** 한 사람 몫. 실패해도 다른 사람 몫과 제안에는 영향이 없다. */
 	void send(long proposalId, long userId, Instant proposedAt) {
 		try {
