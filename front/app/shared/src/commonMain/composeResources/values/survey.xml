@@ -2,7 +2,6 @@
     <string name="survey_title">성향테스트</string>
     <string name="survey_progress">%1$d / %2$d 문항</string>
     <string name="survey_choose_one">가장 가까운 답변 하나를 선택해 주세요.</string>
-    <string name="survey_unknown">모르겠어요</string>
     <string name="survey_any">상관없어요</string>
     <string name="survey_scale_no">아니다</string>
     <string name="survey_scale_yes">그렇다</string>
@@ -10,7 +9,6 @@
     <string name="survey_level_low">낮음</string>
     <string name="survey_level_mid">보통</string>
     <string name="survey_level_high">높음</string>
-    <string name="survey_special_help">‘모르겠어요’는 아직 판단하기 어렵다는 뜻이고, ‘상관없어요’는 어느 쪽이든 괜찮다는 뜻이에요.</string>
     <string name="survey_autosave">답변할 때마다 자동으로 저장돼요.</string>
     <string name="survey_saving">답변 저장 중…</string>
     <string name="survey_saved">답변을 저장했어요.</string>
