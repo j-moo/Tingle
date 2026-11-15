@@ -13,7 +13,12 @@ import org.jetbrains.compose.resources.stringResource
 /** 개인에게만 보이는 추천 UI. 선택은 초안만 바꾸며 메시지를 보내지 않는다. */
 @Composable
 fun ChatQuestionCards(state: ChatExtrasState, editable: Boolean, draft: String,
-    insert: (String) -> Unit, generate: () -> Unit, check: () -> Unit, onTopicConsent: (Boolean) -> Unit = {}) {
+    insert: (String) -> Unit, generate: () -> Unit, check: () -> Unit, onTopicConsent: (Boolean) -> Unit = {},
+    /** 대화에 이미 보낸 메시지 본문. 같은 질문은 목록에서 빼고, 세 개를 다 쓰면 추천 칸을 숨긴다 */
+    used: Set<String> = emptySet()) {
+    // 추천 질문은 방마다 한 번만 받는다. 보낸 질문을 빼고 남은 게 없으면 다시 받을 수 없으니 칸을 보이지 않는다
+    val remaining = state.questions.filter { it.trim() !in used }
+    if (state.questions.isNotEmpty() && remaining.isEmpty()) return
     // 같은 방의 화면 재생성에서는 여닫기를 복원하되 다른 계정/방으로 넘기지 않는다.
     var expanded by rememberSaveable(state.owner?.userId, state.room) { mutableStateOf(false) }
     // 확인 중 권한·질문·초안이 달라지면 오래된 선택을 폐기한다. 질문 본문은 저장하지 않는다.
@@ -29,12 +34,14 @@ fun ChatQuestionCards(state: ChatExtrasState, editable: Boolean, draft: String,
                 // 일반 질문(GENERAL_FALLBACK)은 두 사람에게 맞춘 질문이 아니라는 걸 알린다
                 Text(stringResource(if (state.source == "GENERAL_FALLBACK") Res.string.chat_questions_general
                     else Res.string.chat_questions_help), style = MaterialTheme.typography.bodySmall)
+                if (state.questions.isNotEmpty()) Text(stringResource(Res.string.chat_questions_once), style = MaterialTheme.typography.bodySmall,
+                    color = AppColors.TextSecondary)
                 // 받는 중: 질문 자리 뼈대(이미 받은 질문이 있으면 그대로 둔다)
                 if (state.busy && state.questions.isEmpty()) SkeletonGroup(spacing = AppSpacing.Small) {
                     repeat(3) { SkeletonBone(height = AppSpacing.ControlMinHeight, shape = AppShapes.Control) }
                 }
                 if (state.status == "PENDING") Text(stringResource(Res.string.chat_questions_pending))
-                state.questions.forEach { question ->
+                remaining.forEach { question ->
                     AppButton(question, Modifier.fillMaxWidth(), variant = AppButtonVariant.Secondary,
                         enabled = editable, onClick = {
                             if (editable) {

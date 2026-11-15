@@ -26,7 +26,8 @@ import kotlinx.coroutines.delay
     onSafety: (Long, String) -> Unit, onConsent: () -> Unit,
     // 현재 초안을 추천 영역에 전달해 비어 있을 때만 확인 없이 채운다.
     // 방 번호 · 읽기 가능 · 입력 가능 · 초안 · 초안 넣기 · 차단 화면 열기
-    support: (@Composable (Long, Boolean, Boolean, String, (String) -> Unit, () -> Unit, String?) -> Unit)? = null,
+    // 마지막 인자: 화면에 있는 메시지 본문(보낸 추천 질문을 목록에서 빼는 데 쓴다)
+    support: (@Composable (Long, Boolean, Boolean, String, (String) -> Unit, () -> Unit, String?, Set<String>) -> Unit)? = null,
     listModel: ChatListViewModel = koinViewModel(), roomModel: ChatRoomViewModel = koinViewModel(),
     partnerModel: ChatPartnerViewModel = koinViewModel()) {
     var room by rememberSaveable(session.userId, initialRoom) { mutableStateOf(initialRoom) }
@@ -105,7 +106,8 @@ import kotlinx.coroutines.delay
     } }, onMessageRecovery = { _, _ -> roomModel.retry() },
         onMessagesDisplayed = { displayed = it; roomModel.displayed(it) },
         conversationSupport = support?.let { block -> { block(room!!, conversation.ui.readable, conversation.ui.inputEnabled, conversation.ui.draft, roomModel::draft,
-            { if (!conversation.sending) { roomModel.pause(); onSafety(room!!, "BLOCK") } }, conversation.ui.messages.lastOrNull()?.id) } },
+            { if (!conversation.sending) { roomModel.pause(); onSafety(room!!, "BLOCK") } }, conversation.ui.messages.lastOrNull()?.id,
+            conversation.ui.messages.mapTo(HashSet()) { it.text.trim() }) } },
         // 화면 위 빨간 글 · 버튼 대신 입력창 위 아래 띠로 알린다. 불러오기 실패는 화면이 상태 화면으로 보여 준다
         error = conversation.error, notices = {
             pending?.let { sent ->

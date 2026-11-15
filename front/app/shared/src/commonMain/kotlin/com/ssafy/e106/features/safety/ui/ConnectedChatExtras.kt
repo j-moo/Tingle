@@ -17,7 +17,7 @@ import org.koin.compose.viewmodel.koinViewModel
 
 /** 질문 선택은 초안 교체만 한다. 전송과 동의는 각각 사용자의 별도 행동이다. */
 @Composable fun ConnectedChatExtras(room: Long, readable: Boolean, editable: Boolean, insert: (String) -> Unit,
-    model: ChatExtrasViewModel = koinViewModel(), draft: String = "", onBlock: () -> Unit = {}, latestMessage: String? = null) {
+    model: ChatExtrasViewModel = koinViewModel(), draft: String = "", onBlock: () -> Unit = {}, latestMessage: String? = null, used: Set<String> = emptySet()) {
     val state by model.state.collectAsStateWithLifecycle()
     LaunchedEffect(room, readable) { model.bind(room, readable) }
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { model.bind(room, readable) }
@@ -35,6 +35,6 @@ import org.koin.compose.viewmodel.koinViewModel
         }
         state.safety.forEach { notice -> SafetyNoticeCard(notice, onBlock) { model.closeSafety(notice.noticeId) } }
         // 패널을 접어도 연결 컴포넌트는 유지한다. 여닫기는 POST/GET을 새로 시작하지 않는다.
-        ChatQuestionCards(state, editable, draft, insert, model::generate, model::check, model::setTopicConsent)
+        ChatQuestionCards(state, editable, draft, insert, model::generate, model::check, model::setTopicConsent, used)
     }
 }
