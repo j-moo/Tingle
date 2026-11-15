@@ -102,8 +102,9 @@ internal enum class ServicePage { Home, Proposals, Menu, Chats, Safety, Report, 
 
     // 가입 상태를 READY로 바꾸거나 홈·제안·채팅을 열지 않는다. 소유 해제에 필요한 화면만 예외다.
     if (!opened || (!access.allowed(session) && !canManageOwnedKeyring(session, page))) {
-        // 가입 중 화면에는 회원탈퇴를 두지 않는다(가입을 마친 뒤 내 정보에서 탈퇴한다)
-        OnboardingRoute(session, managedKeyringConnection = true)
+        // 가입 중 화면에는 회원탈퇴를 두지 않는다(가입을 마친 뒤 내 정보에서 탈퇴한다).
+        // 단, 가입을 마친 뒤 키링을 모두 초기화해 키링 화면에 갇힌 계정은 탈퇴 조건(키링 없음)을 갖췄으니 여기서 연다
+        OnboardingRoute(session, managedKeyringConnection = true, onWithdraw = { withdrawal.open(session.userId) })
         return
     }
     if (state.session != session) return
