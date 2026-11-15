@@ -16,6 +16,7 @@ import com.ssafy.e106.resources.Res
 import com.ssafy.e106.resources.push_channel_name
 import com.ssafy.e106.resources.push_chat_message
 import com.ssafy.e106.resources.push_chat_ending
+import com.ssafy.e106.resources.push_matched
 import com.ssafy.e106.resources.push_other
 import com.ssafy.e106.resources.push_new_proposal
 import kotlinx.coroutines.Dispatchers
@@ -49,6 +50,7 @@ class TingleMessagingService : FirebaseMessagingService() {
                 }) return@runBlocking null
             val res = when (msg.kind) {
                 PushKind.CHAT_MESSAGE -> Res.string.push_chat_message
+                PushKind.CHAT_ROOM_CREATED -> Res.string.push_matched
                 PushKind.ONE_HOUR_BEFORE_END -> Res.string.push_chat_ending
                 PushKind.NEW_PROPOSAL -> Res.string.push_new_proposal
                 PushKind.OTHER -> Res.string.push_other
@@ -66,11 +68,19 @@ class TingleMessagingService : FirebaseMessagingService() {
         // data 로 알림마다 다른 Intent 를 만든다. requestCode(해시)만으로 구분하면 해시가 겹친 다른 알림의 extras 를 덮어쓴다
         val tap = PendingIntent.getActivity(this, id, PushTapActivity.intent(this, msg.target, userId).setData(Uri.fromParts("tingle-push", "${msg.kind}/$key", null)),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+        val appName = applicationInfo.loadLabel(packageManager)
+        // 잠금화면에는 앱 이름 + 기본 문구만(보낸 사람 · 내용 숨김)
+        val public = NotificationCompat.Builder(this, CHANNEL).setSmallIcon(android.R.drawable.stat_notify_chat)
+            .setContentTitle(appName).setContentText(text).build()
+        // 서버가 제목 · 본문을 주면 그대로(채팅: 보낸 사람 닉네임 · 마지막 메시지). 같은 방 알림은 덮어써 마지막 메시지만 남는다
+        val body = msg.body ?: text
         val notification = NotificationCompat.Builder(this, CHANNEL)
             .setSmallIcon(android.R.drawable.stat_notify_chat)   // 앱 알림 아이콘이 생기면 바꾼다(디자인)
-            .setContentTitle(applicationInfo.loadLabel(packageManager))
-            .setContentText(text)
-            .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)   // 잠금화면에는 "내용 숨김"
+            .setContentTitle(msg.title ?: appName)
+            .setContentText(body)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(body))
+            .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
+            .setPublicVersion(public)
             .setAutoCancel(true)
             .setOnlyAlertOnce(msg.kind == PushKind.NEW_PROPOSAL)
             .setContentIntent(tap)
