@@ -35,7 +35,14 @@ class KeyringResetRecovery(private val api: KeyringResetRepository, private val 
         ensure(owner)
         val ticket = store.read(owner).singleOrNull { it.deviceId == deviceId }; ensure(owner)
         if (ticket?.run == null) ticket
-        else accept(owner, ticket, unwrap(api.get(deviceId, ticket.run.resetRunId), owner))
+        else {
+            val current = accept(owner, ticket, unwrap(api.get(deviceId, ticket.run.resetRunId), owner))
+            // 초기화를 끝낸 뒤 같은 키링을 다시 등록했으면(서버가 같은 기기 번호를 준다) 지난 완료 기록은 끝난 일이다.
+            // 남겨 두면 새 등록에서도 "초기화되었어요"만 보이고 새 초기화를 시작할 수 없다
+            if (current.run?.state == "COMPLETED" && unwrap(owned.list(), owner).any { it.deviceId == deviceId }) {
+                store.removeCompleted(owner, deviceId); ensure(owner); null
+            } else current
+        }
     }
     @OptIn(ExperimentalUuidApi::class)
     suspend fun start(owner: Long, deviceId: Long, serial: String, accepted: Boolean,
