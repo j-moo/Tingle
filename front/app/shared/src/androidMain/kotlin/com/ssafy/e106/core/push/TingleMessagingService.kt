@@ -16,6 +16,7 @@ import com.ssafy.e106.resources.Res
 import com.ssafy.e106.resources.push_channel_name
 import com.ssafy.e106.resources.push_chat_message
 import com.ssafy.e106.resources.push_chat_ending
+import com.ssafy.e106.resources.push_matched
 import com.ssafy.e106.resources.push_other
 import com.ssafy.e106.resources.push_new_proposal
 import kotlinx.coroutines.Dispatchers
@@ -49,6 +50,7 @@ class TingleMessagingService : FirebaseMessagingService() {
                 }) return@runBlocking null
             val res = when (msg.kind) {
                 PushKind.CHAT_MESSAGE -> Res.string.push_chat_message
+                PushKind.CHAT_ROOM_CREATED -> Res.string.push_matched
                 PushKind.ONE_HOUR_BEFORE_END -> Res.string.push_chat_ending
                 PushKind.NEW_PROPOSAL -> Res.string.push_new_proposal
                 PushKind.OTHER -> Res.string.push_other

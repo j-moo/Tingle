@@ -81,6 +81,14 @@ class PushMessageTest {
     }
 
     @Test
+    fun matchedOpensNewChatRoom() {
+        val m = pushMessageOf(mapOf("type" to "CHAT_ROOM_CREATED", "chatRoomId" to "42", "bindingId" to "b"))
+        assertEquals(PushKind.CHAT_ROOM_CREATED, m.kind)
+        assertEquals(PushTarget.Chat(42), m.target)
+        assertEquals(PushTarget.Home, pushMessageOf(mapOf("type" to "CHAT_ROOM_CREATED", "chatRoomId" to "x")).target)
+    }
+
+    @Test
     fun serverTitleAndBodyAreTrimmedAndCapped() {
         val m = pushMessageOf(mapOf("type" to "CHAT_MESSAGE", "chatRoomId" to "42", "title" to " 초록 ", "body" to "가".repeat(400)))
         assertEquals("초록", m.title)

@@ -27,7 +27,8 @@ internal interface PushDevice {
 }
 
 /** 서버가 보내는 data 전용 메시지 종류. 문구는 앱이 정한다(서버 payload 에 제목 · 본문이 없다) */
-internal enum class PushKind { CHAT_MESSAGE, ONE_HOUR_BEFORE_END, NEW_PROPOSAL, OTHER }
+/** CHAT_ROOM_CREATED: 서로 수락해 매칭이 성사됨(먼저 수락하고 기다리던 사람에게 온다) */
+internal enum class PushKind { CHAT_MESSAGE, CHAT_ROOM_CREATED, ONE_HOUR_BEFORE_END, NEW_PROPOSAL, OTHER }
 
 /** 받은 data 메시지를 알림 하나로 변환한다. 제안 알림은 수신 계정과 설치를 모두 확인한다. */
 internal class PushMessage(val kind: PushKind, val target: PushTarget, val recipientUserId: Long?, val bindingId: String?,
@@ -49,13 +50,13 @@ internal class PushMessage(val kind: PushKind, val target: PushTarget, val recip
 }
 
 /**
- * 서버 data 맵 → [PushMessage]. 채팅 메시지의 chatRoomId 는 방 long id, 종료 안내(ONE_HOUR_BEFORE_END)의 chatRoomId 는 방 publicId(UUID)라
+ * 서버 data 맵 → [PushMessage]. 채팅 메시지 · 매칭 성사의 chatRoomId 는 방 long id, 종료 안내(ONE_HOUR_BEFORE_END)의 chatRoomId 는 방 publicId(UUID)라
  * 채팅 화면으로 갈 수 없어 홈으로 연다. 모르는 type · 깨진 id 도 홈
  */
 internal fun pushMessageOf(data: Map<String, String>): PushMessage {
     val kind = PushKind.entries.firstOrNull { it.name == data["type"] && it != PushKind.OTHER } ?: PushKind.OTHER
     val target = when (kind) {
-        PushKind.CHAT_MESSAGE -> data["chatRoomId"]?.toLongOrNull()?.let { PushTarget.Chat(it) } ?: PushTarget.Home
+        PushKind.CHAT_MESSAGE, PushKind.CHAT_ROOM_CREATED -> data["chatRoomId"]?.toLongOrNull()?.let { PushTarget.Chat(it) } ?: PushTarget.Home
         PushKind.NEW_PROPOSAL -> data["proposalId"]?.toLongOrNull()?.takeIf { it > 0 }
             ?.takeIf { data["noticeId"] == "proposal-$it" }?.let { PushTarget.Proposal(it) } ?: PushTarget.Home
         else -> PushTarget.Home
