@@ -3,7 +3,9 @@ package com.e106.tingle.auth;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -119,15 +121,15 @@ public class MemberAccessRepository {
 		if (required.isEmpty()) {
 			return false;
 		}
-		for (AgreementItem item : required) {
-			List<Boolean> agreed = jdbc.query("select agreed and document_version=? from user_consents "
-				+ "where user_id=? and consent_type=? order by recorded_at desc, consent_id desc limit 1",
-				(rs, row) -> rs.getBoolean(1), item.version(), userId, item.type());
-			if (agreed.isEmpty() || !agreed.getFirst()) {
-				return false;
-			}
-		}
-		return true;
+		// 유형별 최신 동의를 한 번에 읽는다(항목마다 조회하지 않는다). 최신 기록이 현재 버전 동의일 때만 통과한다.
+		Map<String, String> agreedVersions = new HashMap<>();
+		jdbc.query("select distinct on (consent_type) consent_type, agreed, document_version from user_consents "
+			+ "where user_id=? order by consent_type, recorded_at desc, consent_id desc", rs -> {
+				if (rs.getBoolean(2)) {
+					agreedVersions.put(rs.getString(1), rs.getString(3));
+				}
+			}, userId);
+		return required.stream().allMatch(item -> item.version().equals(agreedVersions.get(item.type())));
 	}
 
 	private boolean signupDataReady(long userId, Instant now, boolean requireKeyring) {

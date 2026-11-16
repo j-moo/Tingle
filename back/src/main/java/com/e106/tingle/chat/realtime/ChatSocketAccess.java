@@ -30,6 +30,15 @@ public class ChatSocketAccess {
 	}
 
 	public long require(String token, long roomId) {
+		long userId = requireMember(token);
+		if (!chats.room(roomId, userId).canRead()) {
+			throw new BusinessException(ErrorCode.CHAT_CLOSED);
+		}
+		return userId;
+	}
+
+	/** 토큰·세션·가입 단계만 확인한다. 방 권한은 호출한 쪽이 이어서 확인할 때만 쓴다. */
+	public long requireMember(String token) {
 		if (!restoreGate.servingAllowed()) {
 			throw new BusinessException(ErrorCode.SERVICE_UNAVAILABLE);
 		}
@@ -47,9 +56,6 @@ public class ChatSocketAccess {
 		long userId = Long.parseLong(jwt.getSubject());
 		if (!onboarding.canAccess(userId, OnboardingStatus.READY)) {
 			throw new BusinessException(ErrorCode.ONBOARDING_REQUIRED);
-		}
-		if (!chats.room(roomId, userId).canRead()) {
-			throw new BusinessException(ErrorCode.CHAT_CLOSED);
 		}
 		return userId;
 	}
