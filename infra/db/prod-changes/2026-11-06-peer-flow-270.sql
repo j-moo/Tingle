@@ -71,7 +71,7 @@ CREATE TABLE IF NOT EXISTS keyring_peer_review_resolution (
     disposition varchar(32) NOT NULL
 );
 
--- Optional peer evidence store. Apply explicitly before enabling peer encounter intake.
+-- Peer evidence store (required before deploy). Apply explicitly before the prod deploy.
 -- Nullable evidence columns permit consent retirement without reusing an old event/submission identity.
 CREATE TABLE IF NOT EXISTS keyring_peer_encounter (
     receipt_id uuid primary key,

@@ -199,7 +199,7 @@ DB에 등록된 XIAO 기기·서버 공개키 pin·초기화 guard와 원 접수
 - RESTORE_ACCOUNT_LOCK은 당시 영속 접수한 상대 credential 357B를 그대로 사용한다. 현재 상대 소유자나
   현재 프로필에서 과거 메타데이터를 추정하지 않는다. 허가 발급 시점으로부터300초 범위만 사용하며 동일 키
   재시도/GET은 발급 시각과 grantId·서명을 고정한다. 만료 후에는 새 요청 키가 필요하다.
-- RELEASE_AFTER_DEPARTURE는 명시적인 release 정책 승인을 요구한다. 양쪽 원본의 VERIFIED_BOTH와 해당 만남
+- RELEASE_AFTER_DEPARTURE는 양쪽 원본의 VERIFIED_BOTH와 해당 만남
   시각의 실제 NOT_MATCHED 관계가 있어야 하며 제안·참여자 응답/차단·채팅·현재 사용자 차단이 없어야 한다.
   서버 허가와 별개로 기기는 원본 접수와 해당 상대 소유 세대의 이탈 관측 조건을 확인한다.
 - ERROR_REVIEWED는 REVIEW_QUARANTINED와 실제 별도 검토 승인 행을 요구한다. 일반 상대를 오류 fingerprint로

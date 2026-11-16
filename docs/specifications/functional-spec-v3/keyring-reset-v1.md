@@ -99,7 +99,7 @@ STORED ACK v2의 마지막 epoch는 실행 값으로 검증하며 현재 소유 
 - 기존 초안 스키마/실행이 있다면 신규 필드의 자동 backfill이나 proof 추정을 하지 않고 별도 조정한다.
 - 자동 검증은 합성 키·격리 PostgreSQL·IoT C 공개 fixture로 구분한다. 실제 팀 키와 실기기 E2E는 별도다.
 - FE는 위 challenge 요청/실제 명령 전달/증명 복구/ACK와 재등록 v2를 연결해야 한다.
-  BE·IoT·FE 계약 승인 후 개발·운영 DDL(`keyring-reset-249.sql`, 운영은 develop 머지 전 `infra/db/prod-changes`로 반영)·환경/키 마운트·실기기 순서로 검증한다.
+  BE·IoT·FE 계약 승인 후 개발·운영 DDL(`keyring-reset-249.sql`, 운영 DB는 master 머지(운영 배포) 전에 `infra/db/prod-changes/2026-11-17-env-parity-407.sql`(BE 브랜치에 포함)로 반영)·환경/키 마운트·실기기 순서로 검증한다.
 
 초기화 실행은 현재 DB에 영속 저장하며 자동 정리 잡은 없다. 보관 일수·기한 만료 후 원 계정 조회 정책은
 별도 합의 대상이며, 영구 보관이나 특정 기간의 보관 보장을 구현한 것으로 표시하지 않는다.
