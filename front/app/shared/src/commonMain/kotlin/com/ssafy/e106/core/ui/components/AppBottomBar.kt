@@ -3,7 +3,6 @@ package com.ssafy.e106.core.ui.components
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
-import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
@@ -76,8 +75,9 @@ fun AppBottomBar(
                 Modifier.weight(1f).heightIn(min = AppSpacing.ControlMinHeight)
                     .clip(TabShape)
                     .focusRing(interaction, TabShape)
+                    // 누름 효과(회색 원)는 두지 않는다. 미끄러지는 선택 캡슐 하나로만 보여 준다. 키보드 초점 테두리는 유지
                     .selectable(selected = i == selected, enabled = enabled, role = Role.Tab,
-                        interactionSource = interaction, indication = LocalIndication.current, onClick = { onSelect(i) })
+                        interactionSource = interaction, indication = null, onClick = { onSelect(i) })
                     .padding(AppSpacing.Small),
                 contentAlignment = Alignment.Center,
             ) {
