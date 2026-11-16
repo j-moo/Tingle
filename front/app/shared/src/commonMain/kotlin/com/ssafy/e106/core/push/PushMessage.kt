@@ -47,16 +47,22 @@ internal class PushMessage(val kind: PushKind, val target: PushTarget, val recip
             installationId != null && installationId == currentInstallation && expiresAt != null && expiresAt > now
         return recipientUserId == null || recipientUserId == userId
     }
+
+    /**
+     * 사용자가 지금 보고 있는 대화방([room])의 새 메시지인지. 화면에 바로 보이므로 알림 · 알림 모음에 남기지 않는다.
+     * ponytail: 방의 실시간 연결이 끊긴 순간에 온 메시지는 알림 없이 다음 조회 때 보인다. 놓치는 일이 잦으면 연결 상태도 함께 본다
+     */
+    fun seenIn(room: Long?) = kind == PushKind.CHAT_MESSAGE && room != null && (target as? PushTarget.Chat)?.roomId == room
 }
 
 /**
- * 서버 data 맵 → [PushMessage]. 채팅 메시지 · 매칭 성사의 chatRoomId 는 방 long id, 종료 안내(ONE_HOUR_BEFORE_END)의 chatRoomId 는 방 publicId(UUID)라
- * 채팅 화면으로 갈 수 없어 홈으로 연다. 모르는 type · 깨진 id 도 홈
+ * 서버 data 맵 → [PushMessage]. 채팅 메시지 · 매칭 성사 · 종료 안내(ONE_HOUR_BEFORE_END)의 chatRoomId 는 방 long id 라 그 채팅 화면으로 연다.
+ * 모르는 type · 깨진 id 는 홈
  */
 internal fun pushMessageOf(data: Map<String, String>): PushMessage {
     val kind = PushKind.entries.firstOrNull { it.name == data["type"] && it != PushKind.OTHER } ?: PushKind.OTHER
     val target = when (kind) {
-        PushKind.CHAT_MESSAGE, PushKind.CHAT_ROOM_CREATED -> data["chatRoomId"]?.toLongOrNull()?.let { PushTarget.Chat(it) } ?: PushTarget.Home
+        PushKind.CHAT_MESSAGE, PushKind.CHAT_ROOM_CREATED, PushKind.ONE_HOUR_BEFORE_END -> data["chatRoomId"]?.toLongOrNull()?.let { PushTarget.Chat(it) } ?: PushTarget.Home
         PushKind.NEW_PROPOSAL -> data["proposalId"]?.toLongOrNull()?.takeIf { it > 0 }
             ?.takeIf { data["noticeId"] == "proposal-$it" }?.let { PushTarget.Proposal(it) } ?: PushTarget.Home
         else -> PushTarget.Home

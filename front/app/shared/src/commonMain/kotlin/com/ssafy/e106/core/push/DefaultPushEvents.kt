@@ -25,6 +25,10 @@ internal class DefaultPushEvents(private val session: SessionStore, scope: Corou
     // 목록 전체를 다시 받으므로 짧은 시간에 몰린 알림은 최신 갱신 신호 하나면 충분하다.
     private val arrivals = MutableSharedFlow<Long>(extraBufferCapacity = 1, onBufferOverflow = BufferOverflow.DROP_OLDEST)
     override val proposalArrivals = arrivals.asSharedFlow()
+    /** 화면에 떠 있는 대화방. 화면(메인)이 쓰고 FCM 작업 스레드가 읽는다 */
+    @kotlin.concurrent.Volatile var viewingRoom: Long? = null
+        private set
+    override fun viewing(room: Long?) { viewingRoom = room }
     private val recentProposals = LinkedHashSet<Triple<Long, String, Long>>()
 
     /** 메인 스레드에서 중복 수신을 거른다. 알림 ID도 제안별로 고정해 재시작 후 같은 알림이 쌓이지 않게 한다. */

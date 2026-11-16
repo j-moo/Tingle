@@ -48,6 +48,8 @@ class TingleMessagingService : FirebaseMessagingService() {
             val binding = device.binding() ?: return@runBlocking null
             val installation = if (msg.kind == PushKind.NEW_PROPOSAL) device.installationId() else null
             if (!msg.showTo(userId, binding, installation)) return@runBlocking null
+            // 지금 보고 있는 대화방의 새 메시지는 화면에 바로 뜨므로 알림 · 알림 모음에 남기지 않는다
+            if (msg.seenIn(events.viewingRoom)) return@runBlocking null
             // 알림 권한이 꺼져 있어도 열린 제안 목록은 새로 조회할 수 있다.
             if (msg.target is PushTarget.Proposal && !withContext(Dispatchers.Main.immediate) {
                     events.proposalArrived(userId, checkNotNull(msg.bindingId), msg.target.proposalId)
