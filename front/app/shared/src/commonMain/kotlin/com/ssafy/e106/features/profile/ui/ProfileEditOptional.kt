@@ -98,7 +98,9 @@ internal fun ProfileEditPage(
     }
     fun withdraw(type: OptionalConsentType) { optionalModel.discardDraft(); sheet = null; optionalModel.decide(type, false) }
     fun retry() { optionalModel.load(); if (optionalModel.state.value.busy) retrySave = true }
-    fun enabled(type: OptionalConsentType) = if (optional.agreed(type)) optional.editable else optional.canDecide(type, true)
+    // 기본 정보 저장 중 · 결과 미확인이면 시트를 열지 않는다(저장이 끝나면 화면이 바뀌어 시트가 사라진다)
+    fun enabled(type: OptionalConsentType) = state.canEdit &&
+        if (optional.agreed(type)) optional.editable else optional.canDecide(type, true)
     fun confirm() { val d = optional.decision; optionalModel.confirmDecision(); if (d?.agreed == true) pending = d.type }
     fun dismiss() { optionalModel.dismissDecision(); pending = null }
     // 선택 정보를 아직 못 불러왔으면 기본 프로필 값을 보여 준다(누를 수는 없다)
@@ -112,7 +114,10 @@ internal fun ProfileEditPage(
         onOptional = onOptional, onCorrection = onCorrection, onReload = { model.load(); optionalModel.load() },
         religionChip = { ReligionChip(religion, enabled(OptionalConsentType.PROFILE_RELIGION)) { open(OptionalConsentType.PROFILE_RELIGION) } },
         // 결과 미확인 · 동의 저장 실패 · 조회 실패는 칩 아래에서 "다시 확인" · 같은 동의 다시 요청
-        belowChips = { OptionalProfileStatus(optional, optionalModel::load, optionalModel::retryUnresolvedConsent) },
+        // 저장 · 확인 안내는 시트가 맡고, 사진은 위쪽 사진 칸이 맡는다. 여기서는 동의가 바뀌었다는 안내만 남긴다
+        belowChips = { OptionalProfileStatus(optional.copy(photoFailed = false, notice = optional.notice.takeIf {
+            it == OptionalProfileNotice.VersionChanged || it == OptionalProfileNotice.ConsentRequired }),
+            optionalModel::load, optionalModel::retryUnresolvedConsent, editing = true) },
         introduction = {
             EditIntroCard(saved?.introduction.takeIf { introAdded }, introAdded, enabled(OptionalConsentType.PROFILE_INTRODUCTION)) {
                 open(OptionalConsentType.PROFILE_INTRODUCTION)
