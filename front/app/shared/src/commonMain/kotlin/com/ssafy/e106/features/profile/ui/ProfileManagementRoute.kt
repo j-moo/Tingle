@@ -35,7 +35,10 @@ fun ProfileManagementRoute(session: Session.SignedIn, onExit: () -> Unit, model:
     var optionalExitPrompt by rememberSaveable(session) { mutableStateOf(false) }
     // 구성 변경에서는 저장을 유지하고, 재생성된 화면이 저장 완료 상태를 소비해 이동한다.
     LaunchedEffect(session, state.session, state.saveCompleted, state.busy) {
-        if (state.session == session && model.takeSaveCompletion()) { optionalModel.leave(); page = ProfileDestination.Overview }
+        // 저장 뒤 보기 화면으로 돌아갈 때도 연락 이메일을 다시 받는다(수정 화면에서는 받지 않았으므로)
+        if (state.session == session && model.takeSaveCompletion()) {
+            optionalModel.leave(); page = ProfileDestination.Overview; model.load(withEmail = true)
+        }
     }
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
         if (page != ProfileDestination.Optional) model.load(withEmail = page == ProfileDestination.Overview)
