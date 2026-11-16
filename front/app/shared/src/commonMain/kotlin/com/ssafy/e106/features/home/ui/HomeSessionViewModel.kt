@@ -69,12 +69,15 @@ class HomeSessionViewModel(private val profiles: ProfileRepository, private val 
             saving?.join() // 저장 중에 홈을 다시 열었으면 저장이 끝난 뒤의 값을 받는다.
             val settingsResult = settings.get(user, SettingsKind.MATCHING)
             if (!valid(stamp)) return@read
+            // 처음 여는 홈은 매칭 설정과 키링 목록을 다 받은 뒤 한 번에 보여 준다. 설정만 먼저 보여 주면
+            // 키링이 없는 계정에 ON 원이 잠깐 보였다가 "키링을 연결해 주세요"로 바뀐다
+            var settled: (HomeState) -> HomeState = { it }
             when (settingsResult) {
                 is ApiResult.Ok -> {
                     matching = settingsResult.value
-                    mutable.update { it.copy(home = it.home.copy(load = HomeLoadState.Ready,
-                        matchingEnabled = (settingsResult.value.values as? ConflictValues.Matching)?.enabled,
-                        keyring = if (keepCurrent) it.home.keyring else HomeKeyringState.Checking)) }
+                    val enabled = (settingsResult.value.values as? ConflictValues.Matching)?.enabled
+                    if (keepCurrent) mutable.update { it.copy(home = it.home.copy(load = HomeLoadState.Ready, matchingEnabled = enabled)) }
+                    else settled = { it.copy(load = HomeLoadState.Ready, matchingEnabled = enabled) }
                 }
                 is ApiResult.Fail -> {
                     mutable.update { it.copy(home = if (keepCurrent) it.home else HomeState(HomeLoadState.Failed),
@@ -88,11 +91,11 @@ class HomeSessionViewModel(private val profiles: ProfileRepository, private val 
                     val devices = list.value
                     val aliases = readKeyringAliases(user, devices)
                     val keyring = if (devices.isEmpty()) HomeKeyringState.Missing else HomeKeyringState.Registered
-                    if (valid(stamp)) mutable.update { it.copy(home = it.home.copy(keyring = keyring,
+                    if (valid(stamp)) mutable.update { it.copy(home = settled(it.home).copy(keyring = keyring,
                         keyrings = devices, keyringAliases = aliases)) }
                 }
                 is ApiResult.Fail -> if (valid(stamp)) mutable.update {
-                    if (keepCurrent) it.copy(error = list.error) else it.copy(home = it.home.copy(keyring = HomeKeyringState.Unknown))
+                    if (keepCurrent) it.copy(error = list.error) else it.copy(home = settled(it.home).copy(keyring = HomeKeyringState.Unknown))
                 }
             }
         } finally {

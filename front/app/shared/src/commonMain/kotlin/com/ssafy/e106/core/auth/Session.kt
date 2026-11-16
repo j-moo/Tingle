@@ -20,12 +20,11 @@ sealed interface Session {
         val signupCompleted: Boolean,
     ) : Session {
         /**
-         * 서비스를 쓸 수 있는지. READY 판단은 이것만 쓴다. 가입을 마쳤어도 약관 미동의면 막히고,
-         * 키링을 모두 초기화해 키링이 없으면(KEYRING_REQUIRED) 가입 때처럼 키링 등록 화면으로 막는다.
-         * 서버 canAccess 는 가입 완료 회원을 키링 없이도 통과시키므로 이 차단은 앱 화면에서만 한다(back 체크리스트 4번)
+         * 서비스를 쓸 수 있는지. READY 판단은 이것만 쓴다(서버 canAccess 와 같은 규칙). 가입을 마쳤어도 약관 미동의면 막힌다.
+         * 키링을 모두 초기화해 키링이 없는(KEYRING_REQUIRED) 가입 완료 계정은 막지 않는다: 홈 · 제안 · 채팅 · 마이를 그대로 쓰고,
+         * 홈이 새 매칭 버튼 자리에 "키링을 연결해 주세요"와 "키링 연결하기"를 보여 준다
          */
-        val isReady get() = status == OnboardingStatus.READY ||
-            (signupCompleted && status != OnboardingStatus.AGREEMENT_REQUIRED && status != OnboardingStatus.KEYRING_REQUIRED)
+        val isReady get() = status == OnboardingStatus.READY || (signupCompleted && status != OnboardingStatus.AGREEMENT_REQUIRED)
     }
 }
 

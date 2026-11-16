@@ -45,13 +45,16 @@ class HomeKeyringSummaryTest {
             val vm = HomeSessionViewModel(HttpProfileRepository(client), settings, HttpOnboardingRepository(client),
                 session, auth, owned, prefs = prefs).also { models.put("home", it) }
 
-            // 조회 중에도 매칭 설정을 표시하고, 서버의 READY를 현재 BLE 연결 상태로 해석하지 않는다.
+            // 키링 목록을 받기 전에는 매칭 원을 보여 주지 않는다(키링이 없는 계정에 ON 이 잠깐 보였다 바뀌지 않게).
+            // 다 받으면 한 번에 보여 주고, 서버의 READY를 현재 BLE 연결 상태로 해석하지 않는다.
             vm.home()
             runCurrent()
-            assertEquals(HomeKeyringState.Checking, vm.state.value.home.keyring)
-            assertEquals(true, vm.state.value.home.matchingEnabled)
+            assertEquals(HomeLoadState.Loading, vm.state.value.home.load)
+            assertNull(vm.state.value.home.matchingEnabled)
             reply.complete(ApiResult.Ok(listOf(OwnedKeyring(4, "READY", "test"), OwnedKeyring(7, "READY", "test"))))
             runCurrent()
+            assertEquals(HomeLoadState.Ready, vm.state.value.home.load)
+            assertEquals(true, vm.state.value.home.matchingEnabled)
             assertEquals(HomeKeyringState.Registered, vm.state.value.home.keyring)
             assertTrue(vm.saveKeyringAlias(4, " 재준키링 "))
             assertFalse(vm.saveKeyringAlias(999, "내 기기 아님"))

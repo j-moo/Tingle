@@ -132,6 +132,7 @@ internal enum class ServicePage { Home, Proposals, Menu, Chats, Safety, Report, 
                         HomeAction.Profile -> go(ServicePage.Menu)
                         HomeAction.Chats -> chats()
                         HomeAction.Notifications -> go(ServicePage.Notifications)
+                        HomeAction.RegisterKeyring -> go(ServicePage.KeyringRegistration)
                     } }, onSaveKeyringAlias = model::saveKeyringAlias, keyringStatus = { connection.liveStatus },
                         connectedKeyringId = connection.deviceId, checkingKeyringStatus = connection.liveStatus?.loading == true,
                         keyringPublicName = { id, name ->
