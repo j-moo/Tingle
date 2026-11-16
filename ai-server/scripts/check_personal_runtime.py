@@ -1,147 +1,151 @@
-"""Local Docker/Uvicorn smoke checks; never deploys or changes repository data.
+"""Verify the existing Docker CMD with identical dev/prod personal analysis.
 
-docker build -t tingle-ai-personal-runtime-161:review .
-python -m scripts.check_personal_runtime --image tingle-ai-personal-runtime-161:review
+No deployment, external network, approval artifacts or real user data.
+Run: python -m scripts.check_personal_runtime --image IMAGE --report OUTPUT.json
 """
-
 import argparse
+from hashlib import sha256
 import json
 from pathlib import Path
 import shutil
 import subprocess
-import tempfile
-import time
-from urllib.error import HTTPError, URLError
-from urllib.request import Request, urlopen
-from uuid import uuid4
+from tempfile import TemporaryDirectory
+import uuid
 
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
-import jwt
 
 ROOT = Path(__file__).resolve().parents[1]
-PATH = "/internal/ai/personal-analyses"
+SOURCE_FILES = (
+    "config.py", "main.py", "personal_analysis_api/proposals.py", "personal_analysis_api/adapter.py",
+    "personal_analysis_api/router.py", "personal_analysis/core.py", "personal_analysis/reference.py",
+    "personal_analysis/data/reference.json", "personal_analysis/data/questionnaire-SIS-Q-1.1-100.json",
+    "personal_analysis/data/provenance.json",
+)
 
+PROBE = r'''
+from hashlib import sha256
+import importlib.util
+import json
+import os
+from pathlib import Path
+import time
+import urllib.error
+import urllib.request
+import uuid
+import jwt
 
-def docker(*args):
-    return subprocess.run(["docker", *args], check=True, capture_output=True,
-                          encoding="utf-8", timeout=30).stdout.strip()
-
-
-def http(base, path, *, payload=None, token=None):
-    headers = {"Content-Type": "application/json"}
-    if token:
-        headers["Authorization"] = "Bearer " + token
-    request = Request(base + path, data=payload, headers=headers)
+base = 'http://127.0.0.1:8000'
+path = '/internal/ai/personal-analyses'
+def call(path, body=None, token=None):
+    headers = {'Content-Type': 'application/json'}
+    if token: headers['Authorization'] = 'Bearer ' + token
+    raw = body if isinstance(body, bytes) else json.dumps(body).encode() if body is not None else None
+    request = urllib.request.Request(base + path, data=raw, headers=headers)
     try:
-        response = urlopen(request, timeout=3)
-    except HTTPError as error:
-        response = error
-    with response:
-        return response.status, json.load(response)
+        with urllib.request.urlopen(request, timeout=5) as response:
+            return response.status, json.load(response)
+    except urllib.error.HTTPError as error:
+        return error.code, json.load(error)
+
+for attempt in range(60):
+    try:
+        if call('/health')[0] == 200: break
+    except OSError: pass
+    time.sleep(.1)
+else: raise AssertionError('Application did not become healthy')
+
+environment = os.environ['APP_ENV']
+key = Path('/run/personal-test/private.pem').read_bytes()
+def token(env=environment, scope='ai:execute'):
+    now = int(time.time())
+    return jwt.encode(dict(iss=f'urn:tingle:be:{env}', aud=f'urn:tingle:ai:{env}', sub='tingle-be',
+        iat=now, nbf=now, exp=now+300, jti=str(uuid.uuid4()), scope=scope), key, algorithm='RS256',
+        headers={'kid':'synthetic-personal-image','typ':'tingle-service+jwt'})
+
+paths = call('/openapi.json')[1]['paths']
+assert {path,'/health','/internal/ai/explanations','/internal/ai/icebreakers','/internal/ai/risk-detections'} <= paths.keys()
+assert call(path,b'not-json')[0] == 401
+assert call(path,b'not-json',token('dev' if environment == 'prod' else 'prod'))[0] == 401
+assert call(path,b'not-json',token(scope='other'))[0] == 403
+assert call(path,b' ' * 16385,token())[0] == 400
+assert call(path,b' ' * 16385)[0] == 401
+outcomes = []
+for kind in ('succeeded','insufficient'):
+    body = json.loads(Path('/run/personal-test/'+kind+'.request.json').read_bytes())
+    expected = json.loads(Path('/run/personal-test/'+kind+'.response.proposal.json').read_bytes())
+    status,result = call(path,body,token())
+    assert status == 200 and result == expected
+    assert call(path,body,token())[1] == result
+    raw = json.dumps(result,ensure_ascii=False,sort_keys=True,separators=(',',':')).encode()
+    outcomes.append(dict(case=kind,httpStatus=status,status=result['status'],responseSha256=sha256(raw).hexdigest()))
+body['surveyVersion'] = 'unsupported-synthetic'
+assert call(path,body,token())[0] == 409
+packaged = list(Path('/app').rglob('*'))
+assert not any(p.is_file() and ('tests' in p.relative_to('/app').parts or p.suffix in {'.pem','.key'}) for p in packaged)
+assert {str(p.relative_to('/app/app')) for p in Path('/app/app').rglob('*.json')} == {
+    'personal_analysis/data/reference.json','personal_analysis/data/provenance.json',
+    'personal_analysis/data/questionnaire-SIS-Q-1.1-100.json','personal_analysis_api/presentation-review.json'}
+assert not Path('/app/app/personal_analysis_api/production.py').exists()
+print(json.dumps(dict(environment=environment,health=200,routes=sorted(paths),outcomes=outcomes,
+    tokenizerInstalled=importlib.util.find_spec('tokenizers') is not None,packagedTestMaterials=False)))
+'''
 
 
-def check(image, environment, damage=None, *, personal_prod_enabled=False):
-    enabled = environment == "dev"
-    private = rsa.generate_private_key(public_exponent=65537, key_size=2048)
-    name = "personal-review-161-" + uuid4().hex[:12]
-    with tempfile.TemporaryDirectory(prefix="personal-review-161-") as temporary:
-        root = Path(temporary)
-        (root / "public.pem").write_bytes(private.public_key().public_bytes(
-            serialization.Encoding.PEM, serialization.PublicFormat.SubjectPublicKeyInfo,
-        ))
-        mounts = ["--mount", f"type=bind,source={root},target=/review,readonly"]
-        if damage:
-            shutil.copytree(ROOT / "app", root / "app", ignore=shutil.ignore_patterns("__pycache__"))
-            reference = root / "app/personal_analysis/data/reference.json"
-            if damage == "missing":
-                reference.unlink()
-            else:
-                reference.write_text("{}", encoding="utf-8")
-            mounts += ["--mount", f"type=bind,source={root / 'app'},target=/app/app,readonly"]
-        try:
-            docker("run", "-d", "--name", name, "-p", "127.0.0.1::8000", *mounts,
-                   "-e", "APP_ENV=" + environment,
-                   "-e", "PERSONAL_ANALYSIS_PROD_ENABLED=" + str(personal_prod_enabled).lower(), "-e",
-                   'AI_SERVICE_PUBLIC_KEYS={"synthetic-smoke-key":"/review/public.pem"}', image)
-            if environment == "prod" and personal_prod_enabled:
-                # This repository has no approved production presentation policy.
-                # Check the real image/CMD refuses startup, rather than serving a proposal.
-                assert docker("wait", name) != "0"
-                # Python tracebacks are written to stderr, so inspect both streams.
-                completed = subprocess.run(["docker", "logs", name], check=True, capture_output=True,
-                                           encoding="utf-8", timeout=30)
-                logs = completed.stdout + completed.stderr
-                assert "production presentation policy is not approved" in logs
-                assert "proposals.py" not in logs
-                print(json.dumps({"environment": environment, "personalProdEnabled": True,
-                                  "activation": "REFUSED_UNAPPROVED_PRESENTATION"}), flush=True)
-                return
-            port = docker("port", name, "8000/tcp").rsplit(":", 1)[1]
-            base = "http://127.0.0.1:" + port
-            for attempt in range(40):
-                try:
-                    assert http(base, "/health")[0] == 200
-                    break
-                except (URLError, ConnectionError, TimeoutError):
-                    time.sleep(0.25)
-            else:
-                raise AssertionError("Uvicorn did not become ready")
-            now = int(time.time())
-            token = jwt.encode({
-                "iss": f"urn:tingle:be:{environment}", "aud": f"urn:tingle:ai:{environment}",
-                "sub": "tingle-be", "iat": now, "nbf": now, "exp": now + 300,
-                "jti": str(uuid4()), "scope": "ai:execute",
-            }, private, algorithm="RS256", headers={"kid": "synthetic-smoke-key", "typ": "tingle-service+jwt"})
-            paths = http(base, "/openapi.json")[1]["paths"]
-            outcomes = {}
-            for kind, expected in (("succeeded", "SUCCEEDED"), ("insufficient", "INSUFFICIENT")):
-                payload = (ROOT / f"tests/fixtures/personal-analysis-api/{kind}.request.json").read_bytes()
-                status, result = http(base, PATH, payload=payload, token=token)
-                assert status == (200 if enabled else 404)
-                if enabled:
-                    assert result["status"] == expected
-                    proposal = json.loads((ROOT / f"tests/fixtures/personal-analysis-api/{kind}.response.proposal.json")
-                                          .read_bytes())
-                    assert result == proposal
-                outcomes[kind] = {"http": status, "status": result.get("status")}
-            if enabled:
-                assert PATH in paths
-                assert http(base, PATH, payload=b" " * 16385, token=token)[0] == 400
-                assert http(base, PATH, payload=b" " * 16385)[0] == 401
-                forbidden = jwt.encode({
-                    "iss": f"urn:tingle:be:{environment}", "aud": f"urn:tingle:ai:{environment}",
-                    "sub": "tingle-be", "iat": now, "nbf": now, "exp": now + 300,
-                    "jti": str(uuid4()), "scope": "other",
-                }, private, algorithm="RS256", headers={"kid": "synthetic-smoke-key", "typ": "tingle-service+jwt"})
-                assert http(base, PATH, payload=b"not-json", token=forbidden)[0] == 403
-                invalid = json.loads((ROOT / "tests/fixtures/personal-analysis-api/succeeded.request.json").read_bytes())
-                invalid["analysisVersion"] = "unsupported-version"
-                assert http(base, PATH, payload=json.dumps(invalid).encode(), token=token)[0] == 409
-            else:
-                assert PATH not in paths
-            for path in ("/internal/ai/risk-detections", "/internal/ai/explanations"):
-                assert path in paths
-                assert http(base, path, payload=b"{}", token=token)[0] in (400, 422)
-            # A new process in the exact container image also checks import/runtime absence.
-            state = json.loads(docker("exec", name, "python", "-B", "-c",
-                "import json,sys; from app.main import app; print(json.dumps({"
-                "'runtime':hasattr(app.state,'personal_analysis_runtime'),"
-                "'modules':[n for n in sys.modules if n.startswith('app.personal_analysis')]}))"))
-            assert state["runtime"] is enabled
-            if not enabled:
-                assert state["modules"] == []
-            print(json.dumps({"environment": environment, "personalProdEnabled": personal_prod_enabled,
-                              "damage": damage, "health": 200,
-                              "outcomes": outcomes, **state}), flush=True)
-        finally:
-            subprocess.run(["docker", "rm", "-f", name], capture_output=True, timeout=30)
+def docker(*args, data=None):
+    result = subprocess.run(["docker", *args], input=data, text=True, encoding="utf-8",
+                            capture_output=True, timeout=90)
+    if result.returncode:
+        raise RuntimeError(f"Owned Docker verification failed ({args[0]}): {result.stderr[:2000]}")
+    return result.stdout.strip()
+
+
+def verify(image: str, report: Path | None = None):
+    image_id = docker("image", "inspect", "--format", "{{.Id}}", image)
+    command = json.loads(docker("image", "inspect", "--format", "{{json .Config.Cmd}}", image))
+    assert command == ["python", "-m", "app.main"]
+    cases = []
+    with TemporaryDirectory(prefix="personal-runtime-") as name:
+        directory = Path(name)
+        pair = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+        (directory / "private.pem").write_bytes(pair.private_bytes(
+            serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8, serialization.NoEncryption()))
+        (directory / "public.pem").write_bytes(pair.public_key().public_bytes(
+            serialization.Encoding.PEM, serialization.PublicFormat.SubjectPublicKeyInfo))
+        for kind in ("succeeded", "insufficient"):
+            for suffix in ("request.json", "response.proposal.json"):
+                filename = f"{kind}.{suffix}"
+                shutil.copyfile(ROOT / "tests/fixtures/personal-analysis-api" / filename, directory / filename)
+        for environment in ("dev", "prod"):
+            container = "personal-runtime-" + uuid.uuid4().hex[:12]
+            try:
+                docker("run", "--detach", "--rm", "--network", "none", "--name", container,
+                       "--mount", f"type=bind,source={directory},target=/run/personal-test,readonly",
+                       "--env", f"APP_ENV={environment}", "--env",
+                       'AI_SERVICE_PUBLIC_KEYS={"synthetic-personal-image":"/run/personal-test/public.pem"}', image)
+                observed = json.loads(docker("exec", "-i", container, "python", "-B", "-", data=PROBE))
+                assert observed["tokenizerInstalled"] is False
+                cases.append(observed)
+            finally:
+                docker("rm", "--force", container)
+    assert cases[0]["outcomes"] == cases[1]["outcomes"]
+    program = ('import json;from hashlib import sha256;from pathlib import Path;names='
+               + json.dumps(SOURCE_FILES)
+               + ';print(json.dumps({n:sha256((Path("app")/n).read_bytes()).hexdigest() for n in names}))')
+    image_hashes = json.loads(docker("run", "--rm", "--network", "none", "--entrypoint", "python",
+                                    image, "-B", "-c", program))
+    assert image_hashes == {name: sha256((ROOT / "app" / name).read_bytes()).hexdigest() for name in SOURCE_FILES}
+    value = dict(realGmsCalls=0, image=image, imageId=image_id, command=command, network="none",
+                 devProdEqual=True, sourceBytesMatch=True, sourceSha256=image_hashes, cases=cases)
+    if report is not None:
+        report.parent.mkdir(parents=True, exist_ok=True)
+        report.write_text(json.dumps(value, ensure_ascii=False, indent=2), encoding="utf-8")
+    print(json.dumps(dict(imageId=image_id, environments=len(cases), devProdEqual=True, sourceBytesMatch=True)))
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--image", default="tingle-ai-personal-runtime-161:review")
-    args = parser.parse_args()
-    for environment, damage in (("dev", None), ("prod", None), ("prod", "missing"), ("prod", "integrity")):
-        check(args.image, environment, damage)
-    check(args.image, "prod", personal_prod_enabled=True)
+    parser.add_argument("--report", type=Path)
+    options = parser.parse_args()
+    verify(options.image, options.report)

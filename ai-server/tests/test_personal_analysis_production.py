@@ -1,4 +1,4 @@
-"""Real prod boundaries; a synthetic policy is never a wording approval."""
+"""Real personal-analysis policy, service authentication and validation in prod."""
 
 import json
 from pathlib import Path
@@ -16,9 +16,6 @@ from app.main import create_app
 from app.match_explanation.gms import GmsClient
 from app.personal_analysis import core
 from app.personal_analysis_api import adapter as adapter_module
-from app.personal_analysis_api import production, proposals
-from app.personal_analysis_api.adapter import PresentationPolicy, difference_evidence
-from app.personal_analysis_api.dto import Reading
 from app.personal_analysis_api.review_samples import synthetic_request
 
 PATH = "/internal/ai/personal-analyses"
@@ -32,30 +29,7 @@ def signing_key():
 
 
 @pytest.fixture
-def synthetic_policy():
-    # Exercise the future production connection without blessing proposal wording/IDs.
-    templates = {}
-    for kind in ("succeeded", "insufficient"):
-        answers = {int(a["questionId"][1:]): a["value"] for a in synthetic_request(kind)["answers"]}
-        for row in core.readings(answers):
-            templates[row["key"], row["title"]] = "TEST-ONLY-" + row["key"]
-
-    def difference(row, index, answers):
-        return Reading(
-            key=f"self-preference-Q{row['selfId']:03}-Q{row['id']:03}",
-            templateId="TEST-ONLY-DIFFERENCE", text="Synthetic policy boundary test.",
-            evidenceQuestionIds=difference_evidence(row, answers), priority=2 - index,
-        )
-
-    return PresentationPolicy(
-        reading_template_ids=templates, difference_reading=difference,
-        reading_text_formatters={value: lambda *_: "Synthetic policy boundary test."
-                                 for value in templates.values()},
-    )
-
-
-@pytest.fixture
-def host(tmp_path, signing_key, monkeypatch, synthetic_policy):
+def host(tmp_path, signing_key, monkeypatch):
     public = tmp_path / "public.pem"
     public.write_bytes(signing_key.public_key().public_bytes(
         serialization.Encoding.PEM, serialization.PublicFormat.SubjectPublicKeyInfo))
@@ -66,14 +40,8 @@ def host(tmp_path, signing_key, monkeypatch, synthetic_policy):
     monkeypatch.setattr(GmsClient, "from_environment", forbidden)
     monkeypatch.setattr(GmsClient, "request_text", forbidden)
 
-    def build(*, environment="prod", enabled=True, configured_keys=True, policy_available=True):
-        monkeypatch.setattr(production, "production_presentation_policy",
-                            lambda: synthetic_policy if policy_available else None)
-        if environment == "prod":
-            monkeypatch.setattr(proposals, "proposed_label_only_policy",
-                                lambda: pytest.fail("Production selected the UNAPPROVED proposal"))
+    def build(*, environment="prod", configured_keys=True):
         configured = Settings(_env_file=None, app_env=environment,
-            personal_analysis_prod_enabled=enabled,
             ai_service_public_keys={KID: str(public)} if configured_keys else {},
             explanation_release_descriptor_files=[], icebreaker_release_descriptor_file="",
             risk_local_rules_enabled=False)
@@ -96,13 +64,8 @@ def headers(signing_key):
 
 
 @pytest.mark.parametrize("kind,status", [("succeeded", "SUCCEEDED"), ("insufficient", "INSUFFICIENT")])
-def test_prod_opt_in_executes_real_adapter_and_preserves_response(host, headers, kind, status):
+def test_prod_executes_real_policy_and_preserves_response(host, headers, kind, status):
     expected = json.loads((FIXTURES / f"{kind}.response.proposal.json").read_bytes())
-    for row in expected["readings"]:
-        row["templateId"] = "TEST-ONLY-" + row["key"]
-        row["text"] = "Synthetic policy boundary test."
-    for row in expected["selfPreferenceDifferences"]:
-        row.update(templateId="TEST-ONLY-DIFFERENCE", text="Synthetic policy boundary test.")
     with host() as client:
         response = client.post(PATH, json=synthetic_request(kind), headers=headers())
         assert client.app.state.risk_runtime.resources.engine is None
@@ -112,51 +75,15 @@ def test_prod_opt_in_executes_real_adapter_and_preserves_response(host, headers,
     assert response.headers["X-Request-Id"]
 
 
-def test_repository_has_no_approved_production_presentation():
-    assert production.production_presentation_policy() is None
-
-
-def test_prod_on_without_approved_policy_refuses_activation(host, monkeypatch):
-    monkeypatch.setattr(adapter_module, "PersonalAnalysisAdapter",
-                        lambda **_: pytest.fail("Unapproved production created an adapter"))
-    with pytest.raises(RuntimeError, match="production presentation policy is not approved"):
-        host(policy_available=False)
-
-
-def test_prod_off_does_not_resolve_a_policy_or_register_a_router(monkeypatch):
-    monkeypatch.setattr(production, "production_presentation_policy",
-                        lambda: pytest.fail("Disabled production resolved presentation"))
-    monkeypatch.setattr(proposals, "proposed_label_only_policy",
-                        lambda: pytest.fail("Disabled production selected the proposal"))
-    # No runtime or OpenAPI route may exist after installing the guard.
-    configured = Settings(_env_file=None, app_env="prod", personal_analysis_prod_enabled=False,
-                          ai_service_public_keys={}, explanation_release_descriptor_files=[],
-                          icebreaker_release_descriptor_file="", risk_local_rules_enabled=False)
-    with TestClient(create_app(configured)) as client:
-        assert not hasattr(client.app.state, "personal_analysis_runtime")
-        assert PATH not in client.get("/openapi.json").json()["paths"]
-        assert client.post(PATH, json={}).status_code == 404
-
-
-@pytest.mark.parametrize("environment,enabled,expected", [
-    ("prod", False, 404), ("prod", True, 200),
-    ("local", False, 200), ("test", False, 200), ("dev", False, 200),
-    ("local", True, 200), ("test", True, 200), ("dev", True, 200),
-])
+@pytest.mark.parametrize("environment", ["local", "test", "dev", "prod"])
 @pytest.mark.parametrize("kind", ["succeeded", "insufficient"])
-def test_opt_in_preserves_existing_environment_behavior(host, headers, environment, enabled, expected, kind):
-    with host(environment=environment, enabled=enabled) as client:
+def test_all_environments_register_the_same_analysis_contract(host, headers, environment, kind):
+    with host(environment=environment) as client:
+        assert client.get("/health").status_code == 200
+        assert PATH in client.get("/openapi.json").json()["paths"]
         response = client.post(PATH, json=synthetic_request(kind), headers=headers(environment=environment))
-    assert response.status_code == expected
-    if environment != "prod":
-        assert response.json() == json.loads((FIXTURES / f"{kind}.response.proposal.json").read_bytes())
-
-
-def test_prod_opt_in_setting_defaults_to_false(monkeypatch):
-    monkeypatch.delenv("PERSONAL_ANALYSIS_PROD_ENABLED", raising=False)
-    assert Settings(_env_file=None).personal_analysis_prod_enabled is False
-    monkeypatch.setenv("PERSONAL_ANALYSIS_PROD_ENABLED", "true")
-    assert Settings(_env_file=None).personal_analysis_prod_enabled is True
+    assert response.status_code == 200
+    assert response.json() == json.loads((FIXTURES / f"{kind}.response.proposal.json").read_bytes())
 
 
 @pytest.mark.parametrize("case,status,code", [
@@ -213,7 +140,7 @@ def test_prod_calculation_fault_is_not_information_insufficiency(host, headers, 
     assert "synthetic-sensitive-fault" not in response.text + caplog.text
 
 
-def test_prod_opt_in_without_service_keys_remains_unavailable(host):
+def test_prod_without_service_keys_remains_unavailable(host):
     with host(configured_keys=False) as client:
         response = client.post(PATH, content=b"not-json")
     assert response.status_code == 503 and response.json()["code"] == "SERVICE_UNAVAILABLE"
