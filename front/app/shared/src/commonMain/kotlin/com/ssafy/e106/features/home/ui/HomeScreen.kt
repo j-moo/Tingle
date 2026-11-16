@@ -153,7 +153,8 @@ private fun MatchingPower(state: HomeState, busy: Boolean, onMatchingChange: (Bo
     Text(stringResource(when { missing -> Res.string.home_keyring_connect_title; on == true -> Res.string.home_power_on_title
         on == false -> Res.string.home_power_off_title; else -> Res.string.home_matching_unknown }),
         style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center,
-        maxLines = 1, overflow = TextOverflow.Ellipsis,
+        // ON/OFF 제목만 한 줄로 고정한다(미확인 · 키링 안내 문구는 길어서 줄바꿈한다)
+        maxLines = if (on != null && !missing) 1 else Int.MAX_VALUE, overflow = TextOverflow.Ellipsis,
         modifier = Modifier.semantics { heading(); liveRegion = LiveRegionMode.Polite })
     // 실패 문구 자리: 비어 있어도 늘 한 줄 높이를 차지한다
     Text(if (state.matchingSaveFailed) stringResource(Res.string.home_matching_failed) else "", color = AppColors.Error,
