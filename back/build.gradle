@@ -62,20 +62,7 @@ tasks.named('test') {
 		systemProperty 'tingle.restore-ops.jar', tasks.named('bootJar').get().archiveFile.get().asFile.absolutePath
 	}
 	useJUnitPlatform {
-		excludeTags 'ai-risk-http', 'ai-explanation-http', 'load'
-	}
-}
-
-// 대량 데이터 부하 테스트(@Tag("load")). MR마다 돌리지 않고, develop·master 머지 중 back 이 바뀐 때 Jenkins가 돌린다(Jenkinsfile back 단계).
-tasks.register('loadTest', Test) {
-	group = 'verification'
-	description = 'Run load tests tagged load'
-	testClassesDirs = sourceSets.test.output.classesDirs
-	classpath = sourceSets.test.runtimeClasspath
-	// 머지마다 다시 돌린다(입력이 같아도 건너뛰지 않는다)
-	outputs.upToDateWhen { false }
-	useJUnitPlatform {
-		includeTags 'load'
+		excludeTags 'ai-risk-http', 'ai-explanation-http'
 	}
 }
 

@@ -72,11 +72,9 @@ pipeline {
             gitlabCommitStatus(name: 'back') {
               // build = 컴파일 + checkstyle(네이버 규칙) + 테스트. 테스트 DB 는 Testcontainers 가 서버 docker 로 띄운다.
               // ufw 가 컨테이너 → 호스트 포트를 막으므로 호스트 네트워크로 돌리고 Testcontainers 가 localhost 로 붙게 한다.
-              // 대량 데이터 부하 테스트(@Tag("load"))는 MR마다 돌리지 않고, develop·master 머지 중 back 이 바뀐 때만 함께 돌린다.
               script {
-                def tasks = env.gitlabActionType == 'PUSH' && DEPLOY[env.gitlabSourceBranch] ? 'build loadTest' : 'build'
                 try {
-                  inDocker('eclipse-temurin:21-jdk', 'back', '-v tingle-ci-gradle-back:/root/.gradle --network host -e TESTCONTAINERS_HOST_OVERRIDE=localhost', "sh gradlew ${tasks} --no-daemon")
+                  inDocker('eclipse-temurin:21-jdk', 'back', '-v tingle-ci-gradle-back:/root/.gradle --network host -e TESTCONTAINERS_HOST_OVERRIDE=localhost', 'sh gradlew build --no-daemon')
                 } finally {
                   // 실패해도 어떤 테스트가 왜 깨졌는지 Jenkins 빌드 화면(Tests)에서 보이게 결과를 남긴다.
                   // 이번 빌드에서 새로 만든 결과만 남긴다(skipOldReports — 다른 브랜치 빌드가 남긴 파일은 뺀다). 실패 판정은 Gradle 이 하고 junit 은 기록만 한다.
