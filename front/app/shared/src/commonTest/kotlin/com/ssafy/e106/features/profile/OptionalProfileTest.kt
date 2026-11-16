@@ -17,7 +17,7 @@ private val religion = OptionalConsentType.PROFILE_RELIGION
 private val photo = OptionalConsentType.PROFILE_PHOTO
 
 /** Test-only server: records writes and can delay, fail, or lose responses. */
-private class OptionalServer : OptionalProfileRepository, ProfileRepository {
+internal class OptionalServer : OptionalProfileRepository, ProfileRepository {
     var data = ProfileResponse(1, "Tester", "2000-01-01", "MALE", "NON_SMOKER", "NEVER")
     var records = OptionalConsentType.entries.map { OptionalConsentRecord(it, "v2", false) }
     var docs = records.map { AgreementItem(it.type.name, "v2", it.type.name, false, "https://tingle.test/terms") }

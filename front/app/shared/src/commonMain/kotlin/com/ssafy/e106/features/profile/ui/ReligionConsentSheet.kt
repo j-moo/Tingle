@@ -19,7 +19,9 @@ import com.ssafy.e106.core.ui.components.AppButtonVariant
 import com.ssafy.e106.core.ui.theme.AppColors
 import com.ssafy.e106.core.ui.theme.AppShapes
 import com.ssafy.e106.core.ui.theme.AppSpacing
+import com.ssafy.e106.features.profile.data.OptionalConsentType
 import com.ssafy.e106.resources.*
+import org.jetbrains.compose.resources.StringResource
 import org.jetbrains.compose.resources.stringResource
 
 /**
@@ -36,22 +38,32 @@ internal fun ReligionConsentAsk(enabled: Boolean, onRequest: () -> Unit) {
     }
 }
 
+/** 동의 시트 제목과 설명 세 줄(저장 · 상대 공개 / 동의하지 않아도 불이익 없음 / 철회하면 삭제). 종교와 소개가 쓴다 */
+internal fun consentSheetText(type: OptionalConsentType): Pair<StringResource, List<StringResource>> = when (type) {
+    OptionalConsentType.PROFILE_INTRODUCTION -> Res.string.intro_sheet_title to
+        listOf(Res.string.intro_sheet_use, Res.string.intro_sheet_free, Res.string.intro_sheet_withdraw)
+    else -> Res.string.religion_sheet_title to
+        listOf(Res.string.religion_sheet_use, Res.string.religion_sheet_free, Res.string.religion_sheet_withdraw)
+}
+
 /**
- * 종교 정보 동의 확인 시트. 종교는 민감정보라 무엇에 동의하는지 세 줄로 적고 전문 링크([document])를 둔다.
- * "동의하고 입력하기"를 눌러야 동의가 저장된다. 바깥 · 뒤로 가기 · "동의하지 않기"는 아무것도 저장하지 않는다.
+ * 선택 정보 동의 확인 시트. 무엇에 동의하는지 세 줄([lines])로 적고 전문 링크([document])를 둔다.
+ * [agree] 를 눌러야 동의가 저장된다. 바깥 · 뒤로 가기 · [decline] 은 아무것도 저장하지 않는다.
  */
 @Composable
-internal fun ReligionConsentSheet(busy: Boolean, onAgree: () -> Unit, onDismiss: () -> Unit, document: @Composable () -> Unit) {
+internal fun ConsentSheet(title: StringResource, lines: List<StringResource>, busy: Boolean, onAgree: () -> Unit, onDismiss: () -> Unit,
+    agree: StringResource = Res.string.religion_sheet_agree, decline: StringResource = Res.string.religion_sheet_decline,
+    document: @Composable () -> Unit) {
     Dialog(onDismissRequest = { if (!busy) onDismiss() }, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         ActionSheet(onDismiss = onDismiss.takeIf { !busy }) {
-            Text(stringResource(Res.string.religion_sheet_title), style = MaterialTheme.typography.titleLarge,
+            Text(stringResource(title), style = MaterialTheme.typography.titleLarge,
                 color = AppColors.TextPrimary, modifier = Modifier.semantics { heading() })
-            listOf(Res.string.religion_sheet_use, Res.string.religion_sheet_free, Res.string.religion_sheet_withdraw).forEach {
+            lines.forEach {
                 Text(stringResource(it), style = MaterialTheme.typography.bodyMedium, color = AppColors.TextSecondary)
             }
             document()
-            AppButton(stringResource(Res.string.religion_sheet_agree), Modifier.fillMaxWidth(), loading = busy, onClick = onAgree)
-            AppButton(stringResource(Res.string.religion_sheet_decline), Modifier.fillMaxWidth(), variant = AppButtonVariant.Secondary, enabled = !busy, onClick = onDismiss)
+            AppButton(stringResource(agree), Modifier.fillMaxWidth(), loading = busy, onClick = onAgree)
+            AppButton(stringResource(decline), Modifier.fillMaxWidth(), variant = AppButtonVariant.Secondary, enabled = !busy, onClick = onDismiss)
         }
     }
 }

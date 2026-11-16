@@ -21,4 +21,9 @@
     <string name="profile_religion_hidden">종교 비공개</string>
     <string name="profile_intro_add">소개 추가</string>
     <string name="profile_intro_edit">고치기</string>
+    <!-- 수정 화면의 종교 · 소개 시트. 아래 "저장"과 달리 완료하면 바로 저장한다 -->
+    <string name="profile_sheet_saves_now">완료하면 바로 저장돼요.</string>
+    <string name="profile_sheet_done">완료</string>
+    <string name="profile_sheet_withdraw">동의 철회</string>
+    <string name="profile_consent_check_failed">동의 상태를 확인하지 못했어요.</string>
 </resources>

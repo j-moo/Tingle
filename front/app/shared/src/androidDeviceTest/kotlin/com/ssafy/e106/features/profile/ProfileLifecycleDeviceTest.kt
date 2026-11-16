@@ -69,7 +69,7 @@ class ProfileLifecycleTestActivity : ComponentActivity() {
             }) {
                 AppTheme {
                     if (fixture.management) ProfileManagementRoute(fixture.session.state.value as Session.SignedIn,
-                        onExit = { fixture.exits++ }, model = editModel)
+                        onExit = { fixture.exits++ }, model = editModel, optionalModel = model)
                     else OptionalProfileRoute(fixture.session.state.value as Session.SignedIn,
                         onContinue = { fixture.completedBy = instanceNumber },
                         onBack = { fixture.exits++ }, model = model)

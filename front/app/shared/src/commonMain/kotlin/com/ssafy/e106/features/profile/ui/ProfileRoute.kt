@@ -49,8 +49,10 @@ fun ProfileRoute(session: Session.SignedIn, model: ProfileViewModel = koinViewMo
     val religionAsk = optional.decision?.takeIf { it.type == OptionalConsentType.PROFILE_RELIGION && it.agreed }
     OptionalProfileDialogs(if (religionAsk != null) optional.copy(decision = null) else optional,
         optionalModel::confirmDecision, optionalModel::dismissDecision, optionalModel::deletePhoto)
-    if (religionAsk != null) ReligionConsentSheet(optional.busy, optionalModel::confirmDecision, optionalModel::dismissDecision) {
-        OptionalConsentInfo(optional, OptionalConsentType.PROFILE_RELIGION)
+    if (religionAsk != null) consentSheetText(OptionalConsentType.PROFILE_RELIGION).let { (title, lines) ->
+        ConsentSheet(title, lines, optional.busy, optionalModel::confirmDecision, optionalModel::dismissDecision) {
+            OptionalConsentInfo(optional, OptionalConsentType.PROFILE_RELIGION)
+        }
     }
     state.basicsConfirmation?.let { basics ->
         ProfileBasicsConfirmSheet(isoBirthDate(basics.birthDateDigits),

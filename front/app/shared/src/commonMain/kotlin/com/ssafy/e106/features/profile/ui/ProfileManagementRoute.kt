@@ -1,6 +1,5 @@
 package com.ssafy.e106.features.profile.ui
 
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.rememberScrollState
@@ -10,8 +9,6 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
@@ -30,19 +27,26 @@ import org.koin.compose.viewmodel.koinViewModel
 private enum class ProfileDestination { Overview, Edit, Optional, Correction }
 
 @Composable
-fun ProfileManagementRoute(session: Session.SignedIn, onExit: () -> Unit, model: ProfileEditViewModel = koinViewModel()) {
+fun ProfileManagementRoute(session: Session.SignedIn, onExit: () -> Unit, model: ProfileEditViewModel = koinViewModel(),
+    // 수정 화면의 종교 · 소개 시트와 📷 선택 정보 화면이 같은 인스턴스를 쓴다
+    optionalModel: OptionalProfileViewModel = koinViewModel()) {
     val state by model.state.collectAsStateWithLifecycle()
     var page by rememberSaveable(session) { mutableStateOf(ProfileDestination.Overview) }
     var unknownExitPrompt by rememberSaveable(session) { mutableStateOf(false) }
     // 구성 변경에서는 저장을 유지하고, 재생성된 화면이 저장 완료 상태를 소비해 이동한다.
     LaunchedEffect(session, state.session, state.saveCompleted, state.busy) {
-        if (state.session == session && model.takeSaveCompletion()) page = ProfileDestination.Overview
+        if (state.session == session && model.takeSaveCompletion()) { optionalModel.leave(); page = ProfileDestination.Overview }
     }
-    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { if (page != ProfileDestination.Optional) model.load() }
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
+        if (page != ProfileDestination.Optional) model.load()
+        if (page == ProfileDestination.Edit) optionalModel.load()
+    }
     if (state.session != session) return
-    fun overview() { page = ProfileDestination.Overview }
-    fun returnFromOptional() { page = ProfileDestination.Edit; model.load() }
-    fun exit() { model.leave(); onExit() }
+    // 수정 화면을 떠날 때만 선택 정보 요청을 끊는다(📷 선택 정보 화면은 같은 모델을 이어 쓴다)
+    fun overview() { optionalModel.leave(); page = ProfileDestination.Overview }
+    fun edit() { page = ProfileDestination.Edit; optionalModel.load() }
+    fun returnFromOptional() { edit(); model.load() }
+    fun exit() { model.leave(); optionalModel.leave(); onExit() }
     fun back() {
         if (state.busy) return
         if (state.recoveryRequired) { unknownExitPrompt = true; return }
@@ -56,17 +60,16 @@ fun ProfileManagementRoute(session: Session.SignedIn, onExit: () -> Unit, model:
         back()
     }
     when (page) {
-        ProfileDestination.Optional -> OptionalProfileRoute(session, { returnFromOptional() }, ::returnFromOptional, editingExisting = true)
+        ProfileDestination.Optional -> OptionalProfileRoute(session, { returnFromOptional() }, ::returnFromOptional, model = optionalModel, editingExisting = true)
         ProfileDestination.Correction -> HelpGuideScreen(HelpGuideState(HelpGuideKind.Correction), onAction = {
             if (it == HelpGuideAction.Back) page = ProfileDestination.Edit
         })
-        ProfileDestination.Edit -> ProfileConnectedEditScreen(state,
-            onChange = model::change, onSave = { model.save() },
-            onBack = ::back, onDiscard = { model.discard(::overview) }, onKeep = model::keepEditing,
+        ProfileDestination.Edit -> ProfileEditPage(session, state, model, optionalModel,
+            onBack = ::back, onDiscard = { model.discard(::overview) },
             onOptional = { if (state.canEdit) page = ProfileDestination.Optional },
-            onCorrection = { if (state.canEdit) page = ProfileDestination.Correction }, onReload = model::load)
+            onCorrection = { if (state.canEdit) page = ProfileDestination.Correction })
         ProfileDestination.Overview -> ProfileOverviewScreen(state, devNotice = !session.isReady,
-            onEdit = { page = ProfileDestination.Edit }, onReload = model::load, onBack = ::back)
+            onEdit = ::edit, onReload = model::load, onBack = ::back)
     }
     // 오프라인에서도 사용자를 가두지 않는다. 나가더라도 서버 반영 여부는 미확인으로 남긴다.
     if (unknownExitPrompt) ProfileUnknownExitDialog(
@@ -127,6 +130,7 @@ fun ProfileConnectedEditScreen(
     state: ProfileManagementState, onChange: (ProfileEditDraft) -> Unit, onSave: () -> Unit,
     onBack: () -> Unit, onDiscard: () -> Unit, onKeep: () -> Unit,
     onOptional: () -> Unit, onCorrection: () -> Unit, onReload: () -> Unit,
+    religionChip: @Composable () -> Unit = {}, belowChips: @Composable () -> Unit = {}, introduction: @Composable () -> Unit = {},
 ) {
     val editor = state.editor
     if (editor == null) {
@@ -152,31 +156,9 @@ fun ProfileConnectedEditScreen(
     val (photo, image) = rememberHeroPhoto(state.photo, state.profile?.hasProfilePhoto == true, state.photoFailed)
     ProfileEditScreen(editor.copy(saving = state.busy, interactionEnabled = !state.recoveryRequired, saveError = saveError),
         onChange, onSave, onBack, onDiscard, onKeep, onOptional, onCorrection,
-        heroPhoto = photo, heroImage = image,
-        // 종교 · 소개는 선택 정보 화면(동의 포함)에서 고친다
-        religionChip = { ReligionChip(state.profile?.religion.religion(), state.canEdit, onOptional) },
-        introduction = { EditIntroCard(state.profile?.introduction, added = true, state.canEdit, onOptional) },
+        heroPhoto = photo, heroImage = image, religionChip = religionChip, belowChips = belowChips, introduction = introduction,
         header = { ProfileManagementNotice(state, onReload) },
         refreshing = refreshing, onRefresh = refresh)
-}
-
-/** 수정 화면 종교 칩: 값이 없으면 점선 "종교 추가", 공개하지 않음이면 "종교 비공개" */
-@Composable private fun ReligionChip(religion: ProfileReligion?, enabled: Boolean, onClick: () -> Unit) {
-    val text = when (religion) {
-        null -> stringResource(Res.string.profile_religion_add)
-        ProfileReligion.Private -> stringResource(Res.string.profile_religion_hidden)
-        else -> stringResource(religion.label())
-    }
-    EditChip(Res.drawable.ic_church, text, religion?.let { stringResource(Res.string.profile_chip_change,
-        stringResource(Res.string.profile_religion_title).withoutTag(), stringResource(it.label())) }, enabled, onClick = onClick)
-}
-
-/** 수정 화면 소개 카드: 오른쪽 위에 "고치기"(동의 전이면 "소개 추가"), 카드 전체를 누를 수 있다 */
-@Composable private fun EditIntroCard(text: String?, added: Boolean, enabled: Boolean, onClick: () -> Unit) {
-    val action = stringResource(if (added) Res.string.profile_intro_edit else Res.string.profile_intro_add)
-    ProfileIntroCard(text, Modifier.clip(AppShapes.Card).clickable(enabled, onClickLabel = action, role = Role.Button, onClick = onClick)) {
-        Text(action, style = MaterialTheme.typography.labelLarge, color = if (enabled) AppColors.FreshInk else AppColors.TextDisabled)
-    }
 }
 
 /** 프로필이 없는데 불러오기도 끝났다 = 못 불러왔다(오류) 또는 수정할 프로필이 아니다(입력 미완료) */
