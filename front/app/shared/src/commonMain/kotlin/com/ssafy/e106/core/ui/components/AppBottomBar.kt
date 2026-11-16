@@ -17,6 +17,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -26,6 +27,7 @@ import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.unit.dp
 import com.ssafy.e106.core.ui.theme.AppColors
 import com.ssafy.e106.core.ui.theme.AppSizes
 import com.ssafy.e106.core.ui.theme.AppSpacing
@@ -33,6 +35,12 @@ import com.ssafy.e106.core.ui.theme.focusRing
 import com.ssafy.e106.core.ui.theme.glass
 
 private val TabShape = RoundedCornerShape(50)
+
+/**
+ * 내용 위에 떠 있는 하단 바가 가리는 높이(시스템 내비게이션 바 포함). 바가 없으면 0.
+ * 탭 화면은 스크롤 끝 여백으로 더해 마지막 항목 · 당기기 자리가 바 위로 올라오게 한다
+ */
+val LocalBottomBarPadding = compositionLocalOf { 0.dp }
 
 /**
  * 하단 내비게이션. 글자 탭을 같은 폭으로 늘어놓는다. 화면 아래에 떠 있는 유리 캡슐(visionOS 탭 바).

@@ -39,7 +39,7 @@ fun AccountMenuScreen(
             // 당기면 다시 받는다. 다시 받는 동안은 사진 카드가 뼈대로 바뀌어 알리므로 고리는 따로 돌리지 않는다
             PullDownRefreshBox(false, { onAction(AccountMenuAction.Refresh) }, Modifier.weight(1f).fillMaxWidth()) {
                 Column(Modifier.widthIn(max = 640.dp).fillMaxWidth()
-                    .verticalScroll(rememberScrollState()).padding(screenPaddingValues()),
+                    .verticalScroll(rememberScrollState()).padding(screenPaddingValues(LocalBottomBarPadding.current)),
                     verticalArrangement = Arrangement.spacedBy(AppSpacing.Large)) {
                     when (state.load) {
                         AccountMenuLoad.Loading -> SkeletonGroup { SkeletonBone(Modifier.fillMaxWidth(0.5f), height = 32.dp) }

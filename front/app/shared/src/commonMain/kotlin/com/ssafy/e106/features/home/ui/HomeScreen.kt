@@ -68,7 +68,7 @@ fun HomeScreen(state: HomeState, onMatchingChange: (Boolean) -> Unit, onAction: 
         if (state.load != HomeLoadState.Loading && !refreshing && !state.savingMatching) onAction(HomeAction.Refresh)
     }
     Surface(modifier.fillMaxSize(), color = AppColors.Screen) {
-        // 아래쪽 인셋은 틀(SignedInServiceHost)의 하단 바가 맡는다
+        // 아래쪽 인셋은 틀(SignedInServiceHost)의 하단 바가 맡는다. 바는 내용 위에 떠 있다
         Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal))) {
             // 오른쪽 위 종 모양 = 받은 알림 모음(키링 관리는 마이 → 내 키링)
             AppTopBar(stringResource(Res.string.home_brand), trailing = {
@@ -79,9 +79,12 @@ fun HomeScreen(state: HomeState, onMatchingChange: (Boolean) -> Unit, onAction: 
             PullToRefreshBox(refreshing, refresh, Modifier.weight(1f).fillMaxWidth()
                 .semantics { customActions = listOf(CustomAccessibilityAction(refreshLabel) { refresh(); true }) },
                 contentAlignment = Alignment.TopCenter) {
+                // 아래 바 높이만큼은 바 뒤로 스크롤되는 자리다. 가운데 정렬은 바 위 영역 기준이라 원 자리가 바 유무와 상관없이 같다
+                val bar = LocalBottomBarPadding.current
                 BoxWithConstraints(Modifier.widthIn(max = 640.dp).fillMaxSize().padding(horizontal = screenGutter())) {
                     // 위 40dp: 켜진 원의 빛이 바깥으로 번질 자리. 내용이 길어 원이 스크롤 맨 위에 닿아도 잘리지 않고, 켜고 꺼도 자리가 그대로다
-                    Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(top = PowerGlowRoom).heightIn(min = maxHeight - PowerGlowRoom),
+                    Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(top = PowerGlowRoom, bottom = bar)
+                        .heightIn(min = maxHeight - PowerGlowRoom - bar),
                         verticalArrangement = Arrangement.spacedBy(AppSpacing.Large, Alignment.CenterVertically),
                         horizontalAlignment = Alignment.CenterHorizontally) {
                         when (state.load) {

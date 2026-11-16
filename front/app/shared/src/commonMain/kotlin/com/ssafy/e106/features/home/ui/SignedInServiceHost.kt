@@ -1,17 +1,21 @@
 package com.ssafy.e106.features.home.ui
 
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.unit.dp
+import com.ssafy.e106.core.ui.theme.AppSizes
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -130,9 +134,14 @@ private val TabPages = listOf(ServicePage.Home, ServicePage.Proposals, ServicePa
     var tabEnabled by remember(page) { mutableStateOf(true) }
     // 채팅은 틀이 들고 있는 방 번호로 바로 판단한다(Route 의 알림을 기다리면 한 프레임 바가 남는다)
     val showBar = page in TabPages && tabRoot && !(page == ServicePage.Chats && roomId != null)
-    // 틀은 내용에 인셋 · 배경을 주지 않는다. 탭 화면은 위 · 좌우 인셋만, 아래 인셋은 바가 맡는다
-    Column(Modifier.fillMaxSize()) {
-        Box(Modifier.weight(1f)) {
+    // 바는 내용 위에 떠 있다. 탭 화면은 스크롤 끝에 바 높이(시스템 내비게이션 바 포함)만큼 여백을 둬 마지막 항목이 바 위로 올라오게 한다.
+    // 처음 재기 전에는 기본 높이로 둔다(첫 프레임에 홈 원 자리가 바뀌지 않게)
+    val density = LocalDensity.current
+    var barHeight by remember { mutableStateOf(AppSizes.BottomBarMinHeight) }
+    val navigationInset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+    // 틀은 내용에 인셋 · 배경을 주지 않는다. 탭 화면은 위 · 좌우 인셋만 스스로 적용한다
+    CompositionLocalProvider(LocalBottomBarPadding provides if (showBar) barHeight + navigationInset else 0.dp) { Box(Modifier.fillMaxSize()) {
+        Box(Modifier.fillMaxSize()) {
             when (page) {
                 ServicePage.Home -> {
                     // 카드가 접혀 있어도 기기 연결이 끊기거나 복구되면 바로 표시한다.
@@ -239,10 +248,10 @@ private val TabPages = listOf(ServicePage.Home, ServicePage.Proposals, ServicePa
                 }
             }
         }
-        // 바는 한 번만 그리고 탭을 바꾸면 위 내용만 바뀐다(내용 교체에는 전환 효과를 넣지 않는다).
-        // 높이도 함께 줄고 늘어야 바가 사라진 뒤 내용이 바 높이만큼 튀지 않는다
-        AnimatedVisibility(showBar, enter = expandVertically(expandFrom = Alignment.Top) + fadeIn(),
-            exit = shrinkVertically(shrinkTowards = Alignment.Top) + fadeOut()) {
+        // 바는 한 번만 그리고 탭을 바꾸면 아래 내용만 바뀐다(내용 교체에는 전환 효과를 넣지 않는다).
+        // 내용 위에 떠 있어 나타나고 사라져도 내용 자리는 바뀌지 않는다
+        AnimatedVisibility(showBar, Modifier.align(Alignment.BottomCenter),
+            enter = slideInVertically { it } + fadeIn(), exit = slideOutVertically { it } + fadeOut()) {
             AppBottomBar(listOf(stringResource(Res.string.home_tab), stringResource(Res.string.home_proposal_tab),
                 stringResource(Res.string.home_chat_tab), stringResource(Res.string.home_profile_tab)), tab,
                 // 지금 탭을 다시 누르면 아무것도 하지 않는다(go 가 조회만 취소하고 다시 받지 않는다)
@@ -251,9 +260,10 @@ private val TabPages = listOf(ServicePage.Home, ServicePage.Proposals, ServicePa
                     page -> Unit
                     ServicePage.Chats -> chats()
                     else -> go(target)
-                } }, modifier = Modifier.navigationBarsPadding(), enabled = page != ServicePage.Proposals || tabEnabled)
+                } }, modifier = Modifier.navigationBarsPadding().onSizeChanged { barHeight = with(density) { it.height.toDp() } },
+                enabled = page != ServicePage.Proposals || tabEnabled)
         }
-    }
+    } }
     if (logoutPrompt) AppDialog(title = stringResource(Res.string.account_logout),
         description = stringResource(Res.string.account_logout_detail), confirmText = stringResource(Res.string.account_logout),
         dismissText = stringResource(Res.string.proposals_return), onConfirm = { logoutPrompt = false; model.logout() },
