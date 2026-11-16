@@ -192,25 +192,18 @@ sh gradlew check ${APP_CHECK_ARGS:-} :androidApp:$APK_TASK --no-daemon -Dorg.gra
             echo "app.env 갱신: $(grep -c = /srv/tingle/app.env)개 값"
           '''
         }
-        // 푸시(FCM, -141): Credentials 에 tingle-fcm(Secret file, Firebase 서비스 계정 JSON)이 있으면 키 파일을 쓰고 푸시를 켠다.
-        // 없으면 꺼진 채로 둔다 (back 은 PUSH_ENABLED=false 면 키를 읽지 않는다). 프로젝트 ID 는 JSON 의 project_id 를 쓴다.
-        script {
-          try {
-            withCredentials([file(credentialsId: 'tingle-fcm', variable: 'FCM_JSON')]) {
-              sh '''
-                set +x
-                umask 077
-                cp "$FCM_JSON" /srv/tingle/secrets/fcm.json.tmp
-                mv /srv/tingle/secrets/fcm.json.tmp /srv/tingle/secrets/fcm.json
-                project=$(sed -n 's/.*"project_id": *"\\([^"]*\\)".*/\\1/p' /srv/tingle/secrets/fcm.json)
-                printf 'PUSH_ENABLED=true\\nFIREBASE_PROJECT_ID=%s\\n' "$project" >> /srv/tingle/app.env
-                echo "FCM 키 반영 (Firebase 프로젝트 $project) — 푸시 켬"
-              '''
-            }
-          } catch (e) {
-            if (!(e.message ?: '').contains('tingle-fcm')) { throw e }
-            echo 'FCM 키 없음 (Credentials tingle-fcm) — 푸시 꺼짐'
-          }
+        // 푸시(FCM, -141): 푸시는 늘 켜져 있다. Credentials tingle-fcm(Secret file, Firebase 서비스 계정 JSON)으로 키 파일을 쓰고 프로젝트 ID 를 app.env 에 덧붙인다.
+        // tingle-fcm 이 없으면 여기서 배포가 멈춘다 (compose 도 FIREBASE_PROJECT_ID 가 비면 거절한다). 프로젝트 ID 는 JSON 의 project_id 를 쓴다.
+        withCredentials([file(credentialsId: 'tingle-fcm', variable: 'FCM_JSON')]) {
+          sh '''
+            set +x
+            umask 077
+            cp "$FCM_JSON" /srv/tingle/secrets/fcm.json.tmp
+            mv /srv/tingle/secrets/fcm.json.tmp /srv/tingle/secrets/fcm.json
+            project=$(sed -n 's/.*"project_id": *"\\([^"]*\\)".*/\\1/p' /srv/tingle/secrets/fcm.json)
+            printf 'FIREBASE_PROJECT_ID=%s\\n' "$project" >> /srv/tingle/app.env
+            echo "FCM 키 반영 (Firebase 프로젝트 $project)"
+          '''
         }
       }
     }
@@ -222,13 +215,6 @@ sh gradlew check ${APP_CHECK_ARGS:-} :androidApp:$APK_TASK --no-daemon -Dorg.gra
         script {
           def target = DEPLOY[env.gitlabSourceBranch]
           gitlabCommitStatus(name: "deploy-${env.gitlabSourceBranch}") {
-            def devWithdrawalCompose = '/srv/tingle/dev-runtime/withdrawal.compose.yml'
-            def composeOverride = ''
-            if (env.gitlabSourceBranch == 'develop') {
-              // 개발 백엔드에만 서버에 보관된 기존 탈퇴 설정과 서명 키를 전달한다.
-              sh "test -r '${devWithdrawalCompose}' || { echo '개발 탈퇴 Compose 설정을 읽을 수 없습니다'; exit 1; }"
-              composeOverride = "-f '${devWithdrawalCompose}'"
-            }
             if (target.backup) {
               // 두 DB 백업 계열 모두 최대 7일. 복원 후 재삭제 검증 전에는 서비스 개방 금지.
               sh '''
@@ -240,7 +226,7 @@ sh gradlew check ${APP_CHECK_ARGS:-} :androidApp:$APK_TASK --no-daemon -Dorg.gra
                 echo "DB 백업: $f ($(du -h "$f" | cut -f1))"
               '''
             }
-            def compose = "docker compose --env-file /srv/tingle/.env --env-file /srv/tingle/app.env -f ${target.dir}/infra/docker-compose.yml ${composeOverride}"
+            def compose = "docker compose --env-file /srv/tingle/.env --env-file /srv/tingle/app.env -f ${target.dir}/infra/docker-compose.yml"
             sh """
               # 폴더를 통째로 바꾸지 않고 안의 파일만 바꾼다. 폴더째 바꾸면 그 안을 마운트한 nginx · grafana 가 지워진 옛 폴더를 계속 본다 (2026-10-27).
               # 커밋에 없는 파일(저장소에서 지운 것)은 지운다. 한글 경로가 따옴표로 바뀌지 않게 core.quotePath=false.
