@@ -32,7 +32,8 @@ public final class Ter2ProofVerifier {
 	 * <li>서버: 여기 POLICY·RULE, Ter2ReceiptService.labels 의 버전 이름</li>
 	 * <li>서버 설정(/srv/tingle/.env): KEYRING_PEER_POLICY_VERSION·KEYRING_PEER_RULE_VERSION(숫자 ID, 10진수)</li>
 	 * <li>규칙 문서: 새 버전 이름으로 MATCHING·PRODUCT_POLICY 를 /api/admin/v1 에 등록 → 검증 → 승인(다른 운영자) → 게시,
-	 *     그 조합 ID·해시를 KEYRING_PEER_BUSINESS_RULE_RELEASE_ID·_RELEASE_HASH 에 넣기. 게시 시각 이전 만남은 제안이 안 된다.</li>
+	 *     그 조합의 행을 resources/database/keyring-rule-release.sql 에 넣고 번호·해시를 application.yml 에 적기.
+	 *     게시 시각 이전 만남은 제안이 안 된다.</li>
 	 * </ol>
 	 */
 	public static final long POLICY = 0x52504331L;
