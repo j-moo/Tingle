@@ -1,8 +1,8 @@
--- BE270 optional peer-flow schema. Manual review/apply only; all peer flags remain OFF.
+-- BE270 optional peer-flow schema. Manual review/apply only, before the prod deploy.
 -- Additive and rerunnable. Existing tables are not rewritten or historical ownership backfilled.
--- Verify existing table definitions before enabling. No automatic startup or CI application.
+-- Verify existing table definitions before applying. No automatic startup or CI application.
 BEGIN;
--- Optional peer-flow schema. Explicit review/application is required before app.keyring.peer.enabled=true.
+-- Optional peer-flow schema. Explicit review/application is required before the prod deploy.
 -- No historical ownership is backfilled from mutable current keyring rows.
 CREATE TABLE IF NOT EXISTS keyring_peer_owner (
     user_id bigint primary key,
