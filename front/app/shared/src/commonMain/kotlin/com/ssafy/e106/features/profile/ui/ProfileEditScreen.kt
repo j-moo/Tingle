@@ -45,6 +45,7 @@ internal fun ProfileEditScreen(
     modifier: Modifier = Modifier,
     heroPhoto: HeroPhoto = HeroPhoto.Empty,
     heroImage: ImageBitmap? = null,
+    onRetryPhoto: (() -> Unit)? = null,
     religionChip: @Composable () -> Unit = {},
     belowChips: @Composable () -> Unit = {},
     introduction: @Composable () -> Unit = {},
@@ -65,7 +66,7 @@ internal fun ProfileEditScreen(
                     // 사진 위 닉네임은 아래 입력을 따라 바뀌는 미리보기다
                     ProfileHero(ProfileHeroInfo(draft.nickname, internationalAge(state.birthDateLabel, todayKst()), state.gender),
                         heroPhoto, heroImage, onBack.takeIf { !state.saving }, stringResource(Res.string.profile_edit_title),
-                        heightFraction = 0.42f, preview = true,
+                        heightFraction = 0.42f, preview = true, onRetryPhoto = onRetryPhoto.takeIf { !state.saving },
                         corner = { HeroRoundButton(Res.drawable.ic_camera, stringResource(Res.string.profile_edit_photo_manage), onPhoto, enabled = editable) })
                     Column(Modifier.align(Alignment.CenterHorizontally).widthIn(max = 640.dp).fillMaxWidth().padding(screenPaddingValues()),
                         verticalArrangement = Arrangement.spacedBy(AppSpacing.Large)) {

@@ -156,7 +156,7 @@ fun ProfileConnectedEditScreen(
     val (photo, image) = rememberHeroPhoto(state.photo, state.profile?.hasProfilePhoto == true, state.photoFailed)
     ProfileEditScreen(editor.copy(saving = state.busy, interactionEnabled = !state.recoveryRequired, saveError = saveError),
         onChange, onSave, onBack, onDiscard, onKeep, onOptional, onCorrection,
-        heroPhoto = photo, heroImage = image, religionChip = religionChip, belowChips = belowChips, introduction = introduction,
+        heroPhoto = photo, heroImage = image, onRetryPhoto = onReload, religionChip = religionChip, belowChips = belowChips, introduction = introduction,
         header = { ProfileManagementNotice(state, onReload) },
         refreshing = refreshing, onRefresh = refresh)
 }

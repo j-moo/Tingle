@@ -21,6 +21,8 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.semantics.Role
@@ -64,9 +66,14 @@ internal fun ProfileHero(
     action: (@Composable () -> Unit)? = null,
     corner: (@Composable () -> Unit)? = null,
 ) {
-    LightStatusBarIcons()
-    val height = with(LocalDensity.current) { LocalWindowInfo.current.containerSize.height.toDp() } * heightFraction
-    Box(Modifier.fillMaxWidth().height(height).background(HeroEmpty)) {
+    val density = LocalDensity.current
+    val height = with(density) { LocalWindowInfo.current.containerSize.height.toDp() } * heightFraction
+    // 사진이 상태 바 밑에 깔려 있는 동안만 아이콘을 밝게. 스크롤로 사진이 올라가 밝은 바탕이 보이면 원래(어두운) 아이콘으로
+    val statusBar = WindowInsets.statusBars.getTop(density)
+    var underStatusBar by remember { mutableStateOf(true) }
+    LightStatusBarIcons(underStatusBar)
+    Box(Modifier.fillMaxWidth().height(height).background(HeroEmpty)
+        .onGloballyPositioned { underStatusBar = it.boundsInWindow().bottom > statusBar }) {
         when {
             photo == HeroPhoto.Ready && image != null -> Image(image, stringResource(Res.string.profile_hero_photo),
                 Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
@@ -74,15 +81,12 @@ internal fun ProfileHero(
                 SkeletonBone(height = height, shape = RectangleShape)
             }
             else -> Text(info.nickname.trim().take(1), Modifier.align(Alignment.Center).clearAndSetSemantics {},
-                fontSize = 120.sp, fontWeight = FontWeight.ExtraBold, color = Color.White.copy(alpha = 0.85f))
+                fontSize = with(density) { (height * 0.3f).toSp() }, fontWeight = FontWeight.ExtraBold, color = Color.White.copy(alpha = 0.85f))
         }
         // 위 · 아래 그라데이션: 밝은 사진에서도 흰 글자와 버튼이 보이게
         Box(Modifier.fillMaxWidth().fillMaxHeight(0.28f).background(Brush.verticalGradient(listOf(Color.Black.copy(alpha = 0.45f), Color.Transparent))))
         Box(Modifier.align(Alignment.BottomCenter).fillMaxWidth().fillMaxHeight(0.48f)
             .background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.62f)))))
-        if (photo == HeroPhoto.Failed && onRetryPhoto != null) Box(Modifier.align(Alignment.Center).padding(top = 168.dp)
-            .clip(CircleShape).clickable(role = Role.Button, onClick = onRetryPhoto).minimumInteractiveComponentSize(),
-            contentAlignment = Alignment.Center) { HeroChip(stringResource(Res.string.state_retry)) }
         // 사진은 상태 바 밑까지 깔고, 버튼 · 제목만 상태 바 아래로 내린다
         Box(Modifier.fillMaxWidth().statusBarsPadding().windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal))
             .heightIn(min = 56.dp).padding(horizontal = AppSpacing.Small)) {
@@ -93,20 +97,26 @@ internal fun ProfileHero(
                 fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center)
             if (action != null) Box(Modifier.align(Alignment.CenterEnd)) { action() }
         }
-        Row(Modifier.align(Alignment.BottomStart).fillMaxWidth().windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal))
-            .padding(horizontal = AppSpacing.Large, vertical = AppSpacing.Medium), verticalAlignment = Alignment.Bottom) {
-            // 닉네임 · 칩은 한 덩어리로 읽는다(예: "하늘, 만 27세, 여성")
-            Column(Modifier.weight(1f).semantics(mergeDescendants = true) {}, verticalArrangement = Arrangement.spacedBy(AppSpacing.Small)) {
-                Text(info.nickname, if (preview) Modifier.clearAndSetSemantics {} else Modifier,
-                    fontSize = 28.sp, lineHeight = 34.sp, fontWeight = FontWeight.ExtraBold, color = Color.White,
-                    style = MaterialTheme.typography.headlineMedium.copy(shadow = TextShade), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                if (info.age != null || info.gender != null) Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    info.age?.let { HeroChip(stringResource(Res.string.profile_view_age, it)) }
-                    info.gender?.let { HeroChip(stringResource(if (it == ProfileGender.Male) Res.string.profile_male else Res.string.profile_female),
-                        icon = if (it == ProfileGender.Male) Res.drawable.ic_gender_male else Res.drawable.ic_gender_female) }
+        Column(Modifier.align(Alignment.BottomStart).fillMaxWidth().windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal))
+            .padding(horizontal = AppSpacing.Large, vertical = AppSpacing.Medium)) {
+            // 사진 실패 "다시 시도"는 닉네임 바로 위에 둬 창이 낮아도 겹치지 않는다
+            if (photo == HeroPhoto.Failed && onRetryPhoto != null) Box(Modifier.clip(CircleShape)
+                .clickable(role = Role.Button, onClick = onRetryPhoto).minimumInteractiveComponentSize(),
+                contentAlignment = Alignment.CenterStart) { HeroChip(stringResource(Res.string.state_retry)) }
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Bottom) {
+                // 닉네임 · 칩은 한 덩어리로 읽는다(예: "하늘, 만 27세, 여성")
+                Column(Modifier.weight(1f).semantics(mergeDescendants = true) {}, verticalArrangement = Arrangement.spacedBy(AppSpacing.Small)) {
+                    Text(info.nickname, if (preview) Modifier.clearAndSetSemantics {} else Modifier,
+                        fontSize = 28.sp, lineHeight = 34.sp, fontWeight = FontWeight.ExtraBold, color = Color.White,
+                        style = MaterialTheme.typography.headlineMedium.copy(shadow = TextShade), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    if (info.age != null || info.gender != null) Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        info.age?.let { HeroChip(stringResource(Res.string.profile_view_age, it)) }
+                        info.gender?.let { HeroChip(stringResource(if (it == ProfileGender.Male) Res.string.profile_male else Res.string.profile_female),
+                            icon = if (it == ProfileGender.Male) Res.drawable.ic_gender_male else Res.drawable.ic_gender_female) }
+                    }
                 }
+                corner?.invoke()
             }
-            corner?.invoke()
         }
     }
 }
@@ -149,4 +159,5 @@ internal fun rememberHeroPhoto(bytes: ByteArray?, hasPhoto: Boolean, failed: Boo
 
 private val HeroGlass = Color.Black.copy(alpha = 0.35f)
 private val HeroEmpty = Brush.linearGradient(listOf(Color(0xFFB9C8D6), Color(0xFFC4A796)))
-private val TextShade = Shadow(Color.Black.copy(alpha = 0.35f), Offset(0f, 1f), 4f)
+/** 밝은 사진에서도 흰 제목 · 닉네임이 읽히는 그림자 */
+private val TextShade = Shadow(Color.Black.copy(alpha = 0.5f), Offset(0f, 1f), 6f)

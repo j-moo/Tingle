@@ -23,9 +23,10 @@ import androidx.navigationevent.compose.rememberNavigationEventDispatcherOwner
 }
 
 // 앱은 어두운 아이콘으로 고정돼 있다(MainActivity). 떠날 때는 들어올 때의 값으로 되돌린다
-@Composable internal actual fun LightStatusBarIcons() {
+@Composable internal actual fun LightStatusBarIcons(enabled: Boolean) {
     val view = LocalView.current
-    DisposableEffect(view) {
+    DisposableEffect(view, enabled) {
+        if (!enabled) return@DisposableEffect onDispose {}
         val window = view.context.activity()?.window ?: return@DisposableEffect onDispose {}
         val controller = WindowCompat.getInsetsController(window, view)
         val before = controller.isAppearanceLightStatusBars
