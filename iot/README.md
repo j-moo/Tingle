@@ -33,6 +33,8 @@
 
 ## SIS D3.1 Y3 PCB
 
+초기 `0.8.0-d31` 검증에서는 `01_SIS_D31_GERBER_CAM_Y3.zip`의 Gerber·드릴·FlyingProbe 파일 13개가 검토용 제조 ZIP의 원본과 바이트 단위로 일치했다. 핀 배치는 D3.1 회로도와 `06_PIN_NET_MAP.csv`를 기준으로 확인했다.
+
 `0.9.6-d31`은 제조 파일 `01_SIS_D31_GERBER_CAM_Y3.zip`과 D3.1의 `06_PIN_NET_MAP.csv`를 기준으로 한다. 기본 빌드와 `-Carrier d31`은 같은 설정을 사용한다. [공개 검색 이름 BLE 계약](keyring-app-ble-contract-v1.md#public-scan-name)과 [Fold6 검색·페어링 인계](app-flow-v2-handoff.md#fold6-ble-recovery)를 참조한다.
 
 | 기능 | XIAO 핀 | 제조 기판 연결 |
@@ -203,17 +205,15 @@ iot/
 
 Zephyr 4.2.0, 보드 대상 `xiao_ble/nrf52840`, 공식 Zephyr SDK 0.17.2를 기준으로 한다. Python과 필요한 Zephyr 패키지, CMake, Ninja가 필요하며 빌드 스크립트가 SDK를 자동 설치하지는 않는다.
 
-저장소 루트에서 실행한다. 아래 예시는 실행 도구가 `PATH`에 등록된 환경이다. 그렇지 않으면 각 옵션에 해당 실행 파일의 절대 경로를 지정한다.
+저장소 루트에서 아래 명령을 실행한다.
 
 ```powershell
-# 현재 PC처럼 Python 패키지를 로컬 toolchain/site에 준비한 경우
-$env:PYTHONPATH = (Resolve-Path ./iot/build/toolchain/site).Path
-./iot/tools/build-firmware.ps1 -Python python -CMake cmake -Ninja ninja
+./iot/tools/build-firmware.ps1
 Get-FileHash ./iot/build/zephyr.uf2 -Algorithm SHA256
 Get-Content ./iot/build/firmware-manifest.json
 ```
 
-기본 Zephyr 경로는 `build/toolchain/zephyr`, SDK는 `build/toolchain/zephyr-sdk-0.17.2`다. 외부 설치를 사용하면 `-ZephyrBase`·`-ZephyrSdk`를 지정하고 그 Python 환경에 필요한 패키지를 준비한다. 위 `PYTHONPATH` 설정은 로컬 패키지 디렉터리가 있을 때만 사용한다.
+기본 Zephyr 경로는 `build/toolchain/zephyr`, SDK는 `build/toolchain/zephyr-sdk-0.17.2`다. 기본 Python으로 실행할 때 로컬 패키지 폴더 `build/toolchain/site`가 있고 `PYTHONPATH`가 비어 있으면 그 폴더를 사용한다. CMake나 Ninja를 `PATH`에서 찾지 못하면 `ANDROID_SDK_ROOT`의 `cmake/3.22.1/bin`에 설치된 실행 파일을 사용한다. 다른 설치를 사용하면 `-Python`, `-CMake`, `-Ninja`, `-ZephyrBase`, `-ZephyrSdk`로 경로를 지정한다.
 
 빌드 성공 시 UF2를 `build/zephyr.uf2`로 이동하고 manifest를 갱신한다. 실패하면 직전 UF2가 남을 수 있으므로 **종료 코드·빌드 로그·manifest를 확인**한다. `sourceCommit`은 기준 Git 커밋이며 `sourceDirty=true`이면 미커밋 소스가 포함된 빌드다. 이를 해당 커밋만으로 만든 바이너리라고 보고하지 않는다.
 
