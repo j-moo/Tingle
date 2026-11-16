@@ -1,6 +1,7 @@
 package com.e106.tingle.auth;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.mock;
 
 import java.sql.Timestamp;
 import java.time.Instant;
@@ -18,6 +19,7 @@ import org.springframework.jdbc.datasource.init.ResourceDatabasePopulator;
 import org.springframework.mock.env.MockEnvironment;
 
 import com.e106.tingle.SharedPostgres;
+import com.e106.tingle.withdrawal.WithdrawalIdentityService;
 
 /**
  * 실제 canonical SQL과 가입 준비 조회의 회귀다. 준비 증거를 명시적으로 넣는 fixture이며,
@@ -47,7 +49,7 @@ class MemberAccessReadinessPersistenceTest {
 			environment.setProperty(prefix + "version", VERSION);
 			environment.setProperty(prefix + "required", "true");
 		}
-		members = new MemberAccessRepository(jdbc, environment);
+		members = new MemberAccessRepository(jdbc, environment, mock(WithdrawalIdentityService.class));
 	}
 
 	@Test
@@ -176,7 +178,8 @@ class MemberAccessReadinessPersistenceTest {
 			assertThat(members.ready(revoked.userId(), NOW)).isFalse();
 		}
 		Evidence configured = readyMember();
-		MemberAccessRepository unconfigured = new MemberAccessRepository(jdbc, new MockEnvironment());
+		MemberAccessRepository unconfigured = new MemberAccessRepository(jdbc, new MockEnvironment(),
+			mock(WithdrawalIdentityService.class));
 		assertThat(unconfigured.ready(configured.userId(), NOW)).isFalse();
 	}
 

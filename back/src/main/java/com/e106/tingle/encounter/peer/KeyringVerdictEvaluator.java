@@ -35,8 +35,6 @@ import tools.jackson.databind.json.JsonMapper;
  */
 @Component
 @RequiredArgsConstructor
-// 평가 워커가 꺼져 있으면 만들지 않는다. 그래야 승격이 "접수 완료"를 돌려주고 평가·기한 종료 없이 쌓이지 않고,
-// 이전처럼 정책 대기(BUSINESS_POLICY_PENDING)로 응답한다.
 public class KeyringVerdictEvaluator
 	implements EncounterEvaluationGateway, MatchingEvaluationRuntimeVerifier, HistoricalEvidenceVerifier {
 

@@ -49,6 +49,7 @@ import com.e106.tingle.encounter.EncounterEvaluationWorker.Work;
 import com.e106.tingle.encounter.EncounterReceipts.FrozenEvidence;
 import com.e106.tingle.encounter.EncounterReceipts.StoredReceipt;
 import com.e106.tingle.global.ai.AiCallException;
+import com.e106.tingle.withdrawal.WithdrawalIdentityService;
 
 import tools.jackson.databind.json.JsonMapper;
 
@@ -90,7 +91,7 @@ class EncounterEvaluationWorkerPersistenceTest {
 			when(completions.getIfAvailable()).thenReturn(completion);
 			return new EncounterEvaluationWorker(jdbc, mapper, clock, receipts, gateways,
 				mock(ObjectProvider.class), completions, environment, transactions,
-				new MemberAccessRepository(jdbc, environment));
+				new MemberAccessRepository(jdbc, environment, mock(WithdrawalIdentityService.class)));
 		}
 	}
 

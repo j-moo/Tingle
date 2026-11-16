@@ -14,7 +14,6 @@ import java.util.HexFormat;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
-import org.springframework.core.env.StandardEnvironment;
 import org.springframework.jdbc.core.JdbcTemplate;
 
 import com.e106.tingle.keyring.peer.PeerPolicyProperties;
@@ -28,10 +27,8 @@ class DevSettingsConfigurationTest {
 			pem("PRIVATE KEY", keys.getPrivate().getEncoded()));
 		Path pub = Files.writeString(dir.resolve("public.pem"),
 			pem("PUBLIC KEY", keys.getPublic().getEncoded()));
-		var environment = new StandardEnvironment();
-		environment.setActiveProfiles("prod");
 		DevSettingsIssuer issuer = new DevSettingsConfiguration().devSettingsIssuer(
-			new DevSettingsProperties(secret.toString(), pub.toString()), peer(rawHex(keys)), environment,
+			new DevSettingsProperties(secret.toString(), pub.toString()), peer(rawHex(keys)),
 			mock(JdbcTemplate.class));
 		assertThat(issuer.publicKeyRawHex()).isEqualTo(rawHex(keys));
 	}
@@ -43,41 +40,36 @@ class DevSettingsConfigurationTest {
 			pem("PRIVATE KEY", keys.getPrivate().getEncoded()));
 		Path pub = Files.writeString(dir.resolve("public.pem"),
 			pem("PUBLIC KEY", keys.getPublic().getEncoded()));
-		var environment = new StandardEnvironment();
-		environment.setActiveProfiles("prod");
 		assertThatThrownBy(() -> new DevSettingsConfiguration().devSettingsIssuer(
-			new DevSettingsProperties(secret.toString(), pub.toString()), peer("00".repeat(32)), environment,
+			new DevSettingsProperties(secret.toString(), pub.toString()), peer("00".repeat(32)),
 			mock(JdbcTemplate.class))).isInstanceOf(IllegalStateException.class)
 			.hasMessageContaining("KEYRING_PEER_SERVER_PUBLIC_KEY_HEX");
 	}
 
 	@Test
 	void productionWithoutConfiguredKeyFilesFailsClosedInsteadOfGeneratingOne() {
-		var environment = new StandardEnvironment();
-		environment.setActiveProfiles("prod");
 		assertThatThrownBy(() -> new DevSettingsConfiguration().devSettingsIssuer(
-			new DevSettingsProperties("", ""), peer("00".repeat(32)), environment, mock(JdbcTemplate.class)))
+			new DevSettingsProperties("", ""), peer("00".repeat(32)), mock(JdbcTemplate.class)))
 			.isInstanceOf(IllegalStateException.class)
 			.hasMessageContaining("KEYRING_DEV_SETTINGS_PRIVATE_KEY_FILE");
 	}
 
 	@Test
-	void profilesOtherThanDevTestProdCannotLoadSigningKeys() {
-		var environment = new StandardEnvironment();
-		environment.setActiveProfiles("local");
-		assertThatThrownBy(() -> new DevSettingsConfiguration().devSettingsIssuer(
-			new DevSettingsProperties("secret-path", "public-path"), peer("00".repeat(32)), environment,
-			mock(JdbcTemplate.class)))
-			.isInstanceOf(IllegalStateException.class).hasMessageContaining("dev/test/prod profile");
+	void localProfileLoadsTheRepositoryTestOnlyKey() {
+		// local 은 application-local.yml 의 기본값으로 저장소의 테스트 전용 키를 읽어 그대로 뜬다.
+		DevSettingsIssuer issuer = new DevSettingsConfiguration().devSettingsIssuer(new DevSettingsProperties(
+			"src/test/resources/keyring/test-only-settings-private.pem",
+			"src/test/resources/keyring/test-only-settings-public.pem"),
+			peer("03a107bff3ce10be1d70dd18e74bc09967e4d6309ba50d5f1ddc8664125531b8"), mock(JdbcTemplate.class));
+		assertThat(issuer.publicKeyRawHex())
+			.isEqualTo("03a107bff3ce10be1d70dd18e74bc09967e4d6309ba50d5f1ddc8664125531b8");
 	}
 
 	@Test
 	void missingDedicatedKeysFailClosedWithoutLeakingPaths() {
-		var environment = new StandardEnvironment();
-		environment.setActiveProfiles("dev");
 		assertThatThrownBy(() -> new DevSettingsConfiguration().devSettingsIssuer(
 			new DevSettingsProperties("synthetic-missing-key", "synthetic-missing-public"), peer("00".repeat(32)),
-			environment, mock(JdbcTemplate.class))).isInstanceOf(IllegalStateException.class)
+			mock(JdbcTemplate.class))).isInstanceOf(IllegalStateException.class)
 			.hasMessageContaining("KEYRING_DEV_SETTINGS_PRIVATE_KEY_FILE").hasNoCause();
 	}
 

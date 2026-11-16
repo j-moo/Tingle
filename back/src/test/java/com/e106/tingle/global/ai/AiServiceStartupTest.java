@@ -18,8 +18,10 @@ import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 
+import com.e106.tingle.global.config.ServerSettingsCheck;
 import com.e106.tingle.global.error.BusinessException;
 import com.e106.tingle.global.error.ErrorCode;
+import com.e106.tingle.icebreaker.IcebreakerProperties;
 
 import tools.jackson.databind.json.JsonMapper;
 
@@ -58,6 +60,16 @@ class AiServiceStartupTest {
 	}
 
 	@Test
+	void serverMissingBaseUrlEnvironmentOrIcebreakerManifestPreventsContextStartup() throws Exception {
+		ApplicationContextRunner configured = enabled(keyFile(2048).toString());
+		for (String blank : new String[] {"app.ai.service.base-url=", "app.ai.service.environment=",
+			"app.ai.service.environment=local", "app.icebreaker.manifest-location=",
+			"app.icebreaker.manifest-location=classpath:absent.json"}) {
+			assertStartupFailure(configured.withPropertyValues(blank));
+		}
+	}
+
+	@Test
 	void serverValidSyntheticServiceKeyStartsAndIssuesTokens() throws Exception {
 		enabled(keyFile(2048).toString()).run(context -> {
 			assertThat(context).hasNotFailed().hasSingleBean(AiServiceTokenProvider.class);
@@ -69,7 +81,8 @@ class AiServiceStartupTest {
 
 	@Test
 	void localConfigurationStartsEvenWithAnUnusableKeyPath() {
-		runner.withPropertyValues("app.ai.service.private-key-file=" + temporary.resolve("never-read.pem"))
+		runner.withInitializer(context -> context.getEnvironment().setActiveProfiles("local"))
+			.withPropertyValues("app.ai.service.private-key-file=" + temporary.resolve("never-read.pem"))
 			.run(context -> {
 				assertThat(context).hasNotFailed().hasSingleBean(AiServiceTokenProvider.class);
 				assertThatThrownBy(() -> context.getBean(AiServiceTokenProvider.class).requireAvailable())
@@ -80,15 +93,17 @@ class AiServiceStartupTest {
 
 	private ApplicationContextRunner enabled(String file) {
 		// 개발·운영(dev·prod)은 키가 없으면 기동하지 않는다. local·test 만 키 없이 뜬다.
-		return runner.withPropertyValues("app.ai.service.environment=dev",
-			"app.ai.service.key-id=synthetic-key", "app.ai.service.private-key-file=" + file);
+		return runner.withInitializer(context -> context.getEnvironment().setActiveProfiles("dev"))
+			.withPropertyValues("app.ai.service.environment=dev", "app.ai.service.base-url=http://ai-dev:8000",
+				"app.icebreaker.manifest-location=classpath:icebreakers/general-ko-v1.json",
+				"app.ai.service.key-id=synthetic-key", "app.ai.service.private-key-file=" + file);
 	}
 
 	private void assertStartupFailure(ApplicationContextRunner configured) {
 		configured.run(context -> {
 			assertThat(context).hasFailed();
 			assertThat(context.getStartupFailure()).hasRootCauseInstanceOf(IllegalStateException.class)
-				.hasRootCauseMessage("AI service signing configuration is unavailable");
+				.rootCause().hasMessageStartingWith("AI service signing configuration is unavailable");
 		});
 	}
 
@@ -103,8 +118,8 @@ class AiServiceStartupTest {
 	}
 
 	@TestConfiguration(proxyBeanMethods = false)
-	@EnableConfigurationProperties(AiServiceProperties.class)
-	@Import(AiServiceTokenProvider.class)
+	@EnableConfigurationProperties({AiServiceProperties.class, IcebreakerProperties.class})
+	@Import({AiServiceTokenProvider.class, ServerSettingsCheck.class})
 	static class SigningConfiguration {
 
 		@Bean

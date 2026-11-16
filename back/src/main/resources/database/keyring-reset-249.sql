@@ -1,5 +1,5 @@
--- Candidate migration. Explicit review/application required; not automatically executed at startup.
-create table keyring_reset_run (
+-- 키링 초기화 표(엔티티 아님). 개발·운영 모두 필요하다. 운영 적용본: infra/db/prod-changes/2026-11-17-env-parity-407.sql
+create table if not exists keyring_reset_run (
     run_id uuid primary key,
     keyring_id bigint not null,
     owner_user_id bigint not null,

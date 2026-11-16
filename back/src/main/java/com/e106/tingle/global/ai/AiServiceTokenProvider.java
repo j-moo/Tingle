@@ -36,10 +36,11 @@ public class AiServiceTokenProvider {
 		this.clock = clock;
 		this.json = json;
 		this.key = load(properties);
-		// 개발·운영은 AI 서버를 늘 부른다. 서명 키가 없으면 기동하지 않는다. local·test 만 키 없이 뜬다.
-		if (key == null && !Set.of("local", "test").contains(properties.environment())) {
-			throw new IllegalStateException("AI service signing configuration is unavailable");
-		}
+	}
+
+	/** 키를 읽었는지. 개발·운영에서 키가 없으면 ServerSettingsCheck 가 기동을 막는다. */
+	public boolean available() {
+		return key != null;
 	}
 
 	public void requireAvailable() {

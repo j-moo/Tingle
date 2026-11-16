@@ -61,6 +61,7 @@ import com.e106.tingle.proposal.evaluation.HistoricalEvaluationEvidence;
 import com.e106.tingle.proposal.evaluation.HistoricalEvaluationStore;
 import com.e106.tingle.proposal.evaluation.HistoricalEvidenceVerifier;
 import com.e106.tingle.settings.snapshot.SettingsSnapshotJson;
+import com.e106.tingle.withdrawal.WithdrawalIdentityService;
 
 import tools.jackson.databind.json.JsonMapper;
 
@@ -107,6 +108,9 @@ class EncounterProductionFlowPersistenceTest {
 	private EncounterEvaluationWorker worker;
 	@MockitoSpyBean
 	private EncounterProposalPublisher publisher;
+	// 새 제안 판단의 탈퇴 관계 제한. 이 시험은 탈퇴 기록이 없다.
+	@MockitoBean
+	private WithdrawalIdentityService withdrawalIdentities;
 	@MockitoBean
 	private HistoricalEvidenceVerifier verifier;
 	@MockitoSpyBean
@@ -580,7 +584,7 @@ class EncounterProductionFlowPersistenceTest {
 	private EncounterEvaluationWorker restartedWorker(Environment settings) {
 		return new EncounterEvaluationWorker(jdbc, mapper, clock, receipts, mock(ObjectProvider.class),
 			mock(ObjectProvider.class), mock(ObjectProvider.class), settings, transactions,
-			new MemberAccessRepository(jdbc, settings));
+			new MemberAccessRepository(jdbc, settings, mock(WithdrawalIdentityService.class)));
 	}
 
 	private void assertPublishedAt(Instant first) {

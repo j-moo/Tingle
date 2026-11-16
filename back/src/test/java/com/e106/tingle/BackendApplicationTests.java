@@ -36,7 +36,11 @@ class BackendApplicationTests {
 			+ "or (table_name='user_consents' and column_name in ('consent_type','document_version')))",
 			(rs, row) -> rs.getString(1) + "." + rs.getString(2) + ":" + rs.getString(3));
 		assertThat(jdbc.queryForObject("select count(*) from information_schema.tables "
-			+ "where table_schema='public' and table_type='BASE TABLE'", Integer.class)).isEqualTo(totalTables());
+			+ "where table_schema='public' and table_type='BASE TABLE'"
+			// 엔티티가 아닌 키링 초기화·TSV3 표(RequiredSchemaCheck)는 설계 DDL 수에서 뺀다.
+			+ " and table_name not in ('keyring_reset_run','keyring_peer_owner','keyring_peer_ownership',"
+			+ "'keyring_peer_owner_grant','keyring_peer_record_command','keyring_peer_review_resolution',"
+			+ "'keyring_peer_encounter')", Integer.class)).isEqualTo(totalTables());
 		assertThat(types).containsExactlyInAnyOrder("users.provider:USER-DEFINED",
 			"users.provider_user_id:character varying", "users.status:text", "users.email:character varying",
 			"profile.nickname:character varying", "profile.gender:USER-DEFINED", "profile.smoking_status:USER-DEFINED",

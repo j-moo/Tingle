@@ -7,9 +7,6 @@ import java.security.spec.PKCS8EncodedKeySpec;
 import java.security.spec.X509EncodedKeySpec;
 import java.util.Base64;
 
-import org.springframework.core.env.Environment;
-import org.springframework.core.env.Profiles;
-
 import com.e106.tingle.keyring.proof.ServerSettingsSigner;
 
 /**
@@ -20,10 +17,8 @@ public final class DevSigningKeyLoader {
 	private DevSigningKeyLoader() {
 	}
 
-	public static ServerSettingsSigner load(DevSettingsProperties properties, Environment environment) {
-		if (!environment.acceptsProfiles(Profiles.of("dev", "test", "prod"))) {
-			throw new IllegalStateException("Settings signing requires dev/test/prod profile");
-		}
+	// 키 파일은 모든 프로필에서 필수다(local·test 는 저장소의 테스트 전용 키를 쓴다).
+	public static ServerSettingsSigner load(DevSettingsProperties properties) {
 		try {
 			var factory = KeyFactory.getInstance("Ed25519");
 			return new ServerSettingsSigner(factory.generatePrivate(new PKCS8EncodedKeySpec(

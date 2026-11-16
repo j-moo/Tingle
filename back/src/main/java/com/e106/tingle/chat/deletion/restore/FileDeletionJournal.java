@@ -46,6 +46,10 @@ public class FileDeletionJournal implements DeletionJournal {
 
 	public FileDeletionJournal(@Value("${tingle.chat.deletion.journal-directory:}") String directory,
 		JsonMapper mapper) {
+		// 비어 있으면 채팅 삭제가 영영 재시도만 하므로 기동하지 않는다(개발·운영 같음).
+		if (directory == null || directory.isBlank()) {
+			throw new IllegalStateException("TINGLE_CHAT_DELETION_JOURNAL_DIRECTORY 값이 필요합니다");
+		}
 		this.directory = directory;
 		this.mapper = mapper;
 	}

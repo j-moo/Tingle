@@ -37,6 +37,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 import com.e106.tingle.SharedPostgres;
 import com.e106.tingle.auth.MemberAccessRepository;
 import com.e106.tingle.proposal.ProposalPushNotifier;
+import com.e106.tingle.withdrawal.WithdrawalIdentityService;
 
 import tools.jackson.databind.json.JsonMapper;
 
@@ -70,6 +71,9 @@ class EncounterProposalPublisherPersistenceTest {
 
 	@Autowired
 	private EncounterProposalPublisher publisher;
+	// 새 제안 판단의 탈퇴 관계 제한. 이 시험은 탈퇴 기록이 없다.
+	@MockitoBean
+	private WithdrawalIdentityService withdrawalIdentities;
 	@MockitoBean
 	private ProposalPushNotifier pushes;
 	@Autowired

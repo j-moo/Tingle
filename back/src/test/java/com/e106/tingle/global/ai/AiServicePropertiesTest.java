@@ -13,11 +13,11 @@ import org.springframework.core.env.MapPropertySource;
 class AiServicePropertiesTest {
 
 	@Test
-	void defaultsToLocalWithoutReadingTheMobileLoginConfiguration() {
+	void defaultsToEmptyWithoutReadingTheMobileLoginConfiguration() {
 		Binder binder = new Binder(ConfigurationPropertySources.from(new MapPropertySource("synthetic", Map.of(
 			"app.auth.secret", "synthetic-mobile-secret", "GMS_API_KEY", "synthetic-provider-key"))));
 		AiServiceProperties properties = binder.bindOrCreate("app.ai.service", Bindable.of(AiServiceProperties.class));
-		assertThat(properties).isEqualTo(new AiServiceProperties("local", "", "", ""));
+		assertThat(properties).isEqualTo(new AiServiceProperties("", "", "", ""));
 	}
 
 	@Test

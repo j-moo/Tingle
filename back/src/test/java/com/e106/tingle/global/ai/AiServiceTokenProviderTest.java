@@ -80,7 +80,7 @@ class AiServiceTokenProviderTest {
 	}
 
 	@Test
-	void missingOrInvalidServerConfigurationPreventsConstruction() throws Exception {
+	void missingOrInvalidConfigurationLeavesTheProviderUnavailable() throws Exception {
 		String key = keyFile(pair(2048));
 		List<AiServiceProperties> invalid = List.of(new AiServiceProperties("other", "key", key, ""),
 			new AiServiceProperties("dev", "bad/key", key, ""),
@@ -144,12 +144,10 @@ class AiServiceTokenProviderTest {
 			exception -> assertThat(exception.getErrorCode()).isEqualTo(ErrorCode.SERVICE_UNAVAILABLE));
 	}
 
-	// local·test 는 키 없이도 뜬다. 기동 실패는 서버 환경(dev·prod)에서 확인한다.
+	// 잘못된 키는 조용히 받아들이지 않고 사용 불가로 둔다. 개발·운영 기동 실패는 ServerSettingsCheck 가 맡는다.
 	private void assertConstructionFailure(AiServiceProperties properties) {
-		AiServiceProperties server = new AiServiceProperties(
-			"test".equals(properties.environment()) ? "dev" : properties.environment(), properties.keyId(),
-			properties.privateKeyFile(), properties.baseUrl());
-		assertThatThrownBy(() -> provider(server)).isInstanceOf(IllegalStateException.class)
-			.hasMessage("AI service signing configuration is unavailable").hasNoCause();
+		AiServiceTokenProvider provider = provider(properties);
+		assertThat(provider.available()).isFalse();
+		assertUnavailable(provider);
 	}
 }
