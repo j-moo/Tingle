@@ -246,12 +246,12 @@ private val TabPages = listOf(ServicePage.Home, ServicePage.Proposals, ServicePa
             AppBottomBar(listOf(stringResource(Res.string.home_tab), stringResource(Res.string.home_proposal_tab),
                 stringResource(Res.string.home_chat_tab), stringResource(Res.string.home_profile_tab)), tab,
                 // 지금 탭을 다시 누르면 아무것도 하지 않는다(go 가 조회만 취소하고 다시 받지 않는다)
-                onSelect = { index -> when (val target = TabPages[index]) {
+                // 사라지는 동안의 누름은 무시한다(방에 들어가자마자 다른 탭으로 가지 않게). 색은 바꾸지 않는다
+                onSelect = { index -> if (showBar) when (val target = TabPages[index]) {
                     page -> Unit
                     ServicePage.Chats -> chats()
                     else -> go(target)
-                // 사라지는 동안에는 누를 수 없다(방에 들어가자마자 다른 탭으로 가지 않게)
-                } }, modifier = Modifier.navigationBarsPadding(), enabled = showBar && (page != ServicePage.Proposals || tabEnabled))
+                } }, modifier = Modifier.navigationBarsPadding(), enabled = page != ServicePage.Proposals || tabEnabled)
         }
     }
     if (logoutPrompt) AppDialog(title = stringResource(Res.string.account_logout),
