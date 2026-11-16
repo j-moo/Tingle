@@ -11,6 +11,7 @@ import pytest
 from app.middleware.request_id import RequestIdMiddleware, install_error_handlers
 from app.risk_detection import local_engine, releases
 from app.risk_detection.http_api import Message
+from app.config import Settings
 from app.risk_detection.releases import TokenizedLocalRuleReleaseCatalog, DevelopmentReleaseError
 from app.risk_detection.runtime import create_development_router
 from app.risk_detection.tokenization import LocalFileTokenizer, serialize_context
@@ -30,6 +31,11 @@ def client(release=None):
         descriptor_sha256=release.test_descriptor_pin if release else "",
     ))
     return TestClient(app)
+
+
+def test_release_pin_default(monkeypatch):
+    monkeypatch.delenv("RISK_LOCAL_RULES_DESCRIPTOR_SHA256", raising=False)
+    assert Settings(_env_file=None).risk_local_rules_descriptor_sha256 == ""
 
 
 def test_release_registration_serves_local_rules(tmp_path):
