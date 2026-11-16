@@ -1,6 +1,7 @@
 package com.ssafy.e106.features.profile.ui
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
@@ -21,7 +22,6 @@ import com.ssafy.e106.features.account.ui.HelpGuideScreen
 import com.ssafy.e106.features.account.ui.HelpGuideState
 import com.ssafy.e106.features.profile.photo.ProfilePhotoBytes
 import com.ssafy.e106.resources.*
-import org.jetbrains.compose.resources.StringResource
 import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.viewmodel.koinViewModel
 
@@ -84,12 +84,10 @@ private fun ProfileOverviewScreen(state: ProfileManagementState, devNotice: Bool
         if (state.loadFailed) ProfileLoadFailed(state, title, onBack, onReload)
         else ProfileSkeletonFrame(title, null) {
             SkeletonGroup {
-                // 실제 화면 순서(큰 사진 · 닉네임 · 나이 성별 · 자기소개 · 종교)대로
+                // 실제 화면 순서(큰 사진 · 생활 칩 · 소개 카드)대로
                 SkeletonBone(Modifier.align(Alignment.CenterHorizontally).widthIn(max = 360.dp).fillMaxWidth().aspectRatio(1f), shape = AppShapes.Card)
-                SkeletonBone(width = 160.dp, height = 28.dp)
-                SkeletonBone(width = 120.dp)
-                BoneField(Res.string.profile_view_intro) { SkeletonBone(Modifier.fillMaxWidth(0.7f)) }
-                BoneField(Res.string.profile_view_religion) { SkeletonBone(Modifier.fillMaxWidth(0.4f)) }
+                Row(horizontalArrangement = Arrangement.spacedBy(AppSpacing.Small)) { repeat(3) { SkeletonBone(width = 88.dp, height = 30.dp, shape = CircleShape) } }
+                SkeletonBone(height = 96.dp, shape = AppShapes.Card)
             }
         }
         return
@@ -110,7 +108,8 @@ private fun ProfileOverviewScreen(state: ProfileManagementState, devNotice: Bool
                         verticalArrangement = Arrangement.spacedBy(AppSpacing.Large)) {
                         if (devNotice) Text(stringResource(Res.string.profile_manage_dev_notice), style = MaterialTheme.typography.bodySmall, color = AppColors.TextSecondary)
                         ProfileManagementNotice(state, onReload)
-                        OptionalProfileSummary(state)
+                        ProfileLifestyleChips(profile.lifestyle())
+                        ProfileIntroCard(profile.introduction)
                     }
                 }
             }
@@ -153,7 +152,7 @@ fun ProfileConnectedEditScreen(
         onChange, onSave, onBack, onDiscard, onKeep, onOptional, onCorrection,
         photoContent = { state.photo?.let { ProfilePhotoBytes(it) } ?: Text(stringResource(Res.string.optional_photo_unavailable)) },
         optionalContent = {
-            OptionalProfileSummary(state, viewing = false)
+            OptionalProfileSummary(state)
             Text(stringResource(Res.string.profile_manage_optional_help), style = MaterialTheme.typography.bodySmall)
         },
         photoActionLabel = stringResource(Res.string.profile_manage_optional),
@@ -173,29 +172,13 @@ private val ProfileManagementState.unknown get() = recoveryRequired || problem =
         barTitle = title, onBack = onBack, refreshing = state.busy, onRefresh = onReload)
 }
 
-@Composable private fun OptionalProfileSummary(state: ProfileManagementState, viewing: Boolean = true) {
+@Composable private fun OptionalProfileSummary(state: ProfileManagementState) {
     val p = state.profile ?: return
-    val intro = p.introduction?.takeIf { it.isNotBlank() }
-    val religion = p.religion.religion()?.let { stringResource(it.label()) }
-    if (!viewing) {
-        // 수정 화면은 입력 항목답게 "선택" 표시를 그대로 둔다
-        TagLabel(stringResource(Res.string.profile_intro_title), style = MaterialTheme.typography.titleMedium)
-        Text(intro ?: stringResource(Res.string.profile_manage_none))
-        TagLabel(stringResource(Res.string.profile_religion_title), style = MaterialTheme.typography.titleMedium)
-        Text(religion ?: stringResource(Res.string.profile_manage_none))
-        return
-    }
-    // 보기 화면이라 입력 화면의 "선택" 표시는 빼고, 입력한 값은 상자에 담아 제목과 구분한다
-    SummaryField(Res.string.profile_view_intro, intro)
-    SummaryField(Res.string.profile_view_religion, religion)
-}
-
-@Composable private fun SummaryField(title: StringResource, value: String?) {
-    Column(verticalArrangement = Arrangement.spacedBy(AppSpacing.Small)) {
-        Text(stringResource(title), style = MaterialTheme.typography.titleMedium)
-        Text(value ?: stringResource(Res.string.profile_manage_none), Modifier.fillMaxWidth().glass(AppShapes.Control, AppColors.SurfaceMuted).padding(AppSpacing.Medium),
-            style = MaterialTheme.typography.bodyLarge, color = if (value == null) AppColors.TextSecondary else AppColors.TextPrimary)
-    }
+    // 수정 화면은 입력 항목답게 "선택" 표시를 그대로 둔다
+    TagLabel(stringResource(Res.string.profile_intro_title), style = MaterialTheme.typography.titleMedium)
+    Text(p.introduction?.takeIf { it.isNotBlank() } ?: stringResource(Res.string.profile_manage_none))
+    TagLabel(stringResource(Res.string.profile_religion_title), style = MaterialTheme.typography.titleMedium)
+    Text(p.religion.religion()?.let { stringResource(it.label()) } ?: stringResource(Res.string.profile_manage_none))
 }
 
 /** 저장했어요 · 결과 미확인 안내. 결과 미확인 문구는 같은 내용을 두 번 저장하지 않게 하는 설명이라 줄이지 않는다 */

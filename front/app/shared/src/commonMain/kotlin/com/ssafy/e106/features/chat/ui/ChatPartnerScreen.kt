@@ -56,8 +56,9 @@ fun ChatPartnerScreen(state: ChatPartnerState, onAction: (ChatPartnerAction) -> 
 }
 
 internal fun PublicChatPartner.heroInfo() = ProfileHeroInfo(nickname, age.takeIf { it >= 19 }, gender.gender())
+internal fun PublicChatPartner.lifestyle() = lifestyleOf(smokingStatus, drinkingFrequency, religion)
 
-/** 상대 프로필: 위는 사진이 상태 바까지 꽉 찬 [ProfileHero](제목 · 오른쪽 버튼 없음), 아래는 소개 · 생활 정보 */
+/** 상대 프로필: 위는 사진이 상태 바까지 꽉 찬 [ProfileHero](제목 · 오른쪽 버튼 없음), 아래는 생활 칩 · 소개 카드 */
 @Composable private fun PartnerProfile(state: ChatPartnerState, p: PublicChatPartner, onAction: (ChatPartnerAction) -> Unit, modifier: Modifier) {
     val photo = when (state.visiblePhoto) {
         ChatPartnerPhoto.Loading -> HeroPhoto.Loading
@@ -76,17 +77,8 @@ internal fun PublicChatPartner.heroInfo() = ProfileHeroInfo(nickname, age.takeIf
                     onRetryPhoto = { onAction(ChatPartnerAction.RetryPhoto) })
                 Column(Modifier.align(Alignment.CenterHorizontally).widthIn(max = 640.dp).fillMaxWidth().padding(screenPaddingValues()),
                     verticalArrangement = Arrangement.spacedBy(AppSpacing.Large)) {
-                    PartnerSection(stringResource(Res.string.chat_partner_intro)) {
-                        Text(p.introduction?.takeIf { it.isNotBlank() } ?: stringResource(Res.string.chat_partner_intro_empty))
-                    }
-                    PartnerSection(stringResource(Res.string.chat_partner_lifestyle)) {
-                        PartnerValue(stringResource(Res.string.chat_partner_smoking), ProfileSmoking.entries.find { it.code() == p.smokingStatus }
-                            ?.let { stringResource(it.label()) } ?: stringResource(Res.string.chat_partner_unknown))
-                        PartnerValue(stringResource(Res.string.chat_partner_drinking), ProfileDrinking.entries.find { it.code() == p.drinkingFrequency }
-                            ?.let { stringResource(it.label()) } ?: stringResource(Res.string.chat_partner_unknown))
-                        PartnerValue(stringResource(Res.string.chat_partner_religion), p.religion.religion()?.let { stringResource(it.label()) }
-                            ?: stringResource(if (p.religion == null) Res.string.chat_partner_not_entered else Res.string.chat_partner_unknown))
-                    }
+                    ProfileLifestyleChips(p.lifestyle())
+                    ProfileIntroCard(p.introduction)
                 }
             }
         }
@@ -101,20 +93,5 @@ internal fun PublicChatPartner.heroInfo() = ProfileHeroInfo(nickname, age.takeIf
         SkeletonBone(width = 80.dp, height = 20.dp)
         SkeletonBone(height = 96.dp, shape = AppShapes.Card)
         SkeletonBone(height = 160.dp, shape = AppShapes.Card)
-    }
-}
-
-@Composable private fun PartnerSection(title: String, content: @Composable ColumnScope.() -> Unit) {
-    Surface(Modifier.fillMaxWidth().frost(), shape = AppShapes.Card, color = AppColors.SurfaceMuted, border = GlassBorder) {
-        Column(Modifier.padding(AppSpacing.Large), verticalArrangement = Arrangement.spacedBy(AppSpacing.Medium)) {
-            Text(title, style = MaterialTheme.typography.titleMedium)
-            content()
-        }
-    }
-}
-@Composable private fun PartnerValue(label: String, value: String) {
-    Column(verticalArrangement = Arrangement.spacedBy(AppSpacing.ExtraSmall)) {
-        Text(label, color = AppColors.TextSecondary, style = MaterialTheme.typography.labelLarge)
-        Text(value)
     }
 }
