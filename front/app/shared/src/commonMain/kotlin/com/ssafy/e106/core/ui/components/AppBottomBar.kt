@@ -52,14 +52,16 @@ fun AppBottomBar(
     Row(
         modifier.padding(horizontal = AppSpacing.Large, vertical = AppSpacing.Small)
             .heightIn(min = AppSizes.BottomBarMinHeight - AppSpacing.Small * 2)
-            .glass(RoundedCornerShape(50), blur = true)
+            .glass(TabShape, blur = true)
             .padding(horizontal = AppSpacing.Small)
             .wrapContentHeight()
             .fillMaxWidth().selectableGroup()
             .drawBehind {
                 if (labels.isEmpty()) return@drawBehind
+                // 왼쪽→오른쪽 배치만 계산한다(RTL 미지원). 스프링이 끝을 넘어가도 유리 밖으로 나가지 않게 자른다
                 val cell = size.width / labels.size
-                drawRoundRect(highlight, Offset(cell * position, 0f), Size(cell, size.height), CornerRadius(size.height / 2))
+                val x = (cell * position).coerceIn(0f, size.width - cell)
+                drawRoundRect(highlight, Offset(x, 0f), Size(cell, size.height), CornerRadius(size.height / 2))
             },
         verticalAlignment = Alignment.CenterVertically,
     ) {
