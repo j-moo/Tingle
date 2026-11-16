@@ -99,6 +99,10 @@ struct kr_engine {
 	uint32_t next_sequence;
 	uint8_t cursor_epoch[16];
 	uint32_t overflow;
+	/* RAM-only isolation; the original NVS items remain untouched. */
+	uint32_t quarantined_records;
+	uint32_t final_retry_records;
+	uint64_t final_retry_suppressions;
 	bool ready;
 	bool storage_error;
 };
@@ -118,6 +122,9 @@ size_t kr_record_encode(const struct kr_record *r, uint8_t *out);
 
 void kr_init(struct kr_engine *e, uint64_t device, struct kr_io io);
 bool kr_restored_valid(struct kr_engine *e);
+bool kr_record_valid(const struct kr_record *r);
+bool kr_quarantined(const struct kr_engine *e, unsigned slot);
+unsigned kr_quarantine_count(const struct kr_engine *e);
 enum kr_result kr_register(struct kr_engine *e, const uint8_t owner[16],
 	const uint8_t token[16]);
 bool kr_auth(const struct kr_engine *e, const uint8_t token[16]);

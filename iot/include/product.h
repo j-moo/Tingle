@@ -49,6 +49,7 @@ struct kr_product {
 	int64_t applied_version, utc_base, utc_uptime, challenge_deadline, session_deadline;
 	uint32_t challenge_connection, session_connection;
 	uint32_t applied_generation;
+	uint32_t quarantine_unresolved;
 	unsigned permissions;
 	uint64_t seen[KR_SUPPRESSIONS];
 	uint8_t accounts[KR_RECORDS + KR_SUPPRESSIONS][16];

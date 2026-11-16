@@ -18,12 +18,15 @@ static bool nonzero(const uint8_t *p, size_t n)
 static enum kr_result save(struct kr_engine *e, unsigned slot,
 	const struct kr_record *r)
 {
+	if (e->storage_error || kr_quarantined(e, slot)) { return KR_STORAGE; }
+	if (!memcmp(&e->records[slot], r, sizeof(*r))) { return KR_OK; }
 	if (e->storage_error || e->io.record(e->io.ctx, slot, r)) {
 		e->storage_error = true;
 		e->ready = false;
 		return KR_STORAGE;
 	}
 	e->records[slot] = *r;
+	e->final_retry_records &= ~(UINT32_C(1) << slot);
 	return KR_OK;
 }
 
@@ -36,6 +39,28 @@ void kr_init(struct kr_engine *e, uint64_t device, struct kr_io io)
 	e->next_sequence = 1;
 }
 
+bool kr_quarantined(const struct kr_engine *e, unsigned slot)
+{ return slot < KR_RECORDS && (e->quarantined_records & (UINT32_C(1) << slot)); }
+unsigned kr_quarantine_count(const struct kr_engine *e)
+{
+	unsigned count = 0;
+	for (unsigned i = 0; i < KR_RECORDS; ++i) { count += kr_quarantined(e, i); }
+	return count;
+}
+bool kr_record_valid(const struct kr_record *r)
+{
+	if (r->kind == KR_EMPTY) { return true; }
+	if (r->format != KR_VERSION || r->kind > KR_REVIEW || r->phase > KR_COMPLETE ||
+		r->peer_len > KR_WIRE_MAX || r->own.data_len > KR_DATA_MAX ||
+		!r->sequence || r->sequence == UINT32_MAX) { return false; }
+	if (r->kind == KR_MATCH || r->kind == KR_CONFIRMED) {
+		struct kr_profile peer;
+		if (r->peer_len < 52 || !kr_packet_valid(r->peer_wire, r->peer_len) ||
+			r->peer_wire[3] != 1 || kr_get64(r->peer_wire + 6) != r->peer ||
+			!kr_profile_decode(&peer, r->peer_wire + 14, r->peer_len - 18)) { return false; }
+	}
+	return true;
+}
 bool kr_restored_valid(struct kr_engine *e)
 {
 	if (e->config.format != KR_VERSION || !e->config.device ||
@@ -45,21 +70,9 @@ bool kr_restored_valid(struct kr_engine *e)
 		return false;
 	}
 	for (unsigned i = 0; i < KR_RECORDS; ++i) {
+		if (kr_quarantined(e, i)) { continue; }
 		const struct kr_record *r = &e->records[i];
-		if (r->kind != KR_EMPTY && (r->format != KR_VERSION ||
-			r->kind > KR_REVIEW || r->phase > KR_COMPLETE ||
-			r->peer_len > KR_WIRE_MAX || r->own.data_len > KR_DATA_MAX ||
-			r->sequence == UINT32_MAX)) {
-			return false;
-		}
-		if (r->kind == KR_MATCH || r->kind == KR_CONFIRMED) {
-			struct kr_profile peer;
-			if (r->peer_len < 52 || !kr_packet_valid(r->peer_wire, r->peer_len) ||
-				r->peer_wire[3] != 1 || kr_get64(r->peer_wire + 6) != r->peer ||
-				!kr_profile_decode(&peer, r->peer_wire + 14, r->peer_len - 18)) {
-				return false;
-			}
-		}
+		if (!kr_record_valid(r)) { return false; }
 		if (r->kind && r->sequence >= e->next_sequence) {
 			e->next_sequence = r->sequence + 1;
 		}
@@ -143,7 +156,7 @@ unsigned kr_count(const struct kr_engine *e, enum kr_kind kind)
 {
 	unsigned n = 0;
 	for (unsigned i = 0; i < KR_RECORDS; ++i) {
-		n += e->records[i].kind == kind;
+		n += !kr_quarantined(e, i) && e->records[i].kind == kind;
 	}
 	return n;
 }
@@ -190,10 +203,13 @@ static bool suppressed(const struct kr_engine *e, uint64_t peer)
 static enum kr_result save_suppression(struct kr_engine *e, unsigned slot,
 	const struct kr_suppression *s)
 {
+	if (e->storage_error) { return KR_STORAGE; }
+	if (!memcmp(&e->suppressed[slot], s, sizeof(*s))) { return KR_OK; }
 	if (e->io.suppression(e->io.ctx, slot, s)) {
 		return KR_STORAGE;
 	}
 	e->suppressed[slot] = *s;
+	e->final_retry_suppressions &= ~(UINT64_C(1) << slot);
 	return KR_OK;
 }
 
@@ -204,7 +220,7 @@ static enum kr_result insert(struct kr_engine *e, struct kr_record *r)
 		return KR_FULL;
 	}
 	for (unsigned i = 0; i < KR_RECORDS; ++i) {
-		if (e->records[i].kind == KR_EMPTY) {
+		if (e->records[i].kind == KR_EMPTY && !kr_quarantined(e, i)) {
 			if (e->io.sequence && e->io.sequence(e->io.ctx, e->next_sequence + 1)) {
 				e->storage_error = true; e->ready = false; return KR_STORAGE;
 			}
@@ -374,6 +390,11 @@ static enum kr_result control(struct kr_engine *e, const uint8_t *p, size_t len,
 				s.peer_revision != kr_get32(p + 56) || s.own_revision != kr_get32(p + 60)) {
 				continue;
 			}
+			if (s.phase == KR_COMPLETE && ((peer_id < e->config.device && p[64] == KR_COMMIT) ||
+				(peer_id > e->config.device && p[64] == KR_DONE))) {
+				e->final_retry_suppressions |= UINT64_C(1) << i;
+				return KR_OK;
+			}
 			if (peer_id < e->config.device && p[64] == KR_COMMIT) {
 				s.phase = KR_DONE;
 			} else if (peer_id > e->config.device && p[64] == KR_DONE) {
@@ -428,7 +449,9 @@ static enum kr_result control(struct kr_engine *e, const uint8_t *p, size_t len,
 		r.phase = KR_FINAL;
 		confirm = true;
 	} else if (phase == KR_DONE && coordinator && r.phase == KR_COMPLETE) {
-		r.phase = KR_FINAL; /* Recover a lost FINAL without another feedback. */
+		/* Retry the radio receipt without rewriting the completed record twice. */
+		e->final_retry_records |= UINT32_C(1) << slot;
+		return KR_OK;
 	} else if (phase == KR_FINAL && !coordinator && r.phase == KR_DONE) {
 		r.phase = KR_COMPLETE;
 	} else {
@@ -505,7 +528,9 @@ size_t kr_advertisement(struct kr_engine *e, unsigned *cursor, uint8_t *out,
 		}
 		if (index > KR_RECORDS) {
 			const struct kr_suppression *s = &e->suppressed[index - KR_RECORDS - 1];
-			if (!s->peer || (e->io.same_peer && !e->io.same_peer(e->io.ctx, index - 1, s->peer)) || (s->phase != KR_DONE && s->phase != KR_FINAL)) {
+			bool retry = (e->final_retry_suppressions & (UINT64_C(1) << (index - KR_RECORDS - 1))) != 0;
+			if (!s->peer || (e->io.same_peer && !e->io.same_peer(e->io.ctx, index - 1, s->peer)) ||
+				(s->phase != KR_DONE && s->phase != KR_FINAL && !(retry && s->phase == KR_COMPLETE))) {
 				continue;
 			}
 			kr_put64(body, e->config.device);
@@ -516,13 +541,14 @@ size_t kr_advertisement(struct kr_engine *e, unsigned *cursor, uint8_t *out,
 			kr_put64(body + 48, 0);
 			kr_put32(body + 56, s->own_revision);
 			kr_put32(body + 60, s->peer_revision);
-			body[64] = s->phase;
-			*sent_slot = s->phase == KR_FINAL ? (int)index - 1 : -1;
+			body[64] = retry && s->phase == KR_COMPLETE ? (e->config.device < s->peer ? KR_FINAL : KR_DONE) : s->phase;
+			*sent_slot = s->phase == KR_FINAL || retry ? (int)index - 1 : -1;
 			return kr_packet(2, body, 65, out);
 		}
 		const struct kr_record *r = &e->records[index - 1];
+		bool retry = (e->final_retry_records & (UINT32_C(1) << (index - 1))) != 0;
 		if (!r->kind || r->kind == KR_REVIEW || (e->io.same_peer && !e->io.same_peer(e->io.ctx, index - 1, r->peer)) || r->phase < KR_OFFER ||
-			r->phase == KR_COMPLETE) {
+			(r->phase == KR_COMPLETE && !retry)) {
 			continue;
 		}
 		struct kr_profile peer;
@@ -537,8 +563,8 @@ size_t kr_advertisement(struct kr_engine *e, unsigned *cursor, uint8_t *out,
 		kr_put64(body + 48, 0); /* Reserved; must stay zero in version 1. */
 		kr_put32(body + 56, r->own.revision);
 		kr_put32(body + 60, peer.revision);
-		body[64] = r->phase;
-		*sent_slot = r->phase == KR_FINAL ? (int)index - 1 : -1;
+		body[64] = retry && r->phase == KR_COMPLETE ? KR_FINAL : r->phase;
+		*sent_slot = r->phase == KR_FINAL || retry ? (int)index - 1 : -1;
 		return kr_packet(2, body, 65, out);
 	}
 	return 0;
@@ -546,6 +572,13 @@ size_t kr_advertisement(struct kr_engine *e, unsigned *cursor, uint8_t *out,
 
 void kr_sent(struct kr_engine *e, int slot)
 {
+	if (slot >= 0 && slot < KR_RECORDS && e->records[slot].phase == KR_COMPLETE) {
+		e->final_retry_records &= ~(UINT32_C(1) << slot); return;
+	}
+	if (slot >= KR_RECORDS && slot < KR_RECORDS + KR_SUPPRESSIONS &&
+		e->suppressed[slot - KR_RECORDS].phase == KR_COMPLETE) {
+		e->final_retry_suppressions &= ~(UINT64_C(1) << (slot - KR_RECORDS)); return;
+	}
 	if (slot >= 0 && slot < KR_RECORDS && e->records[slot].phase == KR_FINAL) {
 		struct kr_record r = e->records[slot];
 		r.phase = KR_COMPLETE;

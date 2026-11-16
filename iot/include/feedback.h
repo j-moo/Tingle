@@ -5,8 +5,10 @@
 #include <stdint.h>
 
 #define KR_FEEDBACK_LED_MS 30000
-#define KR_FEEDBACK_PULSE_MS 120
+#define KR_FEEDBACK_PULSE_MS 350
 #define KR_FEEDBACK_GAP_MS 150
+#define KR_FEEDBACK_CYCLE_MS 1250
+#define KR_FEEDBACK_VIBRATION_MS 10000
 
 struct kr_profile;
 struct kr_status;
