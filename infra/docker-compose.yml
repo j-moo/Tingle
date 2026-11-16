@@ -123,12 +123,12 @@ services:
       # AI 시작 질문 Release(운영·개발 공용). 켜고 끄는 스위치는 없고, 이 파일이 있으면 back 이 AI 에 시작 질문을 요청한다. ai 쪽 ICEBREAKER_RELEASE_DESCRIPTOR_FILE 과 같은 Release 여야 한다
       APP_ICEBREAKER_MANIFEST_LOCATION: file:/run/tingle/q040-dev-release-v1/be-descriptor.json
       # 채팅 삭제 뒤 백업 사본 확인(S15P31E106-202 · 250). 두 환경 모두 켜져 있다. 서버 cron 이 1분마다 /srv/tingle/backup-evidence 에 쓰는 메타데이터만 읽는다(/backup 은 붙이지 않음).
-      # 범위 · 승인 ID 는 공개 식별자(docs/specifications/functional-spec-v3/backup-evidence-v1.md). 운영 승인 ID 는 아직 문서에 없어 app.env 의 BACKUP_EVIDENCE_APPROVAL_ID 로 받는다.
+      # 범위 · 승인 ID 는 비밀값이 아닌 공개 식별자다(docs/specifications/functional-spec-v3/backup-evidence-v1.md). 운영 승인 ID 는 S15P31E106-407 에서 정했다.
       APP_BACKUP_EVIDENCE_FILE: /backup-evidence/tingle.json
       APP_BACKUP_EVIDENCE_GENERATION_FILE: /backup-evidence/tingle.restore-generation
       APP_BACKUP_EVIDENCE_NAMESPACE: tingle
       APP_BACKUP_EVIDENCE_SCOPE_ID: tingle-prod-db-dumps-v1
-      APP_BACKUP_EVIDENCE_APPROVAL_ID: ${BACKUP_EVIDENCE_APPROVAL_ID:?}
+      APP_BACKUP_EVIDENCE_APPROVAL_ID: S15P31E106-407-PROD-DB-V1-20261117
     volumes: &back-volumes
       - /srv/tingle/secrets:/run/secrets/tingle:ro # Jenkins 가 쓰는 비밀 파일 (fcm.json)
       - /data/uploads/prod:/data/photos # 운영 사진. 블루 · 그린이 같은 폴더를 함께 쓴다. 호스트 폴더 소유자는 이미지 실행 사용자(uid 1000)
@@ -152,8 +152,10 @@ services:
       <<: *back-env
       SPRING_PROFILES_ACTIVE: dev
       SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/tingle_dev
-      # 토큰 서명 키는 운영과 반드시 달라야 한다. iss · aud 가 두 환경에서 같아서, 같은 키를 쓰면 개발 서버가 발급한 토큰이 운영에서도 통과한다.
+      # 토큰 서명 키는 운영과 반드시 달라야 한다. 같은 키를 쓰면 개발 서버 키를 얻은 사람이 운영 토큰도 위조할 수 있다.
       JWT_SECRET: ${DEV_JWT_SECRET:?}
+      # 푸시 토큰 암호화 키도 같은 이유로 나눈다. 키를 바꾸면 개발 앱 설치는 푸시 토큰을 다시 등록한다.
+      PUSH_TOKEN_ENCRYPTION_KEY: ${DEV_PUSH_TOKEN_ENCRYPTION_KEY:?}
       WITHDRAWAL_IDENTITY_SECRET: ${DEV_WITHDRAWAL_IDENTITY_SECRET:?}
       WITHDRAWAL_RECEIPT_SECRET: ${DEV_WITHDRAWAL_RECEIPT_SECRET:?}
       TERMS_CONTENT_URL: https://${DOMAIN:?}/dev/terms/ # 개발은 develop 에 머지된 web-dev 페이지
@@ -185,7 +187,7 @@ services:
     environment: &ai-env
       AI_SERVICE_PUBLIC_KEYS: '{"be-dev-1":"/run/ai-keys/be-dev-1.pub.pem"}' # back 서명 키와 짝(운영·개발 공용). 파일이 없으면 기동을 거절한다
       # GMS(매칭 이유 · 시작 질문 생성): 키는 Jenkins Credentials tingle-app-env(app.env)의 GMS_API_KEY. 운영·개발 공용이고, 비어 있으면 AI 서버가 기동을 거절한다
-      GMS_API_KEY: "${GMS_API_KEY:-}"
+      GMS_API_KEY: "${GMS_API_KEY:?}"
       ICEBREAKER_RELEASE_DESCRIPTOR_FILE: /run/tingle/q040-dev-release-v1/ai-descriptor.json
     volumes: &ai-volumes
       - /srv/tingle/ai-keys/dev:/run/ai-keys:ro # 공개 키만 둔다(비밀값 아님). 컨테이너 사용자(uid 10001)가 읽도록 644. 폴더 이름은 dev 지만 운영도 이 파일을 쓴다. 키를 바꿀 때는 파일을 덮어쓰지 말고 새 키 이름을 추가한 뒤 back · ai 를 함께 다시 띄운다
@@ -274,7 +276,7 @@ services:
     volumes:
       - ./monitoring/grafana/datasources:/etc/grafana/provisioning/datasources:ro
       - ./monitoring/grafana/dashboards:/etc/grafana/provisioning/dashboards:ro # tingle.json
-      # 개발 비동기 관측 규칙만 등록한다. 수신 채널 승인 전에는 모든 규칙을 paused로 유지한다.
+      # 비동기 관측 규칙(async-jobs-dev · async-jobs-prod.json)을 등록한다. 수신 채널 승인 전에는 모든 규칙을 paused로 유지한다.
       - ./monitoring/grafana/alerting:/etc/grafana/provisioning/alerting:ro
       - grafana:/var/lib/grafana
     depends_on: [prometheus, loki]

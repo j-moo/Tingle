@@ -91,8 +91,8 @@ uid 1000이 호스트 소유자와 같다고 가정하지 않는다. 세대 파�
 JSON의 추가 nullable 필드는 기존 상태를 읽을 수 있으며, 구형 실행 프로그램은 새 필드를 무시하더라도
 이 재시도 개선을 제공하지 않으므로 복원 작업 중 구형 버전으로 되돌리지 않는다.
 
-개발 BE 의 마운트 · 환경변수는 기본 `infra/docker-compose.yml` 의 `back-dev` 에 있다(S15P31E106-250).
-기본 꺼짐이며 서버 `/srv/tingle/.env` 의 `BACKUP_EVIDENCE_ENABLED=true` 로 켠다. 갱신 cron 은 `backup-evidence-refresh.sh` 주석,
+BE 의 마운트 · 환경변수는 `infra/docker-compose.yml` 의 `back-env`(운영)와 `back-dev`(개발)에 있다(S15P31E106-250 · 407).
+운영 · 개발 모두 늘 켜져 있고 끄는 설정은 없다. 갱신 cron 은 `backup-evidence-refresh.sh` 주석,
 복원은 `infra/restore-db.sh` 를 쓴다.
 켜기 전에 메타데이터 폴더 · 세대 파일 · 그룹 권한을 준비한다. 백업 자동 삭제 활성화는 없다.
 실제 인프라 권한·주기 실행·복원 시 세대 갱신 및 운영 로그 내용은 아직 별도 검증 대상이다.
@@ -111,13 +111,13 @@ JSON의 추가 nullable 필드는 기존 상태를 읽을 수 있으며, 구형 
 파일 교체는 원자적으로 하고 BE가 새 세대 파일을 읽을 수 있는 권한을 유지한다.
 이 기준에 따른 복원 스크립트와 기존 gate 설정의 배포 연결은 INFRA가 구현한다.
 
-개발 계약의 공개 식별자는 아래와 같이 지정한다. 운영에 재사용하지 않는다.
+환경별 공개 식별자는 아래와 같이 지정한다. 서로 재사용하지 않는다. compose 에 값으로 적고 cron 에는 `BACKUP_EVIDENCE_SCOPE_ID`로 공급한다.
 
-- `SCOPE_ID=tingle-dev-db-dumps-v1` (`BACKUP_EVIDENCE_SCOPE_ID`로 공급)
-- `APPROVAL_ID=S15P31E106-202-DEV-DB-V1-20261105` (`BACKUP_EVIDENCE_APPROVAL_ID`로 공급)
+- 개발: `SCOPE_ID=tingle-dev-db-dumps-v1`, `APPROVAL_ID=S15P31E106-202-DEV-DB-V1-20261105`
+- 운영: `SCOPE_ID=tingle-prod-db-dumps-v1`, `APPROVAL_ID=S15P31E106-407-PROD-DB-V1-20261117` (S15P31E106-407 에서 지정)
 
 ID 지정은 검토 기록을 연결하는 기준이며 활성화 승인 완료를 뜻하지 않는다.
-BE·INFRA 검토와 아래 로그 범위 확인 후 개발에서 활성화하며 운영은 별도 승인을 받는다.
+두 환경 모두 활성화한다(S15P31E106-407). 아래 로그 범위 확인은 계속 별도 검증 대상이다.
 
 ## 사진·로그 범위 확인
 
@@ -160,7 +160,7 @@ POSIX에서는 journal 디렉터리0700·파일0600으로 초기화한다. names
 - `TINGLE_CHAT_RESTORE_MARKER_FILE`: 저널 디렉터리와 분리한 절대 파일 경로, 부모 폴더 사전 준비.
 - `SPRING_DATASOURCE_URL/USERNAME/PASSWORD`: PostgreSQL 연결. 실제 `current_database()`가 namespace와
   일치하는지 먼저 검사하며 다르면 DB 재삭제·marker 변경을 시작하지 않는다.
-- `APP_BACKUP_EVIDENCE_ENABLED=true` 및 기존 `FILE/GENERATION_FILE/NAMESPACE/SCOPE_ID/APPROVAL_ID`.
+- 기존 `APP_BACKUP_EVIDENCE_FILE/GENERATION_FILE/NAMESPACE/SCOPE_ID/APPROVAL_ID`.
   증거 세대 파일도 같은 UUID여야 한다. 연결/소켓/쿼리/트랜잭션에는 별도 고정 시간 제한을 둔다.
   JDBC URL의 사용자·비밀번호·timeout 재정의는 받지 않는다.
 
