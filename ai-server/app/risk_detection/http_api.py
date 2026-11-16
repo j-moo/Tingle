@@ -176,7 +176,13 @@ class ReleaseCatalog:
             if not self.descriptor_file:
                 return False
             path = Path(self.descriptor_file)
-            descriptor = _json(_read_bounded(path, 65536))
+            raw = _read_bounded(path, 65536)
+            try:
+                descriptor = _json(raw)
+            except RecursionError:
+                # Only malformed JSON nesting is a policy rejection. Recursion
+                # failures in later validation/verification remain internal errors.
+                return False
             if not isinstance(descriptor, dict) or set(descriptor) != {"manifest", "artifact"}:
                 return False
             if Manifest.model_validate(descriptor["manifest"]) != manifest:
