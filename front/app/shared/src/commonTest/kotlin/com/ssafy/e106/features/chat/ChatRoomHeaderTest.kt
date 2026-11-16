@@ -75,6 +75,54 @@ class ChatRoomHeaderTest {
         gate.complete(Unit); runCurrent()
         assertEquals("방21", m.state.value.ui.nickname)
     }
+    @Test fun lateProfileAfterMessageFailureDoesNotRefillNickname() = test {
+        val profileGate = CompletableDeferred<Unit>(); val messagesGate = CompletableDeferred<Unit>()
+        val api = object : ChatTestServer() {
+            override suspend fun profile(id: Long): ApiResult<ChatPartnerRecord> { profileGate.await(); return super.profile(id) }
+        }
+        api.onMessages = { _, _ -> messagesGate.await(); ApiResult.Fail(AppError.Server(503, "SERVICE_UNAVAILABLE", "")) }
+        val m = room(api); runCurrent()
+        messagesGate.complete(Unit); runCurrent()
+        assertEquals(ConversationLoad.Failed, m.state.value.ui.load)
+        profileGate.complete(Unit); runCurrent()
+        assertNull(m.state.value.ui.nickname)
+    }
+    @Test fun revokeThenReloadStartsFreshProfileLoad() = test {
+        val messagesGate = CompletableDeferred<Unit>(); var profiles = 0
+        val api = object : ChatTestServer() {
+            // 첫 요청은 끝나지 않는다. 취소되지 않고 남으면 다음 불러오기가 새로 받지 못한다
+            override suspend fun profile(id: Long): ApiResult<ChatPartnerRecord> { if (profiles++ == 0) awaitCancellation(); return super.profile(id) }
+        }
+        api.onMessages = { _, _ -> messagesGate.await(); ApiResult.Fail(AppError.Server(404, "RESOURCE_NOT_FOUND", "")) }
+        val m = room(api); runCurrent()
+        messagesGate.complete(Unit); runCurrent()
+        assertEquals(ConversationLoad.Unavailable, m.state.value.ui.load)
+        api.onMessages = null; m.reload(); runCurrent()
+        assertTrue(m.state.value.ui.readable); assertEquals(2, profiles); assertEquals("상대", m.state.value.ui.nickname)
+    }
+    @Test fun lateProfileOfSameRoomAfterRevokeIsDroppedByStamp() = test {
+        val profileGate = CompletableDeferred<Unit>(); val messagesGate = CompletableDeferred<Unit>()
+        val api = object : ChatTestServer() {
+            // 취소를 무시하고 도착하는 응답도 방이 닫힌 뒤(stamp 변경)에는 버린다
+            override suspend fun profile(id: Long): ApiResult<ChatPartnerRecord> {
+                withContext(NonCancellable) { profileGate.await() }; return super.profile(id)
+            }
+        }
+        api.onMessages = { _, _ -> messagesGate.await(); ApiResult.Fail(AppError.Server(410, "CHAT_CLOSED", "")) }
+        val m = room(api); runCurrent()
+        messagesGate.complete(Unit); runCurrent()
+        assertEquals(ConversationLoad.Closed, m.state.value.ui.load)
+        profileGate.complete(Unit); runCurrent()
+        assertNull(m.state.value.ui.nickname)
+    }
+    @Test fun leaveClearsNicknameButPauseKeepsIt() = test {
+        val api = Server(); val m = room(api); runCurrent()
+        val gate = CompletableDeferred<Unit>(); api.roomGate = gate
+        m.pause(); m.resume(); runCurrent(); assertEquals("상대", m.state.value.ui.nickname)
+        m.leave(); m.open(20); runCurrent()
+        assertEquals(ConversationLoad.Loading, m.state.value.ui.load); assertNull(m.state.value.ui.nickname)
+        gate.complete(Unit); runCurrent(); assertEquals("상대", m.state.value.ui.nickname)
+    }
     @Test fun photoIsAskedOnlyWhenPartnerHasOne() = test {
         val api = Server(); val m = room(api); runCurrent()
         assertEquals(0, api.photos); assertTrue(m.state.value.ui.readable)

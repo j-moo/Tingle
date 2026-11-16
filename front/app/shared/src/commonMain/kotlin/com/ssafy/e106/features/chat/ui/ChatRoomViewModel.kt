@@ -84,6 +84,11 @@ class ChatRoomViewModel(private val api: ChatRepository, private val sessions: S
         // 두 경로는 readPending으로 합쳐 실행하며 화면 밖에서는 모두 취소한다.
         pollJob = viewModelScope.launch { while (isActive) { delay(5_000); if (mutable.value.ui.readable) recoverNew() } }
     }
+    /** 차단 · 신고 · 나가기나 닫힌 방에서 나갈 때. 같은 방에 다시 들어와도 옛 닉네임 · 사진을 보이지 않는다 */
+    fun leave() {
+        pause(); partnerHasPhoto = null
+        mutable.update { it.copy(ui = it.ui.copy(nickname = null, partnerPhoto = null)) }
+    }
     fun pause() {
         persistDraft(); epoch++; resumed = false; cancelReads()
         // 수신 본문과 상대 사진은 백그라운드에서 숨기고, 복귀 시 현재 권한부터 다시 조회한다.
@@ -409,6 +414,8 @@ class ChatRoomViewModel(private val api: ChatRepository, private val sessions: S
     } }
     private suspend fun fail(error: AppError, owner: Session.SignedIn, id: Long, stamp: Long) {
         if (!valid(stamp, owner, id)) return
+        // 늦게 온 상대 프로필 · 사진이 지운 닉네임을 되살리지 않게 하고, 다시 불러올 때 새로 받게 한다
+        partnerJob?.cancel()
         records = emptyList(); mutable.update { it.copy(error = error, ui = it.ui.accessError(error.chatCode())) }
         if (error.revokesChat()) {
             // 종료 전에 시작된 조회가 뒤늦게 접근 권한을 되살리지 못하게 한다.

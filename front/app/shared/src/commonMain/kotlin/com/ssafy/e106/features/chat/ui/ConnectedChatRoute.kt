@@ -47,7 +47,8 @@ import kotlinx.coroutines.delay
     } }
     fun back() { if (conversation.sending) return
         if (page != "conversation") { partnerModel.clear(); page = "conversation" }
-        else if (room != null) { roomModel.pause(); room = null } else onHome()
+        // 읽을 수 없는(닫힌) 방에서 나가면 닉네임도 지운다. 다시 들어올 때 옛 이름이 보이지 않게
+        else if (room != null) { if (conversation.ui.readable) roomModel.pause() else roomModel.leave(); room = null } else onHome()
     }
     // 메뉴는 같은 대화방 안의 표시 전환이다. 메뉴 진입·복귀로 방을 다시 열어 저장 전 초안을 덮어쓰지 않는다.
     // 상대 프로필은 별도 조회 화면이므로 그 화면을 오갈 때만 방/프로필 진입 처리를 다시 수행한다.
@@ -94,7 +95,7 @@ import kotlinx.coroutines.delay
             for ((operation, label) in listOf("REPORT" to Res.string.chat_connected_report,
                 "BLOCK" to Res.string.chat_connected_block, "LEAVE" to Res.string.chat_connected_leave)) {
                 AppButton(stringResource(label), Modifier.fillMaxWidth(), enabled = !conversation.sending,
-                    onClick = { roomModel.pause(); onSafety(room!!, operation) })
+                    onClick = { roomModel.leave(); onSafety(room!!, operation) })
             }
             // 대화 맨 위 안내는 이전 메시지를 다 받아야 보이므로 메뉴에서도 열 수 있게 한다
             AppButton(stringResource(Res.string.chat_conversation_ai_notice), Modifier.fillMaxWidth(), variant = AppButtonVariant.Secondary,
@@ -116,7 +117,7 @@ import kotlinx.coroutines.delay
     } }, onMessageRecovery = { _, _ -> roomModel.retry() },
         onMessagesDisplayed = { displayed = it; roomModel.displayed(it) },
         conversationSupport = support?.let { block -> { block(room!!, conversation.ui.readable, conversation.ui.inputEnabled, conversation.ui.draft, roomModel::draft,
-            { if (!conversation.sending) { roomModel.pause(); onSafety(room!!, "BLOCK") } }, conversation.ui.messages.lastOrNull()?.id,
+            { if (!conversation.sending) { roomModel.leave(); onSafety(room!!, "BLOCK") } }, conversation.ui.messages.lastOrNull()?.id,
             usedTexts.takeIf { conversation.ui.firstPageLoaded }) } },
         // 화면 위 빨간 글 · 버튼 대신 입력창 위 아래 띠로 알린다. 불러오기 실패는 화면이 상태 화면으로 보여 준다
         error = conversation.error, notices = {
