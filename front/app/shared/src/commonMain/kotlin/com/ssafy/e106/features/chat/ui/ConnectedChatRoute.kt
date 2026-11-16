@@ -9,6 +9,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.ssafy.e106.core.auth.Session
 import com.ssafy.e106.features.chat.data.chatCode
@@ -29,7 +30,9 @@ import kotlinx.coroutines.delay
     // 마지막 인자: 화면에 있는 메시지 본문(보낸 추천 질문을 목록에서 빼는 데 쓴다)
     support: (@Composable (Long, Boolean, Boolean, String, (String) -> Unit, () -> Unit, String?, Set<String>) -> Unit)? = null,
     listModel: ChatListViewModel = koinViewModel(), roomModel: ChatRoomViewModel = koinViewModel(),
-    partnerModel: ChatPartnerViewModel = koinViewModel()) {
+    partnerModel: ChatPartnerViewModel = koinViewModel(),
+    // 대화 화면이 보이는 동안의 방 번호(안 보이면 null). 그 방의 새 메시지 알림을 띄우지 않는 데 쓴다
+    onViewing: (Long?) -> Unit = {}) {
     var room by rememberSaveable(session.userId, initialRoom) { mutableStateOf(initialRoom) }
     var page by rememberSaveable(session.userId, initialRoom) { mutableStateOf("conversation") }
     val list by listModel.state.collectAsStateWithLifecycle()
@@ -47,6 +50,8 @@ import kotlinx.coroutines.delay
     // 메뉴는 같은 대화방 안의 표시 전환이다. 메뉴 진입·복귀로 방을 다시 열어 저장 전 초안을 덮어쓰지 않는다.
     // 상대 프로필은 별도 조회 화면이므로 그 화면을 오갈 때만 방/프로필 진입 처리를 다시 수행한다.
     LaunchedEffect(session, room, page == "partner") { load() }
+    // 앱이 뒤로 가거나 상대 프로필 · 목록으로 나가면 다시 알림을 받는다
+    LifecycleResumeEffect(room, page) { onViewing(room.takeIf { page == "conversation" }); onPauseOrDispose { onViewing(null) } }
     // 화면 상태를 유지하며 권한과 공개 필드를 확인한다. 변경 없는 사진은 다시 다운로드하지 않는다.
     LaunchedEffect(session, room, page, partner.scope, partner.visible) {
         if (page == "partner" && room != null && partner.visible) {

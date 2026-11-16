@@ -22,4 +22,7 @@ interface PushEvents {
 
     /** 이동한 뒤 비운다. 그 사이 새 알림이 들어왔으면(값이 다르면) 비우지 않는다 */
     fun consume(target: PushTarget)
+
+    /** 지금 화면에 떠 있는 대화방(없으면 null). 그 방의 새 메시지 알림은 띄우지 않는다 */
+    fun viewing(room: Long?) {}
 }

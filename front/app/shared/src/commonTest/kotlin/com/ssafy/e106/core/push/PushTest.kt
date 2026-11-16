@@ -24,6 +24,8 @@ import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertTrue
+import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.time.Instant
 
@@ -100,11 +102,22 @@ class PushMessageTest {
     }
 
     @Test
-    fun endingNoticeHasUuidRoomSoOpensHome() {
-        val m = pushMessageOf(mapOf("type" to "ONE_HOUR_BEFORE_END", "chatRoomId" to "2f1c6a4e-0000-0000-0000-000000000000"))
+    fun onlyMessagesOfTheRoomOnScreenAreHidden() {
+        val message = pushMessageOf(mapOf("type" to "CHAT_MESSAGE", "chatRoomId" to "42"))
+        assertTrue(message.seenIn(42))
+        assertFalse(message.seenIn(43)); assertFalse(message.seenIn(null))   // 다른 방 · 방을 안 보는 중
+        // 같은 방이어도 종료 안내 · 매칭 성사는 알린다
+        assertFalse(pushMessageOf(mapOf("type" to "ONE_HOUR_BEFORE_END", "chatRoomId" to "42")).seenIn(42))
+        assertFalse(pushMessageOf(mapOf("type" to "CHAT_ROOM_CREATED", "chatRoomId" to "42")).seenIn(42))
+    }
+
+    @Test
+    fun endingNoticeOpensItsChatRoom() {
+        val m = pushMessageOf(mapOf("type" to "ONE_HOUR_BEFORE_END", "chatRoomId" to "42"))
         assertEquals(PushKind.ONE_HOUR_BEFORE_END, m.kind)
-        assertEquals(PushTarget.Home, m.target)
+        assertEquals(PushTarget.Chat(42), m.target)
         assertNull(m.recipientUserId)
+        assertEquals(PushTarget.Home, pushMessageOf(mapOf("type" to "ONE_HOUR_BEFORE_END", "chatRoomId" to "x")).target)
     }
 
     @Test
