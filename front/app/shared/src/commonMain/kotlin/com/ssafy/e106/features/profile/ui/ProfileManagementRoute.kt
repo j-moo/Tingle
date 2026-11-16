@@ -16,15 +16,11 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.ssafy.e106.core.auth.Session
 import com.ssafy.e106.core.ui.components.*
 import com.ssafy.e106.core.ui.theme.*
-import com.ssafy.e106.features.account.ui.HelpGuideAction
-import com.ssafy.e106.features.account.ui.HelpGuideKind
-import com.ssafy.e106.features.account.ui.HelpGuideScreen
-import com.ssafy.e106.features.account.ui.HelpGuideState
 import com.ssafy.e106.resources.*
 import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.viewmodel.koinViewModel
 
-private enum class ProfileDestination { Overview, Edit, Optional, Correction }
+private enum class ProfileDestination { Overview, Edit, Optional }
 
 @Composable
 fun ProfileManagementRoute(session: Session.SignedIn, onExit: () -> Unit, model: ProfileEditViewModel = koinViewModel(),
@@ -59,7 +55,6 @@ fun ProfileManagementRoute(session: Session.SignedIn, onExit: () -> Unit, model:
         }
         when (page) {
             ProfileDestination.Edit -> model.requestBack(::overview)
-            ProfileDestination.Correction -> page = ProfileDestination.Edit
             else -> exit()
         }
     }
@@ -68,13 +63,9 @@ fun ProfileManagementRoute(session: Session.SignedIn, onExit: () -> Unit, model:
     }
     when (page) {
         ProfileDestination.Optional -> OptionalProfileRoute(session, { returnFromOptional() }, ::returnFromOptional, model = optionalModel, editingExisting = true)
-        ProfileDestination.Correction -> HelpGuideScreen(HelpGuideState(HelpGuideKind.Correction), onAction = {
-            if (it == HelpGuideAction.Back) page = ProfileDestination.Edit
-        })
         ProfileDestination.Edit -> ProfileEditPage(session, state, model, optionalModel,
             onBack = ::back, onDiscard = { model.discard(::overview) },
-            onOptional = { if (state.canEdit) page = ProfileDestination.Optional },
-            onCorrection = { if (state.canEdit) page = ProfileDestination.Correction })
+            onOptional = { if (state.canEdit) page = ProfileDestination.Optional })
         ProfileDestination.Overview -> ProfileOverviewScreen(state, devNotice = !session.isReady,
             onEdit = ::edit, onReload = model::load, onBack = ::back)
     }
@@ -146,7 +137,7 @@ private fun ProfileOverviewScreen(state: ProfileManagementState, devNotice: Bool
 fun ProfileConnectedEditScreen(
     state: ProfileManagementState, onChange: (ProfileEditDraft) -> Unit, onSave: () -> Unit,
     onBack: () -> Unit, onDiscard: () -> Unit, onKeep: () -> Unit,
-    onOptional: () -> Unit, onCorrection: () -> Unit, onReload: () -> Unit,
+    onOptional: () -> Unit, onReload: () -> Unit,
     religionChip: @Composable () -> Unit = {}, belowChips: @Composable () -> Unit = {}, introduction: @Composable () -> Unit = {},
 ) {
     val editor = state.editor
@@ -172,7 +163,7 @@ fun ProfileConnectedEditScreen(
     val (refreshing, refresh) = pullRefresh(state.busy, onReload)
     val (photo, image) = rememberHeroPhoto(state.photo, state.profile?.hasProfilePhoto == true, state.photoFailed)
     ProfileEditScreen(editor.copy(saving = state.busy, interactionEnabled = !state.recoveryRequired, saveError = saveError),
-        onChange, onSave, onBack, onDiscard, onKeep, onOptional, onCorrection,
+        onChange, onSave, onBack, onDiscard, onKeep, onOptional,
         heroPhoto = photo, heroImage = image, onRetryPhoto = onReload, religionChip = religionChip, belowChips = belowChips, introduction = introduction,
         header = { ProfileManagementNotice(state, onReload) },
         refreshing = refreshing, onRefresh = refresh)

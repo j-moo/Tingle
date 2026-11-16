@@ -52,7 +52,7 @@ internal fun OptionalProfileState.settle(pending: OptionalConsentType): ConsentW
 @Composable
 internal fun ProfileEditPage(
     session: Session.SignedIn, state: ProfileManagementState, model: ProfileEditViewModel, optionalModel: OptionalProfileViewModel,
-    onBack: () -> Unit, onDiscard: () -> Unit, onOptional: () -> Unit, onCorrection: () -> Unit,
+    onBack: () -> Unit, onDiscard: () -> Unit, onOptional: () -> Unit,
 ) {
     val optional by optionalModel.state.collectAsStateWithLifecycle()
     // 동의를 확인한 항목. confirmDecision 은 콜백이 없어서, 동의 저장 · 다시 조회가 끝나 고칠 수 있게 되면 그 시트를 연다
@@ -111,7 +111,7 @@ internal fun ProfileEditPage(
     ProfileConnectedEditScreen(state,
         onChange = model::change, onSave = { model.save() },
         onBack = onBack, onDiscard = onDiscard, onKeep = { model.keepEditing(); optionalModel.load() },
-        onOptional = onOptional, onCorrection = onCorrection, onReload = { model.load(); optionalModel.load() },
+        onOptional = onOptional, onReload = { model.load(); optionalModel.load() },
         religionChip = { ReligionChip(religion, enabled(OptionalConsentType.PROFILE_RELIGION)) { open(OptionalConsentType.PROFILE_RELIGION) } },
         // 결과 미확인 · 동의 저장 실패 · 조회 실패는 칩 아래에서 "다시 확인" · 같은 동의 다시 요청
         // 저장 · 확인 안내는 시트가 맡고, 사진은 위쪽 사진 칸이 맡는다. 여기서는 동의가 바뀌었다는 안내만 남긴다

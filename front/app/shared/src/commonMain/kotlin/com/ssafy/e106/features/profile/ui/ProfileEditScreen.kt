@@ -41,7 +41,6 @@ internal fun ProfileEditScreen(
     onDiscard: () -> Unit,
     onKeepEditing: () -> Unit,
     onPhoto: () -> Unit,
-    onCorrection: () -> Unit,
     modifier: Modifier = Modifier,
     heroPhoto: HeroPhoto = HeroPhoto.Empty,
     heroImage: ImageBitmap? = null,
@@ -88,7 +87,7 @@ internal fun ProfileEditScreen(
                         }
                         belowChips()
                         introduction()
-                        LockedIdentity(state, editable, onCorrection)
+                        LockedIdentity(state)
                     }
                 }
             }
@@ -118,8 +117,8 @@ internal fun ProfileEditScreen(
         dismissButton = { TextButton(onClick = onKeepEditing) { Text(stringResource(Res.string.profile_edit_keep)) } })
 }
 
-/** 맨 아래 작은 잠금 카드: 생년월일 · 성별은 직접 바꿀 수 없고 정정을 요청한다 */
-@Composable private fun LockedIdentity(state: ProfileEditState, editable: Boolean, onCorrection: () -> Unit) {
+/** 맨 아래 작은 잠금 카드: 생년월일 · 성별은 보여 주기만 하고 바꿀 수 없다(정정 요청도 받지 않는다) */
+@Composable private fun LockedIdentity(state: ProfileEditState) {
     Row(Modifier.fillMaxWidth().glass(AppShapes.Control, AppColors.SurfaceMuted).padding(AppSpacing.Medium),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(AppSpacing.Small)) {
         Icon(painterResource(Res.drawable.ic_state_lock), null, Modifier.size(AppSizes.IconSmall), tint = AppColors.TextSecondary)
@@ -131,7 +130,6 @@ internal fun ProfileEditScreen(
                 stringResource(if (state.gender == ProfileGender.Male) Res.string.profile_male else Res.string.profile_female)), style = MaterialTheme.typography.bodyMedium)
             Text(stringResource(Res.string.profile_edit_locked), style = MaterialTheme.typography.bodySmall, color = AppColors.TextSecondary)
         }
-        TextButton(onClick = onCorrection, enabled = editable) { Text(stringResource(Res.string.profile_edit_correction)) }
     }
 }
 
