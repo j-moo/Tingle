@@ -53,11 +53,12 @@ fun HomeScreen(state: HomeState, onMatchingChange: (Boolean) -> Unit, onAction: 
     modifier: Modifier = Modifier, onOpenMatchingSettings: (() -> Unit)? = null,
     onSaveKeyringAlias: (suspend (Long, String) -> Boolean)? = null,
     keyringStatus: @Composable () -> OwnedKeyringLiveStatus? = { null },
-    connectedKeyringId: Long? = null, checkingKeyringStatus: Boolean = false,
+    connectedKeyringId: Long? = null,
     keyringPublicName: (@Composable (Long, String) -> Unit)? = null, error: AppError? = null,
     /** 안 읽은 알림이 있으면 종 모양에 점 */
     unreadNotifications: Boolean = false) {
-    val refreshing = state.refreshing || checkingKeyringStatus
+    // 위쪽 로딩은 사용자가 당겼을 때만 돈다. 키링 배터리 확인 · 조용한 갱신으로는 돌지 않는다
+    val refreshing = state.refreshing
     val refreshLabel = stringResource(Res.string.home_refresh)
     val refresh = {
         if (state.load != HomeLoadState.Loading && !refreshing && !state.savingMatching) onAction(HomeAction.Refresh)

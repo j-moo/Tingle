@@ -129,7 +129,7 @@ internal enum class ServicePage { Home, Proposals, Menu, Chats, Safety, Report, 
                         HomeAction.Notifications -> go(ServicePage.Notifications)
                         HomeAction.RegisterKeyring -> go(ServicePage.KeyringRegistration)
                     } }, onSaveKeyringAlias = model::saveKeyringAlias, keyringStatus = { connection.liveStatus },
-                        connectedKeyringId = connection.deviceId, checkingKeyringStatus = connection.liveStatus?.loading == true,
+                        connectedKeyringId = connection.deviceId,
                         keyringPublicName = { id, name ->
                             state.home.keyrings.singleOrNull { it.deviceId == id }?.let { device ->
                                 KeyringPublicNameControls(session.userId, device, name)

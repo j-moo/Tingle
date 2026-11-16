@@ -76,11 +76,12 @@ class HomeKeyringSummaryTest {
             runCurrent()
             assertEquals(HomeKeyringState.Missing, vm.state.value.home.keyring)
 
-            // 이전에 확인된 등록 상태나 빈 목록을 조회 실패 결과로 재사용하지 않는다.
+            // 받아 둔 홈을 다시 열 때(조용한 갱신) 목록 조회가 실패하면 보이던 상태를 두고 오류만 남긴다.
             reply = CompletableDeferred(ApiResult.Fail(AppError.Offline))
             vm.home()
             runCurrent()
-            assertEquals(HomeKeyringState.Unknown, vm.state.value.home.keyring)
+            assertEquals(HomeKeyringState.Missing, vm.state.value.home.keyring)
+            assertEquals(AppError.Offline, vm.state.value.error)
             assertEquals(HomeLoadState.Ready, vm.state.value.home.load)
             assertEquals(true, vm.state.value.home.matchingEnabled)
         } finally {
