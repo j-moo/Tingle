@@ -134,6 +134,8 @@ private fun MatchingPower(state: HomeState, busy: Boolean, onMatchingChange: (Bo
     val ringBottom by animateColorAsState(if (on == true) PowerRingBottom else AppColors.SurfaceMuted, fade)
     val fill by animateColorAsState(if (on == true) PowerFill else AppColors.BorderSubtle, fade)
     val ink by animateColorAsState(if (on == true) PowerInk else AppColors.TextSecondary, fade)
+    // 반사광과 흰 안쪽 테도 색과 함께 옅어진다
+    val shine by animateFloatAsState(if (on == true) 1f else 0f, tween(200))
     Box(Modifier.size(180.dp).alpha(if (missing) 0.55f else 1f)
         // 켜짐: 원 둘레로 연두 빛이 번진다
         .drawBehind {
@@ -142,7 +144,7 @@ private fun MatchingPower(state: HomeState, busy: Boolean, onMatchingChange: (Bo
         }
         .border(14.dp, Brush.verticalGradient(listOf(ringTop, ringBottom)), CircleShape)
         .padding(14.dp).frost(CircleShape).background(fill)
-        .then(if (on == true) Modifier.background(PowerShine).border(1.5.dp, Color.White.copy(alpha = 0.85f), CircleShape) else Modifier)
+        .background(PowerShine, alpha = shine).border(1.5.dp, Color.White.copy(alpha = 0.85f * shine), CircleShape)
         .clickable(enabled, role = Role.Switch, onClickLabel = label) { if (onOpenSettings != null) onOpenSettings() else onMatchingChange(on != true) }
         .semantics { stateDescription = label; if (on != null) toggleableState = androidx.compose.ui.state.ToggleableState(on) },
         contentAlignment = Alignment.Center) {
