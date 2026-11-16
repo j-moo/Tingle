@@ -12,6 +12,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
+import java.util.function.LongConsumer;
 
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.core.env.Environment;
@@ -22,6 +23,8 @@ import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import com.e106.tingle.auth.MemberAccessRepository;
@@ -52,6 +55,7 @@ public class EncounterEvaluationWorker {
 	private final ObjectProvider<EncounterEvaluationCompletion> completions;
 	private final Environment environment;
 	private final TransactionTemplate transaction;
+	private volatile LongConsumer afterEnqueue = matchingId -> { };
 	private final MemberAccessRepository members;
 
 	public EncounterEvaluationWorker(JdbcTemplate jdbc, JsonMapper mapper, Clock clock, EncounterReceipts receipts,
@@ -96,6 +100,21 @@ public class EncounterEvaluationWorker {
 		}
 		write(row, inputKey(input.generationId()), hash);
 		writeWork(row, new Work(input.generationId(), null, hash, State.READY, 0, null, null, input));
+		long matchingId = input.matchingId();
+		TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+			@Override
+			public void afterCommit() {
+				afterEnqueue.accept(matchingId);
+			}
+		});
+	}
+
+	/**
+	 * 접수가 커밋된 직후 할 일을 연결한다. 예약 실행을 켠 서버만 연결하며(EncounterEvaluationSchedulingConfiguration),
+	 * 연결하지 않으면 아무 일도 하지 않고 주기 확인이 처리한다.
+	 */
+	public void wakeAfterEnqueue(LongConsumer wake) {
+		this.afterEnqueue = Objects.requireNonNull(wake);
 	}
 
 	/** 외부 검증기가 없는 상태는 성공이나 제안으로 전환하지 않는다. */
@@ -134,6 +153,7 @@ public class EncounterEvaluationWorker {
 	}
 
 	/** 운영 폴링은 명시적으로 켜며 기한 종료는 평가 결과·검증기 유무와 독립적으로 처리한다. */
+	// 새 만남은 접수 커밋 직후 바로 평가한다(wakeAfterEnqueue). 이 주기 확인은 재시도·기한 종료·놓친 작업 복구용이다.
 	@Scheduled(fixedDelayString = "${app.encounter.evaluation.poll-ms:15000}")
 	public void poll() {
 		if (!environment.getProperty("app.encounter.evaluation.enabled", Boolean.class, false)) {

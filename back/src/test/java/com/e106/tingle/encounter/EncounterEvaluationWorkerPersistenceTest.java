@@ -9,8 +9,10 @@ import java.sql.Timestamp;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneId;
+import java.util.ArrayList;
 import java.util.HexFormat;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
@@ -136,6 +138,27 @@ class EncounterEvaluationWorkerPersistenceTest {
 			NOW.plusSeconds(1800), "v1", UUID.randomUUID(), "rule-1",
 			participant(left, leftDevice, (byte)1), participant(right, rightDevice, (byte)2));
 		persistReceipts(input);
+	}
+
+	// 접수가 커밋된 뒤에만 바로 평가를 깨운다. 롤백되거나 같은 제출을 다시 받으면 깨우지 않는다.
+	@Test
+	void enqueueWakesTheConnectedHandlerOnlyAfterCommit() {
+		List<Long> woken = new ArrayList<>();
+		worker.wakeAfterEnqueue(woken::add);
+		try {
+			assertThatThrownBy(() -> inTransaction(() -> {
+				worker.enqueue(input);
+				assertThat(woken).isEmpty();
+				throw new IllegalStateException("rollback");
+			})).isInstanceOf(IllegalStateException.class);
+			assertThat(woken).isEmpty();
+			enqueue(input);
+			assertThat(woken).containsExactly(input.matchingId());
+			enqueue(input);
+			assertThat(woken).hasSize(1);
+		} finally {
+			worker.wakeAfterEnqueue(matchingId -> { });
+		}
 	}
 
 	@Test
