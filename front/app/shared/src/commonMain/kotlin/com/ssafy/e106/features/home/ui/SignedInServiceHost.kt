@@ -1,14 +1,15 @@
 package com.ssafy.e106.features.home.ui
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.slideInVertically
-import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.lifecycle.Lifecycle
@@ -238,8 +239,10 @@ private val TabPages = listOf(ServicePage.Home, ServicePage.Proposals, ServicePa
                 }
             }
         }
-        // 바는 한 번만 그리고 탭을 바꾸면 위 내용만 바뀐다(내용 교체에는 전환 효과를 넣지 않는다)
-        AnimatedVisibility(showBar, enter = slideInVertically { it / 2 } + fadeIn(), exit = slideOutVertically { it / 2 } + fadeOut()) {
+        // 바는 한 번만 그리고 탭을 바꾸면 위 내용만 바뀐다(내용 교체에는 전환 효과를 넣지 않는다).
+        // 높이도 함께 줄고 늘어야 바가 사라진 뒤 내용이 바 높이만큼 튀지 않는다
+        AnimatedVisibility(showBar, enter = expandVertically(expandFrom = Alignment.Top) + fadeIn(),
+            exit = shrinkVertically(shrinkTowards = Alignment.Top) + fadeOut()) {
             AppBottomBar(listOf(stringResource(Res.string.home_tab), stringResource(Res.string.home_proposal_tab),
                 stringResource(Res.string.home_chat_tab), stringResource(Res.string.home_profile_tab)), tab,
                 // 지금 탭을 다시 누르면 아무것도 하지 않는다(go 가 조회만 취소하고 다시 받지 않는다)
@@ -247,7 +250,8 @@ private val TabPages = listOf(ServicePage.Home, ServicePage.Proposals, ServicePa
                     page -> Unit
                     ServicePage.Chats -> chats()
                     else -> go(target)
-                } }, modifier = Modifier.navigationBarsPadding(), enabled = page != ServicePage.Proposals || tabEnabled)
+                // 사라지는 동안에는 누를 수 없다(방에 들어가자마자 다른 탭으로 가지 않게)
+                } }, modifier = Modifier.navigationBarsPadding(), enabled = showBar && (page != ServicePage.Proposals || tabEnabled))
         }
     }
     if (logoutPrompt) AppDialog(title = stringResource(Res.string.account_logout),
