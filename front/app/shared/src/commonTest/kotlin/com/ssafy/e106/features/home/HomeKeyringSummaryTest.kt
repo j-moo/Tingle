@@ -76,12 +76,43 @@ class HomeKeyringSummaryTest {
             runCurrent()
             assertEquals(HomeKeyringState.Missing, vm.state.value.home.keyring)
 
-            // 이전에 확인된 등록 상태나 빈 목록을 조회 실패 결과로 재사용하지 않는다.
+            // 받아 둔 홈을 다시 열 때(조용한 갱신) 목록 조회가 실패하면 보이던 상태를 두고 오류만 남긴다.
             reply = CompletableDeferred(ApiResult.Fail(AppError.Offline))
             vm.home()
             runCurrent()
-            assertEquals(HomeKeyringState.Unknown, vm.state.value.home.keyring)
+            assertEquals(HomeKeyringState.Missing, vm.state.value.home.keyring)
+            assertEquals(AppError.Offline, vm.state.value.error)
             assertEquals(HomeLoadState.Ready, vm.state.value.home.load)
+            assertEquals(true, vm.state.value.home.matchingEnabled)
+        } finally {
+            models.clear()
+            client.close()
+            Dispatchers.resetMain()
+        }
+    }
+
+    // 처음 여는 홈에서 키링 목록 조회가 실패하면 등록 상태를 단정하지 않는다(미확인)
+    @Test fun firstEntryKeyringLookupFailureIsUnknown() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        val models = ViewModelStore()
+        val client = createHttpClient("https://test/api/", httpLog = false, engine = MockEngine { error("unused") })
+        try {
+            val auth = object : AuthRepository {
+                override fun available(provider: Provider) = error("unused")
+                override suspend fun login(provider: Provider) = error("unused")
+                override suspend fun logout() = error("unused")
+            }
+            val settings = object : MatchingSettingsRepository {
+                override suspend fun get(userId: Long, kind: SettingsKind) =
+                    ApiResult.Ok(SettingsDocument(ConflictValues.Matching(true, false), null))
+                override suspend fun save(userId: Long, kind: SettingsKind, values: ConflictValues, etag: String) = error("unused")
+            }
+            val owned = object : OwnedKeyringRepository { override suspend fun list() = ApiResult.Fail(AppError.Offline) }
+            val vm = HomeSessionViewModel(HttpProfileRepository(client), settings, HttpOnboardingRepository(client),
+                TestSession(OnboardingStatus.READY), auth, owned, prefs = HomeTestPrefs()).also { models.put("home", it) }
+            vm.home(); runCurrent()
+            assertEquals(HomeLoadState.Ready, vm.state.value.home.load)
+            assertEquals(HomeKeyringState.Unknown, vm.state.value.home.keyring)
             assertEquals(true, vm.state.value.home.matchingEnabled)
         } finally {
             models.clear()

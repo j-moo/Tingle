@@ -13,5 +13,4 @@ data class AccountMenuState(
 enum class AccountMenuAction {
     Refresh, Profile, Survey, Matching, Keyring, Permissions,
     Consents, Help, Logout, Withdrawal,
-    Home, Proposals, Chats,
 }

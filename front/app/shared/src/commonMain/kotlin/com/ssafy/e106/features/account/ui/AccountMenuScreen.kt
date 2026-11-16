@@ -33,12 +33,13 @@ fun AccountMenuScreen(
     modifier: Modifier = Modifier,
 ) {
     Surface(modifier.fillMaxSize(), color = AppColors.Screen) {
-        Column(Modifier.fillMaxSize().safeDrawingPadding()) {
+        // 아래쪽 인셋은 틀(SignedInServiceHost)의 하단 바가 맡는다
+        Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal))) {
             AppTopBar(stringResource(Res.string.account_title))
             // 당기면 다시 받는다. 다시 받는 동안은 사진 카드가 뼈대로 바뀌어 알리므로 고리는 따로 돌리지 않는다
             PullDownRefreshBox(false, { onAction(AccountMenuAction.Refresh) }, Modifier.weight(1f).fillMaxWidth()) {
                 Column(Modifier.widthIn(max = 640.dp).fillMaxWidth()
-                    .verticalScroll(rememberScrollState()).padding(screenPaddingValues()),
+                    .verticalScroll(rememberScrollState()).padding(screenPaddingValues(LocalBottomBarPadding.current)),
                     verticalArrangement = Arrangement.spacedBy(AppSpacing.Large)) {
                     when (state.load) {
                         AccountMenuLoad.Loading -> SkeletonGroup { SkeletonBone(Modifier.fillMaxWidth(0.5f), height = 32.dp) }
@@ -69,13 +70,6 @@ fun AccountMenuScreen(
                     }
                 }
             }
-            AppBottomBar(labels = listOf(stringResource(Res.string.home_tab), stringResource(Res.string.home_proposal_tab),
-                stringResource(Res.string.home_chat_tab), stringResource(Res.string.home_profile_tab)), selected = 3,
-                onSelect = { index -> when (index) {
-                    0 -> onAction(AccountMenuAction.Home)
-                    1 -> onAction(AccountMenuAction.Proposals)
-                    2 -> onAction(AccountMenuAction.Chats)
-                } })
         }
     }
 }

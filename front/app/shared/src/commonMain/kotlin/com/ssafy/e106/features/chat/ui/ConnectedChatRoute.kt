@@ -32,7 +32,9 @@ import kotlinx.coroutines.delay
     listModel: ChatListViewModel = koinViewModel(), roomModel: ChatRoomViewModel = koinViewModel(),
     partnerModel: ChatPartnerViewModel = koinViewModel(),
     // 대화 화면이 보이는 동안의 방 번호(안 보이면 null). 그 방의 새 메시지 알림을 띄우지 않는 데 쓴다
-    onViewing: (Long?) -> Unit = {}) {
+    onViewing: (Long?) -> Unit = {},
+    // 방을 열고 닫을 때 같은 프레임에 알린다(틀이 목록일 때만 하단 바를 그린다)
+    onRoom: (Long?) -> Unit = {}) {
     var room by rememberSaveable(session.userId, initialRoom) { mutableStateOf(initialRoom) }
     var page by rememberSaveable(session.userId, initialRoom) { mutableStateOf("conversation") }
     val list by listModel.state.collectAsStateWithLifecycle()
@@ -41,6 +43,7 @@ import kotlinx.coroutines.delay
     var displayed by remember(room) { mutableStateOf(emptyList<Long>()) }
     // 목록에서 누른 방의 상대 닉네임. 방에 들어가면 목록이 비워지므로 누를 때 받아 둔다
     var entry by remember(session.userId) { mutableStateOf<Pair<Long, String?>?>(null) }
+    fun open(id: Long?) { room = id; onRoom(id) }
     fun load() { if (room == null) listModel.refresh() else when(page) {
         "partner" -> partnerModel.load(room!!)
         else -> roomModel.open(room!!, entry?.takeIf { it.first == room }?.second)
@@ -48,7 +51,7 @@ import kotlinx.coroutines.delay
     fun back() { if (conversation.sending) return
         if (page != "conversation") { partnerModel.clear(); page = "conversation" }
         // 읽을 수 없는(닫힌) 방에서 나가면 닉네임도 지운다. 다시 들어올 때 옛 이름이 보이지 않게
-        else if (room != null) { if (conversation.ui.readable) roomModel.pause() else roomModel.leave(); room = null } else onHome()
+        else if (room != null) { if (conversation.ui.readable) roomModel.pause() else roomModel.leave(); open(null) } else onHome()
     }
     // 메뉴는 같은 대화방 안의 표시 전환이다. 메뉴 진입·복귀로 방을 다시 열어 저장 전 초안을 덮어쓰지 않는다.
     // 상대 프로필은 별도 조회 화면이므로 그 화면을 오갈 때만 방/프로필 진입 처리를 다시 수행한다.
@@ -70,12 +73,9 @@ import kotlinx.coroutines.delay
         // 오류는 화면 위 빨간 글 대신 목록의 상태 화면 · 아래 띠가 알린다.
         // 목록 조회부터 동의가 필요할 수 있으므로 방에 들어가지 않아도 동의 관리로 이동할 수 있다.
         ChatListScreen(list.ui, { id -> entry = id to list.ui.rooms.firstOrNull { it.chatRoomId == id }?.nickname
-            room = id; page = "conversation" }, { action -> when(action) {
+            open(id); page = "conversation" }, { action -> when(action) {
             ChatListAction.Refresh -> listModel.refresh()
             ChatListAction.LoadMore -> listModel.more()
-            ChatListAction.Home -> onHome()
-            ChatListAction.Proposals -> onProposals()
-            ChatListAction.Profile -> onProfile()
         } }, error = list.error,
             onConsent = if (list.error?.chatCode() == "AI_RISK_CONSENT_REQUIRED") ({ listModel.pause(); onConsent() }) else null)
         return
@@ -83,7 +83,7 @@ import kotlinx.coroutines.delay
     if (page == "partner") {
         ChatPartnerScreen(partner, onAction = { action -> when(action) {
             ChatPartnerAction.Reload, ChatPartnerAction.RetryPhoto -> partnerModel.load(room!!)
-            ChatPartnerAction.ChatList -> { partnerModel.clear(); page = "conversation"; room = null }
+            ChatPartnerAction.ChatList -> { partnerModel.clear(); page = "conversation"; open(null) }
             else -> back()
         } }); return
     }
@@ -126,7 +126,7 @@ import kotlinx.coroutines.delay
                 NoticeBar(stringResource(if (here) Res.string.chat_connected_recovery else Res.string.chat_connected_other_pending),
                     actionText = stringResource(if (here) Res.string.chat_connected_check else Res.string.chat_connected_open_pending),
                     actionEnabled = !here || conversation.ui.readable && conversation.ui.canSend,
-                    onAction = { if (here) roomModel.retry() else room = sent.room })
+                    onAction = { if (here) roomModel.retry() else open(sent.room) })
             }
             if (conversation.readError) NoticeBar(stringResource(Res.string.chat_connected_read_failed), onAction = { roomModel.displayed(displayed) })
             // 보던 대화는 그대로 두고 한 줄만(이전 메시지 실패는 목록 끝 줄이, 전송 실패는 말풍선이 따로 알린다)

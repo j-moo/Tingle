@@ -51,4 +51,4 @@ internal fun visibleChatRooms(rooms: List<ChatListItem>): List<ChatListItem> =
         else versions.firstOrNull { it.access == ChatRoomAccess.Unknown } ?: versions.first()
     }
 
-enum class ChatListAction { Refresh, LoadMore, Home, Proposals, Profile }
+enum class ChatListAction { Refresh, LoadMore }

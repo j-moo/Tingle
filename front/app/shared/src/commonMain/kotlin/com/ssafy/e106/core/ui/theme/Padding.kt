@@ -40,7 +40,11 @@ fun screenGutter(): Dp {
  * 스크롤 화면은 `LazyColumn(contentPadding = screenPaddingValues())` 처럼 contentPadding 에 넣어야 내용이 가장자리에서 잘리지 않는다.
  */
 @Composable
-fun screenPaddingValues(): PaddingValues = PaddingValues(horizontal = screenGutter(), vertical = AppPadding.ScreenVertical)
+fun screenPaddingValues(extraBottom: Dp = 0.dp): PaddingValues {
+    val gutter = screenGutter()
+    // [extraBottom]: 내용 위에 떠 있는 하단 바가 가리는 높이(LocalBottomBarPadding)
+    return PaddingValues(start = gutter, top = AppPadding.ScreenVertical, end = gutter, bottom = AppPadding.ScreenVertical + extraBottom)
+}
 
 /** 스크롤하지 않는 화면 루트용. `Modifier.padding(screenPaddingValues())` 과 같다. */
 @Composable

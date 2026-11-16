@@ -78,7 +78,7 @@ class ProposalPollingTestActivity : ComponentActivity() {
         setContent { AppTheme {
             var room by remember { mutableStateOf<Long?>(null) }
             if (room != null) Text("채팅방 $room 진입 확인")
-            else ConnectedProposalRoute(session.state.value as Session.SignedIn, {}, {}, {},
+            else ConnectedProposalRoute(session.state.value as Session.SignedIn, {},
                 onOpenChat = { room = it }, model = model, reasonModel = provider[MatchReasonViewModel::class.java])
         } }
     }
