@@ -158,9 +158,9 @@ private fun MatchingPower(state: HomeState, busy: Boolean, onMatchingChange: (Bo
         // ON/OFF 제목만 한 줄로 고정한다(미확인 · 키링 안내 문구는 길어서 줄바꿈한다)
         maxLines = if (on != null && !missing) 1 else Int.MAX_VALUE, overflow = TextOverflow.Ellipsis,
         modifier = Modifier.semantics { heading(); liveRegion = LiveRegionMode.Polite })
-    // 실패 문구 자리: 비어 있어도 늘 한 줄 높이를 차지한다
+    // 실패 문구 자리: 비어 있어도 늘 두 줄 높이를 차지한다(큰 글꼴에서 줄바꿈돼도 원이 움직이지 않는다)
     Text(if (state.matchingSaveFailed) stringResource(Res.string.home_matching_failed) else "", color = AppColors.Error,
-        textAlign = TextAlign.Center, maxLines = 1, minLines = 1, overflow = TextOverflow.Ellipsis,
+        textAlign = TextAlign.Center, minLines = 2,
         modifier = Modifier.fillMaxWidth().semantics { liveRegion = LiveRegionMode.Polite })
 }
 
