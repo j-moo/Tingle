@@ -37,7 +37,13 @@ class HomeSessionViewModel(private val profiles: ProfileRepository, private val 
     private var generation = 0L
     private var job: Job? = null
     init { viewModelScope.launch(start = CoroutineStart.UNDISPATCHED) { sessions.state.collect {
-        generation++; job?.cancel(); mutable.value = HomeSessionState(session = it as? Session.SignedIn)
+        generation++; job?.cancel()
+        val session = it as? Session.SignedIn
+        mutable.value = HomeSessionState(session = session)
+        // 마이 닉네임은 세션이 정해질 때 미리 읽어 둔다. 마이에 들어갈 때 읽으면 한두 프레임 뼈대가 보인다
+        val cached = session?.let { user -> prefs.read(NicknameKey, user.userId) as? PrefRead.Found }?.value ?: return@collect
+        mutable.update { state -> if (state.session != session || state.account.load != AccountMenuLoad.Loading) state
+            else state.copy(account = AccountMenuState(AccountMenuLoad.Ready, cached)) }
     } } }
     private fun valid(stamp: Long) = generation == stamp && mutable.value.session == sessions.state.value
     private fun read(block: suspend (Long, Long) -> Unit) {
@@ -181,6 +187,8 @@ class HomeSessionViewModel(private val profiles: ProfileRepository, private val 
                 // 마이에는 사진을 두지 않는다(사진은 프로필 보기에서). 닉네임만 받는다
                 mutable.update { it.copy(busy = false, account = if (mine) AccountMenuState(AccountMenuLoad.Ready, result.value.nickname)
                     else AccountMenuState(AccountMenuLoad.Failed)) }
+                // 앱을 새로 켠 직후에도 바로 보이게 저장한다
+                if (mine) prefs.set(NicknameKey, result.value.nickname, user)
             }
             is ApiResult.Fail -> if (valid(stamp) && !shown) mutable.update { it.copy(account = AccountMenuState(AccountMenuLoad.Failed), error = result.error) }
         }
@@ -213,6 +221,9 @@ class HomeSessionViewModel(private val profiles: ProfileRepository, private val 
 }
 
 internal const val KEYRING_ALIAS_LIMIT = 20
+
+// 마이 닉네임 캐시. 비-durable 이라 로그아웃 · 계정 전환 때 지워진다
+private val NicknameKey = PrefKey("account.nickname", String.serializer())
 
 // 캐시와 다른 파일에 저장해 앱 재실행 뒤에도 남긴다. 로그아웃·계정 전환의 공통 정리 정책은 따른다.
 private fun aliasKey(deviceId: Long) = PrefKey("home.keyring.alias.$deviceId", String.serializer(), durable = true)
