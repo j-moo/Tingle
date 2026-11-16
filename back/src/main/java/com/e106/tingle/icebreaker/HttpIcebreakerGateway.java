@@ -55,7 +55,7 @@ public class HttpIcebreakerGateway implements IcebreakerGateway {
 
 	@Override
 	public boolean enabled() {
-		if (!properties.externalEnabled() || properties.manifestLocation().isBlank()) {
+		if (properties.manifestLocation().isBlank()) {
 			return false;
 		}
 		try {

@@ -174,7 +174,6 @@ class IcebreakerHttpIntegrationTest extends IntegrationTestSupport {
 		registry.add("app.ai.service.key-id", () -> "synthetic-icebreaker");
 		registry.add("app.ai.service.private-key-file", () -> signingKey.toString());
 		registry.add("app.ai.service.base-url", () -> "http://127.0.0.1:" + server.getAddress().getPort());
-		registry.add("app.icebreaker.external-enabled", () -> true);
 		registry.add("app.icebreaker.service-token", () -> "synthetic-static-token");
 		registry.add("app.icebreaker.endpoint", () -> "http://127.0.0.1:" + server.getAddress().getPort()
 			+ "/internal/ai/icebreakers");

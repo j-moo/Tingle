@@ -99,7 +99,6 @@ class IcebreakerExternalBoundaryIntegrationTest extends IntegrationTestSupport {
 			}
 		});
 		server.start();
-		registry.add("app.icebreaker.external-enabled", () -> true);
 		registry.add("app.icebreaker.service-token", () -> "synthetic-static-token");
 		registry.add("app.icebreaker.endpoint", () -> "http://127.0.0.1:" + server.getAddress().getPort()
 			+ "/internal/ai/icebreakers");
@@ -124,7 +123,6 @@ class IcebreakerExternalBoundaryIntegrationTest extends IntegrationTestSupport {
 
 	@Test
 	void configuredLegacyTransportCannotBypassDisabledCommonAuthentication() throws Exception {
-		assertThat(properties.externalEnabled()).isTrue();
 		assertThat(properties.endpoint()).isNotBlank();
 		assertThat(properties.serviceToken()).isNotBlank();
 		assertThat(context.getBeansOfType(IcebreakerGateway.class)).hasSize(1).containsValue(gateway);

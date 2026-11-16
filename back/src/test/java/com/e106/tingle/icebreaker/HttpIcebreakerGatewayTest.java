@@ -53,7 +53,7 @@ class HttpIcebreakerGatewayTest {
 
 	@Test
 	void disabledGatewayHasNoInventedManifest() {
-		HttpIcebreakerGateway gateway = gateway(false, "");
+		HttpIcebreakerGateway gateway = gateway("");
 		assertThat(gateway.enabled()).isFalse();
 		assertThat(gateway.manifest()).isEmpty();
 		assertThatThrownBy(() -> gateway.generate(1, UUID.randomUUID(), Map.of(), deadline()))
@@ -68,9 +68,9 @@ class HttpIcebreakerGatewayTest {
 		Map<String, Object> manifest = manifest(HexFormat.of().formatHex(
 			MessageDigest.getInstance("SHA-256").digest(content)));
 		Path descriptor = writeDescriptor(artifact, manifest);
-		assertThat(gateway(true, descriptor.toUri().toString()).manifest()).isEqualTo(manifest);
+		assertThat(gateway(descriptor.toUri().toString()).manifest()).isEqualTo(manifest);
 		Files.writeString(artifact, "changed");
-		assertThat(gateway(true, descriptor.toUri().toString()).manifest()).isEmpty();
+		assertThat(gateway(descriptor.toUri().toString()).manifest()).isEmpty();
 	}
 
 	@Test
@@ -79,15 +79,15 @@ class HttpIcebreakerGatewayTest {
 		Files.writeString(artifact, "{}");
 		Map<String, Object> manifest = manifest("0".repeat(64));
 		manifest.remove("releaseId");
-		assertThat(gateway(true, writeDescriptor(artifact, manifest).toUri().toString()).manifest()).isEmpty();
+		assertThat(gateway(writeDescriptor(artifact, manifest).toUri().toString()).manifest()).isEmpty();
 		manifest.put("releaseId", "not-a-uuid");
-		assertThat(gateway(true, writeDescriptor(artifact, manifest).toUri().toString()).manifest()).isEmpty();
+		assertThat(gateway(writeDescriptor(artifact, manifest).toUri().toString()).manifest()).isEmpty();
 	}
 
 	@Test
 	void sendsOnlyTheCorrelatedContextAndManifestWithServiceAuthentication() throws Exception {
 		startServer(200, successfulResponse());
-		HttpIcebreakerGateway gateway = gateway(true, validDescriptor().toUri().toString(), endpoint());
+		HttpIcebreakerGateway gateway = gateway(validDescriptor().toUri().toString(), endpoint());
 		Map<String, Object> manifest = gateway.manifest();
 		UUID attempt = UUID.randomUUID();
 		IcebreakerGateway.Generated response = gateway.generate(2048, attempt, manifest, deadline());
@@ -113,7 +113,7 @@ class HttpIcebreakerGatewayTest {
 	void sendsOnlyOneOfficialCommonTopicAlongsideTheExistingContract() throws Exception {
 		startServer(200, "{\"questions\":[\"첫 질문\",\"두 번째 질문\",\"세 번째 질문\"],"
 			+ "\"source\":\"COMMON_TOPIC_TEMPLATE\",\"promptVersion\":\"q040-template-v1\"}");
-		HttpIcebreakerGateway gateway = gateway(true, validDescriptor().toUri().toString(), endpoint());
+		HttpIcebreakerGateway gateway = gateway(validDescriptor().toUri().toString(), endpoint());
 		Map<String, Object> manifest = gateway.manifest();
 		for (String key : List.of("rest", "talk", "culture", "walk", "active")) {
 			UUID attempt = UUID.randomUUID();
@@ -133,7 +133,7 @@ class HttpIcebreakerGatewayTest {
 	@Test
 	void absentTopicIsOmittedRatherThanSerializedAsNullOrBlank() throws Exception {
 		startServer(200, successfulResponse());
-		HttpIcebreakerGateway gateway = gateway(true, validDescriptor().toUri().toString(), endpoint());
+		HttpIcebreakerGateway gateway = gateway(validDescriptor().toUri().toString(), endpoint());
 		gateway.generate(2048, UUID.randomUUID(), gateway.manifest(), deadline(), null);
 		assertThat(captured.get().body().size()).isEqualTo(3);
 		assertThat(captured.get().body().has("commonTopicKey")).isFalse();
@@ -142,7 +142,7 @@ class HttpIcebreakerGatewayTest {
 	@Test
 	void unofficialOrEmptyTopicsNeverReachTheProvider() throws Exception {
 		startServer(200, successfulResponse());
-		HttpIcebreakerGateway gateway = gateway(true, validDescriptor().toUri().toString(), endpoint());
+		HttpIcebreakerGateway gateway = gateway(validDescriptor().toUri().toString(), endpoint());
 		Map<String, Object> manifest = gateway.manifest();
 		for (String key : List.of("", " ", "unknown", "REST", "DATE_REST", "rest,talk", " rest")) {
 			assertThatThrownBy(() -> gateway.generate(2048, UUID.randomUUID(), manifest, deadline(), key))
@@ -155,13 +155,13 @@ class HttpIcebreakerGatewayTest {
 	@Test
 	void disabledOrUnverifiedConfigurationNeverSendsAnHttpRequest() throws Exception {
 		startServer(200, successfulResponse());
-		HttpIcebreakerGateway disabled = gateway(false, validDescriptor().toUri().toString(), endpoint());
+		HttpIcebreakerGateway disabled = gateway("", endpoint());
 		assertThatThrownBy(() -> disabled.generate(2048, UUID.randomUUID(), Map.of(), deadline()))
 			.isInstanceOfSatisfying(IcebreakerGateway.GatewayException.class,
 				exception -> assertThat(exception.retryable()).isFalse());
 		Path invalid = directory.resolve("unverified.json");
 		Files.writeString(invalid, "{\"manifest\":{}}");
-		HttpIcebreakerGateway unverified = gateway(true, invalid.toUri().toString(), endpoint());
+		HttpIcebreakerGateway unverified = gateway(invalid.toUri().toString(), endpoint());
 		assertThatThrownBy(() -> unverified.generate(2048, UUID.randomUUID(),
 			Map.of("releaseId", "invented"), deadline()))
 			.isInstanceOfSatisfying(IcebreakerGateway.GatewayException.class,
@@ -172,7 +172,7 @@ class HttpIcebreakerGatewayTest {
 	@Test
 	void artifactTamperingAfterTheSnapshotPreventsHttpTransmission() throws Exception {
 		startServer(200, successfulResponse());
-		HttpIcebreakerGateway gateway = gateway(true, validDescriptor().toUri().toString(), endpoint());
+		HttpIcebreakerGateway gateway = gateway(validDescriptor().toUri().toString(), endpoint());
 		Map<String, Object> snapshot = gateway.manifest();
 		assertThat(snapshot).hasSize(11);
 		Files.writeString(directory.resolve("artifact.json"), "changed-after-snapshot");
@@ -186,7 +186,7 @@ class HttpIcebreakerGatewayTest {
 	void rateLimitedAndServerResponsesAreRetryableWithoutExposingProviderBodies() throws Exception {
 		for (int status : new int[] {429, 502}) {
 			startServer(status, "{\"detail\":\"synthetic-provider-private-detail\"}");
-			HttpIcebreakerGateway gateway = gateway(true, validDescriptor().toUri().toString(), endpoint());
+			HttpIcebreakerGateway gateway = gateway(validDescriptor().toUri().toString(), endpoint());
 			assertThatThrownBy(() -> gateway.generate(2048, UUID.randomUUID(), gateway.manifest(), deadline()))
 				.isInstanceOfSatisfying(IcebreakerGateway.GatewayException.class, exception -> {
 					assertThat(exception.retryable()).isTrue();
@@ -201,7 +201,7 @@ class HttpIcebreakerGatewayTest {
 	void permanentProviderRejectionsAreNotRetried() throws Exception {
 		for (int status : new int[] {400, 403, 503}) {
 			startServer(status, "{\"detail\":\"rejected\"}");
-			HttpIcebreakerGateway gateway = gateway(true, validDescriptor().toUri().toString(), endpoint());
+			HttpIcebreakerGateway gateway = gateway(validDescriptor().toUri().toString(), endpoint());
 			assertThatThrownBy(() -> gateway.generate(2048, UUID.randomUUID(), gateway.manifest(), deadline()))
 				.isInstanceOfSatisfying(IcebreakerGateway.GatewayException.class,
 					exception -> assertThat(exception.retryable()).isFalse());
@@ -213,7 +213,7 @@ class HttpIcebreakerGatewayTest {
 	@Test
 	void malformedProviderJsonIsAnUnretryableProtocolFailure() throws Exception {
 		startServer(200, "{broken-json");
-		HttpIcebreakerGateway gateway = gateway(true, validDescriptor().toUri().toString(), endpoint());
+		HttpIcebreakerGateway gateway = gateway(validDescriptor().toUri().toString(), endpoint());
 		assertThatThrownBy(() -> gateway.generate(2048, UUID.randomUUID(), gateway.manifest(), deadline()))
 			.isInstanceOfSatisfying(IcebreakerGateway.GatewayException.class,
 				exception -> assertThat(exception.retryable()).isFalse());
@@ -225,7 +225,7 @@ class HttpIcebreakerGatewayTest {
 		startServer(200, successfulResponse());
 		String unavailableEndpoint = endpoint();
 		server.stop(0);
-		HttpIcebreakerGateway gateway = gateway(true, validDescriptor().toUri().toString(), unavailableEndpoint);
+		HttpIcebreakerGateway gateway = gateway(validDescriptor().toUri().toString(), unavailableEndpoint);
 		assertThatThrownBy(() -> gateway.generate(2048, UUID.randomUUID(), gateway.manifest(), deadline()))
 			.isInstanceOfSatisfying(IcebreakerGateway.GatewayException.class,
 				exception -> assertThat(exception.retryable()).isTrue());
@@ -235,11 +235,11 @@ class HttpIcebreakerGatewayTest {
 	@Test
 	void decodedButIncompleteResponsesFailQuestionValidation() throws Exception {
 		startServer(200, "{\"questions\":[\"하나\",\"둘\",\"셋\"],\"source\":\"GENERATED\"}");
-		HttpIcebreakerGateway gateway = gateway(true, validDescriptor().toUri().toString(), endpoint());
+		HttpIcebreakerGateway gateway = gateway(validDescriptor().toUri().toString(), endpoint());
 		IcebreakerGateway.Generated response = gateway.generate(2048, UUID.randomUUID(),
 			gateway.manifest(), deadline());
 		IcebreakerQuestions validator = new IcebreakerQuestions(new DefaultResourceLoader(), mapper,
-			new IcebreakerProperties(false, "", "", "", "classpath:icebreakers/general-ko-v1.json"));
+			new IcebreakerProperties("", "", "", "classpath:icebreakers/general-ko-v1.json"));
 		assertThat(validator.validate(response)).isNull();
 		assertThat(requests.get()).isEqualTo(1);
 	}
@@ -273,7 +273,7 @@ class HttpIcebreakerGatewayTest {
 	@Test
 	void expiredGenerationDeadlineDoesNotTransmitAnyRequest() throws Exception {
 		startServer(200, successfulResponse());
-		HttpIcebreakerGateway gateway = gateway(true, validDescriptor().toUri().toString(), endpoint());
+		HttpIcebreakerGateway gateway = gateway(validDescriptor().toUri().toString(), endpoint());
 		assertThatThrownBy(() -> gateway.generate(2048, UUID.randomUUID(), gateway.manifest(), clock.instant()))
 			.isInstanceOfSatisfying(IcebreakerGateway.GatewayException.class,
 				exception -> assertThat(exception.retryable()).isTrue());
@@ -298,7 +298,7 @@ class HttpIcebreakerGatewayTest {
 				}
 			});
 			server.start();
-			HttpIcebreakerGateway gateway = gateway(true, validDescriptor().toUri().toString(), endpoint());
+			HttpIcebreakerGateway gateway = gateway(validDescriptor().toUri().toString(), endpoint());
 			assertThatThrownBy(() -> gateway.generate(2048, UUID.randomUUID(), gateway.manifest(), deadline()))
 				.isInstanceOfSatisfying(IcebreakerGateway.GatewayException.class,
 					exception -> assertThat(exception.retryable()).isFalse());
@@ -335,7 +335,7 @@ class HttpIcebreakerGatewayTest {
 	}
 
 	private HttpIcebreakerGateway gateway(String location, Duration maximumCallTime) {
-		return new HttpIcebreakerGateway(new IcebreakerProperties(true, endpoint(),
+		return new HttpIcebreakerGateway(new IcebreakerProperties(endpoint(),
 			"synthetic-service-token", location, "classpath:icebreakers/general-ko-v1.json"),
 			new DefaultResourceLoader(), mapper, clock, client(endpoint()), maximumCallTime);
 	}
@@ -396,12 +396,12 @@ class HttpIcebreakerGatewayTest {
 		return values;
 	}
 
-	private HttpIcebreakerGateway gateway(boolean enabled, String location) {
-		return gateway(enabled, location, "http://localhost/internal/ai/icebreakers");
+	private HttpIcebreakerGateway gateway(String location) {
+		return gateway(location, "http://localhost/internal/ai/icebreakers");
 	}
 
-	private HttpIcebreakerGateway gateway(boolean enabled, String location, String endpoint) {
-		return new HttpIcebreakerGateway(new IcebreakerProperties(enabled, endpoint,
+	private HttpIcebreakerGateway gateway(String location, String endpoint) {
+		return new HttpIcebreakerGateway(new IcebreakerProperties(endpoint,
 			"synthetic-service-token", location, "classpath:icebreakers/general-ko-v1.json"),
 			new DefaultResourceLoader(), mapper, clock, client(endpoint));
 	}
