@@ -16,6 +16,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.unit.dp
 import com.ssafy.e106.core.ui.theme.AppSizes
+import com.ssafy.e106.core.ui.theme.glassLayer
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -141,7 +142,8 @@ private val TabPages = listOf(ServicePage.Home, ServicePage.Proposals, ServicePa
     val navigationInset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
     // 틀은 내용에 인셋 · 배경을 주지 않는다. 탭 화면은 위 · 좌우 인셋만 스스로 적용한다
     CompositionLocalProvider(LocalBottomBarPadding provides if (showBar) barHeight + navigationInset else 0.dp) { Box(Modifier.fillMaxSize()) {
-        Box(Modifier.fillMaxSize()) {
+        // 내용은 바 뒤에서 흐리게 비친다
+        Box(Modifier.fillMaxSize().glassLayer()) {
             when (page) {
                 ServicePage.Home -> {
                     // 카드가 접혀 있어도 기기 연결이 끊기거나 복구되면 바로 표시한다.

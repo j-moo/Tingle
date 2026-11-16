@@ -26,6 +26,7 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import com.ssafy.e106.core.ui.theme.AppColors
@@ -33,8 +34,14 @@ import com.ssafy.e106.core.ui.theme.AppSizes
 import com.ssafy.e106.core.ui.theme.AppSpacing
 import com.ssafy.e106.core.ui.theme.focusRing
 import com.ssafy.e106.core.ui.theme.glass
+import com.ssafy.e106.core.ui.theme.glassBlurAvailable
 
 private val TabShape = RoundedCornerShape(50)
+// 뒤 내용이 흐리게 비치는 반투명 흰 유리. 블러가 없으면 글자가 읽히게 더 진하게 덮는다
+private val BarGlass = Color(0x8CFFFFFF)
+private val BarGlassFallback = Color(0xD9FFFFFF)
+// 안 고른 탭 글자. 반투명 바 뒤로 회색 내용이 비쳐도 대비 4.5:1 이상이 되게 [AppColors.TextSecondary] 보다 진하게
+private val BarInk = Color(0xFF3D3D3D)
 
 /**
  * 내용 위에 떠 있는 하단 바가 가리는 높이(시스템 내비게이션 바 포함). 바가 없으면 0.
@@ -59,7 +66,7 @@ fun AppBottomBar(
     Row(
         modifier.padding(horizontal = AppSpacing.Large, vertical = AppSpacing.Small)
             .heightIn(min = AppSizes.BottomBarMinHeight - AppSpacing.Small * 2)
-            .glass(TabShape, blur = true)
+            .glass(TabShape, if (glassBlurAvailable()) BarGlass else BarGlassFallback, blur = true)
             .padding(horizontal = AppSpacing.Small)
             .wrapContentHeight()
             .fillMaxWidth().selectableGroup()
@@ -77,7 +84,7 @@ fun AppBottomBar(
             val color by animateColorAsState(when {
                 !enabled -> AppColors.TextDisabled
                 i == selected -> AppColors.TextPrimary
-                else -> AppColors.TextSecondary
+                else -> BarInk
             })
             Box(
                 Modifier.weight(1f).heightIn(min = AppSpacing.ControlMinHeight)

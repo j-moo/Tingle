@@ -15,6 +15,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.unit.dp
+import dev.chrisbanes.haze.HazeDefaults
 import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.HazeStyle
 import dev.chrisbanes.haze.hazeEffect
@@ -48,6 +49,14 @@ fun GlassBackdrop(content: @Composable () -> Unit) {
         CompositionLocalProvider(LocalGlassSource provides source) { content() }
     }
 }
+
+/** 이 안의 내용도 떠 있는 탭 바 뒤에서 흐리게 비친다(앱 바닥 위에 겹쳐 그린다). 탭 바를 품은 틀의 내용 영역에만 붙인다 */
+@Composable
+fun Modifier.glassLayer(): Modifier = LocalGlassSource.current?.let { hazeSource(it, zIndex = 1f) } ?: this
+
+/** 블러를 켠 면 뒤가 실제로 흐려지는지. [GlassBackdrop] 밖(미리보기)이나 블러를 못 하는 기기(Android 12 미만)에서는 false → 덮는 색을 더 진하게 한다 */
+@Composable
+fun glassBlurAvailable(): Boolean = LocalGlassSource.current != null && HazeDefaults.blurEnabled()
 
 /**
  * 유리 면 자리를 [shape] 모양으로 잘라 내고, [blur] 면 뒤 배경도 흐린다. 색 · 테두리는 칠하지 않는다(Surface 처럼 색을 따로 칠하는 곳에 붙인다).
