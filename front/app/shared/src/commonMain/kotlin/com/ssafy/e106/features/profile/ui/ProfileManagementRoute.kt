@@ -33,6 +33,8 @@ fun ProfileManagementRoute(session: Session.SignedIn, onExit: () -> Unit, model:
     val state by model.state.collectAsStateWithLifecycle()
     var page by rememberSaveable(session) { mutableStateOf(ProfileDestination.Overview) }
     var unknownExitPrompt by rememberSaveable(session) { mutableStateOf(false) }
+    // 종교 · 소개 저장 결과를 모르는 채 수정 화면을 나가려 할 때. 나가도 보기 화면으로만 간다
+    var optionalExitPrompt by rememberSaveable(session) { mutableStateOf(false) }
     // 구성 변경에서는 저장을 유지하고, 재생성된 화면이 저장 완료 상태를 소비해 이동한다.
     LaunchedEffect(session, state.session, state.saveCompleted, state.busy) {
         if (state.session == session && model.takeSaveCompletion()) { optionalModel.leave(); page = ProfileDestination.Overview }
@@ -50,11 +52,10 @@ fun ProfileManagementRoute(session: Session.SignedIn, onExit: () -> Unit, model:
     fun back() {
         if (state.busy) return
         if (state.recoveryRequired) { unknownExitPrompt = true; return }
-        // 수정 화면의 종교 · 소개 시트 요청도 끝까지 기다리고, 결과를 모르면 그냥 나가지 않고 묻는다
+        // 수정 화면의 선택 정보 요청은 끊는다: 읽기는 그냥 취소되고, 쓰기는 결과 미확인이 되어 나가기 전에 묻는다
         if (page == ProfileDestination.Edit) {
-            val optional = optionalModel.state.value
-            if (optional.busy) return
-            if (optional.recoveryRequired) { unknownExitPrompt = true; return }
+            if (optionalModel.state.value.busy) optionalModel.leave()
+            if (optionalModel.state.value.recoveryRequired) { optionalExitPrompt = true; return }
         }
         when (page) {
             ProfileDestination.Edit -> model.requestBack(::overview)
@@ -81,6 +82,10 @@ fun ProfileManagementRoute(session: Session.SignedIn, onExit: () -> Unit, model:
     if (unknownExitPrompt) ProfileUnknownExitDialog(
         onDismiss = { unknownExitPrompt = false },
         onExit = { unknownExitPrompt = false; exit() })
+    // 선택 정보 쪽 확인은 고치던 닉네임 · 흡연 · 음주를 지키는 기존 "나갈까요?"를 거쳐 보기 화면으로 간다
+    if (optionalExitPrompt) ProfileUnknownExitDialog(
+        onDismiss = { optionalExitPrompt = false },
+        onExit = { optionalExitPrompt = false; model.requestBack(::overview) })
 }
 
 /**

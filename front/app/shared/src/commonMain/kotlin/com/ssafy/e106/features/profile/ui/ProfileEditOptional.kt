@@ -110,7 +110,7 @@ internal fun ProfileEditPage(
 
     ProfileConnectedEditScreen(state,
         onChange = model::change, onSave = { model.save() },
-        onBack = onBack, onDiscard = onDiscard, onKeep = model::keepEditing,
+        onBack = onBack, onDiscard = onDiscard, onKeep = { model.keepEditing(); optionalModel.load() },
         onOptional = onOptional, onCorrection = onCorrection, onReload = { model.load(); optionalModel.load() },
         religionChip = { ReligionChip(religion, enabled(OptionalConsentType.PROFILE_RELIGION)) { open(OptionalConsentType.PROFILE_RELIGION) } },
         // 결과 미확인 · 동의 저장 실패 · 조회 실패는 칩 아래에서 "다시 확인" · 같은 동의 다시 요청
