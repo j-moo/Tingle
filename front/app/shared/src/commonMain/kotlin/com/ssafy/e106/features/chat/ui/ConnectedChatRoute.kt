@@ -40,7 +40,7 @@ import kotlinx.coroutines.delay
     val partner by partnerModel.state.collectAsStateWithLifecycle()
     var displayed by remember(room) { mutableStateOf(emptyList<Long>()) }
     // 목록에서 누른 방의 상대 닉네임. 방에 들어가면 목록이 비워지므로 누를 때 받아 둔다
-    var entry by remember { mutableStateOf<Pair<Long, String?>?>(null) }
+    var entry by remember(session.userId) { mutableStateOf<Pair<Long, String?>?>(null) }
     fun load() { if (room == null) listModel.refresh() else when(page) {
         "partner" -> partnerModel.load(room!!)
         else -> roomModel.open(room!!, entry?.takeIf { it.first == room }?.second)
