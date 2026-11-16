@@ -15,7 +15,7 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 
-def check(*, environment="local", enabled=False, descriptor_file="", descriptor_sha256=""):
+def check(*, descriptor_file="", descriptor_sha256=""):
     result = {
         "ready": False, "approval": "NOT_VERIFIED", "externalService": "NOT_VERIFIED",
         "activationAuthorized": False,
@@ -24,10 +24,6 @@ def check(*, environment="local", enabled=False, descriptor_file="", descriptor_
     def report(code):
         return {**result, "code": code}
 
-    if enabled is not True:
-        return report("DISABLED")
-    if environment not in {"local", "test", "dev"}:
-        return report("ENVIRONMENT_BLOCKED")
     if not descriptor_file:
         return report("DESCRIPTOR_MISSING")
     if not descriptor_sha256:
@@ -61,13 +57,10 @@ def check(*, environment="local", enabled=False, descriptor_file="", descriptor_
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--environment", default="local")
-    parser.add_argument("--enabled", action="store_true")
     parser.add_argument("--descriptor", default="")
     parser.add_argument("--descriptor-sha256", default="")
     args = parser.parse_args(argv)
-    result = check(environment=args.environment, enabled=args.enabled,
-                   descriptor_file=args.descriptor, descriptor_sha256=args.descriptor_sha256)
+    result = check(descriptor_file=args.descriptor, descriptor_sha256=args.descriptor_sha256)
     print(json.dumps(result, sort_keys=True))
     return 0 if result["ready"] else 2
 

@@ -10,7 +10,6 @@ services:
       GMS_API_KEY: "${GMS_API_KEY:?GMS_API_KEY is required}"
       AI_SERVICE_PUBLIC_KEYS: '{"be-dev-1":"/run/ai-keys/be-dev-1.pub.pem"}'
       ICEBREAKER_RELEASE_DESCRIPTOR_FILE: /run/tingle/q040-dev-release-v1/ai-descriptor.json
-      RISK_LOCAL_RULES_ENABLED: "false"
     volumes:
       - /srv/tingle/ai-keys/dev:/run/ai-keys:ro
       - ${Q040_DEV_RELEASE_DIR:-/srv/tingle/releases/q040-dev-release-v1}:/run/tingle/q040-dev-release-v1:ro

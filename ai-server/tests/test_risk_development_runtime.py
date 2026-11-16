@@ -8,7 +8,6 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 import pytest
 
-from app.config import Settings
 from app.middleware.request_id import RequestIdMiddleware, install_error_handlers
 from app.risk_detection import local_engine, releases
 from app.risk_detection.http_api import Message
@@ -19,30 +18,23 @@ from safety48_runtime_support import message, request_for, synthetic_release, sy
 from test_risk_detection_http import ROUTE, assert_error
 
 
-def client(release=None, *, enabled=True, environment="test"):
+def client(release=None):
     app = FastAPI()
     install_error_handlers(app)
     app.add_middleware(RequestIdMiddleware)
     # Domain unit tests only. Real cryptographic auth and actual main are tested
     # by the separate loopback/subprocess module, without this test double.
     app.include_router(create_development_router(
-        lambda _: True, environment=environment, enabled=enabled,
+        lambda _: True,
         descriptor_file=str(release.descriptor) if release else "",
         descriptor_sha256=release.test_descriptor_pin if release else "",
     ))
     return TestClient(app)
 
 
-def test_release_pin_default(monkeypatch):
-    monkeypatch.delenv("RISK_LOCAL_RULES_DESCRIPTOR_SHA256", raising=False)
-    assert Settings(_env_file=None).risk_local_rules_descriptor_sha256 == ""
-
-
-@pytest.mark.parametrize("environment", ["local", "test", "dev", "prod"])
-@pytest.mark.parametrize("enabled", [False, True])
-def test_release_registration_ignores_legacy_switch_and_environment(tmp_path, environment, enabled):
+def test_release_registration_serves_local_rules(tmp_path):
     release = synthetic_release(tmp_path)
-    response = client(release, environment=environment, enabled=enabled).post(
+    response = client(release).post(
         ROUTE, json=request_for(release, [message("원금 보장하니 인증금을 송금해.")]),
     )
     assert response.status_code == 200
@@ -51,13 +43,7 @@ def test_release_registration_ignores_legacy_switch_and_environment(tmp_path, en
         dict(sequence=1, category="FRAUD", noticeType="MONEY_REQUEST", audience="RECIPIENT")]
 
 
-@pytest.mark.parametrize("environment,enabled", [
-    (environment, enabled)
-    for environment in ("local", "test", "dev", "prod", "production", "unknown")
-    for enabled in (False, True)
-    if not (enabled and environment in {"local", "test", "dev"})
-])
-def test_missing_release_does_not_import_tokenizers(environment, enabled, monkeypatch):
+def test_missing_release_does_not_import_tokenizers(monkeypatch):
     original = builtins.__import__
 
     def guarded(name, *args, **kwargs):
@@ -65,21 +51,20 @@ def test_missing_release_does_not_import_tokenizers(environment, enabled, monkey
         return original(name, *args, **kwargs)
 
     monkeypatch.setattr(builtins, "__import__", guarded)
-    response = client(enabled=enabled, environment=environment).post(ROUTE, content=b"invalid-body-not-parsed")
+    response = client().post(ROUTE, content=b"invalid-body-not-parsed")
     assert_error(response, 422, "POLICY_UNRESOLVED")
 
 
 def test_partial_release_configuration_fails_closed():
     with pytest.raises(DevelopmentReleaseError, match="^Safety Guard development runtime unavailable$"):
-        create_development_router(lambda _: True, environment="prod", descriptor_file="missing-release.json")
+        create_development_router(lambda _: True, descriptor_file="missing-release.json")
 
 
 @pytest.mark.parametrize("pin", ["", "0" * 64, "not-a-review-pin"])
 def test_a_release_path_alone_cannot_self_approve_activation(tmp_path, pin):
     release = synthetic_release(tmp_path)
     with pytest.raises(DevelopmentReleaseError, match="^Safety Guard development runtime unavailable$"):
-        create_development_router(lambda _: True, environment="dev", enabled=True,
-                                  descriptor_file=str(release.descriptor), descriptor_sha256=pin)
+        create_development_router(lambda _: True, descriptor_file=str(release.descriptor), descriptor_sha256=pin)
 
 
 def test_actual_token_ids_cover_canonical_context_and_special_tokens(tmp_path):

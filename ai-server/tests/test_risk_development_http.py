@@ -81,27 +81,19 @@ def token(private, environment="test", scope="ai:execute"):
     }, private, algorithm="RS256", headers={"typ": "tingle-service+jwt", "kid": KID})
 
 
-@pytest.mark.parametrize("environment,enabled,status", [
-    ("local", False, 200), ("test", False, 200), ("dev", False, 200),
-    ("prod", False, 200), ("prod", True, 200),
-    ("local", True, 200), ("test", True, 200), ("dev", True, 200),
-])
-def test_real_main_uses_release_in_every_environment(tmp_path, synthetic_private, environment, enabled, status):
+@pytest.mark.parametrize("environment", ["local", "test", "dev", "prod"])
+def test_real_main_uses_release_in_every_environment(tmp_path, synthetic_private, environment):
     release = synthetic_release(tmp_path)
     keys = public_key_file(tmp_path, synthetic_private)
-    env = isolated_environment(tmp_path, environment=environment, enabled=enabled, release=release, public_keys=keys)
+    env = isolated_environment(tmp_path, environment=environment, release=release, public_keys=keys)
     env.update(SYNTHETIC_TOKEN=token(synthetic_private, environment), SYNTHETIC_REQUEST=json.dumps(request_for(release)))
     completed = subprocess.run([sys.executable, "-c", PROBE], cwd=tmp_path, env=env,
                                capture_output=True, encoding="utf-8", timeout=30)
     assert completed.returncode == 0 and not completed.stderr
     result = json.loads(completed.stdout)
-    assert result["http"] == status
-    assert result["tokenizersLoaded"] is (status == 200)
-    assert result["rulesLoaded"] is (status == 200)
-    if status == 200:
-        assert result["body"]["verdict"]["kind"] == "NORMAL"
-    else:
-        assert result["body"]["code"] == "POLICY_UNRESOLVED"
+    assert result["http"] == 200
+    assert result["tokenizersLoaded"] is True and result["rulesLoaded"] is True
+    assert result["body"]["verdict"]["kind"] == "NORMAL"
 
 
 def test_real_main_without_release_keeps_safety_unavailable(tmp_path, synthetic_private):

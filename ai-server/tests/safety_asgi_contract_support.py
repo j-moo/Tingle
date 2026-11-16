@@ -145,7 +145,7 @@ def main_factory(tmp_path, monkeypatch, synthetic_private_keys, caplog, capsys, 
     hosts = []
     stack = ExitStack()
 
-    def make(*, environment="test", enabled=True, release=None, pin=None, keys=True,
+    def make(*, environment="test", release=None, pin=None, keys=True,
              engine_factory=None, gms_primary=None, start=True, configured=True):
         directory = tmp_path / f"main-{len(hosts)}"
         directory.mkdir(exist_ok=True)

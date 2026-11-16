@@ -23,27 +23,23 @@ def test_matching_pin_cannot_reuse_release_bound_to_pre_fix_http_source(tmp_path
     previous_pin = release.test_descriptor_pin
     with pytest.raises(DevelopmentReleaseError):
         DevelopmentReleaseCatalog(str(release.descriptor), descriptor_sha256=previous_pin)
-    result = check(environment="test", enabled=True, descriptor_file=str(release.descriptor),
+    result = check(descriptor_file=str(release.descriptor),
                    descriptor_sha256=previous_pin)
     assert result["code"] == "RELEASE_BINDING_INVALID" and not result["ready"]
 
 
-@pytest.mark.parametrize("environment,enabled,code", [
-    ("local", False, "DISABLED"), ("prod", True, "ENVIRONMENT_BLOCKED"),
-    ("test", True, "DESCRIPTOR_MISSING"),
-])
-def test_closed_preflight_never_reads_files_or_imports_optional_dependencies(monkeypatch, environment, enabled, code):
+def test_closed_preflight_never_reads_files_or_imports_optional_dependencies(monkeypatch):
     def forbidden(*args, **kwargs):
         pytest.fail("Closed preflight accessed a dependency")
     monkeypatch.setattr(Path, "open", forbidden)
     monkeypatch.setattr(importlib, "import_module", forbidden)
-    assert check(environment=environment, enabled=enabled)["code"] == code
+    assert check()["code"] == "DESCRIPTOR_MISSING"
 
 
 @pytest.mark.parametrize("pin,code", [("", "PIN_MISSING"), ("bad", "PIN_INVALID"), ("0" * 64, "PIN_MISMATCH")])
 def test_descriptor_does_not_approve_its_own_pin(tmp_path, pin, code):
     release = synthetic_release(tmp_path, development_only=True)
-    result = check(environment="test", enabled=True, descriptor_file=str(release.descriptor), descriptor_sha256=pin)
+    result = check(descriptor_file=str(release.descriptor), descriptor_sha256=pin)
     assert result["code"] == code and not result["ready"]
     assert result["approval"] == "NOT_VERIFIED" and not result["activationAuthorized"]
 
@@ -53,7 +49,7 @@ def test_valid_synthetic_binding_is_read_only_and_cannot_grant_approval(tmp_path
     before = {p.name: p.read_bytes() for p in tmp_path.iterdir()}
     from app.risk_detection.local_engine import LocalRuleRiskEngine
     monkeypatch.setattr(LocalRuleRiskEngine, "__init__", lambda *a, **k: pytest.fail("Preflight started an engine"))
-    result = check(environment="test", enabled=True, descriptor_file=str(release.descriptor),
+    result = check(descriptor_file=str(release.descriptor),
                    descriptor_sha256=release.test_descriptor_pin)
     assert result["code"] == "LOCAL_BINDINGS_VERIFIED" and result["ready"]
     assert result["approval"] == result["externalService"] == "NOT_VERIFIED"
@@ -72,7 +68,7 @@ def test_optional_dependency_is_distinct_from_release_pin(tmp_path, monkeypatch,
             return SimpleNamespace(__version__="wrong")
         return original(name, *args, **kwargs)
     monkeypatch.setattr(importlib, "import_module", resolve)
-    result = check(environment="test", enabled=True, descriptor_file=str(release.descriptor),
+    result = check(descriptor_file=str(release.descriptor),
                    descriptor_sha256=release.test_descriptor_pin)
     assert result["code"] == code and not result["ready"]
     assert "synthetic-private" not in json.dumps(result)
@@ -82,7 +78,7 @@ def test_changed_artifact_and_unreadable_descriptor_are_sanitized(tmp_path):
     release = synthetic_release(tmp_path, development_only=True)
     pin = release.test_descriptor_pin
     release.artifact.write_bytes(b"changed")
-    args = dict(environment="test", enabled=True, descriptor_file=str(release.descriptor), descriptor_sha256=pin)
+    args = dict(descriptor_file=str(release.descriptor), descriptor_sha256=pin)
     assert check(**args)["code"] == "RELEASE_BINDING_INVALID"
     release.descriptor.unlink()
     result = check(**args)
@@ -90,8 +86,7 @@ def test_changed_artifact_and_unreadable_descriptor_are_sanitized(tmp_path):
     assert str(tmp_path) not in json.dumps(result)
 
 
-def test_cli_does_not_consume_activation_environment(monkeypatch, capsys):
-    monkeypatch.setenv("RISK_LOCAL_RULES_ENABLED", "true")
+def test_cli_without_descriptor_is_not_ready(capsys):
     assert main([]) == 2
     result = json.loads(capsys.readouterr().out)
-    assert result["code"] == "DISABLED"
+    assert result["code"] == "DESCRIPTOR_MISSING"

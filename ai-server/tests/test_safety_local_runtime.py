@@ -44,7 +44,7 @@ def plain_release(tmp_path, monkeypatch, no_external_io):
     ("그거 보내 줘. 알지?", "INSUFFICIENT"),
 ])
 def test_real_main_without_tokenizer(main_factory, plain_release, environment, text, kind):
-    host = main_factory(environment=environment, enabled=False, release=plain_release)
+    host = main_factory(environment=environment, release=plain_release)
     engine = host.client.app.state.risk_runtime.resources.engine
     assert type(engine) is LocalRuleRiskEngine and not engine.requires_token_budget
     response = expect(host.post(request_for(plain_release, [message(text)])))
@@ -54,7 +54,7 @@ def test_real_main_without_tokenizer(main_factory, plain_release, environment, t
 
 @pytest.mark.parametrize("environment", ["dev", "prod"])
 def test_same_release_produces_same_verdict_and_keeps_authentication(main_factory, plain_release, environment):
-    host = main_factory(environment=environment, enabled=False, release=plain_release)
+    host = main_factory(environment=environment, release=plain_release)
     payload = request_for(plain_release, [message("원금 보장하니 인증금을 송금해.")])
     response = expect(host.post(payload))
     assert response["verdict"]["findings"] == [
@@ -67,11 +67,10 @@ def test_same_release_produces_same_verdict_and_keeps_authentication(main_factor
            401, "ACCESS_TOKEN_INVALID")
 
 
-@pytest.mark.parametrize("environment", ["dev", "prod"])
-def test_direct_router_without_switch_or_tokenizer(plain_release, environment):
+def test_direct_router_without_switch_or_tokenizer(plain_release):
     app = FastAPI()
     install_error_handlers(app)
-    app.include_router(create_development_router(lambda _: True, environment=environment, enabled=False,
+    app.include_router(create_development_router(lambda _: True,
         descriptor_file=str(plain_release.descriptor), descriptor_sha256=plain_release.test_descriptor_pin))
     with TestClient(app) as client:
         response = client.post("/internal/ai/risk-detections", json=request_for(plain_release))

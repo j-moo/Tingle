@@ -21,11 +21,9 @@ class DevelopmentRuntime:
     A factory must clean up its own partial construction if it raises.
     """
 
-    def __init__(self, *, environment: str,
-                 descriptor_file: str = "", descriptor_sha256: str = "",
+    def __init__(self, *, descriptor_file: str = "", descriptor_sha256: str = "",
                  engine_factory: Callable | None = None,
                  gms_primary: "GmsPrimaryConfiguration | None" = None):
-        self.environment = environment
         self.descriptor_file, self.descriptor_sha256 = descriptor_file, descriptor_sha256
         self._engine_factory = engine_factory
         self._gms_primary = gms_primary
@@ -169,12 +167,11 @@ class DevelopmentRuntime:
                 self._state = "closed"  # Also restore fully disposed state on caller cancellation.
 
 
-def create_development_router(authenticate: Callable, *, environment: str, enabled: bool = False,
-                              descriptor_file: str = "", descriptor_sha256: str = "",
+def create_development_router(authenticate: Callable, *, descriptor_file: str = "", descriptor_sha256: str = "",
                               runtime: DevelopmentRuntime | None = None) -> APIRouter:
     if runtime is not None:
         return create_router(authenticate, runtime=runtime.resolve)
-    # Local rules depend on release integrity, never environment/enabled.
+    # Local rules depend only on release integrity.
     if not descriptor_file and not descriptor_sha256:
         return create_router(authenticate, ReleaseCatalog(descriptor_file))
 
