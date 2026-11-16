@@ -97,7 +97,7 @@ def isolated_environment(directory: Path, *, environment="test", enabled=True, r
         "RISK_RELEASE_DESCRIPTOR_FILE": str(release.descriptor) if release else "",
         "RISK_LOCAL_RULES_DESCRIPTOR_SHA256": release.test_descriptor_pin if release else "",
         "AI_SERVICE_PUBLIC_KEYS": json.dumps(public_keys or {}),
-        "EXPLANATION_RELEASE_DESCRIPTOR_FILES": "[]", "PYTHONPATH": os.pathsep.join(paths),
+        "GMS_API_KEY": "synthetic-safety-startup-only", "PYTHONPATH": os.pathsep.join(paths),
         "PYTHONIOENCODING": "utf-8", "PYTHONDONTWRITEBYTECODE": "1", "TOKENIZERS_PARALLELISM": "false",
     })
     return env

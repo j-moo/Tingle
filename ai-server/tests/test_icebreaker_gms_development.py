@@ -25,13 +25,13 @@ def host(tmp_path, signing_key, release, monkeypatch):
     public.write_bytes(signing_key.public_key().public_bytes(
         serialization.Encoding.PEM, serialization.PublicFormat.SubjectPublicKeyInfo))
     monkeypatch.setattr("app.security.service_auth.time", lambda: NOW)
-    def make(handler, *, enabled=True, environment="test"):
+    def make(handler, *, environment="test"):
         configured = Settings(_env_file=None, app_env=environment,
             ai_service_public_keys={KID: str(public)},
-            icebreaker_release_descriptor_file=str(release[0]), icebreaker_dev_enabled=True,
-            risk_local_rules_enabled=False, explanation_release_descriptor_files=[])
+            icebreaker_release_descriptor_file=str(release[0]),
+            risk_local_rules_enabled=False)
         provider = GmsClient("synthetic-only", transport=httpx.MockTransport(handler))
-        return TestClient(create_app(configured, _icebreaker_gms_client=provider if enabled else None, _match_gms_client=object()))
+        return TestClient(create_app(configured, _icebreaker_gms_client=provider, _match_gms_client=object()))
     return make
 
 
@@ -62,15 +62,15 @@ def test_generation_and_fallback(host, make_headers, payload, fault):
         assert response.json() == _select_questions("walk").model_dump()
 
 
-@pytest.mark.parametrize("gate", ["default", "no-topic", "auth", "manifest", "production"])
+@pytest.mark.parametrize("gate", ["no-topic", "auth", "manifest"])
 def test_gate_never_calls_provider(host, make_headers, payload, gate):
     def forbidden(_): pytest.fail("Gate must stop provider")
     if gate != "no-topic": payload["commonTopicKey"] = "walk"
     if gate == "manifest": payload["manifest"]["engineVersion"] = "not-registered"
-    environment = "prod" if gate == "production" else "test"
-    with host(forbidden, enabled=gate != "default", environment=environment) as client:
+    environment = "test"
+    with host(forbidden, environment=environment) as client:
         response = client.post(PATH, json=payload, headers={} if gate == "auth" else make_headers(environment=environment))
-    assert response.status_code == {"auth": 401, "manifest": 503, "production": 503}.get(gate, 200)
+    assert response.status_code == {"auth": 401, "manifest": 503}.get(gate, 200)
 
 
 def test_release_revoked_while_provider_runs(host, make_headers, payload, release):

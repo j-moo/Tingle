@@ -31,7 +31,7 @@ def test_viewer_a_receives_b_planning_fit_via_runtime_route(configured, private_
     scope["display_evidence_ids"] = ["e1"]
 
     # 기존 합성 인증·release와 실제 runtime 라우터를 사용한다. POST는 한 번뿐이다.
-    with client_for(auth, [descriptor]) as client:
+    with client_for(auth) as client:
         response = client.post(PATH, json=body, headers={
             "Authorization": "Bearer " + token(private_key),
         })

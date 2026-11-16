@@ -1,11 +1,24 @@
 import json
+import os
 import shutil
 import subprocess
 from pathlib import Path
 
 import pytest
 
+# app.main is imported during collection and validates the mandatory startup key.
+os.environ["GMS_API_KEY"] = "synthetic-pytest-only"
+
 from app.personal_analysis.reference import CALCULATION_VERSION
+
+
+@pytest.fixture(autouse=True)
+def block_real_gms_transport(monkeypatch):
+    import httpx2
+
+    async def forbidden(*args, **kwargs):
+        pytest.fail("Real GMS HTTP transport is forbidden in automated tests")
+    monkeypatch.setattr(httpx2.AsyncHTTPTransport, "handle_async_request", forbidden)
 
 
 @pytest.fixture(scope="session")

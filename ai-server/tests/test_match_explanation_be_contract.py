@@ -439,7 +439,7 @@ def test_partial_overlap_example_keeps_evening_only(viewer):
     ("model-outside-display", 400), ("unknown-model", 400), ("duplicate-model", 400),
     ("viewer", 400), ("reference", 400), ("record-reference", 400), ("empty-source", 400),
     ("wrong-source", 503), ("wrong-topic", 503), ("wrong-direction", 503), ("private-fact", 503),
-    ("display-empty", 503), ("release", 503), ("artifact", 503), ("conflict", 503),
+    ("display-empty", 503), ("release", 200), ("artifact", 200), ("conflict", 503),
     ("auth-missing", 401), ("auth-scope", 403),
 ])
 def test_gms_off_with_model_scope_still_enforces_all_boundaries(host, make_headers, release, gate, status):
@@ -488,7 +488,7 @@ def test_gms_off_with_model_scope_still_enforces_all_boundaries(host, make_heade
             release[2].write_bytes(b"changed synthetic artifact")
         response = client.post(PATH, json=body, headers=headers)
     assert response.status_code == status
-    assert "text" not in response.json()
+    assert ("text" in response.json()) is (status == 200)
 
 
 def test_shared_deadline_cancels_review_and_returns_fallback():

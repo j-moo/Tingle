@@ -12,6 +12,10 @@ CM14로 P0 필수 포함. 허용된 정보로 질문을 제공하고, 공통 주
 
 2026-10-30 MVP 합의: `POST /internal/ai/icebreakers`의 실제 HTTP 503은 일시 장애를 포함해 재시도 없이 BE의 `GENERAL_FALLBACK` 질문 3개 전체로 대체한다. 네트워크·시간 초과는 기존 최대 3회·최초 요청부터 고정 5분 예산을 유지하며, 다른 HTTP 상태와 다른 AI 기능의 오류 분류는 변경하지 않는다.
 
+**2026-11-16 시연용 공통 문장 생성 경로:** MAT-04 매칭 이유와 AI-01 아이스브레이커는 개발·운영 모두 `python -m app.main`의 공통 factory에서 같은 GMS provider를 연결한다. `GMS_API_KEY` 누락·빈값은 요청 처리 전 기동 오류이며, 키 확인을 위해 외부 API를 호출하지 않는다. 실행 중 timeout·제공업체 오류·출력 검토 실패는 기존 규칙 설명/질문 템플릿으로 대체하고 `GENERATED` 성공과 구분한다. Match·Icebreaker의 개발 전용 GMS 스위치와 Icebreaker 개발 환경 제한은 사용하지 않으며 `APP_ENV`의 서비스 인증 구분은 유지한다.
+
+MAT-04의 AI HTTP 경로는 descriptor 등록·artifact 대조 없이 요청을 처리한다. manifest 11필드의 자료형·필수값·UUID·해시 형식과 contextBundle의 Release 참조·열람자·근거·공개/모델 허용 범위 검증은 유지한다. Release 등록과 파일 대조는 BE 담당 범위이며, BE 만남 접수용 Release와 AI-01의 기존 `ICEBREAKER_RELEASE_DESCRIPTOR_FILE` 검증은 이번 제거 대상이 아니다. 개인분석 요청은 계속 GMS를 호출하지 않고 Safety의 별도 runtime·Release 검증은 유지한다. 자동 검증은 합성 데이터·대역을 사용하며 실제 GMS 및 BE 연동 성공과 구분한다.
+
 | 구분 | 기준 |
 | --- | --- |
 | 사용자·조건 | 상호 수락한 활성 채팅방의 참여자 |

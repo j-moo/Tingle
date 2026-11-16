@@ -1,4 +1,4 @@
-"""Loopback Match 통합 fixture. 실제 인증/해시/근거/품질 검사를 사용한다.
+"""Loopback Match 통합 fixture. 실제 인증/manifest/근거/품질 검사를 사용한다.
 
 외부 GMS 응답만 MockTransport로 대체한다. 활성화 OFF/생성/timeout/검토 거절은
 각각 별도 앱으로 구성하며 운영 서버/외부 API/실제 회원 데이터는 사용하지 않는다.
@@ -18,7 +18,7 @@ from app.middleware.request_id import RequestIdMiddleware, install_error_handler
 from app.security.service_auth import ServiceAuthenticator, ServiceAuthSettings
 
 
-def build_app(public_key, descriptor, mode_file):
+def build_app(public_key, mode_file):
     root = FastAPI()
     counters = {}
 
@@ -60,7 +60,7 @@ def build_app(public_key, descriptor, mode_file):
         auth = ServiceAuthenticator(ServiceAuthSettings(
             environment="test", public_keys={"synthetic-key": public_key}))
         provider = None if mode == "off" else GmsClient("synthetic-only", transport=httpx.MockTransport(handler))
-        app.include_router(create_runtime_router(auth, [descriptor], gms_client=provider))
+        app.include_router(create_runtime_router(auth, gms_client=provider))
         root.mount("/" + mode, app)
 
     @root.get("/health")
@@ -74,8 +74,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--port", type=int, required=True)
     parser.add_argument("--public-key", type=Path, required=True)
-    parser.add_argument("--descriptor", type=Path, required=True)
+    parser.add_argument("--descriptor", type=Path, help="Legacy caller compatibility; unused")
     parser.add_argument("--mode-file", type=Path, required=True)
     args = parser.parse_args()
-    uvicorn.run(build_app(args.public_key, args.descriptor, args.mode_file), host="127.0.0.1", port=args.port,
+    uvicorn.run(build_app(args.public_key, args.mode_file), host="127.0.0.1", port=args.port,
                 log_level="error", access_log=False)

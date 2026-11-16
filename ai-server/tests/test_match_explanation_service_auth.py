@@ -16,7 +16,7 @@ from fastapi.testclient import TestClient
 import jwt
 import pytest
 
-from app.match_explanation.releases import ReleaseError
+from app.match_explanation.releases import ReleaseRegistry
 from app.match_explanation.runtime import create_runtime_router
 from app.middleware.request_id import RequestIdMiddleware, install_error_handlers
 from app.security.service_auth import ServiceAuthenticator, ServiceAuthSettings
@@ -72,11 +72,11 @@ def token(private, **changes):
     return jwt.encode(claims, private, algorithm="RS256", headers={"typ": "tingle-service+jwt", "kid": KID})
 
 
-def client_for(auth, descriptor_files=()):
+def client_for(auth):
     app = FastAPI()
     install_error_handlers(app)
     app.add_middleware(RequestIdMiddleware)
-    app.include_router(create_runtime_router(auth, descriptor_files))
+    app.include_router(create_runtime_router(auth))
     return TestClient(app)
 
 
@@ -96,7 +96,7 @@ def test_verified_common_service_token_reaches_registered_rules_without_model(co
     monkeypatch.setattr(GmsClient, "from_environment", forbidden)
     auth, descriptor, body, _, _ = configured
     request_id = str(uuid4())
-    with client_for(auth, [descriptor]) as client:
+    with client_for(auth) as client:
         response = client.post(PATH, json=body, headers={
             "Authorization": "Bearer " + token(private_key), "X-Request-Id": request_id,
         })
@@ -126,18 +126,18 @@ def test_common_auth_errors_keep_their_status_and_code(configured, private_key, 
         headers = {}
     elif case == "duplicate":
         headers = [("Authorization", "Bearer " + signed), ("Authorization", "Bearer " + signed)]
-    with client_for(auth, [descriptor]) as client:
+    with client_for(auth) as client:
         response = client.post(PATH, json=body, headers=headers)
     assert_error(response, status, code)
     assert 'realm="tingle-ai"' in response.headers["www-authenticate"]
 
 
-@pytest.mark.parametrize("missing", ["keys", "release"])
+@pytest.mark.parametrize("missing", ["keys"])
 def test_empty_runtime_configuration_remains_closed(configured, private_key, missing):
     auth, descriptor, body, _, _ = configured
     if missing == "keys":
         auth = ServiceAuthenticator(ServiceAuthSettings(environment="test"), now=lambda: NOW)
-    with client_for(auth, () if missing == "release" else [descriptor]) as client:
+    with client_for(auth) as client:
         response = client.post(PATH, json=body, headers={"Authorization": "Bearer " + token(private_key)})
     assert_error(response, 503, "SERVICE_UNAVAILABLE")
 
@@ -145,14 +145,17 @@ def test_empty_runtime_configuration_remains_closed(configured, private_key, mis
 @pytest.mark.parametrize("changed", ["artifact", "key"])
 def test_key_reload_failure_and_artifact_tampering_do_not_run_rules(configured, private_key, changed):
     auth, descriptor, body, public, artifact = configured
-    with client_for(auth, [descriptor]) as client:
+    with client_for(auth) as client:
         if changed == "artifact":
             artifact.write_bytes(b"changed-synthetic-artifact")
         else:
             public.write_text("broken-synthetic-public-key")
             assert not auth.reload_keys()
         response = client.post(PATH, json=body, headers={"Authorization": "Bearer " + token(private_key)})
-        assert_error(response, 503, "SERVICE_UNAVAILABLE")
+        if changed == "key":
+            assert_error(response, 503, "SERVICE_UNAVAILABLE")
+        else:
+            assert response.status_code == 200
 
 
 @pytest.mark.parametrize("status, detail", [
@@ -165,14 +168,16 @@ def test_unexpected_authentication_failure_does_not_expose_details(configured, s
     def failing_auth(request):
         raise HTTPException(status, detail=detail)
 
-    with client_for(failing_auth, [descriptor]) as client:
+    with client_for(failing_auth) as client:
         response = client.post(PATH, json=body, headers={"Authorization": "Bearer synthetic-token"})
     assert_error(response, 503, "SERVICE_UNAVAILABLE")
 
 
-def test_invalid_explicit_release_registration_fails_without_registering_a_fixture(tmp_path):
-    with pytest.raises(ReleaseError):
-        create_runtime_router(lambda request: {}, [tmp_path / "missing-descriptor.json"])
+def test_match_router_never_constructs_a_release_registry(monkeypatch):
+    def forbidden(*args):
+        pytest.fail("Match router must not load descriptors")
+    monkeypatch.setattr(ReleaseRegistry, "__init__", forbidden)
+    assert create_runtime_router(lambda request: {}) is not None
 
 
 @pytest.mark.parametrize("configured_keys", [False, True])
@@ -184,9 +189,11 @@ def test_actual_main_registers_explanations_with_safe_default_release(
     assert result["registered"] and result["riskRegistered"]
     assert result["ready"] is configured_keys
     assert result["healthStatus"] == 200 and result["health"] == {"status": "ok"}
-    assert result["cases"]["default"] == [
-        503, {"code": "SERVICE_UNAVAILABLE", "message": "SERVICE_UNAVAILABLE"}, "no-store",
-    ]
+    response = result["cases"]["default"]
+    assert response[0] == (200 if configured_keys else 503)
+    assert response[2] == "no-store"
+    if configured_keys:
+        assert response[1]["source"] == "RULE_FALLBACK"
 
 
 def test_actual_main_applies_explanation_evidence_contract(configured, private_key, tmp_path):
@@ -215,31 +222,31 @@ def test_actual_main_applies_explanation_evidence_contract(configured, private_k
             version, f'"version_ref": "{uuid4()}", {version}', 1,
         ),
     }
-    result = run_actual_main(configured, private_key, tmp_path, cases, True, register_release=True)
+    result = run_actual_main(configured, private_key, tmp_path, cases, True)
     responses = result["cases"]
     assert responses.pop("verified") == [
         200, {"source": "RULE_FALLBACK", "text": "상대의 연락 방식이 당신의 선호와 맞아요.",
               "evidenceKeys": [], "promptVersion": None, "encounterId": 1001}, "no-store",
     ]
+    assert responses.pop("manifest-mismatch")[0] == 200
     for case, (status, response, cache) in responses.items():
-        unavailable = case in {"no-display-scope", "private-fact", "manifest-mismatch"}
+        unavailable = case in {"no-display-scope", "private-fact"}
         code = "SERVICE_UNAVAILABLE" if unavailable else "INVALID_REQUEST"
         assert (status, response, cache) == (
             503 if unavailable else 400, {"code": code, "message": code}, "no-store",
         ), case
 
 
-def run_actual_main(configured, private_key, tmp_path, cases, configured_keys, *, register_release=False):
+def run_actual_main(configured, private_key, tmp_path, cases, configured_keys):
     _, descriptor, _, public, _ = configured
     env = {key: value for key, value in os.environ.items()
            if key.upper() in {"SYSTEMROOT", "WINDIR", "PATH", "TEMP", "TMP"}}
     env.update({
+        "GMS_API_KEY": "synthetic-startup-only",
         "APP_ENV": "test", "AI_SERVICE_PUBLIC_KEYS": json.dumps({KID: str(public)} if configured_keys else {}),
         "RISK_RELEASE_DESCRIPTOR_FILE": "", "PYTHONPATH": str(Path(__file__).resolve().parents[1]),
         "PYTHONIOENCODING": "utf-8", "PYTHONDONTWRITEBYTECODE": "1",
     })
-    if register_release:
-        env["EXPLANATION_RELEASE_DESCRIPTOR_FILES"] = json.dumps([str(descriptor)])
     now = int(time.time())
     probe = """
 import json

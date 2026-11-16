@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 
 from cryptography.hazmat.primitives import serialization
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 import httpx2 as httpx
 import pytest
@@ -12,6 +13,9 @@ import pytest
 from app.config import Settings
 from app.main import create_app
 from app.match_explanation.gms import GmsClient
+from app.match_explanation.runtime import create_runtime_router
+from app.middleware.request_id import RequestIdMiddleware, install_error_handlers
+from app.security.service_auth import ServiceAuthenticator, ServiceAuthSettings
 from app.match_explanation.prompts import PROMPT_VERSION
 from security.synthetic_jwt import NOW
 from test_icebreakers_http import signing_key, make_headers, KID
@@ -29,10 +33,17 @@ def host(tmp_path, signing_key, release, monkeypatch):
     def make(handler, *, enabled=True, environment="test"):
         configured = Settings(_env_file=None, app_env=environment,
             ai_service_public_keys={KID: str(public)},
-            explanation_release_descriptor_files=[str(tmp_path / "synthetic-descriptor.json")],
             risk_local_rules_enabled=False, icebreaker_release_descriptor_file="")
+        if not enabled:
+            # Python-only rule composition for contract tests; the real app always uses GMS.
+            application = FastAPI()
+            install_error_handlers(application)
+            application.add_middleware(RequestIdMiddleware)
+            auth = ServiceAuthenticator(ServiceAuthSettings(environment=environment, public_keys={KID: str(public)}))
+            application.include_router(create_runtime_router(auth))
+            return TestClient(application)
         provider = GmsClient("synthetic-only", transport=httpx.MockTransport(handler))
-        return TestClient(create_app(configured, _match_gms_client=provider if enabled else None, _icebreaker_gms_client=object()))
+        return TestClient(create_app(configured, _match_gms_client=provider, _icebreaker_gms_client=object()))
     return make
 
 
@@ -41,7 +52,7 @@ def candidate():
 
 
 @pytest.mark.parametrize("fault", [None, "unsafe", "timeout", "provider", "review"])
-def test_opt_in_generates_or_safely_falls_back(host, make_headers, release, fault):
+def test_provider_generates_or_safely_falls_back(host, make_headers, release, fault):
     calls = []
     def handler(request):
         body = json.loads(request.content)
@@ -73,44 +84,45 @@ def test_opt_in_generates_or_safely_falls_back(host, make_headers, release, faul
     assert "synthetic private" not in response.text
 
 
-@pytest.mark.parametrize("gate", ["default", "scope", "no-evidence", "auth", "manifest", "production"])
+@pytest.mark.parametrize("gate", ["scope", "no-evidence", "auth", "manifest"])
 def test_closed_gates_do_not_call_gms(host, make_headers, release, gate):
     def forbidden(_): pytest.fail("Gate must stop provider")
     body = payload(release)
     status = 200
-    if gate in {"default", "production"}:
-        body["contextBundle"]["scope"]["model_evidence_ids"] = ["e1"]
-    elif gate == "no-evidence":
+    if gate == "no-evidence":
         body["contextBundle"]["context"]["evidence"] = []
         body["contextBundle"]["scope"]["display_evidence_ids"] = []
         status = 503
     elif gate == "manifest":
-        body["manifest"]["engineVersion"] = "not-registered"
-        status = 503
+        body["manifest"]["engineVersion"] = " "
+        status = 400
     elif gate == "auth": status = 401
-    environment = "prod" if gate == "production" else "test"
-    with host(forbidden, enabled=gate != "default", environment=environment) as client:
+    environment = "test"
+    with host(forbidden, environment=environment) as client:
         response = client.post(PATH, json=body, headers={} if gate == "auth" else make_headers(environment=environment))
     assert response.status_code == status
     if status == 200:
         assert response.json()["source"] == "RULE_FALLBACK"
 
 
-def test_disclosure_revoked_during_generation_prevents_review_and_response(host, make_headers, release):
+def test_artifact_changes_do_not_gate_match_generation(host, make_headers, release):
     calls = []
     def handler(_):
         calls.append(1)
-        release[2].write_bytes(b"revoked synthetic artifact")
-        return httpx.Response(200, json=envelope(json.dumps(candidate())))
+        release[2].write_bytes(b"changed synthetic artifact")
+        result = candidate() if len(calls) == 1 else {
+            "supported": True, "directionCorrect": True, "privacySafe": True, "evidenceIds": ["e1"]}
+        return httpx.Response(200, json=envelope(json.dumps(result)))
     body = payload(release)
     body["contextBundle"]["scope"]["model_evidence_ids"] = ["e1"]
     with host(handler) as client:
         response = client.post(PATH, json=body, headers=make_headers())
-    assert response.status_code == 503 and len(calls) == 1
+    assert response.status_code == 200 and len(calls) == 2
+    assert response.json()["source"] == "GENERATED"
 
 
 @pytest.mark.parametrize("gate", ["model-outside-display", "unknown-id", "duplicate-id", "viewer", "reference"])
-def test_opt_in_scope_integrity_precedes_provider(host, make_headers, release, gate):
+def test_scope_integrity_precedes_provider(host, make_headers, release, gate):
     def forbidden(_): pytest.fail("Invalid scope must not reach GMS")
     body = payload(release)
     bundle = body["contextBundle"]

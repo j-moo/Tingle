@@ -80,7 +80,7 @@ def test_only_display_allowed_topic_survives_runtime_response(
     auth, descriptor, original_body, headers = shared_request
     body = copy.deepcopy(original_body)
     body["contextBundle"]["scope"]["display_evidence_ids"] = list(display_ids)
-    with client_for(auth, [descriptor]) as client:
+    with client_for(auth) as client:
         response = client.post(PATH, json=body, headers=headers)
     result = response.json()
     print(json.dumps({
