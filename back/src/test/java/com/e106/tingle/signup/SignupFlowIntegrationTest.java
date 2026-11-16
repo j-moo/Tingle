@@ -2,7 +2,6 @@ package com.e106.tingle.signup;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
@@ -18,7 +17,6 @@ import java.security.KeyPair;
 import java.security.KeyPairGenerator;
 import java.security.Signature;
 import java.time.Instant;
-import java.util.Arrays;
 import java.util.Base64;
 import java.util.HexFormat;
 import java.util.Map;
@@ -33,17 +31,16 @@ import org.springframework.context.annotation.Import;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.ActiveProfiles;
-import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.test.web.servlet.ResultActions;
 
+import com.e106.tingle.ContractFixtures;
 import com.e106.tingle.IntegrationTestSupport;
 import com.e106.tingle.TestcontainersConfiguration;
 import com.e106.tingle.auth.SocialProvider;
 import com.e106.tingle.auth.SocialVerifier.SocialAccount;
 import com.e106.tingle.keyring.proof.KeyringProofTranscript;
 import com.e106.tingle.keyring.proof.PeerSettingsCodec;
-import com.e106.tingle.settings.snapshot.KeyringCanonicalSnapshotService;
 
 import tools.jackson.databind.JsonNode;
 
@@ -64,10 +61,6 @@ class SignupFlowIntegrationTest extends IntegrationTestSupport {
 
 	@Autowired
 	private ApplicationContext context;
-	// 이 흐름의 설문은 모두 "모름"이라 TSV3 프로필 바이트를 만들 수 없다. 기기에 보낼 프로필은 공개 시험 벡터로 대신한다
-	// (실제 프로필 바이트 생성은 DevSettingsIntegrationTest·KeyringCanonicalSnapshotService 테스트가 본다).
-	@MockitoBean
-	private KeyringCanonicalSnapshotService snapshots;
 
 	@Test
 	void walksSignupToReadyThenEndsOldDeviceSessionAndRestrictsRejoinAfterWithdrawal() throws Exception {
@@ -191,11 +184,15 @@ class SignupFlowIntegrationTest extends IntegrationTestSupport {
 			.andReturn().getResponse().getContentAsString());
 		long sessionId = session.path("sessionId").asLong();
 		String base = "/api/survey-sessions/" + sessionId;
+		// 기기 매칭 프로필(TSV3)을 만들 수 있게 정책 계약의 NORMAL 응답으로 답한다. 계약에 없는 문항만 "모름"이다.
+		JsonNode normal = jsonMapper.readTree(ContractFixtures.mvpPolicyCases()).path("cases").valueStream()
+			.filter(testCase -> "NORMAL".equals(testCase.path("id").asString()))
+			.findFirst().orElseThrow().at("/input/left/answers");
 		for (JsonNode question : jsonMapper.readTree(perform(get(base + "/questionnaire"), tokens, null)
 			.andExpect(status().isOk()).andReturn().getResponse().getContentAsString()).path("questions")) {
 			String questionId = question.path("questionId").asString();
-			// 모든 문항이 "모름"을 받는다. Q097(엄격 제외)·Q098(교류 범위)은 확인된 값이어야 분석 결과가 적용된다.
-			Object value = switch (questionId) {
+			JsonNode measured = normal.path(Integer.toString(Integer.parseInt(questionId.substring(1))));
+			Object value = !measured.isMissingNode() ? measured : switch (questionId) {
 				case "Q097" -> "any";
 				case "Q098" -> "some";
 				default -> "unknown";
@@ -219,11 +216,6 @@ class SignupFlowIntegrationTest extends IntegrationTestSupport {
 	}
 
 	private void syncKeyring(JsonNode tokens, Device device) throws Exception {
-		try (var input = getClass().getResourceAsStream("/keyring/app-flow-v3-vectors.json")) {
-			byte[] bundle = Base64.getUrlDecoder().decode(jsonMapper.readTree(input).path("vectors").path("bundle")
-				.path("base64url").asString());
-			given(snapshots.generateStoragePayload(anyLong())).willReturn(Arrays.copyOfRange(bundle, 4, 200));
-		}
 		String runs = "/api/keyrings/" + device.id() + "/sync-runs";
 		byte[] challenge = new byte[32];
 		JsonNode run = jsonMapper.readTree(perform(post(runs).header("Idempotency-Key", UUID.randomUUID()),

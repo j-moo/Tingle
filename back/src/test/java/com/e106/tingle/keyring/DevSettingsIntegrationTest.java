@@ -1,6 +1,7 @@
 package com.e106.tingle.keyring;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.BDDMockito.given;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -37,6 +38,8 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.ResultActions;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import com.e106.tingle.ContractFixtures;
 import com.e106.tingle.IntegrationTestSupport;
@@ -56,6 +59,8 @@ class DevSettingsIntegrationTest extends IntegrationTestSupport {
 
 	@Autowired
 	private KeyPair settingsServerKeys;
+	@Autowired
+	private PlatformTransactionManager transactions;
 
 	@BeforeEach
 	void freezeTimeToWholeSeconds() {
@@ -227,6 +232,127 @@ class DevSettingsIntegrationTest extends IntegrationTestSupport {
 		assertThat(runCount(fixture)).isZero();
 		JsonNode legacy = create(fixture, UUID.randomUUID(), nonce(2), 201);
 		assertThat(legacy.path("payloadFormat").asString()).isEqualTo("tingle-dev-settings-v1");
+	}
+
+	// ---------- 서명 경로의 접근·증명·멱등 경계 (지운 서명 없는 동기화 테스트에서 옮김) ----------
+
+	@Test
+	void foreignMemberCannotReadOrAcknowledgeAnotherOwnersRun() throws Exception {
+		Fixture owner = syncPendingUser();
+		Fixture other = syncPendingUser();
+		JsonNode run = create(owner, UUID.randomUUID(), nonce(1), 201);
+		perform(get(runPath(owner, run)), other.tokens(), null).andExpect(status().isNotFound());
+		perform(post(runPath(owner, run) + "/ack").header("Idempotency-Key", UUID.randomUUID()),
+			other.tokens(), ackBody(owner, run)).andExpect(status().isNotFound());
+		assertThat(runState(run)).isEqualTo("PENDING");
+	}
+
+	@Test
+	void invalidProofWrongVersionAndRevokedCredentialKeepTheRunPending() throws Exception {
+		Fixture fixture = syncPendingUser();
+		JsonNode run = create(fixture, UUID.randomUUID(), nonce(1), 201);
+		Fixture wrongSigner = new Fixture(fixture.tokens(), fixture.userId(), fixture.deviceId(), fixture.serial(),
+			fixture.keyId(), fixture.generation(), KeyPairGenerator.getInstance("Ed25519").generateKeyPair());
+		ackCall(fixture, run, UUID.randomUUID(), ackBody(wrongSigner, run))
+			.andExpect(status().isUnprocessableContent()).andExpect(jsonPath("$.code").value("INVALID_DEVICE_PROOF"));
+		long version = run.path("settingsVersion").asLong();
+		String wrongVersion = ackBody(fixture, run).replace("\"settingsVersion\":" + version,
+			"\"settingsVersion\":" + (version + 1));
+		ackCall(fixture, run, UUID.randomUUID(), wrongVersion).andExpect(status().is4xxClientError());
+		jdbc.update("update keyring set credential_revoked_at=now() where id=?", fixture.deviceId());
+		ackCall(fixture, run, UUID.randomUUID(), ackBody(fixture, run))
+			.andExpect(status().isUnprocessableContent()).andExpect(jsonPath("$.code").value("INVALID_DEVICE_PROOF"));
+		assertThat(runState(run)).isEqualTo("PENDING");
+	}
+
+	@Test
+	void changedOwnershipGenerationRejectsTheOldRun() throws Exception {
+		Fixture fixture = syncPendingUser();
+		JsonNode run = create(fixture, UUID.randomUUID(), nonce(1), 201);
+		jdbc.update("update keyring set owner_generation=? where id=?", UUID.randomUUID(), fixture.deviceId());
+		perform(get(runPath(fixture, run)), fixture.tokens(), null).andExpect(status().is4xxClientError());
+		ackCall(fixture, run, UUID.randomUUID(), ackBody(fixture, run)).andExpect(status().is4xxClientError());
+		assertThat(runState(run)).isEqualTo("PENDING");
+	}
+
+	@Test
+	void enforcesAuthenticationOnboardingGateAndLoggedOutSession() throws Exception {
+		Fixture fixture = syncPendingUser();
+		JsonNode run = create(fixture, UUID.randomUUID(), nonce(1), 201);
+		mockMvc.perform(post(basePath(fixture))).andExpect(status().isUnauthorized());
+		mockMvc.perform(get(runPath(fixture, run))).andExpect(status().isUnauthorized());
+		JsonNode incomplete = login("kakao", newSocialId());
+		agree(incomplete).andExpect(status().isOk());
+		perform(post(basePath(fixture)).header("Idempotency-Key", UUID.randomUUID()), incomplete,
+			toJson(Map.of("deviceNonce", nonce(2)))).andExpect(status().isForbidden())
+			.andExpect(jsonPath("$.code").value("ONBOARDING_REQUIRED"));
+		logout(fixture.tokens().path("refreshToken").asString()).andExpect(status().isNoContent());
+		ackCall(fixture, run, UUID.randomUUID(), ackBody(fixture, run)).andExpect(status().isUnauthorized());
+		assertThat(runState(run)).isEqualTo("PENDING");
+	}
+
+	@Test
+	void invalidHeadersAndClientSuppliedFieldsCannotCreateOrAcknowledgeRuns() throws Exception {
+		Fixture fixture = syncPendingUser();
+		String body = toJson(Map.of("deviceNonce", nonce(1)));
+		perform(post(basePath(fixture)), fixture.tokens(), body).andExpect(status().isBadRequest());
+		perform(post(basePath(fixture)).header("Idempotency-Key", "invalid"), fixture.tokens(), body)
+			.andExpect(status().isBadRequest());
+		assertThat(runCount(fixture)).isZero();
+		JsonNode run = create(fixture, UUID.randomUUID(), nonce(1), 201);
+		perform(post(runPath(fixture, run) + "/ack"), fixture.tokens(), ackBody(fixture, run))
+			.andExpect(status().isBadRequest());
+		String valid = ackBody(fixture, run);
+		String unknown = valid.substring(0, valid.length() - 1) + ",\"publicKey\":\"untrusted\"}";
+		ackCall(fixture, run, UUID.randomUUID(), unknown).andExpect(status().isBadRequest());
+		assertThat(runState(run)).isEqualTo("PENDING");
+	}
+
+	@Test
+	void concurrentCreationWithSameAndDifferentKeysFreezesOneVersion() throws Exception {
+		Fixture fixture = syncPendingUser();
+		UUID key = UUID.randomUUID();
+		UUID alias = UUID.randomUUID();
+		List<JsonNode> results = runConcurrently(() -> createEither(fixture, key), () -> createEither(fixture, key),
+			() -> createEither(fixture, alias));
+		assertThat(results).extracting(result -> result.path("syncRunId").asString()).containsOnly(
+			results.getFirst().path("syncRunId").asString());
+		assertThat(results).extracting(result -> result.path("settingsVersion").asLong()).containsOnly(
+			results.getFirst().path("settingsVersion").asLong());
+		assertThat(runCount(fixture)).isEqualTo(1);
+	}
+
+	@Test
+	void transactionRollbackRestoresCreationAndAcknowledgementTogether() throws Exception {
+		Fixture fixture = syncPendingUser();
+		UUID createKey = UUID.randomUUID();
+		TransactionTemplate transaction = new TransactionTemplate(transactions);
+		assertThatThrownBy(() -> transaction.executeWithoutResult(state -> {
+			try {
+				JsonNode run = create(fixture, createKey, nonce(1), 201);
+				ackCall(fixture, run, UUID.randomUUID(), ackBody(fixture, run)).andExpect(status().isOk());
+			} catch (Exception exception) {
+				throw new IllegalStateException("unexpected API failure", exception);
+			}
+			throw new IllegalStateException("synthetic rollback");
+		})).isInstanceOf(IllegalStateException.class).hasMessage("synthetic rollback");
+		assertThat(runCount(fixture)).isZero();
+		create(fixture, createKey, nonce(1), 201);
+	}
+
+	private JsonNode createEither(Fixture fixture, UUID key) throws Exception {
+		ResultActions result = createCall(fixture, key, nonce(1));
+		assertThat(result.andReturn().getResponse().getStatus()).isIn(200, 201);
+		return jsonMapper.readTree(result.andReturn().getResponse().getContentAsString());
+	}
+
+	private String runPath(Fixture fixture, JsonNode run) {
+		return basePath(fixture) + "/" + run.path("syncRunId").asString();
+	}
+
+	private String runState(JsonNode run) {
+		return jdbc.queryForObject("select state from keyring_sync_run where sync_run_id=?", String.class,
+			UUID.fromString(run.path("syncRunId").asString()));
 	}
 
 	private void assertServerSignature(Fixture fixture, JsonNode run) throws Exception {
