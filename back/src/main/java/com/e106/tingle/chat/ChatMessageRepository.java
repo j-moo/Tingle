@@ -21,9 +21,12 @@ public interface ChatMessageRepository extends JpaRepository<ChatMessage, Long> 
 	@Query(value = "select p.chat_id as \"roomId\", profile.nickname as \"partnerNickname\", "
 		+ "r.last_message_seq as \"lastMessageSeq\", left(last.body, " + LAST_MESSAGE_PREVIEW + ") as \"lastMessage\", "
 		+ "cast(floor(extract(epoch from last.created_at) * 1000) as bigint) as \"lastMessageAtMillis\", "
-		+ "exists (select 1 from chat_message m where m.chat_id=p.chat_id "
-		+ "and m.sender_participant_id<>p.id and (p.read_state->cast(m.id as text)->>'readAt') is null) "
-		+ "as \"hasNewMessage\" from chat_participant p join chat r on r.id=p.chat_id "
+		// last_read_message_seq 까지는 내 메시지이거나 읽은 메시지만 이어지므로(advanceContiguous) 그 뒤만 센다
+		+ "(select count(*) from (select 1 from chat_message m where m.chat_id=p.chat_id "
+		+ "and m.seq>p.last_read_message_seq and m.sender_participant_id<>p.id "
+		+ "and (p.read_state->cast(m.id as text)->>'readAt') is null "
+		+ "limit " + UNREAD_COUNT_LIMIT + ") unread) as \"unreadCount\" "
+		+ "from chat_participant p join chat r on r.id=p.chat_id "
 		+ "join matching pair on pair.id=r.matching_id "
 		+ "left join profile on profile.user_id=case when pair.user_low_id=p.user_id "
 		+ "then pair.user_high_id when pair.user_high_id=p.user_id then pair.user_low_id end "
@@ -39,7 +42,8 @@ public interface ChatMessageRepository extends JpaRepository<ChatMessage, Long> 
 
 		String getPartnerNickname();
 
-		boolean getHasNewMessage();
+		// 읽지 않은 상대 메시지 수(UNREAD_COUNT_LIMIT 에서 멈춘다). 0보다 크면 새 메시지가 있다
+		Long getUnreadCount();
 
 		// 본문과 같은 조회 시점의 순번(방 엔티티를 먼저 읽은 뒤 새 메시지가 와도 어긋나지 않게)
 		Long getLastMessageSeq();
@@ -51,6 +55,8 @@ public interface ChatMessageRepository extends JpaRepository<ChatMessage, Long> 
 
 	/** 목록 한 줄에 보여 줄 마지막 메시지 길이 */
 	int LAST_MESSAGE_PREVIEW = 100;
+	// 읽지 않은 수는 여기까지만 센다(앱 배지는 99 까지 표시)
+	int UNREAD_COUNT_LIMIT = 100;
 
 	@Query("select m from ChatMessage m join ChatMember p on p.id=m.senderParticipantId "
 		+ "where p.userId=:userId and m.requestKey=:key")

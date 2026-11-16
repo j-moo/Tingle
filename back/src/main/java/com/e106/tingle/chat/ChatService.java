@@ -159,10 +159,13 @@ public class ChatService {
 			var summary = summaries.get(room.getId());
 			String nickname = summary == null ? null : summary.getPartnerNickname();
 			Long at = summary == null ? null : summary.getLastMessageAtMillis();
-			return roomView(room, userId, true, summary != null && summary.getHasNewMessage(),
+			Integer unread = summary == null || summary.getUnreadCount() == null ? null
+				: summary.getUnreadCount().intValue();
+			return roomView(room, userId, true, unread != null && unread > 0,
 				nickname == null || nickname.isBlank() ? null : nickname,
 				summary == null ? null : summary.getLastMessageSeq(),
-				summary == null ? null : summary.getLastMessage(), at == null ? null : Instant.ofEpochMilli(at));
+				summary == null ? null : summary.getLastMessage(), at == null ? null : Instant.ofEpochMilli(at),
+				unread);
 		}).toList(), next, clock.instant());
 	}
 
@@ -399,11 +402,11 @@ public class ChatService {
 	}
 
 	private ChatRoomView roomView(ChatRoom room, long userId, boolean allowed) {
-		return roomView(room, userId, allowed, null, null, null, null, null);
+		return roomView(room, userId, allowed, null, null, null, null, null, null);
 	}
 
 	private ChatRoomView roomView(ChatRoom room, long userId, boolean allowed, Boolean hasNewMessage,
-		String partnerNickname, Long lastSequence, String lastMessage, Instant lastMessageAt) {
+		String partnerNickname, Long lastSequence, String lastMessage, Instant lastMessageAt, Integer unreadCount) {
 		Instant now = clock.instant();
 		boolean active = room.active(now);
 		Instant closed = room.getClosedAt() != null ? room.getClosedAt() : active ? null : room.getExpiresAt();
@@ -419,7 +422,8 @@ public class ChatService {
 			active && allowed ? partnerNickname : null,
 			active && allowed ? lastSequence : null,
 			active && allowed && lastSequence != null && lastSequence > 0 ? lastMessage : null,
-			active && allowed && lastSequence != null && lastSequence > 0 ? lastMessageAt : null);
+			active && allowed && lastSequence != null && lastSequence > 0 ? lastMessageAt : null,
+			active && allowed ? unreadCount : null);
 	}
 
 	private String encode(String value) {
