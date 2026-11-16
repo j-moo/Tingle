@@ -229,6 +229,11 @@ public class Ter2ReceiptService {
 		if (result.occurredAt().isAfter(clock.instant())) {
 			throw invalid();
 		}
+		// 검토(REVIEW) 기록은 판정 도구(keyring_peer_review_resolution 을 쓰는 곳)가 생길 때까지 모든 환경에서 받지 않는다.
+		// 받으면 REVIEW_QUARANTINED 행이 풀 길 없이 쌓인다. 도구가 생기면 이 거절을 지운다(끄고 켜는 설정은 두지 않는다).
+		if (result.kind() == Kind.REVIEW) {
+			throw unresolved();
+		}
 		Scope ownScope = signedScope(result.own(), result.occurredAt());
 		if (result.peer() != null) {
 			Scope peerScope = signedScope(result.peer(), result.occurredAt());

@@ -210,25 +210,13 @@ class Ter2ReceiptServiceTest {
 	}
 
 	@Test
-	void quarantinesAuthenticatedReviewAndRejectsAnotherOriginalForTheSameEvent() throws Exception {
-		byte[] review = raw.clone();
-		review[25] = 3;
-		review[27] = 2;
-		signSynthetic(review, 1);
-		var accepted = service.accept(1, 100, submission(review));
-		assertThat(accepted.encounterStatus()).isEqualTo("REVIEW_QUARANTINED");
-		assertThat(accepted.proof().receiptStatus()).isEqualTo("STORED");
-		assertThatThrownBy(() -> service.accept(1, 100, submission(raw)))
-			.isInstanceOf(BusinessException.class).extracting("errorCode").isEqualTo(ErrorCode.IDEMPOTENCY_CONFLICT);
-		assertThat(jdbc.queryForObject("select count(*) from keyring_peer_encounter", Long.class)).isEqualTo(1);
-	}
-
-	@Test
-	void reviewWithoutPeerAcceptsEmptyCredentialButConfirmedRecordDoesNot() throws Exception {
+	void reviewWithoutPeerIsRejectedAndConfirmedRecordNeedsACredential() throws Exception {
 		byte[] review = emptyPeerReview(raw);
 		Submission request = submission(review);
 		assertThat(request.peerCredential()).isEmpty();
-		assertThat(service.accept(1, 100, request).encounterStatus()).isEqualTo("REVIEW_QUARANTINED");
+		// REVIEW 접수는 판정 도구가 생길 때까지 모든 환경에서 거절한다.
+		assertThatThrownBy(() -> service.accept(1, 100, request)).isInstanceOf(BusinessException.class)
+			.extracting("errorCode").isEqualTo(ErrorCode.POLICY_UNRESOLVED);
 		Submission normal = submission(raw);
 		Submission missing = new Submission(normal.submissionId(), normal.eventId(), normal.occurredAt(),
 			normal.policyVersion(), normal.matchingRuleVersion(), normal.settingsSnapshotId(), "", normal.evidence());
@@ -321,12 +309,15 @@ class Ter2ReceiptServiceTest {
 	}
 
 	@Test
-	void reviewIsStoredInQuarantineWithoutWaitingForCounterpart() throws Exception {
+	void reviewIsRejectedUntilReviewToolingExistsAndStoresNothing() throws Exception {
 		byte[] review = raw.clone();
 		review[25] = 3;
 		review[27] = 2;
 		signSynthetic(review, 1);
-		assertThat(service.accept(1, 100, submission(review)).encounterStatus()).isEqualTo("REVIEW_QUARANTINED");
+		assertThatThrownBy(() -> service.accept(1, 100, submission(review)))
+			.isInstanceOf(BusinessException.class).extracting("errorCode").isEqualTo(ErrorCode.POLICY_UNRESOLVED);
+		assertThat(jdbc.queryForObject("select count(*) from keyring_peer_encounter", Long.class)).isZero();
+		assertThat(service.accept(1, 100, submission(raw)).encounterStatus()).isEqualTo("WAITING_COUNTERPART");
 	}
 
 	@Test

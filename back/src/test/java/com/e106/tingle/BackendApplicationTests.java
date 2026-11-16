@@ -14,8 +14,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 
 @Import(TestcontainersConfiguration.class)
-// 설계 DDL(schema.sql)의 표만 센다. 엔티티가 아닌 키링 초기화·TSV3 표(application-erd.yml)는 만들지 않는다.
-@SpringBootTest(properties = "spring.sql.init.schema-locations=classpath:database/schema.sql")
+@SpringBootTest
 @ActiveProfiles({"test", "erd"})
 class BackendApplicationTests {
 
