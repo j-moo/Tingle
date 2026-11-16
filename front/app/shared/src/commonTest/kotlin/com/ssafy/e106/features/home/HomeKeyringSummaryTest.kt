@@ -90,4 +90,34 @@ class HomeKeyringSummaryTest {
             Dispatchers.resetMain()
         }
     }
+
+    // 처음 여는 홈에서 키링 목록 조회가 실패하면 등록 상태를 단정하지 않는다(미확인)
+    @Test fun firstEntryKeyringLookupFailureIsUnknown() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        val models = ViewModelStore()
+        val client = createHttpClient("https://test/api/", httpLog = false, engine = MockEngine { error("unused") })
+        try {
+            val auth = object : AuthRepository {
+                override fun available(provider: Provider) = error("unused")
+                override suspend fun login(provider: Provider) = error("unused")
+                override suspend fun logout() = error("unused")
+            }
+            val settings = object : MatchingSettingsRepository {
+                override suspend fun get(userId: Long, kind: SettingsKind) =
+                    ApiResult.Ok(SettingsDocument(ConflictValues.Matching(true, false), null))
+                override suspend fun save(userId: Long, kind: SettingsKind, values: ConflictValues, etag: String) = error("unused")
+            }
+            val owned = object : OwnedKeyringRepository { override suspend fun list() = ApiResult.Fail(AppError.Offline) }
+            val vm = HomeSessionViewModel(HttpProfileRepository(client), settings, HttpOnboardingRepository(client),
+                TestSession(OnboardingStatus.READY), auth, owned, prefs = HomeTestPrefs()).also { models.put("home", it) }
+            vm.home(); runCurrent()
+            assertEquals(HomeLoadState.Ready, vm.state.value.home.load)
+            assertEquals(HomeKeyringState.Unknown, vm.state.value.home.keyring)
+            assertEquals(true, vm.state.value.home.matchingEnabled)
+        } finally {
+            models.clear()
+            client.close()
+            Dispatchers.resetMain()
+        }
+    }
 }

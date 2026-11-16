@@ -155,19 +155,20 @@ class HomeSessionKeepTest {
             assertEquals(false, vm.state.value.home.matchingEnabled)
             assertTrue(vm.state.value.home.savingMatching)
 
-            // 다른 곳에서 먼저 바뀜: 서버 최신 값(꺼짐, 사진 조건 바뀜)
-            settings.current = SettingsDocument(ConflictValues.Matching(false, true), "\"v3\"")
+            // 다른 곳에서 먼저 바뀜: 누른 값(꺼짐)이 아니라 서버 최신 값(켜짐, 사진 조건 바뀜)을 보여 준다
+            settings.current = SettingsDocument(ConflictValues.Matching(true, true), "\"v3\"")
             settings.saveGate!!.complete(Unit); runCurrent()
             assertTrue(vm.state.value.home.matchingSaveFailed)
-            assertEquals(false, vm.state.value.home.matchingEnabled)
-
-            // 최신 값도 못 받음: 누르기 전 값(꺼짐)으로 돌아간다
-            settings.saveGate = CompletableDeferred(); settings.getOffline = true
-            vm.setMatching(true); runCurrent()
             assertEquals(true, vm.state.value.home.matchingEnabled)
+
+            // 최신 값도 못 받음: 누르기 전 값(켜짐)으로 돌아간다. 저장은 받아 둔 최신 값(사진 조건 켜짐)에 맞춰 보냈다
+            settings.saveGate = CompletableDeferred(); settings.getOffline = true
+            vm.setMatching(false); runCurrent()
+            assertEquals(false, vm.state.value.home.matchingEnabled)
+            assertEquals(ConflictValues.Matching(false, true), settings.saves.last())
             settings.saveGate!!.complete(Unit); runCurrent()
             assertTrue(vm.state.value.home.matchingSaveFailed)
-            assertEquals(false, vm.state.value.home.matchingEnabled)
+            assertEquals(true, vm.state.value.home.matchingEnabled)
             assertFalse(vm.state.value.home.savingMatching)
         }
     }
