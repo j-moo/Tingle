@@ -110,6 +110,7 @@ class LifecycleProfileServer : ProfileRepository, OptionalProfileRepository {
         writes++; saveGate?.await()
         if (offline) return ApiResult.Fail(AppError.Offline)
         data = data.copy(introduction = fields["introduction"]?.jsonPrimitive?.contentOrNull ?: data.introduction,
+            religion = fields["religion"]?.jsonPrimitive?.contentOrNull ?: data.religion,
             nickname = fields["nickname"]?.jsonPrimitive?.content ?: data.nickname)
         return ApiResult.Ok(data)
     }
@@ -216,6 +217,28 @@ class ProfileLifecycleDeviceTest {
             compose.onNodeWithText("저장하지 않고 나가기").performClick()
             compose.onNodeWithText("내 프로필").assertExists()
             scenario.onActivity { assertEquals(0, f.server.writes); assertEquals("Tester", f.server.data.nickname) }
+        }
+    }
+    @Test fun editReligionChipConsentsPicksAndSavesInSheets() {
+        // 수정 화면: 종교 칩 → 동의 시트 → 선택 시트 → 완료하면 칩이 새 값으로 바뀐다
+        val f = ProfileLifecycleFixture(management = true)
+        f.server.records = f.server.records.map {
+            if (it.type == OptionalConsentType.PROFILE_RELIGION) OptionalConsentRecord(it.type, "v1", false) else it
+        }
+        launch(f).use { scenario ->
+            compose.waitUntil(5_000) {
+                var ready = false; scenario.onActivity { ready = it.editModel.state.value.canEdit }; ready
+            }
+            compose.onNodeWithContentDescription("프로필 수정").performClick()
+            val religionChip = hasContentDescription("종교 추가") and isEnabled()
+            compose.waitUntil(10_000) { compose.onAllNodes(religionChip).fetchSemanticsNodes().isNotEmpty() }
+            compose.onNode(religionChip).performScrollTo().performClick()
+            compose.onNodeWithText("동의하고 입력하기").performClick()
+            compose.waitUntil(10_000) { compose.onAllNodesWithText("불교").fetchSemanticsNodes().isNotEmpty() }
+            compose.onNodeWithText("불교").performClick()
+            compose.onNodeWithText("완료").performClick()
+            compose.waitUntil(10_000) { compose.onAllNodesWithContentDescription("종교: 불교, 바꾸기").fetchSemanticsNodes().isNotEmpty() }
+            assertEquals("BUDDHIST", f.server.data.religion); assertEquals(1, f.server.consentWrites)
         }
     }
     @Test fun pickerResultAndCropSurviveRecreationWithoutRelaunchOrUpload() {
