@@ -12,7 +12,7 @@
     <string name="profile_male">남성</string>
     <string name="profile_female">여성</string>
     <string name="profile_notice_title">등록 전에 확인해 주세요</string>
-    <string name="profile_notice_body">만 19세 이상부터 이용할 수 있어요. 프로필 등록 후 생년월일과 성별은 직접 바꿀 수 없어요. 정정이 필요하면 서비스팀에 문의해 주세요.</string>
+    <string name="profile_notice_body">만 19세 이상부터 이용할 수 있어요. 프로필 등록 후에는 생년월일과 성별을 바꿀 수 없으니 등록 전에 한 번 더 확인해 주세요.</string>
     <string name="profile_continue">다음</string>
     <string name="profile_saving">저장 중…</string>
     <string name="profile_confirm_basics_title">생년월일과 성별을 확인해 주세요</string>

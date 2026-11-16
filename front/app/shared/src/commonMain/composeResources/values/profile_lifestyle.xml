@@ -17,4 +17,17 @@
     <string name="profile_drinking_often">주 4회 이상</string>
     <string name="profile_drinking_days_help">음주 횟수는 술을 마신 날을 기준으로 선택해 주세요. 같은 날 여러 번 마셔도 1회로 세어요.</string>
     <string name="profile_drinking_special_help">‘중요한 자리일 때만’은 평소에는 마시지 않고, 본인이 특별하다고 생각하는 자리에서만 마시는 경우예요.</string>
+    <!-- 프로필 보기 · 수정의 생활 칩. 음주는 항목명 없이 값만 보여서 "음주"를 붙인다 -->
+    <string name="profile_drinking_never_chip">전혀 안 마심</string>
+    <string name="profile_drinking_special_chip">중요한 자리에서만 음주</string>
+    <string name="profile_drinking_monthly_less_chip">월 1회 이하 음주</string>
+    <string name="profile_drinking_monthly_chip">월 2~4회 음주</string>
+    <string name="profile_drinking_weekly_chip">주 2~3회 음주</string>
+    <string name="profile_drinking_often_chip">주 4회 이상 음주</string>
+    <!-- 칩 줄을 화면 리더가 한 문장으로 읽는다(예: "흡연 비흡연, 음주 월 2~4회, 종교 무교") -->
+    <string name="profile_chips_smoking">흡연 %1$s</string>
+    <string name="profile_chips_drinking">음주 %1$s</string>
+    <string name="profile_chips_religion">종교 %1$s</string>
+    <string name="profile_intro_card">소개</string>
+    <string name="profile_intro_empty">아직 소개가 없어요</string>
 </resources>

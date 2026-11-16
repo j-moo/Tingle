@@ -1,23 +1,27 @@
 <resources>
     <string name="profile_edit_title">프로필 수정</string>
-    <string name="profile_edit_heading">지금의 나를 알려 주세요</string>
-    <string name="profile_edit_help">변경한 내용은 저장한 뒤 반영돼요.</string>
-    <string name="profile_edit_identity">변경할 수 없는 정보</string>
     <string name="profile_edit_birth_date_value">생년월일 · %1$s</string>
     <string name="profile_edit_gender_value">성별 · %1$s</string>
-    <string name="profile_edit_locked">생년월일과 성별은 직접 수정할 수 없어요. 잘못 입력했다면 서비스팀에 정정을 요청해 주세요.</string>
-    <string name="profile_edit_correction">정보 정정 문의</string>
+    <string name="profile_edit_locked">생년월일과 성별은 가입 후에는 바꿀 수 없어요.</string>
     <string name="profile_edit_save">변경 내용 저장</string>
     <string name="profile_edit_nickname_invalid">닉네임은 한글·영문·숫자·공백으로 2~20자 입력해 주세요.</string>
     <string name="profile_edit_smoking">흡연</string>
     <string name="profile_edit_drinking">음주</string>
-    <string name="profile_edit_choose">선택해 주세요</string>
-    <string name="profile_edit_change">%1$s · %2$s</string>
-    <string name="profile_edit_photo_registered">프로필 사진이 등록되어 있어요</string>
     <string name="profile_edit_photo_manage">사진 관리</string>
-    <string name="profile_edit_cancel">닫기</string>
     <string name="profile_edit_discard_title">변경 내용을 저장하지 않고 나갈까요?</string>
     <string name="profile_edit_discard_body">수정 중인 내용은 사라지고 기존 프로필이 유지돼요.</string>
     <string name="profile_edit_discard">저장하지 않고 나가기</string>
     <string name="profile_edit_keep">계속 수정하기</string>
+    <!-- 수정 화면 생활 칩. 값이 없으면 점선 칩에 "흡연 선택"처럼 쓴다 -->
+    <string name="profile_smoking_pick">흡연 선택</string>
+    <string name="profile_drinking_pick">음주 선택</string>
+    <string name="profile_chip_change">%1$s: %2$s, 바꾸기</string>
+    <string name="profile_religion_add">종교 추가</string>
+    <string name="profile_religion_hidden">종교 비공개</string>
+    <string name="profile_intro_add">소개 추가</string>
+    <string name="profile_intro_edit">고치기</string>
+    <!-- 수정 화면의 종교 · 소개 시트. 아래 "저장"과 달리 완료하면 바로 저장한다 -->
+    <string name="profile_sheet_saves_now">완료하면 바로 저장돼요.</string>
+    <string name="profile_sheet_done">완료</string>
+    <string name="profile_sheet_withdraw">동의 철회</string>
 </resources>
