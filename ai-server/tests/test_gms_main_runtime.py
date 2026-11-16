@@ -415,3 +415,17 @@ def test_actual_asgi_disconnect_cancels_provider_and_sends_no_response(configure
         assert factory.transports[0].closed
         provider.assert_called_once()
     host.client.portal.call(scenario)
+
+
+@pytest.mark.parametrize("environment", ["dev", "prod"])
+def test_injected_gms_without_release_fails_startup_in_every_environment(main_factory, environment):
+    # 주입된 GMS는 환경과 무관하게 같은 경로를 탄다. Release가 없으면 조용히 꺼지지 않고 기동을 거절한다.
+    factory = Mock(side_effect=AssertionError("constructed a client without a release"))
+    configuration = GmsPrimaryConfiguration(
+        enabled=True, approval_file="must-not-read", approval_sha256="must-not-read", client_factory=factory)
+    host = main_factory(environment=environment, gms_primary=configuration, configured=False, start=False)
+    with pytest.raises(DevelopmentReleaseError):
+        with host.client:
+            pass
+    assert host.client.app.state.risk_runtime.resources is None
+    factory.assert_not_called()
