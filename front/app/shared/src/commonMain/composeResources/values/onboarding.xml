@@ -66,4 +66,5 @@
     <string name="required_consent_introduction">자기소개 수집·이용 동의</string>
     <string name="required_consent_agree">동의하고 계속하기</string>
     <string name="required_consent_logout">동의하지 않고 로그아웃</string>
+    <string name="onboarding_hub_edit">수정하기</string>
 </resources>

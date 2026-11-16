@@ -1,6 +1,5 @@
 package com.ssafy.e106.features.proposals.ui
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -52,7 +51,7 @@ fun ProposalListScreen(state: ProposalListState, onOpenProposal: (Long) -> Unit,
     }
     // 1분마다 남은 시간을 다시 그린다(값은 서버 기준 마감에서 받은 뒤 흐른 시간만 빼서 계산 — 기기 시계를 쓰지 않음)
     val tick by produceState(0) { while (true) { delay(60_000); value++ } }
-    Surface(modifier.fillMaxSize(), color = AppColors.Background) {
+    Surface(modifier.fillMaxSize(), color = AppColors.Screen) {
         Column(Modifier.fillMaxSize().safeDrawingPadding()) {
             AppTopBar(stringResource(Res.string.proposal_list_title))
             val refresh = { if (state.load != ProposalListLoad.Loading && !state.refreshing) onAction(ProposalListAction.Refresh) }
@@ -164,8 +163,7 @@ private fun ProposalRow(item: ProposalListItem, tick: Int, onOpenProposal: (Long
 /** 끝난 제안 한 줄: "매칭이 안 된 제안이 있어요" / "기한이 지난 제안이 있어요"(상대 이름은 남기지 않음). 누르면 결과 화면 → 확인하면 사라짐 */
 @Composable
 private fun EndedRow(item: ProposalListItem, onOpenProposal: (Long) -> Unit) {
-    Row(Modifier.fillMaxWidth().heightIn(min = AppSpacing.ControlMinHeight).clip(AppShapes.Card)
-        .background(AppColors.SurfaceMuted)
+    Row(Modifier.fillMaxWidth().heightIn(min = AppSpacing.ControlMinHeight).glass(AppShapes.Card, AppColors.SurfaceMuted)
         .clickable(role = Role.Button) { onOpenProposal(item.proposalId) }
         .padding(AppSpacing.Large),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(AppSpacing.Medium)) {

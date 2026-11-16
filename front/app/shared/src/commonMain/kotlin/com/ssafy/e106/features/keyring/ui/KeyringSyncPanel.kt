@@ -94,7 +94,7 @@ import org.koin.compose.viewmodel.koinViewModel
 @Composable internal fun OwnedKeyringSyncScreen(list: OwnedKeyringsState, selectedId: Long?, aliases: Map<Long, String>,
     availability: BleAvailability, link: BleProbeState, syncing: Boolean, onBack: () -> Unit, onRefresh: () -> Unit,
     onSelect: (OwnedKeyring) -> Unit, result: @Composable () -> Unit) {
-    Surface(Modifier.fillMaxSize(), color = AppColors.Background) {
+    Surface(Modifier.fillMaxSize(), color = AppColors.Screen) {
         Column(Modifier.fillMaxSize().safeDrawingPadding(), horizontalAlignment = Alignment.CenterHorizontally) {
             BackArrowBar(onBack)
             // 키링 연결 화면처럼 제목 · 목록 · 버튼 묶음을 남은 공간 가운데에 둔다(넘치면 스크롤)
@@ -226,7 +226,7 @@ import org.koin.compose.viewmodel.koinViewModel
     if ((failed || retrying) && !closed) ModalBottomSheet(onDismissRequest = { if (!locked) closedFor = failKey },
         // 반만 열린 상태로 멈추지 않고 내용 높이(화면 70%)까지 한 번에 올라오게 한다. 보내는 중엔 끌어내려도 닫히지 않는다
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true,
-            confirmValueChange = { it != SheetValue.Hidden || !lockedNow }), containerColor = AppColors.Background, dragHandle = null) {
+            confirmValueChange = { it != SheetValue.Hidden || !lockedNow }), containerColor = AppColors.Sheet, dragHandle = null) {
         SyncFailSheetContent(locked, onRetry = { retrying = true; retryAll() }, onClose = { closedFor = failKey })
     }
     if (pickExisting && serial != null) Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally,

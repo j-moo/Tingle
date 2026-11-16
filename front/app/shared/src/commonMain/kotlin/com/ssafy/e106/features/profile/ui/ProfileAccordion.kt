@@ -116,7 +116,7 @@ fun ProfileAccordionScreen(
     // 머리줄은 기본 · 생활 저장 중에만 잠근다(선택 프로필 다시 불러오기는 들어올 때 · 사진 선택에서 돌아올 때마다 돌아서 막으면 깜빡인다)
     val busy = basics.saving || lifestyle.saving
     val locked = busy || (page == ProfilePage.Optional && optional.details.saving)   // 선택 프로필 저장 중 섹션을 바꾸면 저장 결과가 버려진다
-    Surface(Modifier.fillMaxSize(), color = AppColors.Background) {
+    Surface(Modifier.fillMaxSize(), color = AppColors.Screen) {
         Column(Modifier.fillMaxSize().safeDrawingPadding().imePadding()) {
             AppTopBar(stringResource(Res.string.profile_flow_title), onBack = onBack)
             Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.TopCenter) {
@@ -208,8 +208,8 @@ internal fun ProfileAccordionSkeleton(onBack: (() -> Unit)? = null) {
 private fun Section(title: StringResource, open: Boolean, enabled: Boolean, onToggle: () -> Unit, content: @Composable ColumnScope.() -> Unit) {
     val state = stringResource(if (open) Res.string.profile_section_expanded else Res.string.profile_section_collapsed)
     val turn by animateFloatAsState(if (open) 90f else -90f)   // 왼쪽 화살표를 돌려 접힘 ↓ · 펼침 ↑
-    Surface(shape = RoundedCornerShape(14.dp), color = AppColors.Background,
-        border = BorderStroke(1.5.dp, if (open) OpenBorder else AppColors.BorderSubtle), shadowElevation = if (open) 2.dp else 0.dp) {
+    Surface(Modifier.frost(RoundedCornerShape(14.dp)), shape = RoundedCornerShape(14.dp), color = AppColors.Background,
+        border = if (open) BorderStroke(1.5.dp, OpenBorder) else GlassBorder) {
         Column {
             Row(Modifier.fillMaxWidth().clickable(enabled, role = Role.Button, onClick = onToggle)
                 .semantics(mergeDescendants = true) { stateDescription = state }

@@ -75,7 +75,7 @@ fun ProfileBasicsScreen(
     onContinue: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    Surface(modifier.fillMaxSize(), color = AppColors.Background) {
+    Surface(modifier.fillMaxSize(), color = AppColors.Screen) {
         BoxWithConstraints(Modifier.fillMaxSize().safeDrawingPadding().imePadding()) {
             // 가로+IME처럼 실제 남은 높이가 짧으면 제목/다음을 스크롤 안으로 옮긴다.
             // 입력 폼 자체는 같은 컴포지션 위치에 유지해 키보드 개폐로 포커스나 입력이 초기화되지 않는다.

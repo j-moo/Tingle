@@ -59,7 +59,7 @@ fun ProfileDetailsScreen(
                 loadingText = stringResource(Res.string.profile_saving), onClick = onContinue)
         }
     }
-    Surface(modifier.fillMaxSize(), color = AppColors.Background) {
+    Surface(modifier.fillMaxSize(), color = AppColors.Screen) {
         BoxWithConstraints(Modifier.fillMaxSize().safeDrawingPadding().imePadding()) {
             val compactHeight = maxHeight < 320.dp
             Column(Modifier.fillMaxSize()) {
@@ -222,7 +222,7 @@ internal fun ProfileReligionBlock(
                 val selected = state.religion == option
                 AppRadio(selected = selected, onSelect = { onReligionChange(option) },
                     label = stringResource(option.label()), enabled = state.editable && state.religionConsent,
-                    modifier = Modifier.background(if (selected) AppColors.SelectionContainer else AppColors.SurfaceMuted, AppShapes.Control))
+                    modifier = Modifier.background(if (selected) AppColors.SelectionContainer else AppColors.SurfaceMuted, AppShapes.Small))
             }
         }
     }

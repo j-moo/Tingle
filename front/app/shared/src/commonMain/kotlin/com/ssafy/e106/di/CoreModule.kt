@@ -62,7 +62,7 @@ fun coreModule(baseUrl: String, httpLog: Boolean, socialKeys: SocialKeys) = modu
     single<HttpClient> { get<DefaultSessionStore>().client }
     single<AuthRepository> { DefaultAuthRepository(get(), get()) }
     single<PushDevice> { platformPushDevice() }
-    single { DefaultPushEvents(get(), CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)) }   // 메인 스레드 전용
+    single { DefaultPushEvents(get(), CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)) { room -> get<PushDevice>().clearChat(room) } }   // 메인 스레드 전용
     single<PushEvents> { get<DefaultPushEvents>() }
     single { com.ssafy.e106.core.push.NotificationInbox(get()) }
     // 세션 상태를 지켜보며 계정 데이터를 지우므로 앱 시작부터 만든다

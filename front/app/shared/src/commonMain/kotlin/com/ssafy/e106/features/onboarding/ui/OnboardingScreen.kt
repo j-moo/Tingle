@@ -88,7 +88,10 @@ fun OnboardingRoute(
             hubPreferences = if (canSettings && !session.isReady && session.status == OnboardingStatus.PREFERENCES_REQUIRED)
                 ({ HubAgePreference(session, onOpenFull = { openSettings = true }) }) else null,
             hubSync = if (canSettings && !session.isReady && session.status == OnboardingStatus.PREFERENCES_REQUIRED)
-                ({ HubSyncStart(session) }) else null)
+                ({ HubSyncStart(session) }) else null,
+            // 완료한 희망 나이는 그 줄 안에서 고친다(키링 동기화 단계)
+            hubAgeEdit = if (canSettings && !session.isReady && session.status == OnboardingStatus.SYNC_PENDING)
+                ({ HubAgePreference(session, onOpenFull = { openSettings = true }) }) else null)
     }
 }
 
@@ -116,6 +119,8 @@ fun OnboardingScreen(
     hubPreferences: (@Composable ColumnScope.() -> Unit)? = null,
     /** 희망 나이 단계에서 미리 열어 두는 키링 동기화 줄의 버튼 */
     hubSync: (@Composable ColumnScope.() -> Unit)? = null,
+    /** 완료한 희망 나이 줄을 펼쳤을 때 그 자리에서 고치는 입력 */
+    hubAgeEdit: (@Composable ColumnScope.() -> Unit)? = null,
     onWithdraw: (() -> Unit)? = null,
 ) {
     val session = state.session ?: return
@@ -144,7 +149,14 @@ fun OnboardingScreen(
         }
         SignupHub(hub, hubSeen, onHubSettled, start, state.busy, state.error?.let { it.stateTitle() }, onLogout, onRefresh,
             inline = hubPreferences.takeIf { session.status == OnboardingStatus.PREFERENCES_REQUIRED },
-            nextInline = hubSync.takeIf { session.status == OnboardingStatus.PREFERENCES_REQUIRED })
+            nextInline = hubSync.takeIf { session.status == OnboardingStatus.PREFERENCES_REQUIRED },
+            // 완료한 단계 고치기: 프로필 = 프로필 관리 화면, 성향테스트 = 성향테스트 화면("답 수정하기"), 희망 나이 = 그 줄 안에서
+            onEdit = { row -> when (row) {
+                1 -> onManageProfile.takeIf { canManageProfile }
+                2 -> onOpenSurvey.takeIf { canOpenSurvey }
+                else -> null
+            } },
+            editInline = { row -> hubAgeEdit.takeIf { row == 3 } })
         return
     }
     // 약관 항목이 보이는 동안은 당겨도 다시 받지 않는다(다시 받으면 체크가 지워진다). 못 받았거나 저장 뒤 확인이 남았을 때만 당긴다
@@ -224,7 +236,7 @@ fun OnboardingScreen(
 @Composable
 internal fun OnboardingPanel(title: String, refreshing: Boolean = false, onRefresh: (() -> Unit)? = null,
     bottom: (@Composable ColumnScope.() -> Unit)? = null, content: @Composable ColumnScope.() -> Unit) {
-    Surface(Modifier.fillMaxSize(), color = AppColors.Background) {
+    Surface(Modifier.fillMaxSize(), color = AppColors.Screen) {
         Column(Modifier.fillMaxSize().safeDrawingPadding(), horizontalAlignment = Alignment.CenterHorizontally) {
             val body: @Composable BoxScope.() -> Unit = {
                 // 내용이 짧아도 빈 곳을 당길 수 있게 화면 높이를 다 쓴다

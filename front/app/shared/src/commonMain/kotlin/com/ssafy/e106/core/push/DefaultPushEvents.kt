@@ -16,7 +16,9 @@ import kotlinx.coroutines.launch
  * 로그아웃 상태에서 눌린 알림은 담지 않고, 복원 중(콜드 스타트)이면 담았다가 복원 결과가 로그아웃 · 다른 계정이면 버린다. 로그아웃 · 만료 때 비운다.
  * [tap] 과 [pending] 을 함께 바꾸므로 메인 스레드에서만 쓴다: open · consume 은 화면이, 세션 구독은 [scope](Dispatchers.Main)가 부른다
  */
-internal class DefaultPushEvents(private val session: SessionStore, scope: CoroutineScope) : PushEvents {
+internal class DefaultPushEvents(private val session: SessionStore, scope: CoroutineScope,
+    /** 대화방을 화면에 띄웠을 때(그 방의 알림 지우기) */
+    private val onRoomShown: (Long) -> Unit = {}) : PushEvents {
     private class Tap(val target: PushTarget, val forUser: Long)
 
     private var tap: Tap? = null
@@ -28,7 +30,7 @@ internal class DefaultPushEvents(private val session: SessionStore, scope: Corou
     /** 화면에 떠 있는 대화방. 화면(메인)이 쓰고 FCM 작업 스레드가 읽는다 */
     @kotlin.concurrent.Volatile var viewingRoom: Long? = null
         private set
-    override fun viewing(room: Long?) { viewingRoom = room }
+    override fun viewing(room: Long?) { viewingRoom = room; room?.let(onRoomShown) }
     private val recentProposals = LinkedHashSet<Triple<Long, String, Long>>()
 
     /** 메인 스레드에서 중복 수신을 거른다. 알림 ID도 제안별로 고정해 재시작 후 같은 알림이 쌓이지 않게 한다. */

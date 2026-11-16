@@ -36,7 +36,7 @@ fun ProposalProfileScreen(
     val ready = state.load == ProposalProfileLoad.Ready && state.profile != null && state.profile.photoState != ProposalPhotoState.Unavailable
     val loading = state.load == ProposalProfileLoad.Loading
     val unavailable = !loading && (state.load == ProposalProfileLoad.Unavailable || state.profile?.photoState == ProposalPhotoState.Unavailable)
-    Surface(modifier.fillMaxSize(), color = AppColors.Background) {
+    Surface(modifier.fillMaxSize(), color = AppColors.Screen) {
         Column(Modifier.fillMaxSize().safeDrawingPadding()) {
             Box(Modifier.fillMaxWidth().heightIn(min = AppSizes.TopBarMinHeight).padding(horizontal = AppSpacing.Small),
                 contentAlignment = Alignment.CenterStart) {
@@ -153,7 +153,7 @@ private fun DecisionBar(state: ProposalProfileState, onAction: (ProposalProfileA
 
 @Composable
 private fun ProfileSection(title: String, color: androidx.compose.ui.graphics.Color, content: @Composable ColumnScope.() -> Unit) {
-    Surface(shape = AppShapes.Card, color = color) {
+    Surface(Modifier.frost(), shape = AppShapes.Card, color = color, border = GlassBorder) {
         Column(Modifier.fillMaxWidth().padding(AppSpacing.Large),
             verticalArrangement = Arrangement.spacedBy(AppSpacing.Medium)) {
             Text(title, style = MaterialTheme.typography.titleMedium, modifier = Modifier.semantics { heading() })

@@ -78,7 +78,7 @@ internal fun KeyringIntro(
     /** 가입을 마친 뒤 키링을 모두 초기화해 이 화면에 온 계정만: 탈퇴는 키링이 없어야 할 수 있어 여기서도 열어 준다 */
     onWithdraw: (() -> Unit)? = null,
 ) {
-    Surface(Modifier.fillMaxSize(), color = AppColors.Background) {
+    Surface(Modifier.fillMaxSize(), color = AppColors.Screen) {
         Column(Modifier.fillMaxSize().safeDrawingPadding(), horizontalAlignment = Alignment.CenterHorizontally) {
             val (refreshing, pull) = pullRefresh(busy, onReload)
             PullDownRefreshBox(refreshing, pull, Modifier.weight(1f).fillMaxWidth()) {

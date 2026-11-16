@@ -107,7 +107,7 @@ import org.koin.compose.viewmodel.koinViewModel
 @Composable
 private fun SettingsFrame(title: String, onBack: () -> Unit, refreshing: Boolean = false, onRefresh: (() -> Unit)? = null,
     notice: @Composable ColumnScope.() -> Unit = {}, bottom: @Composable ColumnScope.() -> Unit, content: @Composable ColumnScope.() -> Unit) {
-    Surface(Modifier.fillMaxSize(), color = AppColors.Background) {
+    Surface(Modifier.fillMaxSize(), color = AppColors.Screen) {
         Column(Modifier.fillMaxSize().safeDrawingPadding(), horizontalAlignment = Alignment.CenterHorizontally) {
             AppTopBar(title, onBack = onBack)
             // 빈 곳을 당겨도 새로고침이 되게 화면 높이를 다 쓰고 스크롤할 수 있게 둔다

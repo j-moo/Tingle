@@ -5,10 +5,12 @@ import androidx.compose.material3.Shapes
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 
-private val lightScheme = lightColorScheme(
+private val glassScheme = lightColorScheme(
     primary = AppColors.ActionPrimary, onPrimary = AppColors.OnPrimary,
     secondary = AppColors.ActionPrimary, onSecondary = AppColors.OnPrimary,
-    background = AppColors.Background, onBackground = AppColors.TextPrimary,
+    background = AppColors.Screen, onBackground = AppColors.TextPrimary,
+    surfaceContainerLowest = AppColors.Sheet, surfaceContainerLow = AppColors.Sheet, surfaceContainer = AppColors.Sheet,
+    surfaceContainerHigh = AppColors.Sheet, surfaceContainerHighest = AppColors.Sheet,
     surface = AppColors.Background, onSurface = AppColors.TextPrimary,
     surfaceVariant = AppColors.SurfaceMuted, onSurfaceVariant = AppColors.TextSecondary,
     outline = AppColors.BorderControl,
@@ -18,7 +20,7 @@ private val lightScheme = lightColorScheme(
 @Composable
 fun AppTheme(content: @Composable () -> Unit) = ProvidePreviewResources {
     MaterialTheme(
-        colorScheme = lightScheme,
+        colorScheme = glassScheme,
         typography = appTypography(),
         shapes = Shapes(small = AppShapes.Control, medium = AppShapes.Control),
         content = content,

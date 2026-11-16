@@ -1,5 +1,6 @@
 package com.ssafy.e106.core.ui.components
 
+import com.ssafy.e106.core.ui.theme.frost
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.padding
@@ -13,6 +14,7 @@ import androidx.compose.ui.unit.dp
 import com.ssafy.e106.core.ui.theme.AppColors
 import com.ssafy.e106.core.ui.theme.AppShapes
 import com.ssafy.e106.core.ui.theme.AppSpacing
+import com.ssafy.e106.core.ui.theme.GlassBorder
 
 /**
  * 채팅 말풍선. 본문 + 시각 같은 메타. Figma 01 Tingle/Message.
@@ -20,7 +22,7 @@ import com.ssafy.e106.core.ui.theme.AppSpacing
  */
 @Composable
 fun MessageBubble(text: String, meta: String, modifier: Modifier = Modifier) {
-    Surface(modifier = modifier.widthIn(max = BubbleMaxWidth), shape = AppShapes.Card, color = AppColors.SurfaceMuted) {
+    Surface(modifier = modifier.widthIn(max = BubbleMaxWidth).frost(), shape = AppShapes.Card, color = AppColors.SurfaceMuted, border = GlassBorder) {
         Column(
             Modifier.padding(horizontal = AppSpacing.Large, vertical = AppSpacing.Medium),
             verticalArrangement = Arrangement.spacedBy(AppSpacing.Medium),

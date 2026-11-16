@@ -14,6 +14,7 @@
     <string name="survey_saved">답변을 저장했어요.</string>
     <string name="survey_save_failed">답변을 저장하지 못했어요. 선택한 답변으로 다시 시도해 주세요.</string>
     <string name="survey_previous">이전 문항</string>
+    <string name="survey_edit_finish">수정 마치기</string>
     <string name="survey_next">다음</string>
     <string name="survey_review_submit">제출 단계로</string>
     <string name="survey_resume_title">하던 테스트가 있어요</string>

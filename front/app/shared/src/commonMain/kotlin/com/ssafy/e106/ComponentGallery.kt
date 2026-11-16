@@ -38,12 +38,9 @@ import com.ssafy.e106.core.ui.components.ProfilePlaceholder
 import com.ssafy.e106.core.ui.components.ServiceRow
 import com.ssafy.e106.core.ui.components.StatusCard
 import com.ssafy.e106.core.ui.theme.AppColors
-import com.ssafy.e106.core.ui.theme.AppLayer
-import com.ssafy.e106.core.ui.theme.AppShapes
 import com.ssafy.e106.core.ui.theme.AppSpacing
 import com.ssafy.e106.core.ui.theme.AppTheme
 import com.ssafy.e106.core.ui.theme.screenPaddingValues
-import com.ssafy.e106.core.ui.theme.appLayer
 import kotlinx.coroutines.delay
 
 /** 공통 컴포넌트 미리보기. 실제 화면이 생기면 NavHost 로 바뀐다. 문구는 미리보기용이라 리소스로 빼지 않았다. */
@@ -117,11 +114,6 @@ fun ComponentGallery() {
                         ProfilePlaceholder("프로필 사진\n등록된 사진이 없어요")
                     }
 
-                    Section("레이어") {
-                        Surface(Modifier.fillMaxWidth().appLayer(AppLayer.Card), shape = AppShapes.Control) {
-                            Text("Card 레이어 카드", Modifier.padding(AppSpacing.Large), style = MaterialTheme.typography.bodyMedium)
-                        }
-                    }
                 }
                 AppBottomBar(listOf("홈", "제안", "채팅", "내 정보"), nav, { nav = it })
             }

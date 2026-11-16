@@ -13,7 +13,9 @@ import kotlinx.serialization.Serializable
     // 기존 서버와 방 상세 응답에는 닉네임이 없을 수 있다.
     val partnerNickname: String? = null,
     // 마지막 메시지. 순번이 없으면 옛 서버(모름), 0이면 아직 메시지 없음. 본문은 서버가 주소 가리기를 마친 값
-    val lastMessageSeq: Long? = null, val lastMessage: String? = null, val lastMessageAt: String? = null)
+    val lastMessageSeq: Long? = null, val lastMessage: String? = null, val lastMessageAt: String? = null,
+    // 읽지 않은 상대 메시지 수(목록에서만, 서버가 100 에서 세기를 멈춘다). 없으면 옛 서버
+    val unreadCount: Int? = null)
 @Serializable data class ChatRoomsPage(val items: List<ChatRoomRecord>, val nextCursor: String?, val serverTime: String)
 @Serializable data class ChatMessageRecord(val messageId: Long, val clientMessageId: String, val sender: String,
     val sequence: Long, val text: String, val createdAt: String)

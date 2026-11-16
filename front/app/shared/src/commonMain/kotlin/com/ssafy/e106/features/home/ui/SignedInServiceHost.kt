@@ -15,7 +15,6 @@ import com.ssafy.e106.features.chat.ui.ConnectedChatRoute
 import com.ssafy.e106.features.safety.ui.*
 import com.ssafy.e106.features.report.ui.ConnectedReportRoute
 import com.ssafy.e106.core.ui.components.*
-import com.ssafy.e106.core.ui.theme.AppSpacing
 import com.ssafy.e106.features.account.ui.*
 import com.ssafy.e106.features.onboarding.ui.*
 import com.ssafy.e106.features.profile.ui.*
@@ -113,10 +112,6 @@ internal enum class ServicePage { Home, Proposals, Menu, Chats, Safety, Report, 
             else -> go(ServicePage.Home)
         } }
     Column(Modifier.fillMaxSize()) {
-        // 홈의 불러오기 실패는 홈 화면이 상태 화면으로 보여 준다
-        if (page == ServicePage.Menu) state.error?.let {
-            Text(it.message, Modifier.padding(AppSpacing.Medium), color = MaterialTheme.colorScheme.error)
-        }
         Box(Modifier.weight(1f)) {
             when (page) {
                 ServicePage.Home -> {

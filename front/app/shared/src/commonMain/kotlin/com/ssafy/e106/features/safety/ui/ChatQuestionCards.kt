@@ -26,7 +26,7 @@ fun ChatQuestionCards(state: ChatExtrasState, editable: Boolean, draft: String,
     var candidate by remember(state.owner?.userId, state.room, state.questions, editable, draft) {
         mutableStateOf<String?>(null)
     }
-    Surface(color = AppColors.SurfaceMuted, shape = AppShapes.Control) {
+    Surface(Modifier.frost(AppShapes.Control), color = AppColors.SurfaceMuted, shape = AppShapes.Control, border = GlassBorder) {
         Column(Modifier.fillMaxWidth().padding(AppSpacing.Small), verticalArrangement = Arrangement.spacedBy(AppSpacing.Small)) {
             TextButton(onClick = { expanded = !expanded; candidate = null }, modifier = Modifier.fillMaxWidth()) {
                 Text(stringResource(if (expanded) Res.string.chat_questions_collapse else Res.string.chat_questions_expand))

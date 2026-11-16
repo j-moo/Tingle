@@ -408,4 +408,12 @@ class PushRegistrarTest {
         runCurrent()
         assertEquals(0, h.bodies.size)
     }
+
+    @Test
+    fun messageNotificationCountsEveryMessageButKeepsRecentLines() {
+        assertEquals(1 to listOf("a"), mergedLines(0, emptyList(), "a", 6))
+        val (count, lines) = mergedLines(6, listOf("1", "2", "3", "4", "5", "6"), "7", 6)
+        assertEquals(7, count)
+        assertEquals(listOf("2", "3", "4", "5", "6", "7"), lines)
+    }
 }

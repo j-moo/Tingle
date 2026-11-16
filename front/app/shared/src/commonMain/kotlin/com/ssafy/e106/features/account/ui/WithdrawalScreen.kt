@@ -35,7 +35,7 @@ fun WithdrawalScreen(state: WithdrawalState, onAccepted: (Boolean) -> Unit, onAc
         WithdrawalStage.Completed -> if (cleanupUnconfirmed) ({ onAction(WithdrawalAction.CheckResult) }) else null
         else -> null
     }
-    Surface(Modifier.fillMaxSize(), color = AppColors.Background) {
+    Surface(Modifier.fillMaxSize(), color = AppColors.Screen) {
         Column(Modifier.fillMaxSize().safeDrawingPadding()) {
             AppTopBar(stringResource(Res.string.withdraw_title),
                 onBack = if (state.busy || stage == WithdrawalStage.Completed) null else ({ onAction(WithdrawalAction.Back) }))

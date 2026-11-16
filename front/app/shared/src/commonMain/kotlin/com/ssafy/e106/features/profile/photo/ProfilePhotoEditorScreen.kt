@@ -40,7 +40,7 @@ fun ProfilePhotoEditorScreen(
         PhotoEditorStage.Review -> Res.string.photo_editor_review
         else -> Res.string.photo_editor_title
     })
-    Surface(color = AppColors.Background) {
+    Surface(color = AppColors.Screen) {
         Column(Modifier.fillMaxSize().safeDrawingPadding()) {
             AppTopBar(title, onBack = onBack)
             Column(Modifier.weight(1f).align(Alignment.CenterHorizontally).widthIn(max = 560.dp)

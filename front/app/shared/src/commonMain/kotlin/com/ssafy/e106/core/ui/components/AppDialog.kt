@@ -23,10 +23,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.ssafy.e106.core.ui.theme.AppColors
-import com.ssafy.e106.core.ui.theme.AppLayer
 import com.ssafy.e106.core.ui.theme.AppShapes
 import com.ssafy.e106.core.ui.theme.AppSpacing
-import com.ssafy.e106.core.ui.theme.appLayer
 
 /**
  * 확인 대화상자. 주요 버튼 위, 보조 버튼 아래. Figma 01 Tingle/Dialog (Confirm · Danger).
@@ -56,12 +54,11 @@ fun AppDialog(
             Surface(
                 modifier = Modifier.padding(horizontal = AppSpacing.Section)
                     .widthIn(min = DialogMinWidth, max = DialogMaxWidth)
-                    .appLayer(AppLayer.Dialog, AppShapes.Card)
                     // 카드 안을 눌렀을 때 바깥 탭으로 새지 않게 소비한다
                     .pointerInput(Unit) { detectTapGestures { } }
                     .semantics { paneTitle = title },
                 shape = AppShapes.Card,
-                color = AppColors.Background,
+                color = AppColors.Sheet,
                 border = BorderStroke(AppSpacing.Stroke, AppColors.BorderSubtle),
             ) {
                 Column(Modifier.padding(AppSpacing.Section), verticalArrangement = Arrangement.spacedBy(AppSpacing.Large)) {

@@ -59,7 +59,7 @@ fun ChatConversationScreen(
                 .mapNotNull { it.id.toLongOrNull() }
         }.distinctUntilChanged().collect { ids -> withFrameNanos { }; latestDisplayed(ids) }
     }
-    Surface(modifier.fillMaxSize(), color = AppColors.Background) {
+    Surface(modifier.fillMaxSize(), color = AppColors.Screen) {
         BoxWithConstraints(Modifier.fillMaxSize().safeDrawingPadding().imePadding()) {
             // 가로 IME 등으로 남은 높이가 짧으면 입력/전송을 우선한다. 높이가 확보되면 제목/메뉴가 복귀한다.
             // 입력 컴포지션 위치는 유지하고 높이만 조정해 초안과 포커스를 보존한다.
@@ -204,9 +204,9 @@ private fun MessageRow(message: ConversationMessage, enabled: Boolean, onRecover
         Column(Modifier.semantics(mergeDescendants = true) { contentDescription = who }, horizontalAlignment = side,
             verticalArrangement = Arrangement.spacedBy(AppSpacing.ExtraSmall)) {
             Surface(Modifier.widthIn(max = 286.dp), shape = RoundedCornerShape(16.dp),
-                color = if (message.mine) AppColors.TextPrimary.copy(alpha = if (sent) 1f else 0.6f) else AppColors.SurfaceMuted) {
+                color = if (message.mine) AppColors.ActionPrimary.copy(alpha = if (sent) 1f else 0.6f) else AppColors.SurfaceMuted) {
                 Text(message.text, Modifier.padding(horizontal = AppSpacing.Large, vertical = AppSpacing.Medium),
-                    style = MaterialTheme.typography.bodyMedium, color = if (message.mine) AppColors.Background else AppColors.TextPrimary)
+                    style = MaterialTheme.typography.bodyMedium, color = if (message.mine) AppColors.OnPrimary else AppColors.TextPrimary)
             }
             if (sent) Text(chatTimeParts(message.timeLabel)?.let { clock(it) } ?: message.timeLabel?.takeIf { it.isNotBlank() }
                 ?: stringResource(Res.string.chat_conversation_time_unknown),
@@ -321,10 +321,10 @@ private fun ConversationComposer(state: ChatConversationState, onDraftChange: (S
                 .clickable(enabled = state.submitEnabled, role = Role.Button) { if (state.submitEnabled) onAction(ConversationAction.Send) },
                 contentAlignment = Alignment.Center) {
                 Box(Modifier.size(44.dp).clip(CircleShape)
-                    .background(if (state.submitEnabled || state.submitting) AppColors.TextPrimary else AppColors.BorderSubtle),
+                    .background(if (state.submitEnabled || state.submitting) AppColors.ActionPrimary else AppColors.BorderSubtle),
                     contentAlignment = Alignment.Center) {
-                    if (state.submitting) CircularProgressIndicator(Modifier.size(18.dp), color = AppColors.Background, strokeWidth = 2.dp)
-                    else Text("→", style = MaterialTheme.typography.titleMedium, color = AppColors.Background, modifier = Modifier.clearAndSetSemantics {})
+                    if (state.submitting) CircularProgressIndicator(Modifier.size(18.dp), color = AppColors.OnPrimary, strokeWidth = 2.dp)
+                    else Text("→", style = MaterialTheme.typography.titleMedium, color = AppColors.OnPrimary, modifier = Modifier.clearAndSetSemantics {})
                 }
             }
         }

@@ -47,7 +47,7 @@ import kotlin.time.Instant
 }
 
 @Composable internal fun NotificationsScreen(items: List<InboxItem>, fresh: Set<String>, onBack: () -> Unit, onOpen: (PushTarget) -> Unit) {
-    Surface(Modifier.fillMaxSize(), color = AppColors.Background) {
+    Surface(Modifier.fillMaxSize(), color = AppColors.Screen) {
         Column(Modifier.fillMaxSize().safeDrawingPadding()) {
             AppTopBar(stringResource(Res.string.notifications_title), onBack = onBack)
             if (items.isEmpty()) Column(Modifier.weight(1f).fillMaxWidth().padding(screenPaddingValues()),

@@ -99,7 +99,7 @@ fun AiConsentNoticeScreen(state: AiConsentState, onBack: () -> Unit, onReviewed:
 }
 @Composable private fun ConsentFrame(title: String, back: () -> Unit, modifier: Modifier, onRefresh: (() -> Unit)? = null,
     content: @Composable ColumnScope.() -> Unit) {
-    Surface(modifier.fillMaxSize(), color = AppColors.Background) {
+    Surface(modifier.fillMaxSize(), color = AppColors.Screen) {
         Column(Modifier.fillMaxSize().safeDrawingPadding()) {
             AppTopBar(title, onBack = back)
             val body: @Composable BoxScope.() -> Unit = {

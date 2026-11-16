@@ -41,7 +41,7 @@ fun ProfileEditScreen(
     var selection by rememberSaveable { mutableStateOf<String?>(null) }
     val draft = state.draft
     val editable = !state.saving && state.interactionEnabled
-    Surface(modifier.fillMaxSize(), color = AppColors.Background) {
+    Surface(modifier.fillMaxSize(), color = AppColors.Screen) {
         Column(Modifier.fillMaxSize().safeDrawingPadding().imePadding()) {
             // 결과 재조회가 필요해 입력을 잠근 경우에도 확인 후 나갈 수 있게 뒤로가기는 유지한다.
             AppTopBar(stringResource(Res.string.profile_edit_title), onBack = if (!state.saving) onBack else null)
@@ -66,7 +66,7 @@ fun ProfileEditScreen(
                         label = stringResource(Res.string.profile_nickname), required = true, enabled = editable,
                         supportingText = stringResource(Res.string.profile_nickname_help),
                         errorText = if (draft.nicknameValid) null else stringResource(Res.string.profile_edit_nickname_invalid))
-                    Surface(color = AppColors.SurfaceMuted, shape = AppShapes.Control) {
+                    Surface(Modifier.frost(AppShapes.Control), color = AppColors.SurfaceMuted, shape = AppShapes.Control, border = GlassBorder) {
                         Column(Modifier.fillMaxWidth().padding(AppSpacing.Medium),
                             verticalArrangement = Arrangement.spacedBy(AppSpacing.Small)) {
                             Text(stringResource(Res.string.profile_edit_identity), style = MaterialTheme.typography.titleSmall)

@@ -37,7 +37,7 @@ internal fun pullRefresh(busy: Boolean, onRefresh: () -> Unit): Pair<Boolean, ()
 @Composable
 internal fun ProfileSkeletonFrame(title: String, button: String?, onBack: (() -> Unit)? = null, spacing: Dp = AppSpacing.Large,
     content: @Composable ColumnScope.() -> Unit) {
-    Surface(Modifier.fillMaxSize(), color = AppColors.Background) {
+    Surface(Modifier.fillMaxSize(), color = AppColors.Screen) {
         Column(Modifier.fillMaxSize().safeDrawingPadding()) {
             AppTopBar(title, onBack = onBack)
             Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.TopCenter) {

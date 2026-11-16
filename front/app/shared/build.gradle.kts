@@ -37,6 +37,7 @@ kotlin {
             implementation(libs.compose.material3)
             implementation(libs.compose.ui)
             implementation(libs.compose.resources)
+            implementation(libs.haze)   // 유리 면 뒤 배경 블러(core/ui/theme/Glass.kt)
             implementation(libs.ktor.client.core)
             implementation(libs.okio)
             implementation(libs.ktor.client.content.negotiation)
