@@ -173,9 +173,9 @@ private fun ConversationTopBar(state: ChatConversationState, onAction: (Conversa
             .then(if (state.readable) Modifier.clickable(role = Role.Button, onClickLabel = partner) { onAction(ConversationAction.OpenPartner) } else Modifier)
             .padding(horizontal = AppSpacing.Small), verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(AppSpacing.Small)) {
-            // 상대 사진(장식이라 읽지 않음). 없거나 받는 중 · 실패면 첫 글자, 읽을 수 없는 방이면 두지 않는다
-            if (named) Box(Modifier.size(36.dp).clip(CircleShape).background(AppColors.SurfaceMuted), contentAlignment = Alignment.Center) {
-                val photo = state.partnerPhoto
+            // 상대 사진(장식이라 읽지 않음). 없거나 받는 중 · 실패면 첫 글자, 읽을 수 없는 방이나 이름을 모르면 두지 않는다(빈 원 없이)
+            val photo = state.partnerPhoto?.takeIf { named }
+            if (name != null || photo != null) Box(Modifier.size(36.dp).clip(CircleShape).background(AppColors.SurfaceMuted), contentAlignment = Alignment.Center) {
                 if (photo != null) Image(photo, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
                 else Text(name.initial(), style = MaterialTheme.typography.titleSmall, color = AppColors.TextSecondary,
                     modifier = Modifier.clearAndSetSemantics {})
