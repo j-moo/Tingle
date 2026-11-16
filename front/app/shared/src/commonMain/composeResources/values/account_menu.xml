@@ -9,8 +9,6 @@
     <string name="account_terms">이용약관</string>
     <string name="account_privacy">개인정보 처리방침</string>
     <string name="account_consents">동의 내역·AI 처리 안내</string>
-    <string name="account_correction">생년월일·성별 정정 요청</string>
-    <string name="account_correction_detail">직접 수정할 수 없는 정보는 서비스팀에 요청해요.</string>
     <string name="account_support">고객 문의</string>
     <string name="account_support_detail">서비스 이용에 도움이 필요하신가요?</string>
     <string name="account_logout">로그아웃</string>

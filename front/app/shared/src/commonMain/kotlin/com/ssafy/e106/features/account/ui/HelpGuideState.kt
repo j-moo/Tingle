@@ -2,7 +2,7 @@ package com.ssafy.e106.features.account.ui
 
 import com.ssafy.e106.features.onboarding.data.isPublishedHttpsUrl
 
-enum class HelpGuideKind { Terms, PrivacyPolicy, Support, Correction }
+enum class HelpGuideKind { Terms, PrivacyPolicy, Support }
 enum class HelpGuideStage { Loading, Ready, Unavailable, LoadFailed, OpenFailed }
 enum class HelpGuideAction { Back, Reload, Open }
 
@@ -17,5 +17,5 @@ data class HelpGuideState(
     val openUrl: String? get() = destinationUrl?.takeIf {
         stage in listOf(HelpGuideStage.Ready, HelpGuideStage.OpenFailed) && isPublishedHttpsUrl(it)
     }
-    val isInquiry get() = kind == HelpGuideKind.Support || kind == HelpGuideKind.Correction
+    val isInquiry get() = kind == HelpGuideKind.Support
 }
