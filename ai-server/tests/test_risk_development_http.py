@@ -82,11 +82,11 @@ def token(private, environment="test", scope="ai:execute"):
 
 
 @pytest.mark.parametrize("environment,enabled,status", [
-    ("local", False, 422), ("test", False, 422), ("dev", False, 422),
-    ("prod", False, 422), ("prod", True, 422),
+    ("local", False, 200), ("test", False, 200), ("dev", False, 200),
+    ("prod", False, 200), ("prod", True, 200),
     ("local", True, 200), ("test", True, 200), ("dev", True, 200),
 ])
-def test_real_main_honors_opt_in_and_environment(tmp_path, synthetic_private, environment, enabled, status):
+def test_real_main_uses_release_in_every_environment(tmp_path, synthetic_private, environment, enabled, status):
     release = synthetic_release(tmp_path)
     keys = public_key_file(tmp_path, synthetic_private)
     env = isolated_environment(tmp_path, environment=environment, enabled=enabled, release=release, public_keys=keys)
@@ -104,16 +104,19 @@ def test_real_main_honors_opt_in_and_environment(tmp_path, synthetic_private, en
         assert result["body"]["code"] == "POLICY_UNRESOLVED"
 
 
-def test_real_main_rejects_missing_opt_in_release_without_disclosing_paths(tmp_path, synthetic_private):
+def test_real_main_without_release_keeps_safety_unavailable(tmp_path, synthetic_private):
     env = isolated_environment(tmp_path, public_keys=public_key_file(tmp_path, synthetic_private))
+    release = synthetic_release(tmp_path)
+    env.update(SYNTHETIC_TOKEN=token(synthetic_private), SYNTHETIC_REQUEST=json.dumps(request_for(release)))
     completed = subprocess.run([sys.executable, "-c", PROBE], cwd=tmp_path, env=env,
                                capture_output=True, encoding="utf-8", timeout=30)
-    assert completed.returncode == 7 and not completed.stderr
-    assert json.loads(completed.stdout) == {
-        "error": "DevelopmentReleaseError", "message": "Safety Guard development runtime unavailable"}
+    assert completed.returncode == 0 and not completed.stderr
+    result = json.loads(completed.stdout)
+    assert result["http"] == 422 and result["body"]["code"] == "POLICY_UNRESOLVED"
+    assert not result["tokenizersLoaded"] and not result["rulesLoaded"]
 
 
-@pytest.mark.parametrize("environment", ["local", "test", "dev"])
+@pytest.mark.parametrize("environment", ["local", "test", "dev", "prod"])
 def test_real_main_rejects_unreviewed_files_even_with_opt_in(tmp_path, synthetic_private, environment):
     release = synthetic_release(tmp_path)
     env = isolated_environment(tmp_path, environment=environment, release=release,

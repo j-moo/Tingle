@@ -1,7 +1,8 @@
 """Verify the real Docker CMD offline with required keys and dev/prod providers.
 
-Only test containers mount a synthetic sitecustomize/MockTransport. The image
-and application contain no test switches. Docker networking is disabled.
+Only test containers mount synthetic releases and sitecustomize/MockTransport.
+Safety rules and personal v2 run beside both providers in the same application.
+The image contains no test switches. Docker networking is disabled.
 """
 
 import argparse
@@ -9,6 +10,7 @@ from hashlib import sha256
 import json
 from pathlib import Path
 import subprocess
+import sys
 from tempfile import TemporaryDirectory
 from uuid import uuid4
 
@@ -102,11 +104,30 @@ for name, path in [('match','/internal/ai/explanations'), ('ice','/internal/ai/i
     results[name] = result
     body['manifest']['engineVersion'] = ''
     assert call(path,body,token)[0] == 400
-print(json.dumps(dict(mode=mode, results=results), ensure_ascii=False))
+safety = json.loads((root/'safety-request.json').read_bytes())
+assert call('/internal/ai/risk-detections',safety)[0] == 401
+local_outcomes = []
+for text, kind in [('합성 정상 인사','NORMAL'), ('원금 보장하니 인증금을 송금해.','RISK'),
+                   ('그거 보내 줘. 알지?','INSUFFICIENT')]:
+    safety['contextBundle'][0]['text'] = text
+    status, result = call('/internal/ai/risk-detections',safety,token)
+    assert status == 200 and result['verdict']['kind'] == kind
+    local_outcomes.append(kind)
+personal = json.loads((root/'personal-request.json').read_bytes())
+status, result = call('/internal/ai/personal-analyses',personal,token)
+assert status == 200 and result == json.loads((root/'personal-expected.json').read_bytes())
+import importlib.util
+assert importlib.util.find_spec('tokenizers') is None
+print(json.dumps(dict(mode=mode, results=results, safety=local_outcomes,
+                     personal=result['status'], tokenizerInstalled=False), ensure_ascii=False))
 '''
 
 
 def verify(image: str, report: Path | None = None):
+    # Host-only test helpers; never copied into the production image.
+    sys.path.insert(0, str(ROOT / "tests"))
+    from safety48_runtime_support import request_for, synthetic_release
+
     command = json.loads(docker("image", "inspect", "--format", "{{json .Config.Cmd}}", image))
     assert command == ["python", "-m", "app.main"]
     image_id = docker("image", "inspect", "--format", "{{.Id}}", image)
@@ -121,6 +142,11 @@ def verify(image: str, report: Path | None = None):
             key_failures.append(dict(environment=environment, key="missing" if key is None else "blank", rejected=True))
     with TemporaryDirectory(prefix="gms-image-synthetic-") as temporary:
         directory = Path(temporary)
+        safety = synthetic_release(directory, tokenized=False)
+        (directory / "safety-request.json").write_text(json.dumps(request_for(safety)), encoding="utf-8")
+        personal = ROOT / "tests/fixtures/personal-analysis-api"
+        (directory / "personal-request.json").write_bytes((personal / "succeeded.request.json").read_bytes())
+        (directory / "personal-expected.json").write_bytes((personal / "succeeded.response.proposal.json").read_bytes())
         signing_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
         (directory / "private.pem").write_bytes(signing_key.private_bytes(serialization.Encoding.PEM,
             serialization.PrivateFormat.PKCS8, serialization.NoEncryption()))
@@ -152,6 +178,8 @@ def verify(image: str, report: Path | None = None):
                        "-e", f"APP_ENV={environment}", "-e", "GMS_API_KEY=synthetic-image-only",
                        "-e", "PYTHONPATH=/run/gms-test:/app", "-e", "RISK_LOCAL_RULES_ENABLED=false",
                        "-e", 'AI_SERVICE_PUBLIC_KEYS={"synthetic-gms":"/run/gms-test/public.pem"}',
+                       "-e", "RISK_RELEASE_DESCRIPTOR_FILE=/run/gms-test/" + safety.descriptor.name,
+                       "-e", "RISK_LOCAL_RULES_DESCRIPTOR_SHA256=" + safety.test_descriptor_pin,
                        "-e", "ICEBREAKER_RELEASE_DESCRIPTOR_FILE=/run/gms-test/ice-descriptor.json", image)
                 observed = []
                 for mode in ("success", "timeout", "error", "review", "invalid"):
@@ -168,6 +196,7 @@ def verify(image: str, report: Path | None = None):
                                     image, "-B", "-c", program))
     assert image_hashes == {name: sha256((ROOT / "app" / name).read_bytes()).hexdigest() for name in SOURCE_FILES}
     result = dict(imageId=image_id, command=command, network="none", realGmsCalls=0,
+                  syntheticOnly=True, approval="NOT_VERIFIED", sameAppSafetyAndPersonal=True,
                   provider="MockTransport", devProdEqual=True, sourceBytesMatch=True,
                   sourceSha256=image_hashes, keyFailures=key_failures, cases=cases)
     if report is not None:

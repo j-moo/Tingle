@@ -1,4 +1,4 @@
-"""Default-OFF Safety Guard registration for local/test/dev environments only."""
+"""Release-bound local Safety rules in every environment; legacy GMS stays gated."""
 
 import asyncio
 from collections.abc import Callable
@@ -25,6 +25,7 @@ class DevelopmentRuntime:
                  descriptor_file: str = "", descriptor_sha256: str = "",
                  engine_factory: Callable | None = None,
                  gms_primary: "GmsPrimaryConfiguration | None" = None):
+        # Compatibility arguments control only explicitly injected Safety GMS.
         self.environment, self.enabled = environment, enabled
         self.descriptor_file, self.descriptor_sha256 = descriptor_file, descriptor_sha256
         self._engine_factory = engine_factory
@@ -66,13 +67,19 @@ class DevelopmentRuntime:
         execution = ExecutionBoundary()
         catalog = ReleaseCatalog(self.descriptor_file)
         try:
-            # OFF/prod never reads development artifacts, imports a tokenizer,
-            # calls the injected factory or looks up provider credentials.
-            if self.enabled is True and self.environment in {"local", "test", "dev"}:
+            remote = self._gms_primary is not None
+            remote_allowed = self.enabled is True and self.environment in {"local", "test", "dev"}
+            # No release keeps only Safety unavailable. Explicit invalid or
+            # partial local configuration fails startup. Legacy GMS stays gated.
+            if ((not remote and (self.descriptor_file or self.descriptor_sha256))
+                    or (remote and remote_allowed)):
                 from app.risk_detection.local_engine import LocalRuleRiskEngine
-                from app.risk_detection.releases import DevelopmentReleaseCatalog, DevelopmentReleaseError
+                from app.risk_detection.releases import (
+                    DevelopmentReleaseCatalog, DevelopmentReleaseError, local_release_catalog,
+                )
 
-                catalog = DevelopmentReleaseCatalog(
+                catalog_factory = DevelopmentReleaseCatalog if remote else local_release_catalog
+                catalog = catalog_factory(
                     self.descriptor_file, descriptor_sha256=self.descriptor_sha256)
                 if self._gms_primary is not None:
                     from app.risk_detection.gms_runtime import (
@@ -88,7 +95,8 @@ class DevelopmentRuntime:
                         engine = GmsPrimaryEngine(catalog=catalog, configuration=self._gms_primary)
                 if engine is None:
                     factory = self._engine_factory or LocalRuleRiskEngine
-                    engine = factory(count_input_tokens=catalog.tokenizer.count)
+                    tokenizer = getattr(catalog, "tokenizer", None)
+                    engine = factory(count_input_tokens=tokenizer.count if tokenizer is not None else None)
                 execution = ExecutionBoundary(getattr(engine, "execution_limits", None))
                 # Recheck the catalog's pinned snapshot after dependency assembly.
                 if not catalog.supports(catalog._manifest):
@@ -168,13 +176,14 @@ def create_development_router(authenticate: Callable, *, environment: str, enabl
                               runtime: DevelopmentRuntime | None = None) -> APIRouter:
     if runtime is not None:
         return create_router(authenticate, runtime=runtime.resolve)
-    # Check before importing rule data, reading releases or loading optional
-    # tokenizers. Production ignores opt-in and retains engine=None.
-    if enabled is not True or environment not in {"local", "test", "dev"}:
+    # Local rules depend on release integrity, never environment/enabled.
+    if not descriptor_file and not descriptor_sha256:
         return create_router(authenticate, ReleaseCatalog(descriptor_file))
 
     from app.risk_detection.local_engine import LocalRuleRiskEngine
-    from app.risk_detection.releases import DevelopmentReleaseCatalog
+    from app.risk_detection.releases import local_release_catalog
 
-    catalog = DevelopmentReleaseCatalog(descriptor_file, descriptor_sha256=descriptor_sha256)
-    return create_router(authenticate, catalog, LocalRuleRiskEngine(count_input_tokens=catalog.tokenizer.count))
+    catalog = local_release_catalog(descriptor_file, descriptor_sha256=descriptor_sha256)
+    tokenizer = getattr(catalog, "tokenizer", None)
+    return create_router(authenticate, catalog, LocalRuleRiskEngine(
+        count_input_tokens=tokenizer.count if tokenizer is not None else None))

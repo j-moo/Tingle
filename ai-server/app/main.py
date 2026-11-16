@@ -22,7 +22,8 @@ def create_app(app_settings: Settings | None = None, *, _risk_engine_factory: Ca
 
     Match Insight and Icebreaker share the required GMS client in every
     environment. Python-only injection replaces providers in offline tests.
-    Safety Guard retains its separate runtime and approval boundary.
+    Local Safety rules validate releases in every environment, without a
+    tokenizer or activation switch. Legacy Safety GMS keeps its separate gate.
     """
     configured = app_settings if app_settings is not None else settings
     try:
@@ -30,7 +31,8 @@ def create_app(app_settings: Settings | None = None, *, _risk_engine_factory: Ca
     except ValueError:
         raise RuntimeError("GMS_API_KEY is required and must be valid") from None
     risk_runtime = DevelopmentRuntime(
-        environment=configured.app_env, enabled=configured.risk_local_rules_enabled,
+        environment=configured.app_env,
+        enabled=configured.risk_local_rules_enabled if _risk_gms_primary is not None else False,
         descriptor_file=configured.risk_release_descriptor_file,
         descriptor_sha256=configured.risk_local_rules_descriptor_sha256,
         engine_factory=_risk_engine_factory,

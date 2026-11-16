@@ -12,7 +12,7 @@ from app.config import Settings
 from app.middleware.request_id import RequestIdMiddleware, install_error_handlers
 from app.risk_detection import local_engine, releases
 from app.risk_detection.http_api import Message
-from app.risk_detection.releases import DevelopmentReleaseCatalog, DevelopmentReleaseError
+from app.risk_detection.releases import TokenizedLocalRuleReleaseCatalog, DevelopmentReleaseError
 from app.risk_detection.runtime import create_development_router
 from app.risk_detection.tokenization import LocalFileTokenizer, serialize_context
 from safety48_runtime_support import message, request_for, synthetic_release, synthetic_tokenizer
@@ -33,17 +33,18 @@ def client(release=None, *, enabled=True, environment="test"):
     return TestClient(app)
 
 
-def test_settings_opt_in_defaults_off(monkeypatch):
+def test_legacy_gms_switch_and_release_pin_defaults(monkeypatch):
     monkeypatch.delenv("RISK_LOCAL_RULES_ENABLED", raising=False)
     assert Settings(_env_file=None).risk_local_rules_enabled is False
     monkeypatch.delenv("RISK_LOCAL_RULES_DESCRIPTOR_SHA256", raising=False)
     assert Settings(_env_file=None).risk_local_rules_descriptor_sha256 == ""
 
 
-@pytest.mark.parametrize("environment", ["local", "test", "dev"])
-def test_explicit_development_registration_uses_actual_rules_and_tokenizer(tmp_path, environment):
+@pytest.mark.parametrize("environment", ["local", "test", "dev", "prod"])
+@pytest.mark.parametrize("enabled", [False, True])
+def test_release_registration_ignores_legacy_switch_and_environment(tmp_path, environment, enabled):
     release = synthetic_release(tmp_path)
-    response = client(release, environment=environment).post(
+    response = client(release, environment=environment, enabled=enabled).post(
         ROUTE, json=request_for(release, [message("원금 보장하니 인증금을 송금해.")]),
     )
     assert response.status_code == 200
@@ -58,7 +59,7 @@ def test_explicit_development_registration_uses_actual_rules_and_tokenizer(tmp_p
     for enabled in (False, True)
     if not (enabled and environment in {"local", "test", "dev"})
 ])
-def test_off_or_unsupported_environment_does_not_read_release_or_import_tokenizers(environment, enabled, monkeypatch):
+def test_missing_release_does_not_import_tokenizers(environment, enabled, monkeypatch):
     original = builtins.__import__
 
     def guarded(name, *args, **kwargs):
@@ -70,9 +71,9 @@ def test_off_or_unsupported_environment_does_not_read_release_or_import_tokenize
     assert_error(response, 422, "POLICY_UNRESOLVED")
 
 
-def test_explicit_enablement_without_a_release_fails_closed():
+def test_partial_release_configuration_fails_closed():
     with pytest.raises(DevelopmentReleaseError, match="^Safety Guard development runtime unavailable$"):
-        client()
+        create_development_router(lambda _: True, environment="prod", descriptor_file="missing-release.json")
 
 
 @pytest.mark.parametrize("pin", ["", "0" * 64, "not-a-review-pin"])
@@ -216,7 +217,7 @@ def test_source_or_release_changes_are_rejected_before_and_after_analysis(tmp_pa
 @pytest.mark.parametrize("total,status", [(3000, 200), (3001, 400)])
 def test_actual_tokenizer_limit_is_enforced_without_character_estimates(tmp_path, total, status):
     release = synthetic_release(tmp_path)
-    counter = DevelopmentReleaseCatalog(str(release.descriptor),
+    counter = TokenizedLocalRuleReleaseCatalog(str(release.descriptor),
                                         descriptor_sha256=release.test_descriptor_pin).tokenizer
     overhead = counter.count(serialize_context([Message(**message("!"))])) - 1
     messages = [message("!" * (total - overhead))]

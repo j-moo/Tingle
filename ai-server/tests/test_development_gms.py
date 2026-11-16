@@ -50,7 +50,7 @@ def host(tmp_path, monkeypatch, signing_key, release):
         "AI_SERVICE_PUBLIC_KEYS": json.dumps({KID: str(public)}),
         "ICEBREAKER_RELEASE_DESCRIPTOR_FILE": str(tmp_path / "synthetic-descriptor.json"),
         "RISK_LOCAL_RULES_ENABLED": "false",
-        "RISK_RELEASE_DESCRIPTOR_FILE": str(tmp_path / "missing-safety.json"),
+        "RISK_RELEASE_DESCRIPTOR_FILE": "",
         "RISK_LOCAL_RULES_DESCRIPTOR_SHA256": "",
 
     }
@@ -147,6 +147,40 @@ def test_both_real_clients_share_the_existing_safety_lifespan(host, make_headers
     assert host.credentials == [True]
     assert host.transport.closes == 3
     assert runtime.resources is None and runtime.remaining == 0
+
+
+@pytest.mark.parametrize("environment", ["dev", "prod"])
+@pytest.mark.parametrize("enabled", [False, True])
+def test_local_safety_and_shared_gms_and_personal_v2_share_one_app(
+        host, monkeypatch, make_headers, tmp_path, environment, enabled):
+    from app.risk_detection.local_engine import LocalRuleRiskEngine
+    from safety48_runtime_support import message, request_for, synthetic_release
+
+    directory = tmp_path / "local-safety"
+    directory.mkdir()
+    release = synthetic_release(directory, tokenized=False)
+    monkeypatch.setenv("APP_ENV", environment)
+    monkeypatch.setenv("RISK_LOCAL_RULES_ENABLED", str(enabled).lower())
+    monkeypatch.setenv("RISK_RELEASE_DESCRIPTOR_FILE", str(release.descriptor))
+    monkeypatch.setenv("RISK_LOCAL_RULES_DESCRIPTOR_SHA256", release.test_descriptor_pin)
+    headers = make_headers(environment=environment)
+    with TestClient(host.build()) as client:
+        engine = client.app.state.risk_runtime.resources.engine
+        assert type(engine) is LocalRuleRiskEngine and not engine.requires_token_budget
+        for text, kind in (("합성 정상 인사", "NORMAL"), ("원금 보장하니 인증금을 송금해.", "RISK"),
+                           ("그거 보내 줘. 알지?", "INSUFFICIENT")):
+            response = client.post("/internal/ai/risk-detections",
+                                   json=request_for(release, [message(text)]), headers=headers)
+            assert response.status_code == 200 and response.json()["verdict"]["kind"] == kind
+        assert not host.calls
+        for route, payload in ((MATCH, host.match), (ICE, host.ice)):
+            assert client.post(route, json=payload, headers=headers).json()["source"] == "GENERATED"
+        fixture = Path(__file__).parent / "fixtures/personal-analysis-api"
+        request = json.loads((fixture / "succeeded.request.json").read_bytes())
+        expected = json.loads((fixture / "succeeded.response.proposal.json").read_bytes())
+        personal = client.post("/internal/ai/personal-analyses", json=request, headers=headers)
+        assert personal.status_code == 200 and personal.json() == expected
+    assert host.credentials == [True] and len(host.calls) == 3
 
 
 @pytest.mark.parametrize("environment", ["local", "test", "dev", "prod"])
@@ -286,8 +320,9 @@ def test_cancelled_lifespan_still_closes_the_common_runtime(host):
     assert not host.calls
 
 
-def test_safety_opt_in_without_approval_still_fails_closed(host, monkeypatch):
+def test_explicit_invalid_safety_release_still_fails_closed(host, monkeypatch, tmp_path):
     monkeypatch.setenv("RISK_LOCAL_RULES_ENABLED", "true")
+    monkeypatch.setenv("RISK_RELEASE_DESCRIPTOR_FILE", str(tmp_path / "missing-safety.json"))
     app = host.build()
     with pytest.raises(DevelopmentReleaseError):
         with TestClient(app):
