@@ -40,6 +40,8 @@ app:
     approval-id: test-only
   chat-deletion:
     scheduling-enabled: false
+  risk:
+    scheduling-enabled: false
   ai:
     service:
       # 키·주소는 AI 를 쓰는 테스트가 직접 넣는다.

@@ -28,22 +28,16 @@ class RiskAnalysisDispatcherTest {
 		"v", "a".repeat(64));
 
 	@Test
-	void disabledDispatcherDoesNotReadConfigurationFilesOrStoredMessages() {
-		assertThat(dispatcher(false).runOnce()).isZero();
-		verifyNoInteractions(gateway, manifests, store, service);
-	}
-
-	@Test
 	void unavailableGatewayDoesNotReadManifestOrCandidates() {
 		doThrow(new BusinessException(ErrorCode.POLICY_UNRESOLVED)).when(gateway).requireAvailable();
-		assertThat(dispatcher(true).runOnce()).isZero();
+		assertThat(dispatcher().runOnce()).isZero();
 		verifyNoInteractions(manifests, store, service);
 	}
 
 	@Test
 	void missingVerifiedManifestDoesNotReadCandidates() {
 		when(manifests.current()).thenReturn(Optional.empty());
-		assertThat(dispatcher(true).runOnce()).isZero();
+		assertThat(dispatcher().runOnce()).isZero();
 		var order = inOrder(gateway, manifests);
 		order.verify(gateway).requireAvailable();
 		order.verify(manifests).current();
@@ -58,7 +52,7 @@ class RiskAnalysisDispatcherTest {
 		when(service.analyzeNext(10, manifest)).thenThrow(new BusinessException(ErrorCode.CHAT_CLOSED));
 		when(service.analyzeNext(11, manifest)).thenReturn(true);
 		when(service.analyzeNext(12, manifest)).thenReturn(false);
-		RiskAnalysisDispatcher dispatcher = dispatcher(true);
+		RiskAnalysisDispatcher dispatcher = dispatcher();
 		assertThat(dispatcher.runOnce()).isEqualTo(1);
 		assertThat(dispatcher.runOnce()).isZero();
 		verify(service).analyzeNext(12, manifest);
@@ -75,7 +69,7 @@ class RiskAnalysisDispatcherTest {
 		when(manifests.current()).thenReturn(Optional.of(manifest));
 		when(store.candidates(0, 20)).thenReturn(List.of(9L));
 		when(store.candidates(9, 20)).thenReturn(List.of());
-		RiskAnalysisDispatcher dispatcher = dispatcher(true);
+		RiskAnalysisDispatcher dispatcher = dispatcher();
 		dispatcher.runOnce();
 		dispatcher.runOnce();
 		dispatcher.runOnce();
@@ -85,7 +79,7 @@ class RiskAnalysisDispatcherTest {
 		order.verify(store).candidates(0, 20);
 	}
 
-	private RiskAnalysisDispatcher dispatcher(boolean enabled) {
-		return new RiskAnalysisDispatcher(enabled, gateway, manifests, store, service);
+	private RiskAnalysisDispatcher dispatcher() {
+		return new RiskAnalysisDispatcher(gateway, manifests, store, service);
 	}
 }

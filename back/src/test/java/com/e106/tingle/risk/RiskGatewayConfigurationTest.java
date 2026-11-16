@@ -3,7 +3,6 @@ package com.e106.tingle.risk;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import java.nio.charset.StandardCharsets;
@@ -19,36 +18,15 @@ import com.e106.tingle.risk.RiskAnalysisTypes.Message;
 class RiskGatewayConfigurationTest {
 
 	private final ApplicationContextRunner runner = new ApplicationContextRunner()
-		.withUserConfiguration(RiskGatewayConfiguration.class, DisabledRiskAnalysisGateway.class);
+		.withUserConfiguration(RiskGatewayConfiguration.class);
 
 	@Test
-	void defaultDoesNotRequireAnAiClientOrTokenizer() {
-		runner.run(context -> {
-			assertThat(context).hasNotFailed().hasSingleBean(RiskAnalysisGateway.class);
-			assertThat(context.getBean(RiskAnalysisGateway.class)).isInstanceOf(DisabledRiskAnalysisGateway.class);
-		});
-	}
-
-	@Test
-	void commonAiClientDoesNotEnableRiskTransmission() {
-		AiInternalClient client = mock(AiInternalClient.class);
-		RiskTokenizer tokenizer = mock(RiskTokenizer.class);
-		runner.withBean(AiInternalClient.class, () -> client).withBean(RiskTokenizer.class, () -> tokenizer)
-			.run(context -> {
-				assertThat(context).hasNotFailed().hasSingleBean(RiskAnalysisGateway.class);
-				assertThat(context.getBean(RiskAnalysisGateway.class)).isInstanceOf(DisabledRiskAnalysisGateway.class);
-				verifyNoInteractions(client, tokenizer);
-			});
-	}
-
-	@Test
-	void explicitEnablementUsesTheRegisteredTokenizerAndCommonClient() {
+	void usesTheRegisteredTokenizerAndCommonClientWithoutAnyFlag() {
 		AiInternalClient client = mock(AiInternalClient.class);
 		RiskTokenizer tokenizer = mock(RiskTokenizer.class);
 		Input input = new Input(List.of(new Message(1, "A", "synthetic", true, false)), null);
 		when(tokenizer.applyAsInt(input)).thenReturn(19);
-		runner.withPropertyValues("app.risk.external-enabled=true")
-			.withBean(AiInternalClient.class, () -> client).withBean(RiskTokenizer.class, () -> tokenizer)
+		runner.withBean(AiInternalClient.class, () -> client).withBean(RiskTokenizer.class, () -> tokenizer)
 			.run(context -> {
 				assertThat(context).hasNotFailed().hasSingleBean(RiskAnalysisGateway.class);
 				RiskAnalysisGateway gateway = context.getBean(RiskAnalysisGateway.class);
@@ -61,14 +39,13 @@ class RiskGatewayConfigurationTest {
 	}
 
 	@Test
-	void enabledWithoutRegisteredTokenizerCountsTheSerializedContextBytes() {
+	void withoutRegisteredTokenizerCountsTheSerializedContextBytes() {
 		// AI 서버의 json.dumps(..., ensure_ascii=False, separators=(",", ":")) 결과와 같은 길이여야 한다.
 		String ai = """
 			{"contextBundle":[{"sequence":1,"speaker":"A","text":"안녕 \\"반가워\\"\\n","fresh":true,"urlMasked":false}]}"""
 			.strip();
 		Input input = new Input(List.of(new Message(1, "A", "안녕 \"반가워\"\n", true, false)), null);
-		runner.withPropertyValues("app.risk.external-enabled=true")
-			.withBean(AiInternalClient.class, () -> mock(AiInternalClient.class))
+		runner.withBean(AiInternalClient.class, () -> mock(AiInternalClient.class))
 			.run(context -> {
 				assertThat(context).hasNotFailed();
 				assertThat(context.getBean(RiskAnalysisGateway.class).countTokens(input))
@@ -77,9 +54,8 @@ class RiskGatewayConfigurationTest {
 	}
 
 	@Test
-	void enabledWithoutCommonClientFailsAtStartup() {
-		runner.withPropertyValues("app.risk.external-enabled=true")
-			.withBean(RiskTokenizer.class, () -> mock(RiskTokenizer.class))
+	void withoutCommonClientFailsAtStartup() {
+		runner.withBean(RiskTokenizer.class, () -> mock(RiskTokenizer.class))
 			.run(context -> assertThat(context).hasFailed());
 	}
 }

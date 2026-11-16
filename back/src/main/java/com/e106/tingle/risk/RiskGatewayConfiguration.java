@@ -2,13 +2,12 @@ package com.e106.tingle.risk;
 
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
 import com.e106.tingle.global.ai.AiInternalClient;
 
-/** 공통 AI 인증 활성화만으로 대화를 전송하지 않는다. app.risk.external-enabled 를 켜야 전송 어댑터가 등록된다. */
+/** 위험 감지 전송 어댑터는 개발·운영 모두 늘 등록된다. 실제 전송은 회원 동의와 승인된 Release(app.risk.release)가 있을 때만 한다. */
 @Configuration(proxyBeanMethods = false)
 public class RiskGatewayConfiguration {
 
@@ -19,13 +18,11 @@ public class RiskGatewayConfiguration {
 	 */
 	@Bean
 	@ConditionalOnMissingBean
-	@ConditionalOnProperty(name = "app.risk.external-enabled", havingValue = "true")
 	RiskTokenizer riskTokenizer(@Value("${app.risk.tokenizer.special-tokens:16}") int specialTokens) {
 		return new ByteBoundRiskTokenizer(specialTokens);
 	}
 
 	@Bean
-	@ConditionalOnProperty(name = "app.risk.external-enabled", havingValue = "true")
 	RiskAnalysisGateway httpRiskAnalysisGateway(AiInternalClient client, RiskTokenizer tokenizer) {
 		return new HttpRiskAnalysisGateway(client, tokenizer);
 	}
