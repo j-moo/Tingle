@@ -81,7 +81,7 @@ services:
       SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER:?}
       SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:?}
       JWT_SECRET: ${JWT_SECRET:?}
-      # 탈퇴 신원 · 영수증 서명 비밀값. 환경마다 다른 값을 쓴다(back-dev 는 DEV_ 이름).
+      # 탈퇴 신원 · 영수증 서명 비밀값(32바이트 이상). back-dev 는 DEV_ 값이 있으면 그 값을 쓴다.
       WITHDRAWAL_IDENTITY_SECRET: ${WITHDRAWAL_IDENTITY_SECRET:?}
       WITHDRAWAL_RECEIPT_SECRET: ${WITHDRAWAL_RECEIPT_SECRET:?}
       PUSH_TOKEN_ENCRYPTION_KEY: ${PUSH_TOKEN_ENCRYPTION_KEY:?}
@@ -162,12 +162,13 @@ services:
       <<: *back-env
       SPRING_PROFILES_ACTIVE: dev
       SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/tingle_dev
-      # 토큰 서명 키는 운영과 반드시 달라야 한다. 같은 키를 쓰면 개발 서버 키를 얻은 사람이 운영 토큰도 위조할 수 있다.
-      JWT_SECRET: ${DEV_JWT_SECRET:?}
-      # 푸시 토큰 암호화 키도 같은 이유로 나눈다. 키를 바꾸면 개발 앱 설치는 푸시 토큰을 다시 등록한다.
-      PUSH_TOKEN_ENCRYPTION_KEY: ${DEV_PUSH_TOKEN_ENCRYPTION_KEY:?}
-      WITHDRAWAL_IDENTITY_SECRET: ${DEV_WITHDRAWAL_IDENTITY_SECRET:?}
-      WITHDRAWAL_RECEIPT_SECRET: ${DEV_WITHDRAWAL_RECEIPT_SECRET:?}
+      # 환경별 비밀값. DEV_ 값이 있으면 개발만 그 값을 쓰고, 없으면 운영과 같은 값을 쓴다(지금 동작 유지, 재로그인 없음).
+      # 운영과 같은 토큰 서명 키를 쓰면 개발 서버 키를 얻은 사람이 운영 토큰도 위조할 수 있으므로 DEV_JWT_SECRET 을 따로 두는 것을 권한다.
+      # 바꾸면 개발 앱은 다시 로그인하고(JWT), 푸시 토큰을 다시 등록한다(푸시 키). 탈퇴 키는 개발 DB 에 지문이 남아 있으면 기존 값과 같아야 한다.
+      JWT_SECRET: ${DEV_JWT_SECRET:-${JWT_SECRET:?}}
+      PUSH_TOKEN_ENCRYPTION_KEY: ${DEV_PUSH_TOKEN_ENCRYPTION_KEY:-${PUSH_TOKEN_ENCRYPTION_KEY:?}}
+      WITHDRAWAL_IDENTITY_SECRET: ${DEV_WITHDRAWAL_IDENTITY_SECRET:-${WITHDRAWAL_IDENTITY_SECRET:?}}
+      WITHDRAWAL_RECEIPT_SECRET: ${DEV_WITHDRAWAL_RECEIPT_SECRET:-${WITHDRAWAL_RECEIPT_SECRET:?}}
       TERMS_CONTENT_URL: https://${DOMAIN:?}/dev/terms/ # 개발은 develop 에 머지된 web-dev 페이지
       PRIVACY_CONTENT_URL: https://${DOMAIN:?}/dev/privacy/
       AI_RISK_CONTENT_URL: https://${DOMAIN:?}/dev/ai-risk/
