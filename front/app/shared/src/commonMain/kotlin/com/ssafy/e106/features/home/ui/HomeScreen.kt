@@ -115,16 +115,17 @@ fun HomeScreen(state: HomeState, onMatchingChange: (Boolean) -> Unit, onAction: 
     }
 }
 
-private val PowerFill = Color(0xB3FFB3CC)    // 켜짐 원: 연분홍 70%
-private val PowerShine = Brush.verticalGradient(listOf(Color(0xB3FFFFFF), Color(0x00FFFFFF), Color(0x26FF7FAB)))   // 유리 반사광: 위는 희게, 아래는 분홍이 고인다
-private val PowerGlow = Color(0x99FF9CC0)    // 원 둘레로 번지는 빛
+// 켜짐 색은 연두 초안(11-17). 실기기에서 조정한다
+private val PowerFill = Color(0xB3C8F5A0)    // 켜짐 원: 연두 70%
+private val PowerShine = Brush.verticalGradient(listOf(Color(0xB3FFFFFF), Color(0x00FFFFFF), Color(0x268BD650)))   // 유리 반사광: 위는 희게, 아래는 연두가 고인다
+private val PowerGlow = Color(0x99A8E878)    // 원 둘레로 번지는 빛
 private val PowerRingTop = Color(0xF2FFFFFF)   // 밝게 빛나는 테(위 → 아래 그러데이션)
-private val PowerRingBottom = Color(0xB3FFC2D8)
-private val PowerInk = Color(0xFFB0235A)     // 연분홍 위 ON 글자(대비 4.5:1 이상)
+private val PowerRingBottom = Color(0xB3D4F5B8)
+private val PowerInk = AppColors.FreshInk     // 연두 위 ON 글자(대비 4.5:1 이상)
 private val PowerGlowRoom = 40.dp            // 원(180dp) 둘레 빛이 원 바깥으로 번지는 거리
 
 /**
- * 가운데 큰 원: 켜짐 = 연분홍 반투명 유리 원 · 빛나는 밝은 테, 꺼짐 = 회색. 누르면 바꾼다(호출부가 설정 화면을 주면 그리로 연다).
+ * 가운데 큰 원: 켜짐 = 연두 반투명 유리 원 · 빛나는 밝은 테, 꺼짐 = 회색. 누르면 바꾼다(호출부가 설정 화면을 주면 그리로 연다).
  * 원 아래 묶음(제목 · 문구 한 줄)은 높이가 늘 같아서 눌러도 원이 위아래로 움직이지 않는다
  */
 @Composable
@@ -142,7 +143,7 @@ private fun MatchingPower(state: HomeState, busy: Boolean, onMatchingChange: (Bo
     val fill by animateColorAsState(if (on == true) PowerFill else AppColors.BorderSubtle, fade)
     val ink by animateColorAsState(if (on == true) PowerInk else AppColors.TextSecondary, fade)
     Box(Modifier.size(180.dp).alpha(if (missing) 0.55f else 1f)
-        // 켜짐: 원 둘레로 분홍 빛이 번진다
+        // 켜짐: 원 둘레로 연두 빛이 번진다
         .drawBehind {
             val reach = size.minDimension * 0.72f
             drawCircle(Brush.radialGradient(listOf(glow, glow.copy(alpha = 0f)), radius = reach), reach)
