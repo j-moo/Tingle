@@ -6,7 +6,7 @@ from uuid import uuid4
 
 import pytest
 
-from app.match_explanation.releases import MANIFEST_FIELDS, ReleaseError, ReleaseRegistry
+from app.match_explanation.releases import MANIFEST_FIELDS, ReleaseError, ReleaseRegistry, _Release
 
 
 def descriptor(tmp_path, artifact_bytes=b'{"synthetic": true}\n', identifier=None):
@@ -24,6 +24,23 @@ def test_empty_default_registry_rejects_every_request(tmp_path):
     _, _, manifest = descriptor(tmp_path)
     with pytest.raises(ReleaseError):
         ReleaseRegistry().verify(manifest)
+
+
+def test_excessively_nested_descriptor_has_a_sanitized_registration_error(tmp_path):
+    path, _, _ = descriptor(tmp_path)
+    path.write_bytes(b'[' * 20000 + b'0' + b']' * 20000)
+    with pytest.raises(ReleaseError, match="^Release registration failed$"):
+        ReleaseRegistry([path])
+
+
+@pytest.mark.parametrize("error_type", [RecursionError, RuntimeError])
+def test_internal_verification_failure_is_not_reclassified_as_invalid_json(tmp_path, monkeypatch, error_type):
+    path, _, _ = descriptor(tmp_path)
+    def broken(*args):
+        raise error_type("synthetic-internal-verification-failure")
+    monkeypatch.setattr(_Release, "verify", broken)
+    with pytest.raises(error_type, match="synthetic-internal-verification-failure"):
+        ReleaseRegistry([path])
 
 
 def test_registered_exact_artifact_bytes_and_all_eleven_manifest_fields_match(tmp_path):
