@@ -52,7 +52,8 @@ fun ProposalListScreen(state: ProposalListState, onOpenProposal: (Long) -> Unit,
     // 1분마다 남은 시간을 다시 그린다(값은 서버 기준 마감에서 받은 뒤 흐른 시간만 빼서 계산 — 기기 시계를 쓰지 않음)
     val tick by produceState(0) { while (true) { delay(60_000); value++ } }
     Surface(modifier.fillMaxSize(), color = AppColors.Screen) {
-        Column(Modifier.fillMaxSize().safeDrawingPadding()) {
+        // 아래쪽 인셋은 틀(SignedInServiceHost)의 하단 바가 맡는다
+        Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal))) {
             AppTopBar(stringResource(Res.string.proposal_list_title))
             val refresh = { if (state.load != ProposalListLoad.Loading && !state.refreshing) onAction(ProposalListAction.Refresh) }
             // 당기기를 못 하는 TalkBack 사용자를 위한 "새로고침" 접근성 동작은 PullDownRefreshBox 가 둔다
@@ -116,13 +117,6 @@ fun ProposalListScreen(state: ProposalListState, onOpenProposal: (Long) -> Unit,
             if (state.load == ProposalListLoad.Ready && state.refreshFailed && entries.isNotEmpty())
                 NoticeBar(stringResource(Res.string.proposal_list_refresh_failed), actionEnabled = !state.refreshing, onAction = refresh)
             notice()
-            AppBottomBar(labels = listOf(stringResource(Res.string.proposal_list_home), stringResource(Res.string.proposal_list_tab),
-                stringResource(Res.string.proposal_list_chats), stringResource(Res.string.proposal_list_profile)), selected = 1,
-                onSelect = { when (it) {
-                    0 -> onAction(ProposalListAction.Home)
-                    2 -> onAction(ProposalListAction.Chats)
-                    3 -> onAction(ProposalListAction.Profile)
-                } })
         }
     }
 }

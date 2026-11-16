@@ -204,10 +204,8 @@ class WideLayoutDeviceTest {
                 compose.onNodeWithText("검증 선택지 6").performScrollTo().performClick()
                 compose.onNodeWithText("다음").assertIsDisplayed().assertIsEnabled()
             }
-            "home" -> {
-                compose.onNodeWithText("받은 제안").performScrollTo().assertIsDisplayed()
-                compose.onNodeWithText("마이").assertIsDisplayed()
-            }
+            // 하단 바는 틀(SignedInServiceHost)이 그린다. 홈 화면만 띄우면 내 키링 카드까지 닿는지 본다
+            "home" -> compose.onNodeWithText("내 키링").performScrollTo().assertIsDisplayed()
             else -> {
                 compose.onNode(hasSetTextAction()).assertIsDisplayed()
                 compose.onNodeWithContentDescription("전송").assertIsDisplayed().assertIsEnabled()

@@ -47,7 +47,7 @@ private val WarnInk = Color(0xFF7A4B00)
 
 /**
  * 가입 완료 회원의 홈(시안 02 큰 매칭 버튼). 가운데 큰 원 하나가 새 매칭 상태, 그 문구 바로 아래 내 키링 요약 한 장(모두 화면 가운데).
- * 받은 제안 · 대화방은 아래 탭(제안 · 채팅)으로 보고 홈에는 두지 않는다. 저장/통신/실제 화면 이동은 호출부에서 처리한다.
+ * 받은 제안 · 대화방은 아래 탭(제안 · 채팅, 틀이 그린다)으로 보고 홈에는 두지 않는다. 저장/통신/실제 화면 이동은 호출부에서 처리한다.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -68,7 +68,8 @@ fun HomeScreen(state: HomeState, onMatchingChange: (Boolean) -> Unit, onAction: 
         if (state.load != HomeLoadState.Loading && !refreshing && !state.savingMatching) onAction(HomeAction.Refresh)
     }
     Surface(modifier.fillMaxSize(), color = AppColors.Screen) {
-        Column(Modifier.fillMaxSize().safeDrawingPadding()) {
+        // 아래쪽 인셋은 틀(SignedInServiceHost)의 하단 바가 맡는다
+        Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal))) {
             // 오른쪽 위 종 모양 = 받은 알림 모음(키링 관리는 마이 → 내 키링)
             AppTopBar(stringResource(Res.string.home_brand), trailing = {
                 NotificationBell(unreadNotifications) { onAction(HomeAction.Notifications) }
@@ -102,15 +103,6 @@ fun HomeScreen(state: HomeState, onMatchingChange: (Boolean) -> Unit, onAction: 
                     }
                 }
             }
-            AppBottomBar(labels = listOf(stringResource(Res.string.home_tab), stringResource(Res.string.home_proposal_tab),
-                stringResource(Res.string.home_chat_tab), stringResource(Res.string.home_profile_tab)), selected = 0,
-                onSelect = { index ->
-                    when (index) {
-                        1 -> onAction(HomeAction.Proposals)
-                        2 -> onAction(HomeAction.Chats)
-                        3 -> onAction(HomeAction.Profile)
-                    }
-                })
         }
     }
 }

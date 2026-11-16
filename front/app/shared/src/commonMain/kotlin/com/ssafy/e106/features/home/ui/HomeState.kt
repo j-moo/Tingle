@@ -19,4 +19,4 @@ data class HomeState(
 )
 
 /** [RegisterKeyring]: 등록된 키링이 없는 홈의 "키링 연결하기"(키링 등록 화면으로) */
-enum class HomeAction { Refresh, Proposals, Chats, Profile, Notifications, RegisterKeyring }
+enum class HomeAction { Refresh, Notifications, RegisterKeyring }

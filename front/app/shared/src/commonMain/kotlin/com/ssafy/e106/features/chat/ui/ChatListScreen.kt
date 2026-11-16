@@ -47,7 +47,8 @@ fun ChatListScreen(state: ChatListState, onOpenChat: (Long) -> Unit,
             onAction(ChatListAction.LoadMore)
     }
     Surface(modifier.fillMaxSize(), color = AppColors.Screen) {
-        Column(Modifier.fillMaxSize().safeDrawingPadding()) {
+        // 아래쪽 인셋은 틀(SignedInServiceHost)의 하단 바가 맡는다
+        Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal))) {
             AppTopBar(stringResource(Res.string.chat_list_title))
             val refresh = { if (state.load != ChatListLoad.Loading && !state.refreshing) onAction(ChatListAction.Refresh) }
             // 불러오기 실패: 동의가 필요하면 그 안내와 동의 화면으로 가는 버튼, 아니면 오류 종류에 맞는 상태 화면
@@ -102,13 +103,6 @@ fun ChatListScreen(state: ChatListState, onOpenChat: (Long) -> Unit,
                     actionText = stringResource(Res.string.chat_access_open_consent), onAction = onConsent)
                 else NoticeBar(stringResource(Res.string.chat_list_refresh_failed), actionEnabled = !state.refreshing, onAction = refresh)
             }
-            AppBottomBar(labels = listOf(stringResource(Res.string.chat_list_home), stringResource(Res.string.chat_list_proposals),
-                stringResource(Res.string.chat_list_title), stringResource(Res.string.chat_list_profile)), selected = 2,
-                onSelect = { when (it) {
-                    0 -> onAction(ChatListAction.Home)
-                    1 -> onAction(ChatListAction.Proposals)
-                    3 -> onAction(ChatListAction.Profile)
-                } })
         }
     }
 }
