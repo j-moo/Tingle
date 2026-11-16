@@ -90,12 +90,13 @@ class ChatRoomViewModel(private val api: ChatRepository, private val sessions: S
         // 본문을 비울 때 복구 위치도 함께 초기화한다. 남은 순번 때문에 이전 메시지를 건너뛰지 않게 한다.
         records = emptyList(); receivedThrough = 0; needsInitialPage = true
         mutable.update { it.copy(ui = it.ui.copy(messages = emptyList(), canRead = false, canSend = false,
-            nextCursor = null, historyLoad = HistoryLoad.Idle, partnerPhoto = null)) }
+            nextCursor = null, historyLoad = HistoryLoad.Idle, partnerPhoto = null, firstPageLoaded = false)) }
     }
     fun reload() = read { owner, id, stamp ->
         // 최초 페이지를 다시 읽을 때 구독과 복구 위치를 함께 초기화하여 이전 방 결과가 섞이지 않게 한다.
         stopRealtime(); needsInitialPage = true; receivedThrough = 0
-        mutable.update { it.copy(ui = it.ui.copy(load = ConversationLoad.Loading, canRead = false, canSend = false, messages = emptyList()), error = null) }
+        mutable.update { it.copy(ui = it.ui.copy(load = ConversationLoad.Loading, canRead = false, canSend = false, messages = emptyList(),
+            firstPageLoaded = false), error = null) }
         val pending = storage.withLock { prefs.flow(pendingChatKey).first() }?.takeIf { it.owner == owner.userId }
         val draft = local.draft(owner.userId, id)
         if (!valid(stamp, owner, id)) return@read
@@ -112,7 +113,8 @@ class ChatRoomViewModel(private val api: ChatRepository, private val sessions: S
                 needsInitialPage = false
                 reconcilePending(owner, id, records)
                 // 최신 초안 복원 정책을 유지한다. 첫 페이지의 늦은 응답으로 사용자의 새 입력을 덮지 않는다.
-                mutable.update { it.copy(ui = it.ui.copy(nextCursor = result.value.nextCursor, historyLoad = HistoryLoad.Idle)) }; render()
+                mutable.update { it.copy(ui = it.ui.copy(nextCursor = result.value.nextCursor, historyLoad = HistoryLoad.Idle,
+                    firstPageLoaded = true)) }; render()
                 startRealtime(owner, id, stamp)
             }
             is ApiResult.Fail -> fail(result.error, owner, id, stamp)

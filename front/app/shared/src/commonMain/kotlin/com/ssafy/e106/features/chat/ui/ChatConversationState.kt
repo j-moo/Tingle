@@ -36,6 +36,8 @@ data class ChatConversationState(
     val nextCursor: String? = null,
     val historyLoad: HistoryLoad = HistoryLoad.Idle,
     val realtime: ChatRealtimeStatus? = null,
+    // 이번 진입의 첫 메시지 페이지를 받았는지. 받기 전엔 보낸 메시지 목록(추천 질문 거르기)을 믿을 수 없다
+    val firstPageLoaded: Boolean = false,
 ) {
     val readable: Boolean get() = load == ConversationLoad.Active && canRead
     val inputEnabled: Boolean get() = readable && canSend && !submitting
@@ -60,7 +62,7 @@ data class ChatConversationState(
 
     // 닉네임도 지운다. 다음 접근 성공 때 다시 받는다
     private fun withoutContent() = copy(messages = emptyList(), draft = "", nextCursor = null,
-        historyLoad = HistoryLoad.Idle, submitting = false, nickname = null, partnerPhoto = null)
+        historyLoad = HistoryLoad.Idle, submitting = false, nickname = null, partnerPhoto = null, firstPageLoaded = false)
 }
 
 enum class ConversationAction { Back, Reload, Send, OpenMenu, OpenPartner, OpenAiNotice, OpenConsent, LoadOlder }
