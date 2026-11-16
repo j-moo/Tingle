@@ -50,6 +50,12 @@ fun ProfileManagementRoute(session: Session.SignedIn, onExit: () -> Unit, model:
     fun back() {
         if (state.busy) return
         if (state.recoveryRequired) { unknownExitPrompt = true; return }
+        // 수정 화면의 종교 · 소개 시트 요청도 끝까지 기다리고, 결과를 모르면 그냥 나가지 않고 묻는다
+        if (page == ProfileDestination.Edit) {
+            val optional = optionalModel.state.value
+            if (optional.busy) return
+            if (optional.recoveryRequired) { unknownExitPrompt = true; return }
+        }
         when (page) {
             ProfileDestination.Edit -> model.requestBack(::overview)
             ProfileDestination.Correction -> page = ProfileDestination.Edit
