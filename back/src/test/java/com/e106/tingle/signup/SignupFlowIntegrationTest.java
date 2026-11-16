@@ -18,7 +18,9 @@ import java.security.KeyPair;
 import java.security.KeyPairGenerator;
 import java.security.Signature;
 import java.time.Instant;
+import java.util.Arrays;
 import java.util.Base64;
+import java.util.HexFormat;
 import java.util.Map;
 import java.util.UUID;
 
@@ -39,9 +41,9 @@ import com.e106.tingle.IntegrationTestSupport;
 import com.e106.tingle.TestcontainersConfiguration;
 import com.e106.tingle.auth.SocialProvider;
 import com.e106.tingle.auth.SocialVerifier.SocialAccount;
-import com.e106.tingle.keyring.KeyringPayload;
-import com.e106.tingle.keyring.KeyringPayloadProvider;
 import com.e106.tingle.keyring.proof.KeyringProofTranscript;
+import com.e106.tingle.keyring.proof.PeerSettingsCodec;
+import com.e106.tingle.settings.snapshot.KeyringCanonicalSnapshotService;
 
 import tools.jackson.databind.JsonNode;
 
@@ -50,23 +52,22 @@ import tools.jackson.databind.JsonNode;
  * 단계마다 가입 단계 조회로 다음 단계를 확인한다. 다른 영역 변경이 가입을 깨면 여기서 바로 드러난다.
  * 바깥 시스템만 대신한다: 소셜 서버(SocialVerifier), AI 서버(PersonalAnalysisClient), 키링 기기(Ed25519 키·설정 payload).
  */
-@SpringBootTest(properties = {"app.withdrawal.enabled=true",
-	"app.withdrawal.identity-secret=identity-test-secret-is-at-least-thirty-two-bytes-long",
-	"app.withdrawal.receipt-secret=receipt-test-secret-is-at-least-thirty-two-bytes-long"})
+@SpringBootTest
 @AutoConfigureMockMvc
 @ActiveProfiles({"test", "erd"})
 @Import(TestcontainersConfiguration.class)
 class SignupFlowIntegrationTest extends IntegrationTestSupport {
 
 	private static final String SURVEY_VERSION = "SIS-Q-1.1-100";
-	private static final String PROOF_PROTOCOL = "tingle-device-proof-v1";
-
-	// 기기에 보낼 설정 묶음은 기기 쪽 경계다. 키링 동기화 테스트와 같은 합성 payload를 쓴다.
-	@MockitoBean
-	private KeyringPayloadProvider payloadProvider;
+	private static final String PROOF_PROTOCOL = "tingle-device-proof-v2";
+	private static final String APPLIED_PROTOCOL = "tingle-settings-applied-v1";
 
 	@Autowired
 	private ApplicationContext context;
+	// 이 흐름의 설문은 모두 "모름"이라 TSV3 프로필 바이트를 만들 수 없다. 기기에 보낼 프로필은 공개 시험 벡터로 대신한다
+	// (실제 프로필 바이트 생성은 DevSettingsIntegrationTest·KeyringCanonicalSnapshotService 테스트가 본다).
+	@MockitoBean
+	private KeyringCanonicalSnapshotService snapshots;
 
 	@Test
 	void walksSignupToReadyThenEndsOldDeviceSessionAndRestrictsRejoinAfterWithdrawal() throws Exception {
@@ -109,7 +110,7 @@ class SignupFlowIntegrationTest extends IntegrationTestSupport {
 			.andExpect(status().isOk());
 		step(tokens, "SYNC_PENDING").andExpect(jsonPath("$.signupCompleted").value(false));
 
-		// 7. 키링 동기화: 설정 발급 → 기기 서명 ACK → READY
+		// 7. 키링 동기화: TSV3 설정 발급 → 기기 저장 ACK → 적용 확인 → READY
 		syncKeyring(tokens, device);
 		step(tokens, "READY").andExpect(jsonPath("$.signupCompleted").value(true))
 			.andExpect(jsonPath("$.matchingReady").value(true));
@@ -163,8 +164,8 @@ class SignupFlowIntegrationTest extends IntegrationTestSupport {
 	private Device registerKeyring(JsonNode tokens) throws Exception {
 		// 공장에서 기기 키를 넣어 둔 미등록 키링(재고)
 		KeyPair keys = KeyPairGenerator.getInstance("Ed25519").generateKeyPair();
-		String serial = "flow-" + newSocialId();
-		String keyId = "key-" + newSocialId();
+		String serial = "XIAO-%016x".formatted(UUID.randomUUID().getLeastSignificantBits());
+		String keyId = "ed25519-" + HexFormat.of().formatHex(keys.getPublic().getEncoded(), 12, 20);
 		long id = jdbc.queryForObject("insert into keyring(serial_number,firmware_version,state,"
 			+ "credential_key_id,credential_public_key) values (?,'flow-fw','UNBOUND',?,?) returning id",
 			Long.class, serial, keyId, encode(keys.getPublic().getEncoded()));
@@ -173,12 +174,13 @@ class SignupFlowIntegrationTest extends IntegrationTestSupport {
 		JsonNode challenge = jsonMapper.readTree(perform(post("/api/keyrings/registration-challenges")
 			.header("Idempotency-Key", UUID.randomUUID()), tokens, null).andExpect(status().isCreated())
 			.andReturn().getResponse().getContentAsString());
-		byte[] transcript = KeyringProofTranscript.registration(keyId, serial,
+		// 새 기기는 소유 카운터 0 · 소유자 없음으로 v2 등록 서명을 한다.
+		byte[] transcript = KeyringProofTranscript.registrationV2(keyId, serial,
 			UUID.fromString(challenge.path("challengeId").asString()), challenge.path("nonce").asString(),
-			Instant.parse(challenge.path("expiresAt").asString()).getEpochSecond()).bytes();
+			Instant.parse(challenge.path("expiresAt").asString()).getEpochSecond(), 0).bytes();
 		perform(post("/api/keyrings").header("Idempotency-Key", UUID.randomUUID()), tokens,
 			toJson(Map.of("challengeId", challenge.path("challengeId").asString(), "deviceSerial", serial,
-				"proof", proof(device, transcript))))
+				"ownershipEpoch", 0, "ownerState", "UNOWNED", "proof", proof(device, transcript))))
 			.andExpect(status().isCreated()).andExpect(jsonPath("$.deviceId").value(id));
 		return device;
 	}
@@ -217,28 +219,36 @@ class SignupFlowIntegrationTest extends IntegrationTestSupport {
 	}
 
 	private void syncKeyring(JsonNode tokens, Device device) throws Exception {
-		given(payloadProvider.prepare(anyLong(), anyLong(), any(UUID.class))).willAnswer(invocation -> {
-			long userId = invocation.getArgument(0);
-			long version = jdbc.queryForObject("select settings_version from user_setting where user_id=?",
-				Long.class, userId);
-			long deviceId = invocation.getArgument(1);
-			UUID generation = invocation.getArgument(2);
-			return new KeyringPayload(userId, deviceId, generation, version, "synthetic-test-v1",
-				("flow-payload-v" + version).getBytes(StandardCharsets.UTF_8));
-		});
+		try (var input = getClass().getResourceAsStream("/keyring/app-flow-v3-vectors.json")) {
+			byte[] bundle = Base64.getUrlDecoder().decode(jsonMapper.readTree(input).path("vectors").path("bundle")
+				.path("base64url").asString());
+			given(snapshots.generateStoragePayload(anyLong())).willReturn(Arrays.copyOfRange(bundle, 4, 200));
+		}
 		String runs = "/api/keyrings/" + device.id() + "/sync-runs";
+		byte[] challenge = new byte[32];
 		JsonNode run = jsonMapper.readTree(perform(post(runs).header("Idempotency-Key", UUID.randomUUID()),
-			tokens, null).andExpect(status().isCreated()).andReturn().getResponse().getContentAsString());
+			tokens, toJson(Map.of("deviceNonce", encode(challenge), "payloadFormat", PeerSettingsCodec.FORMAT)))
+			.andExpect(status().isCreated()).andReturn().getResponse().getContentAsString());
 		step(tokens, "SYNC_PENDING");
 		UUID generation = UUID.fromString(run.path("ownerGeneration").asString());
-		byte[] transcript = KeyringProofTranscript.stored(device.keyId(), device.serial(), device.id(), generation,
-			UUID.fromString(run.path("syncRunId").asString()), run.path("nonce").asString(),
-			run.path("settingsVersion").asLong(), run.path("payloadHash").asString()).bytes();
-		perform(post(runs + "/" + run.path("syncRunId").asString() + "/ack")
-			.header("Idempotency-Key", UUID.randomUUID()), tokens,
-			toJson(Map.of("settingsVersion", run.path("settingsVersion").asLong(),
-				"payloadHash", run.path("payloadHash").asString(), "proof", proof(device, transcript))))
+		String runId = run.path("syncRunId").asString();
+		long version = run.path("settingsVersion").asLong();
+		String hash = run.path("payloadHash").asString();
+		byte[] stored = KeyringProofTranscript.storedV2(device.keyId(), device.serial(), device.id(), generation,
+			UUID.fromString(runId), run.path("nonce").asString(), version, hash, 0).bytes();
+		perform(post(runs + "/" + runId + "/ack").header("Idempotency-Key", UUID.randomUUID()), tokens,
+			toJson(Map.of("settingsVersion", version, "payloadHash", hash, "proof", proof(device, stored))))
 			.andExpect(status().isOk()).andExpect(jsonPath("$.state").value("ACKED"));
+		// 저장 ACK 만으로는 끝나지 않는다. 기기가 설정을 실제로 적용했다는 서명까지 받아야 READY 가 된다.
+		step(tokens, "SYNC_PENDING");
+		byte[] applied = (String.join("\n", "TINGLE-KEYRING-APPLIED", APPLIED_PROTOCOL, device.keyId(),
+			device.serial(), Long.toString(device.id()), generation.toString(), "0", runId,
+			run.path("nonce").asString(), Long.toString(version), hash, "APPLIED") + "\n")
+			.getBytes(StandardCharsets.UTF_8);
+		perform(post(runs + "/" + runId + "/applied").header("Idempotency-Key", UUID.randomUUID()), tokens,
+			toJson(Map.of("settingsVersion", version, "payloadHash", hash, "proof",
+				Map.of("protocolVersion", APPLIED_PROTOCOL, "keyId", device.keyId(), "signature",
+					sign(device, applied))))).andExpect(status().isOk());
 	}
 
 	private ResultActions withdraw(JsonNode tokens, JsonNode prepared) throws Exception {
@@ -255,11 +265,15 @@ class SignupFlowIntegrationTest extends IntegrationTestSupport {
 	}
 
 	private Map<String, String> proof(Device device, byte[] transcript) throws Exception {
+		return Map.of("protocolVersion", PROOF_PROTOCOL, "keyId", device.keyId(), "signature",
+			sign(device, transcript));
+	}
+
+	private String sign(Device device, byte[] transcript) throws Exception {
 		Signature signer = Signature.getInstance("Ed25519");
 		signer.initSign(device.keys().getPrivate());
 		signer.update(transcript);
-		return Map.of("protocolVersion", PROOF_PROTOCOL, "keyId", device.keyId(), "signature",
-			encode(signer.sign()));
+		return encode(signer.sign());
 	}
 
 	private static String encode(byte[] bytes) {

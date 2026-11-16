@@ -69,7 +69,7 @@ import tools.jackson.databind.json.JsonMapper;
 	"spring.main.web-application-type=none", "spring.profiles.active=test",
 	"spring.jpa.hibernate.ddl-auto=none", "spring.docker.compose.enabled=false",
 	"spring.sql.init.mode=always", "spring.sql.init.schema-locations=classpath:database/schema.sql",
-	"app.encounter.evaluation.retry-seconds=30", "app.encounter.evaluation.enabled=true",
+	"app.encounter.evaluation.retry-seconds=30",
 	"app.agreement.items[0].type=TERMS",
 	"app.agreement.items[0].version=test", "app.agreement.items[0].required=true"
 })
@@ -345,19 +345,6 @@ class EncounterProductionFlowPersistenceTest {
 		worker.poll();
 		assertThat(jdbc.queryForObject("select status='NOT_MATCHED' and proposed_at is null and raw_delete_at=? "
 			+ "from matching where id=?", Boolean.class, Timestamp.from(earlier), input.matchingId())).isTrue();
-		assertThat(successfulEvidence()).containsExactlyElementsOf(completed);
-		assertEvidencePreserved();
-	}
-
-	@Test
-	void disabledWorkerDoesNotRunTheExpirySweep() {
-		completeWithoutProposal();
-		List<String> completed = successfulEvidence();
-		Environment disabled = mock(Environment.class);
-		when(disabled.getProperty("app.encounter.evaluation.enabled", Boolean.class, false)).thenReturn(false);
-		clock.set(NOW.plusSeconds(1800));
-		restartedWorker(disabled).poll();
-		assertWaitingWithoutProposal();
 		assertThat(successfulEvidence()).containsExactlyElementsOf(completed);
 		assertEvidencePreserved();
 	}

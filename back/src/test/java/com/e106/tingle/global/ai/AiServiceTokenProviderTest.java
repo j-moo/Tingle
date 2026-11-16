@@ -80,21 +80,21 @@ class AiServiceTokenProviderTest {
 	}
 
 	@Test
-	void missingOrInvalidEnabledConfigurationPreventsConstruction() throws Exception {
+	void missingOrInvalidServerConfigurationPreventsConstruction() throws Exception {
 		String key = keyFile(pair(2048));
-		List<AiServiceProperties> invalid = List.of(new AiServiceProperties(true, "other", "key", key, ""),
-			new AiServiceProperties(true, "test", "bad/key", key, ""),
-			new AiServiceProperties(true, "test", "x".repeat(65), key, ""),
-			new AiServiceProperties(true, "test", "key", "", ""),
-			new AiServiceProperties(true, "test", "key", temporary.resolve("absent").toString(), ""));
+		List<AiServiceProperties> invalid = List.of(new AiServiceProperties("other", "key", key, ""),
+			new AiServiceProperties("dev", "bad/key", key, ""),
+			new AiServiceProperties("prod", "x".repeat(65), key, ""),
+			new AiServiceProperties("dev", "key", "", ""),
+			new AiServiceProperties("prod", "key", temporary.resolve("absent").toString(), ""));
 		for (AiServiceProperties properties : invalid) {
 			assertConstructionFailure(properties);
 		}
 	}
 
 	@Test
-	void disabledConfigurationStillConstructsWithoutAnyValidKeyOrIdentitySettings() {
-		assertUnavailable(provider(new AiServiceProperties(false, "other", "bad/key", "invalid\0path", "")));
+	void localConfigurationStillConstructsWithoutAnyValidKeyOrIdentitySettings() {
+		assertUnavailable(provider(new AiServiceProperties("local", "bad/key", "invalid\0path", "")));
 	}
 
 	@Test
@@ -121,7 +121,7 @@ class AiServiceTokenProviderTest {
 	}
 
 	private AiServiceProperties properties(String file) {
-		return new AiServiceProperties(true, "test", "synthetic-service-key", file, "https://ai.invalid");
+		return new AiServiceProperties("test", "synthetic-service-key", file, "https://ai.invalid");
 	}
 
 	private String keyFile(KeyPair pair) throws Exception {
@@ -144,8 +144,12 @@ class AiServiceTokenProviderTest {
 			exception -> assertThat(exception.getErrorCode()).isEqualTo(ErrorCode.SERVICE_UNAVAILABLE));
 	}
 
+	// local·test 는 키 없이도 뜬다. 기동 실패는 서버 환경(dev·prod)에서 확인한다.
 	private void assertConstructionFailure(AiServiceProperties properties) {
-		assertThatThrownBy(() -> provider(properties)).isInstanceOf(IllegalStateException.class)
+		AiServiceProperties server = new AiServiceProperties(
+			"test".equals(properties.environment()) ? "dev" : properties.environment(), properties.keyId(),
+			properties.privateKeyFile(), properties.baseUrl());
+		assertThatThrownBy(() -> provider(server)).isInstanceOf(IllegalStateException.class)
 			.hasMessage("AI service signing configuration is unavailable").hasNoCause();
 	}
 }

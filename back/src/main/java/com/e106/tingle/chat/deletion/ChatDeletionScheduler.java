@@ -8,7 +8,8 @@ import lombok.RequiredArgsConstructor;
 
 @Component
 @RequiredArgsConstructor
-@ConditionalOnProperty(name = "app.chat-deletion.scheduling-enabled", havingValue = "true")
+// 개발·운영은 늘 켠다. 통합 테스트만 끈다(application-test.yml).
+@ConditionalOnProperty(name = "app.chat-deletion.scheduling-enabled", havingValue = "true", matchIfMissing = true)
 public class ChatDeletionScheduler {
 	private final ChatDeletionService service;
 

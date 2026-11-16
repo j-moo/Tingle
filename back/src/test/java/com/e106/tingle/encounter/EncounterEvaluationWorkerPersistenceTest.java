@@ -56,8 +56,7 @@ import tools.jackson.databind.json.JsonMapper;
 @SpringBootTest(classes = EncounterEvaluationWorkerPersistenceTest.Config.class, properties = {
 	"spring.main.web-application-type=none", "spring.profiles.active=test",
 	"spring.jpa.hibernate.ddl-auto=none", "spring.docker.compose.enabled=false",
-	"spring.sql.init.mode=always", "spring.sql.init.schema-locations=classpath:database/schema.sql",
-	"app.encounter.evaluation.enabled=true"
+	"spring.sql.init.mode=always", "spring.sql.init.schema-locations=classpath:database/schema.sql"
 })
 class EncounterEvaluationWorkerPersistenceTest {
 	private static final Instant NOW = Instant.parse("2026-10-29T00:00:00Z");

@@ -19,7 +19,6 @@ import java.util.UUID;
 
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -46,7 +45,6 @@ import tools.jackson.databind.json.JsonMapper;
 
 /** Durable cryptographic intake only. STORED/VERIFIED_BOTH are not matching approval or a created proposal. */
 @Service
-@ConditionalOnProperty(name = {"app.keyring.peer.enabled", "app.keyring.peer.encounters-enabled"}, havingValue = "true")
 public class Ter2ReceiptService {
 
 	private final JdbcTemplate jdbc;
@@ -59,8 +57,6 @@ public class Ter2ReceiptService {
 	private final Ter2ProofVerifier verifier = new Ter2ProofVerifier();
 	@Value("${app.keyring.peer.server-public-key-hex:}")
 	private String expectedServerPublicKeyHex;
-	@Value("${app.keyring.peer.review-intake-approved:false}")
-	private boolean reviewIntakeApproved;
 
 	public Ter2ReceiptService(JdbcTemplate jdbc, PeerOwnershipService ownership,
 		ObjectProvider<DevSettingsIssuer> issuers, Clock clock, JsonMapper mapper, SettingsSnapshotJson snapshots,
@@ -232,9 +228,6 @@ public class Ter2ReceiptService {
 		});
 		if (result.occurredAt().isAfter(clock.instant())) {
 			throw invalid();
-		}
-		if (result.kind() == Kind.REVIEW && !reviewIntakeApproved) {
-			throw unresolved();
 		}
 		Scope ownScope = signedScope(result.own(), result.occurredAt());
 		if (result.peer() != null) {

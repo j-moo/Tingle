@@ -8,32 +8,20 @@ import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 
-import com.e106.tingle.global.error.BusinessException;
-import com.e106.tingle.global.error.ErrorCode;
-
-/** 11-11 결정 B로 운영에서도 서명 키가 켜지지만 1바이트 ON/OFF·TPS1 개발 형식은 열리지 않는다. */
+/** 운영도 개발과 같이 1바이트 ON/OFF·TPS1 형식을 받는다(11-17 결정 D3 가). 프로필로 막는 가드가 없다. */
 class KeyringSyncProductionGuardTest {
 	private static final String NONCE = "A".repeat(43);
 
 	@Test
-	void productionRejectsDevelopmentOnlyPayloadFormatsBeforeTouchingAnyState() {
-		context("prod").run(context -> {
-			KeyringSyncService service = context.getBean(KeyringSyncService.class);
+	void productionAndDevelopmentReachTheSameNormalFlowForEveryFormat() {
+		// 의존성이 비어 있으므로 형식 검사를 지나 첫 조회에서 멈춘다. 어느 프로필에서도 형식이 막히지 않았다는 뜻이다.
+		for (String profile : new String[] {"dev", "prod"}) {
 			for (String format : new String[] {null, "tingle-profile-storage-v1"}) {
-				assertThatThrownBy(() -> service.create(1L, UUID.randomUUID(), 1L, UUID.randomUUID(), NONCE, format))
-					.isInstanceOf(BusinessException.class)
-					.extracting(exception -> ((BusinessException)exception).getErrorCode())
-					.isEqualTo(ErrorCode.POLICY_UNRESOLVED);
+				context(profile).run(context -> assertThatThrownBy(() -> context.getBean(KeyringSyncService.class)
+					.create(1L, UUID.randomUUID(), 1L, UUID.randomUUID(), NONCE, format))
+					.isInstanceOf(NullPointerException.class));
 			}
-		});
-	}
-
-	@Test
-	void developmentStillReachesTheNormalFlowForTheSameFormats() {
-		// 의존성이 비어 있으므로 가드를 지나 첫 조회에서 멈춘다. 개발 형식이 개발에서 막히지 않았다는 뜻이다.
-		context("dev").run(context -> assertThatThrownBy(() -> context.getBean(KeyringSyncService.class)
-			.create(1L, UUID.randomUUID(), 1L, UUID.randomUUID(), NONCE, null))
-			.isInstanceOf(NullPointerException.class));
+		}
 	}
 
 	private static ApplicationContextRunner context(String profile) {

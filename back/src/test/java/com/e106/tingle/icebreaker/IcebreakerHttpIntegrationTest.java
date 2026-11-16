@@ -169,7 +169,6 @@ class IcebreakerHttpIntegrationTest extends IntegrationTestSupport {
 		Files.writeString(signingKey, "-----BEGIN PRIVATE KEY-----\n"
 			+ Base64.getEncoder().encodeToString(keys.getPrivate().getEncoded())
 			+ "\n-----END PRIVATE KEY-----\n");
-		registry.add("app.ai.service.enabled", () -> true);
 		registry.add("app.ai.service.environment", () -> "test");
 		registry.add("app.ai.service.key-id", () -> "synthetic-icebreaker");
 		registry.add("app.ai.service.private-key-file", () -> signingKey.toString());

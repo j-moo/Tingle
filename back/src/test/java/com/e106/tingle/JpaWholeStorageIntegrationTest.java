@@ -20,7 +20,8 @@ import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
 
 /** 빈 PostgreSQL에 SQL 선행 생성 없이 앱의 모든 엔티티로 만든 실제 저장 구조를 검사한다. */
-@SpringBootTest
+// 엔티티가 만드는 표만 센다. 엔티티가 아닌 키링 초기화·TSV3 표(application-test.yml)는 만들지 않는다.
+@SpringBootTest(properties = "spring.sql.init.mode=never")
 @ActiveProfiles("test")
 @Import(TestcontainersConfiguration.class)
 class JpaWholeStorageIntegrationTest {

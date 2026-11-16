@@ -30,7 +30,9 @@ public final class DevSigningKeyLoader {
 				pem(properties.privateKeyFile(), "PRIVATE KEY"))), factory.generatePublic(new X509EncodedKeySpec(
 				pem(properties.publicKeyFile(), "PUBLIC KEY"))));
 		} catch (Exception exception) {
-			throw new IllegalStateException("Dedicated development settings signing keys unavailable");
+			// 키 파일이 없으면 기동하지 않는다(개발·운영 같음). 키 내용은 메시지에 넣지 않는다.
+			throw new IllegalStateException("키링 설정 서명 키를 읽지 못했습니다. KEYRING_DEV_SETTINGS_PRIVATE_KEY_FILE, "
+				+ "KEYRING_DEV_SETTINGS_PUBLIC_KEY_FILE 에 Ed25519 PEM 파일 경로가 필요합니다");
 		}
 	}
 

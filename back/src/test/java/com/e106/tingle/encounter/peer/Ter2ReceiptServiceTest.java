@@ -114,7 +114,6 @@ class Ter2ReceiptServiceTest {
 			mapper, snapshots, new DataSourceTransactionManager(dataSource));
 		ReflectionTestUtils.setField(service, "expectedServerPublicKeyHex", HexFormat.of().formatHex(server));
 		// Explicit synthetic review policy approval; production's absent/default flag remains false.
-		ReflectionTestUtils.setField(service, "reviewIntakeApproved", true);
 		int evidence = evidence(raw);
 		byte[] own = Arrays.copyOfRange(raw, evidence + 80, evidence + 437);
 		byte[] peer = Arrays.copyOfRange(raw, evidence + 437, evidence + 794);
@@ -322,16 +321,12 @@ class Ter2ReceiptServiceTest {
 	}
 
 	@Test
-	void reviewNeedsExplicitApprovalBeforeStoringOrIssuingDeletionPermission() throws Exception {
+	void reviewIsStoredInQuarantineWithoutWaitingForCounterpart() throws Exception {
 		byte[] review = raw.clone();
 		review[25] = 3;
 		review[27] = 2;
 		signSynthetic(review, 1);
-		ReflectionTestUtils.setField(service, "reviewIntakeApproved", false);
-		assertThatThrownBy(() -> service.accept(1, 100, submission(review)))
-			.isInstanceOf(BusinessException.class).extracting("errorCode").isEqualTo(ErrorCode.POLICY_UNRESOLVED);
-		assertThat(jdbc.queryForObject("select count(*) from keyring_peer_encounter", Long.class)).isZero();
-		assertThat(service.accept(1, 100, submission(raw)).encounterStatus()).isEqualTo("WAITING_COUNTERPART");
+		assertThat(service.accept(1, 100, submission(review)).encounterStatus()).isEqualTo("REVIEW_QUARANTINED");
 	}
 
 	@Test

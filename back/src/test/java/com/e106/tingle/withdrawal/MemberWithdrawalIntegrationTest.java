@@ -28,9 +28,7 @@ import com.e106.tingle.user.ProfilePhotoService;
 
 import tools.jackson.databind.JsonNode;
 
-@SpringBootTest(properties = {"app.withdrawal.enabled=true",
-	"app.withdrawal.identity-secret=identity-test-secret-is-at-least-thirty-two-bytes-long",
-	"app.withdrawal.receipt-secret=receipt-test-secret-is-at-least-thirty-two-bytes-long"})
+@SpringBootTest
 @AutoConfigureMockMvc
 @ActiveProfiles({"test", "erd"})
 @Import(TestcontainersConfiguration.class)

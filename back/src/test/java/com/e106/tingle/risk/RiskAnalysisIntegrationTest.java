@@ -976,7 +976,7 @@ class RiskAnalysisIntegrationTest extends IntegrationTestSupport {
 		try {
 			var tokens = org.mockito.Mockito.mock(com.e106.tingle.global.ai.AiServiceTokenProvider.class);
 			given(tokens.issue()).willReturn("synthetic-risk-token");
-			var properties = new com.e106.tingle.global.ai.AiServiceProperties(true, "test", "synthetic", "",
+			var properties = new com.e106.tingle.global.ai.AiServiceProperties("test", "synthetic", "",
 				"http://127.0.0.1:" + server.getAddress().getPort());
 			var client = new com.e106.tingle.global.ai.AiInternalClient(properties, tokens, jsonMapper);
 			HttpRiskAnalysisGateway http = new HttpRiskAnalysisGateway(client, input -> 100);

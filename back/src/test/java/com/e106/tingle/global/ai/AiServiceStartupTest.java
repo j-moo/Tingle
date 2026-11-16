@@ -32,25 +32,25 @@ class AiServiceStartupTest {
 	Path temporary;
 
 	@Test
-	void enabledMissingKeyConfigurationOrMissingFilePreventsContextStartup() {
+	void serverMissingKeyConfigurationOrMissingFilePreventsContextStartup() {
 		assertStartupFailure(enabled(""));
 		assertStartupFailure(enabled(temporary.resolve("absent-private-key.pem").toString()));
 	}
 
 	@Test
-	void enabledCorruptKeyPreventsContextStartupWithoutExposingTheKeyMaterial() throws IOException {
+	void serverCorruptKeyPreventsContextStartupWithoutExposingTheKeyMaterial() throws IOException {
 		Path file = temporary.resolve("corrupt-private-key.pem");
 		Files.writeString(file, "synthetic-corrupt-private-key-material");
 		assertStartupFailure(enabled(file.toString()));
 	}
 
 	@Test
-	void enabledWeakRsaKeyPreventsContextStartup() throws Exception {
+	void serverWeakRsaKeyPreventsContextStartup() throws Exception {
 		assertStartupFailure(enabled(keyFile(1024).toString()));
 	}
 
 	@Test
-	void enabledInvalidIssuerEnvironmentOrKeyIdPreventsContextStartup() throws Exception {
+	void serverInvalidIssuerEnvironmentOrKeyIdPreventsContextStartup() throws Exception {
 		ApplicationContextRunner configured = enabled(keyFile(2048).toString());
 		assertStartupFailure(configured.withPropertyValues("app.ai.service.environment=production"));
 		assertStartupFailure(configured.withPropertyValues("app.ai.service.key-id="));
@@ -58,7 +58,7 @@ class AiServiceStartupTest {
 	}
 
 	@Test
-	void enabledValidSyntheticServiceKeyStartsAndIssuesTokens() throws Exception {
+	void serverValidSyntheticServiceKeyStartsAndIssuesTokens() throws Exception {
 		enabled(keyFile(2048).toString()).run(context -> {
 			assertThat(context).hasNotFailed().hasSingleBean(AiServiceTokenProvider.class);
 			AiServiceTokenProvider provider = context.getBean(AiServiceTokenProvider.class);
@@ -68,11 +68,10 @@ class AiServiceStartupTest {
 	}
 
 	@Test
-	void defaultDisabledConfigurationStartsEvenWithAnUnusableKeyPath() {
+	void localConfigurationStartsEvenWithAnUnusableKeyPath() {
 		runner.withPropertyValues("app.ai.service.private-key-file=" + temporary.resolve("never-read.pem"))
 			.run(context -> {
 				assertThat(context).hasNotFailed().hasSingleBean(AiServiceTokenProvider.class);
-				assertThat(context.getBean(AiServiceProperties.class).enabled()).isFalse();
 				assertThatThrownBy(() -> context.getBean(AiServiceTokenProvider.class).requireAvailable())
 					.isInstanceOfSatisfying(BusinessException.class,
 						error -> assertThat(error.getErrorCode()).isEqualTo(ErrorCode.SERVICE_UNAVAILABLE));
@@ -80,7 +79,8 @@ class AiServiceStartupTest {
 	}
 
 	private ApplicationContextRunner enabled(String file) {
-		return runner.withPropertyValues("app.ai.service.enabled=true", "app.ai.service.environment=test",
+		// 개발·운영(dev·prod)은 키가 없으면 기동하지 않는다. local·test 만 키 없이 뜬다.
+		return runner.withPropertyValues("app.ai.service.environment=dev",
 			"app.ai.service.key-id=synthetic-key", "app.ai.service.private-key-file=" + file);
 	}
 

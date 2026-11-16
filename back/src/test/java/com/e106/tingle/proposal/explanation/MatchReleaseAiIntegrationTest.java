@@ -166,7 +166,6 @@ class MatchReleaseAiIntegrationTest extends IntegrationTestSupport {
 			stop();
 			throw exception;
 		}
-		properties.add("app.ai.service.enabled", () -> true);
 		properties.add("app.ai.service.environment", () -> "test");
 		properties.add("app.ai.service.key-id", () -> "synthetic-key");
 		properties.add("app.ai.service.private-key-file", () -> temporary.resolve("private.pem").toString());
@@ -314,7 +313,6 @@ class MatchReleaseAiIntegrationTest extends IntegrationTestSupport {
 			+ "1,?,?,?,true,?,?,?, ?,?,?) on conflict(id) do nothing", RELEASE, toJson(ids),
 			Timestamp.from(NOW.minusSeconds(180)), UUID.randomUUID(), hash, UUID.randomUUID(), hash, reviewer,
 			Timestamp.from(NOW.minusSeconds(180)), author, Timestamp.from(NOW.minusSeconds(180)));
-		ReflectionTestUtils.setField(resolver, "approved", true);
 		ReflectionTestUtils.setField(resolver, "configuredRelease", RELEASE.toString());
 		ReflectionTestUtils.setField(resolver, "configuredHash", hash);
 		assertThat(resolver.resolve(POLICY, RULE, NOW.minusSeconds(60))).isEqualTo(RELEASE);

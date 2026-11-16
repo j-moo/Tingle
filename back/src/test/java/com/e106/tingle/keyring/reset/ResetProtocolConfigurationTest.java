@@ -9,20 +9,11 @@ import com.e106.tingle.keyring.DevSettingsProperties;
 
 class ResetProtocolConfigurationTest {
 	@Test
-	void defaultOffAndResetFlagAloneNeverLoadKeysOrRegisterAPhysicalProtocol() {
-		new ApplicationContextRunner().withUserConfiguration(ResetProtocolConfiguration.class)
-			.run(context -> assertThat(context).hasNotFailed().doesNotHaveBean(ResetDeviceProtocol.class));
-		new ApplicationContextRunner().withUserConfiguration(ResetProtocolConfiguration.class)
-			.withPropertyValues("app.keyring-reset.enabled=true")
-			.run(context -> assertThat(context).hasNotFailed().doesNotHaveBean(ResetDeviceProtocol.class));
-	}
-
-	@Test
-	void bothFlagsWithoutExistingDedicatedKeysFailClosedAndDoNotExposePaths() {
+	void missingDedicatedKeysFailClosedAndDoNotExposePaths() {
 		context("dev").run(context -> {
 			assertThat(context).hasFailed();
-			assertThat(context.getStartupFailure()).hasRootCauseMessage(
-				"Dedicated development settings signing keys unavailable");
+			assertThat(context.getStartupFailure()).rootCause().hasMessageContaining(
+				"KEYRING_DEV_SETTINGS_PRIVATE_KEY_FILE");
 			assertThat(context.getStartupFailure().toString()).doesNotContain("synthetic-secret-path");
 		});
 	}
@@ -32,16 +23,15 @@ class ResetProtocolConfigurationTest {
 		// 11-11 결정 B: 운영도 같은 키 파일을 읽는다. 파일이 없으면 임의 키 없이 기동을 거절한다.
 		context("prod").run(context -> {
 			assertThat(context).hasFailed();
-			assertThat(context.getStartupFailure()).hasRootCauseMessage(
-				"Dedicated development settings signing keys unavailable");
+			assertThat(context.getStartupFailure()).rootCause().hasMessageContaining(
+				"KEYRING_DEV_SETTINGS_PRIVATE_KEY_FILE");
 		});
 	}
 
 	private ApplicationContextRunner context(String... profiles) {
 		return new ApplicationContextRunner().withUserConfiguration(ResetProtocolConfiguration.class)
-			.withBean(DevSettingsProperties.class, () -> new DevSettingsProperties(true,
+			.withBean(DevSettingsProperties.class, () -> new DevSettingsProperties(
 				"synthetic-secret-path", "synthetic-public-path"))
-			.withPropertyValues("app.keyring-reset.enabled=true", "app.keyring.dev-settings.enabled=true")
 			.withInitializer(context -> context.getEnvironment().setActiveProfiles(profiles));
 	}
 }

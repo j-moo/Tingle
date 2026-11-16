@@ -9,7 +9,6 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
@@ -24,7 +23,6 @@ import lombok.RequiredArgsConstructor;
 
 /** Immutable ownership evidence, separate from the device's mutable current owner. */
 @Service
-@ConditionalOnProperty(name = "app.keyring.peer.enabled", havingValue = "true")
 @RequiredArgsConstructor
 public class PeerOwnershipService {
 

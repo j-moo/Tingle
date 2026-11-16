@@ -7,7 +7,6 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 
@@ -38,8 +37,6 @@ import tools.jackson.databind.json.JsonMapper;
 @RequiredArgsConstructor
 // 평가 워커가 꺼져 있으면 만들지 않는다. 그래야 승격이 "접수 완료"를 돌려주고 평가·기한 종료 없이 쌓이지 않고,
 // 이전처럼 정책 대기(BUSINESS_POLICY_PENDING)로 응답한다.
-@ConditionalOnProperty(name = {"app.keyring.peer.enabled", "app.keyring.peer.encounters-enabled",
-	"app.keyring.peer.business-intake-enabled", "app.encounter.evaluation.enabled"}, havingValue = "true")
 public class KeyringVerdictEvaluator
 	implements EncounterEvaluationGateway, MatchingEvaluationRuntimeVerifier, HistoricalEvidenceVerifier {
 

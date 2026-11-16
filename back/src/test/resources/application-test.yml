@@ -3,11 +3,43 @@ spring:
   jpa:
     hibernate:
       ddl-auto: create-drop
+  # 엔티티가 아닌 키링 초기화·TSV3 표(외래 키 없음)도 만든다. 운영은 infra/db/prod-changes 로 만든다.
+  sql:
+    init:
+      mode: always
+      schema-locations: classpath:database/keyring-reset-249.sql,classpath:database/keyring-peer-ownership-270.sql,classpath:database/keyring-peer-commands-270.sql,classpath:database/keyring-peer-encounter-270.sql
 
+# 개발·운영의 필수 설정에 넣는 테스트 전용 값(실제 비밀 값이 아니다). 서명 키는 저장소의 테스트 전용 키다.
 app:
   withdrawal:
+    identity-secret: identity-test-secret-is-at-least-thirty-two-bytes-long
+    receipt-secret: receipt-test-secret-is-at-least-thirty-two-bytes-long
     scheduling-enabled: false
     photo-cleanup-scheduling-enabled: false
+  keyring:
+    dev-settings:
+      private-key-file: src/test/resources/keyring/test-only-settings-private.pem
+      public-key-file: src/test/resources/keyring/test-only-settings-public.pem
+    peer:
+      policy-version: 1380991793
+      rule-version: 268439809
+      lease-seconds: 86400
+      opportunity-seconds: 604800
+      presence-gap-seconds: 30
+      server-public-key-hex: 03a107bff3ce10be1d70dd18e74bc09967e4d6309ba50d5f1ddc8664125531b8
+  push:
+    token-encryption-key: MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDA=
+  chat-message-push:
+    poll-ms: 1000
+  # 증거 파일이 없으므로 예약 삭제는 늘 보류된다. 삭제 동작은 각 테스트가 직접 확인한다.
+  backup-evidence:
+    file: ${java.io.tmpdir}/tingle-backup-evidence-test/tingle_dev.json
+    generation-file: ${java.io.tmpdir}/tingle-backup-evidence-test/tingle_dev.restore-generation
+    namespace: tingle_dev
+    scope-id: test-db-dumps
+    approval-id: test-only
+  chat-deletion:
+    scheduling-enabled: false
   async-observation:
     enabled: false
   auth:

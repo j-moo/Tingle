@@ -99,13 +99,12 @@ public class MemberAccessRepository {
 	}
 
 	/**
-	 * 새 제안을 받을 수 있는지. 기존 제안 응답 조건에 더해, 키링이 필수인 환경에서는 키링이 있어야 한다.
+	 * 새 제안을 받을 수 있는지. 기존 제안 응답 조건에 더해 키링이 있어야 한다.
 	 * 마지막 키링을 초기화한 회원은 기존 기능은 그대로 쓰지만, 키링을 다시 등록할 때까지 새 제안은 만들지 않는다.
 	 * 차단 · 신고 · 방 나가기 같은 기존 응답 경로는 [canRespondToProposal] 을 그대로 쓴다.
 	 */
 	public boolean canReceiveNewProposal(long userId) {
-		return canRespondToProposal(userId)
-			&& (!environment.getProperty("app.signup.keyring-required", Boolean.class, true) || hasKeyring(userId));
+		return canRespondToProposal(userId) && hasKeyring(userId);
 	}
 
 	public boolean signupCompleted(long userId) {

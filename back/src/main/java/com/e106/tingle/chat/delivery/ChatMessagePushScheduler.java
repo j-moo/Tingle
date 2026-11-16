@@ -5,24 +5,29 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.atomic.AtomicBoolean;
 
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.scheduling.annotation.EnableScheduling;
 import org.springframework.scheduling.annotation.Scheduled;
 
 import jakarta.annotation.PreDestroy;
-import lombok.RequiredArgsConstructor;
 
 @Configuration
 @EnableScheduling
-@RequiredArgsConstructor
-@ConditionalOnProperty(name = "app.chat-message-push.scheduling-enabled", havingValue = "true")
 public class ChatMessagePushScheduler {
 	private final ChatMessagePushDispatcher dispatcher;
 	private final ExecutorService worker = Executors.newVirtualThreadPerTaskExecutor();
 	private final AtomicBoolean running = new AtomicBoolean();
 
-	@Scheduled(fixedDelayString = "${app.chat-message-push.poll-ms:1000}")
+	public ChatMessagePushScheduler(ChatMessagePushDispatcher dispatcher,
+		@Value("${app.chat-message-push.poll-ms:}") String pollMs) {
+		if (!pollMs.matches("[1-9][0-9]{0,8}")) {
+			throw new IllegalStateException("CHAT_MESSAGE_PUSH_POLL_MS 값이 없거나 올바르지 않습니다 (1 이상 ms)");
+		}
+		this.dispatcher = dispatcher;
+	}
+
+	@Scheduled(fixedDelayString = "${app.chat-message-push.poll-ms}")
 	public void dispatch() {
 		if (!running.compareAndSet(false, true)) {
 			return;

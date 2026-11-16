@@ -14,7 +14,6 @@ import java.util.UUID;
 
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
 
 import com.e106.tingle.global.error.BusinessException;
@@ -31,7 +30,6 @@ import lombok.RequiredArgsConstructor;
 
 /** Explicitly opted-in TSV3 issuer. The caller holds member/settings/device locks in that order. */
 @Service
-@ConditionalOnProperty(name = "app.keyring.peer.enabled", havingValue = "true")
 @RequiredArgsConstructor
 public class PeerSettingsIssuer {
 

@@ -30,11 +30,10 @@ class RiskGatewayConfigurationTest {
 	}
 
 	@Test
-	void commonAiEnablementDoesNotEnableRiskTransmission() {
+	void commonAiClientDoesNotEnableRiskTransmission() {
 		AiInternalClient client = mock(AiInternalClient.class);
 		RiskTokenizer tokenizer = mock(RiskTokenizer.class);
-		runner.withPropertyValues("app.ai.service.enabled=true")
-			.withBean(AiInternalClient.class, () -> client).withBean(RiskTokenizer.class, () -> tokenizer)
+		runner.withBean(AiInternalClient.class, () -> client).withBean(RiskTokenizer.class, () -> tokenizer)
 			.run(context -> {
 				assertThat(context).hasNotFailed().hasSingleBean(RiskAnalysisGateway.class);
 				assertThat(context.getBean(RiskAnalysisGateway.class)).isInstanceOf(DisabledRiskAnalysisGateway.class);

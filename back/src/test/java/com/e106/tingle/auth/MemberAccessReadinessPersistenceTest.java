@@ -71,15 +71,6 @@ class MemberAccessReadinessPersistenceTest {
 		jdbc.update("update keyring set owner_user_id=null,state='UNBOUND' where owner_user_id=?", evidence.userId());
 		assertThat(members.canRespondToProposal(evidence.userId())).isTrue();
 		assertThat(members.canReceiveNewProposal(evidence.userId())).isFalse();
-		MockEnvironment optional = new MockEnvironment();
-		for (int index = 0; index < REQUIRED.size(); index++) {
-			String prefix = "app.agreement.items[" + index + "].";
-			optional.setProperty(prefix + "type", REQUIRED.get(index));
-			optional.setProperty(prefix + "version", VERSION);
-			optional.setProperty(prefix + "required", "true");
-		}
-		optional.setProperty("app.signup.keyring-required", "false");
-		assertThat(new MemberAccessRepository(jdbc, optional).canReceiveNewProposal(evidence.userId())).isTrue();
 	}
 
 	@Test

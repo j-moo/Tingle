@@ -10,9 +10,14 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.security.KeyFactory;
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
 import java.security.Signature;
+import java.security.spec.PKCS8EncodedKeySpec;
+import java.security.spec.X509EncodedKeySpec;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
@@ -30,7 +35,6 @@ import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.ResultActions;
 
@@ -38,7 +42,6 @@ import com.e106.tingle.ContractFixtures;
 import com.e106.tingle.IntegrationTestSupport;
 import com.e106.tingle.TestcontainersConfiguration;
 import com.e106.tingle.keyring.proof.KeyringProofTranscript;
-import com.e106.tingle.keyring.proof.ServerSettingsSigner;
 
 import tools.jackson.databind.JsonNode;
 
@@ -256,17 +259,9 @@ class DevSettingsIntegrationTest extends IntegrationTestSupport {
 		long deviceId = jdbc.queryForObject("insert into keyring(serial_number,firmware_version,state,"
 			+ "credential_key_id,credential_public_key) values (?,'sync-test','UNBOUND',?,?) returning id",
 			Long.class, serial, keyId, encode(keys.getPublic().getEncoded()));
-		JsonNode challenge = jsonMapper.readTree(perform(post("/api/keyrings/registration-challenges")
-			.header("Idempotency-Key", UUID.randomUUID()), tokens, null).andExpect(status().isCreated())
-			.andReturn().getResponse().getContentAsString());
-		byte[] transcript = KeyringProofTranscript.registration(keyId, serial,
-			UUID.fromString(challenge.path("challengeId").asString()), challenge.path("nonce").asString(),
-			Instant.parse(challenge.path("expiresAt").asString()).getEpochSecond()).bytes();
-		String registration = toJson(Map.of("challengeId", challenge.path("challengeId").asString(),
-			"deviceSerial", serial, "proof", Map.of("protocolVersion", "tingle-device-proof-v1",
-				"keyId", keyId, "signature", sign(keys, transcript))));
-		perform(post("/api/keyrings").header("Idempotency-Key", UUID.randomUUID()), tokens, registration)
-			.andExpect(status().isCreated());
+		// 소유 카운터가 없는 기존(v1) 등록 기기다. 새 등록은 v2 로 소유 카운터를 받는다(KeyringRegistrationIntegrationTest).
+		jdbc.update("update keyring set owner_user_id=?,state='REGISTERED',owner_generation=? where id=?", userId,
+			UUID.randomUUID(), deviceId);
 		patchProfile(tokens, fullProfile(uniqueNickname())).andExpect(status().isOk());
 		completeProfile(tokens).andExpect(status().isOk());
 		UUID generation = jdbc.queryForObject("select owner_generation from keyring where id=?", UUID.class,
@@ -385,15 +380,17 @@ class DevSettingsIntegrationTest extends IntegrationTestSupport {
 
 	@TestConfiguration(proxyBeanMethods = false)
 	static class SigningConfiguration {
+		/** 서버가 쓰는 테스트 전용 서명 키(application-test.yml)와 같은 쌍. 서명 확인에만 쓴다. */
 		@Bean
 		KeyPair settingsServerKeys() throws Exception {
-			return KeyPairGenerator.getInstance("Ed25519").generateKeyPair();
+			var factory = KeyFactory.getInstance("Ed25519");
+			return new KeyPair(factory.generatePublic(new X509EncodedKeySpec(pem("test-only-settings-public.pem"))),
+				factory.generatePrivate(new PKCS8EncodedKeySpec(pem("test-only-settings-private.pem"))));
 		}
 
-		@Bean
-		DevSettingsIssuer devSettingsIssuer(JdbcTemplate jdbc, KeyPair settingsServerKeys) {
-			return new DevSettingsIssuer(jdbc,
-				new ServerSettingsSigner(settingsServerKeys.getPrivate(), settingsServerKeys.getPublic()));
+		private static byte[] pem(String name) throws Exception {
+			String text = Files.readString(Path.of("src/test/resources/keyring", name));
+			return Base64.getMimeDecoder().decode(text.replaceAll("-----[A-Z ]+-----", ""));
 		}
 	}
 }
