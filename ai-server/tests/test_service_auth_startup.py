@@ -35,8 +35,7 @@ from app.personal_analysis_api.review_samples import synthetic_request
 with TestClient(app) as client:
     diagnostic_request_ids = []
     def observe_personal_unavailable(response):
-        if (hasattr(app.state, 'personal_analysis_runtime')
-                and response.request.url.path == '/internal/ai/personal-analyses' and response.status_code == 503):
+        if response.request.url.path == '/internal/ai/personal-analyses' and response.status_code == 503:
             diagnostic_request_ids.append(response.headers['X-Request-Id'])
     client.event_hooks['response'].append(observe_personal_unavailable)
     paths = client.get('/openapi.json').json()['paths']
