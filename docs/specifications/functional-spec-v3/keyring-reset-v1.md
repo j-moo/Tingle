@@ -2,15 +2,13 @@
 
 S15P31E106-249 / MR !211. 기기 바이트 계약의 기준은 IoT !217 `f701140d`의
 `iot/src/reset.c`, `proof.c`, `settings_auth.c`다. 이 문서는 BE 구현과 적용 순서를 설명하며
-계약 담당자의 승인·개발 배포·실기기 완료를 대신하지 않는다. 기능은 기본 OFF다.
+계약 담당자의 승인·개발 배포·실기기 완료를 대신하지 않는다. 기능은 운영·개발 모두 늘 켜져 있다(S15P31E106-407).
 
 ## 실행 설정과 안전 경계
 
-`app.keyring-reset.enabled=true`와 기존 `app.keyring.dev-settings.enabled=true`가 함께 있어야
-실제 서명 adapter를 등록한다. 이미 준비한 개발 Ed25519 전용 키 파일과 기존 loader를 재사용한다.
+켜고 끄는 설정은 없고 실제 서명 adapter를 늘 등록한다. 이미 준비한 개발 Ed25519 전용 키 파일과 기존 loader를 재사용한다.
 키가 없거나 쌍이 다르면 시작 실패이며 임시 키·JWT 키·기기 개인키로 대체하지 않는다.
-dev/test만 허용하고 prod가 함께 활성화되어도 거부한다. 운영 키·활성화는 별도 검토 사항이다.
-컨트롤러는 reset flag가 없으면 등록되지 않는다. 실제 adapter가 없으면 시작은 POLICY_UNRESOLVED다.
+운영도 같은 키를 쓴다(11-11 결정 B). 실제 adapter가 없으면 시작은 POLICY_UNRESOLVED다.
 
 ## 앱 API
 
@@ -73,7 +71,7 @@ NULL인 최초 기기는 서명된 epoch0 challenge/등록 v2 증명으로만0�
 초기화는 from→from+1이고 Long.MAX_VALUE에서는 거부한다. 재등록에서도 카운터는 유지한다.
 고정 serial·기기 인증키·폐기 정보·회원/프로필/설문/설정/채팅은 지우지 않는다.
 
-reset flag가 켜진 상태에서 발급한 등록 challenge는 `tingle-device-proof-v2`다.
+발급하는 등록 challenge는 `tingle-device-proof-v2`다.
 이 선택은 신규 등록 전체에 적용되므로 기존0.2.3 등 v1-only 앱/펌웨어 조합의 신규 등록과 호환되지 않는다.
 FE와 IoT가 challenge v2·ownershipEpoch·UNOWNED를 지원하는 배포 버전·적용 순서를 합의하기 전에는
 기능을 켜지 않는다. 구형과의 혼재 운영을 자동 해결한 것으로 표시하지 않는다.
