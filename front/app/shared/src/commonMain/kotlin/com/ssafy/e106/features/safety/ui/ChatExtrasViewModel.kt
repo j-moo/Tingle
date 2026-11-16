@@ -22,7 +22,9 @@ data class ChatExtrasState(val owner: Session.SignedIn? = null, val room: Long? 
     // 관심 주제 동의. null 이면 아직 모름(스위치 숨김)
     val topicConsent: Boolean? = null, val topicSaving: Boolean = false,
     // 아직 닫지 않은 AI 위험 안내(나에게만 보임)
-    val safety: List<SafetyNoticeItem> = emptyList())
+    val safety: List<SafetyNoticeItem> = emptyList(),
+    // 이 방의 질문 확인이 한 번이라도 끝났는지(실패 포함). 끝나기 전엔 추천 칸을 그리지 않는다
+    val checked: Boolean = false)
 
 /** 부가 기능 실패는 기본 채팅을 취소하지 않는다. 다만 권한을 잃은 결과는 표시하지 않는다. */
 @OptIn(ExperimentalUuidApi::class)
@@ -290,7 +292,8 @@ class ChatExtrasViewModel(private val api: ChatExtrasRepository, private val cha
             try { if(allowed(room, owner, stamp)) block(room, owner, stamp) }
             catch(e: CancellationException) { throw e }
             catch(_: Exception) { if(valid(stamp, owner, room)) mutable.update { it.copy(error = chatInvalid(), questions = emptyList(), source = null) } }
-            finally { if(valid(stamp, owner, room) && seq == workSeq) mutable.update { it.copy(busy = false) } }
+            // 실패해도 확인은 끝난 것으로 둔다. 칸 안의 "다시 시도"가 보여야 한다
+            finally { if(valid(stamp, owner, room) && seq == workSeq) mutable.update { it.copy(busy = false, checked = true) } }
         }
     }
 }

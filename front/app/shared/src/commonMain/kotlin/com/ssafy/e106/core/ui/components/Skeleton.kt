@@ -40,10 +40,12 @@ import org.jetbrains.compose.resources.stringResource
 /**
  * 당겨서 새로고침: 내용 전체가 손가락을 따라 내려오고, 위쪽 빈자리에 고리가 드러난다(놓으면 고리가 돈다).
  * [content] 는 세로로 스크롤할 수 있어야 당김이 잡힌다. 당길 수 없는 사용자를 위해 같은 동작을 접근성 동작으로도 둔다.
+ * 내용이 상태 바 밑까지 깔린 화면은 [indicatorInsets] 로 고리를 상태 바 아래로 내린다.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun PullDownRefreshBox(refreshing: Boolean, onRefresh: () -> Unit, modifier: Modifier = Modifier, content: @Composable BoxScope.() -> Unit) {
+fun PullDownRefreshBox(refreshing: Boolean, onRefresh: () -> Unit, modifier: Modifier = Modifier,
+    indicatorInsets: WindowInsets = WindowInsets(0), content: @Composable BoxScope.() -> Unit) {
     val state = rememberPullToRefreshState()
     val travel = with(LocalDensity.current) { PullTravel.toPx() }
     val label = stringResource(Res.string.state_refresh)
@@ -52,7 +54,7 @@ fun PullDownRefreshBox(refreshing: Boolean, onRefresh: () -> Unit, modifier: Mod
         state, contentAlignment = Alignment.TopCenter,
         indicator = {
             val pulled = state.distanceFraction.coerceIn(0f, 1f)
-            Box(Modifier.align(Alignment.TopCenter).fillMaxWidth().height(PullTravel).graphicsLayer { alpha = pulled }
+            Box(Modifier.align(Alignment.TopCenter).windowInsetsPadding(indicatorInsets).fillMaxWidth().height(PullTravel).graphicsLayer { alpha = pulled }
                 .clearAndSetSemantics {}, contentAlignment = Alignment.Center) {
                 if (refreshing) CircularProgressIndicator(Modifier.size(AppSizes.Icon), color = AppColors.TextPrimary,
                     trackColor = AppColors.BorderSubtle, strokeWidth = PullStroke)

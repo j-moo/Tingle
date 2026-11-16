@@ -33,4 +33,6 @@ object AppColors {
     /** 되돌릴 수 없는 작업(키링 초기화)의 경고 배경 · 글자 */
     val ErrorContainer = Color(0xFFFDECEA)
     val OnErrorContainer = Color(0xFF6B1510)
+    /** 켜진 홈 원 글자 · 생활 정보 아이콘의 연두 잉크(연두 바탕 대비 4.5:1 이상) */
+    val FreshInk = Color(0xFF2F6B12)
 }

@@ -21,12 +21,20 @@ import org.jetbrains.compose.resources.StringResource
 import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.viewmodel.koinViewModel
 
-/** 화면은 서버 데이터를 직접 변경하지 않고 사용자의 명시적 선택만 ViewModel에 전달한다. */
+/**
+ * 화면은 서버 데이터를 직접 변경하지 않고 사용자의 명시적 선택만 ViewModel에 전달한다.
+ * [onTabBar] 로 틀(하단 바)에 (목록 루트인지, 바를 눌러도 되는지)를 알린다. 수락 · 거절을 보내는 중에는 바로 이동하지 못한다
+ */
 @Composable
-fun ConnectedProposalRoute(session: Session.SignedIn, onHome: () -> Unit, onProfile: () -> Unit,
-    onChats: () -> Unit, onOpenChat: (Long) -> Unit, model: ProposalViewModel = koinViewModel(),
-    reasonModel: MatchReasonViewModel = koinViewModel(), pushes: PushEvents? = null) {
+fun ConnectedProposalRoute(session: Session.SignedIn, onHome: () -> Unit, onOpenChat: (Long) -> Unit,
+    model: ProposalViewModel = koinViewModel(), reasonModel: MatchReasonViewModel = koinViewModel(), pushes: PushEvents? = null,
+    onTabBar: (root: Boolean, enabled: Boolean) -> Unit = { _, _ -> }) {
     val state by model.state.collectAsStateWithLifecycle()
+    // 목록(저장소 문제 · 채팅으로 넘어가는 순간 제외)일 때만 하단 바를 보인다
+    val root = state.session != session || !state.storageIssue && state.page == ProposalPageMode.List && state.openChat == null
+    // 조회(자동 · 수동)는 이동을 막지 않는다. 이탈 시 pause/refresh 가 취소와 응답 무효화를 맡고, 수락 · 거절을 보내는 중에만 막는다
+    val navigationBlocked = state.writing
+    SideEffect { onTabBar(root, !navigationBlocked) }
     // 목록 탭(응답 대기 | 기다리는 중): 프로필에 갔다 와도 그대로
     var listTab by rememberSaveable(session.userId) { mutableIntStateOf(0) }
     val lifecycle = LocalLifecycleOwner.current.lifecycle
@@ -54,13 +62,11 @@ fun ConnectedProposalRoute(session: Session.SignedIn, onHome: () -> Unit, onProf
         if (reason.accessLost) reason.context?.let(model::revokeProfile)
     }
     DisposableEffect(reasonModel) { onDispose { reasonModel.bind(null) } }
-    // NavHost 이동으로 컴포지션만 제거되어도 자동 조회를 멈춘다. ViewModel 정리와 화면 이탈은 다르다.
+    // NavHost 이동 · 하단 바 이동으로 컴포지션만 제거되어도 자동 조회를 멈춘다. ViewModel 정리와 화면 이탈은 다르다.
     DisposableEffect(model) { onDispose { model.pause() } }
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { model.resume() }
     LifecycleEventEffect(Lifecycle.Event.ON_STOP) { model.pause() }
     if (state.session != session) return
-    // 조회(자동 · 수동)는 이동을 막지 않는다. 이탈 시 pause/refresh 가 취소와 응답 무효화를 맡고, 수락 · 거절을 보내는 중에만 막는다
-    val navigationBlocked = state.writing
     fun leave(action: () -> Unit) { if (!navigationBlocked) { model.pause(); action() } }
     // 서로 수락 · 채팅방 확인되면 결과 화면 없이 바로 채팅
     LaunchedEffect(state.openChat, navigationBlocked) {
@@ -84,9 +90,6 @@ fun ConnectedProposalRoute(session: Session.SignedIn, onHome: () -> Unit, onProf
             when (action) {
                 ProposalListAction.Refresh -> model.refresh()
                 ProposalListAction.LoadMore -> model.more()
-                ProposalListAction.Home -> leave(onHome)
-                ProposalListAction.Profile -> leave(onProfile)
-                ProposalListAction.Chats -> leave(onChats)
             }
         }, tab = listTab, onTab = { listTab = it }, error = state.error, notice = {
             // 이전에 보낸 선택의 결과를 모르면 새 제안을 열지 않는다. 결과 확인은 아래 띠에서 한다

@@ -3,6 +3,8 @@ package com.ssafy.e106.features.home
 import androidx.lifecycle.ViewModelStore
 import com.ssafy.e106.core.auth.*
 import com.ssafy.e106.core.network.*
+import com.ssafy.e106.core.storage.PrefKey
+import com.ssafy.e106.core.storage.PrefRead
 import com.ssafy.e106.features.account.ui.AccountMenuLoad
 import com.ssafy.e106.features.home.ui.HomeLoadState
 import com.ssafy.e106.features.home.ui.HomeSessionViewModel
@@ -17,6 +19,7 @@ import io.ktor.client.engine.mock.MockEngine
 import kotlinx.coroutines.*
 import kotlinx.coroutines.test.*
 import kotlin.test.*
+import kotlinx.serialization.builtins.serializer
 
 /** 마이를 다시 열 때 받아 둔 닉네임을 지우고 뼈대로 돌아가지 않는다. 다시 받기 실패도 실패 화면으로 바꾸지 않는다. */
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -32,6 +35,7 @@ class HomeAccountNicknameTest {
                 override suspend fun nickname(value: String) = error("unused")
                 override suspend fun save(userId: Long, fields: kotlinx.serialization.json.JsonObject) = error("unused")
                 override suspend fun complete(userId: Long) = error("unused")
+                override suspend fun contactEmail(userId: Long) = error("unused")
             }
             // 마이 닉네임 조회에는 쓰이지 않는 연결들. 불리면 실패한다
             val settings = object : MatchingSettingsRepository {
@@ -73,6 +77,49 @@ class HomeAccountNicknameTest {
             assertEquals(AccountMenuLoad.Ready, vm.state.value.account.load)
             assertEquals("새닉네임", vm.state.value.account.nickname)
             assertNotEquals(HomeLoadState.Failed, vm.state.value.home.load)
+        } finally {
+            models.clear()
+            client.close()
+            Dispatchers.resetMain()
+        }
+    }
+
+    // 앱을 새로 켠 직후: 저장해 둔 닉네임을 첫 프레임부터 보여 주고, 서버 값이 오면 화면과 저장값을 함께 바꾼다
+    @Test fun cachedNicknameShowsFromFirstFrame() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        val models = ViewModelStore()
+        val client = createHttpClient("https://test/api/", httpLog = false, engine = MockEngine { error("unused") })
+        try {
+            val reply = CompletableDeferred<ApiResult<ProfileResponse>>()
+            val profiles = object : ProfileRepository {
+                override suspend fun get(userId: Long) = reply.await()
+                override suspend fun nickname(value: String) = error("unused")
+                override suspend fun save(userId: Long, fields: kotlinx.serialization.json.JsonObject) = error("unused")
+                override suspend fun complete(userId: Long) = error("unused")
+                override suspend fun contactEmail(userId: Long) = error("unused")
+            }
+            val settings = object : MatchingSettingsRepository {
+                override suspend fun get(userId: Long, kind: SettingsKind) = error("unused")
+                override suspend fun save(userId: Long, kind: SettingsKind, values: ConflictValues, etag: String) = error("unused")
+            }
+            val auth = object : AuthRepository {
+                override fun available(provider: Provider) = error("unused")
+                override suspend fun login(provider: Provider) = error("unused")
+                override suspend fun logout() = error("unused")
+            }
+            val owned = object : OwnedKeyringRepository { override suspend fun list() = error("unused") }
+            val key = PrefKey("account.nickname", String.serializer())
+            val prefs = HomeTestPrefs().apply { set(key, "저장된닉", 1) }
+            val vm = HomeSessionViewModel(profiles, settings, HttpOnboardingRepository(client),
+                TestSession(OnboardingStatus.READY), auth, owned, prefs = prefs).also { models.put("home", it) }
+            assertEquals(AccountMenuLoad.Ready, vm.state.value.account.load)
+            assertEquals("저장된닉", vm.state.value.account.nickname)
+
+            vm.account(); runCurrent()
+            assertEquals("저장된닉", vm.state.value.account.nickname)
+            reply.complete(ApiResult.Ok(ProfileResponse(1, "새닉네임"))); runCurrent()
+            assertEquals("새닉네임", vm.state.value.account.nickname)
+            assertEquals(PrefRead.Found("새닉네임"), prefs.read(key, 1))
         } finally {
             models.clear()
             client.close()

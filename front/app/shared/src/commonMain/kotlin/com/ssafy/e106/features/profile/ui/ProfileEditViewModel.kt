@@ -25,6 +25,8 @@ data class ProfileManagementState(
     val photoFailed: Boolean = false,
     // 저장 성공 후 이동은 현재 화면이 소비한다. 회전 전 화면의 콜백을 붙잡지 않는다.
     val saveCompleted: Boolean = false,
+    // 보기 화면의 연락 이메일 카드. 없거나 못 받으면 null(카드를 숨긴다)
+    val contactEmail: String? = null,
 ) {
     val canEdit get() = editor != null && !busy && !recoveryRequired
 }
@@ -40,13 +42,14 @@ class ProfileEditViewModel(
     val state = mutable.asStateFlow()
     private var generation = 0
     private var job: Job? = null
+    private var emailJob: Job? = null
     private var writing = false
     private var pending: JsonObject? = null
 
     init {
         viewModelScope.launch(start = CoroutineStart.UNDISPATCHED) {
             sessions.state.collect { s ->
-                generation++; job?.cancel(); writing = false; pending = null
+                generation++; job?.cancel(); emailJob?.cancel(); writing = false; pending = null
                 mutable.value = ProfileManagementState(session = s as? Session.SignedIn)
             }
         }
@@ -65,7 +68,7 @@ class ProfileEditViewModel(
     fun leave() {
         // 화면 구성 해제(dispose)가 아니라 사용자의 실제 이탈에서만 요청을 취소한다.
         val uncertain = writing
-        generation++; job?.cancel(); writing = false
+        generation++; job?.cancel(); emailJob?.cancel(); writing = false
         // 사진은 지우지 않는다: 다시 들어올 때 같은 사진을 처음부터 그리지 않게(계정이 바뀌면 상태 전체가 초기화된다)
         mutable.update { it.copy(busy = false, saveCompleted = false, recoveryRequired = it.recoveryRequired || uncertain,
             editor = it.editor?.copy(confirmDiscard = false)) }
@@ -88,7 +91,24 @@ class ProfileEditViewModel(
                 ProfileGender.entries.first { it.code() == p.gender }, p.hasProfilePhoto), error = null, problem = null)
         }
     }
-    fun load() = work { user, stamp ->
+    /** [withEmail]: 보기 화면만 연락 이메일 카드를 쓴다(수정 화면에서는 받지 않는다) */
+    fun load(withEmail: Boolean = false) {
+        if (withEmail) loadContactEmail()
+        loadProfile()
+    }
+    // 연락 이메일은 선택 카드라 프로필 불러오기(busy)와 따로 받는다. 실패하면 보이던 값을 그대로 둔다(계정이 바뀌면 상태 전체가 초기화된다)
+    /** 연락 이메일만 다시 받는다(프로필 · 사진은 받지 않는다). 저장 뒤 보기 화면으로 돌아갈 때 쓴다 */
+    fun loadContactEmail() {
+        val user = mutable.value.session ?: return
+        if (user != sessions.state.value || !access.canManageProfile(user)) return
+        val stamp = generation
+        emailJob?.cancel()
+        emailJob = viewModelScope.launch {
+            val result = profiles.contactEmail(user.userId) as? ApiResult.Ok ?: return@launch
+            if (valid(stamp)) mutable.update { it.copy(contactEmail = result.value.email?.takeIf { e -> e.isNotBlank() }) }
+        }
+    }
+    private fun loadProfile() = work { user, stamp ->
         // 다시 불러오는 동안 보던 사진은 지우지 않는다(돌아올 때마다 사진 칸이 깜빡이지 않게). 새 사진이 오면 바꾼다
         when (val result = profiles.get(user)) {
             is ApiResult.Fail -> if (valid(stamp)) mutable.update { it.copy(error = result.error) }

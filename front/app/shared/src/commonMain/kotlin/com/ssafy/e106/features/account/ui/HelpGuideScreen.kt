@@ -19,7 +19,6 @@ fun HelpGuideScreen(state: HelpGuideState, onAction: (HelpGuideAction) -> Unit, 
         HelpGuideKind.Terms -> Res.string.account_terms
         HelpGuideKind.PrivacyPolicy -> Res.string.account_privacy
         HelpGuideKind.Support -> Res.string.account_support
-        HelpGuideKind.Correction -> Res.string.account_correction
     })
     // 처음 불러오기 실패: 화면 전체를 상태 화면으로(당기거나 작은 "다시 시도"). 화면이 오류 종류를 받지 않아 "알 수 없는 오류" 모양이다
     if (state.stage == HelpGuideStage.LoadFailed) {
@@ -39,17 +38,14 @@ fun HelpGuideScreen(state: HelpGuideState, onAction: (HelpGuideAction) -> Unit, 
                         HelpGuideKind.Terms -> Res.string.help_terms_heading
                         HelpGuideKind.PrivacyPolicy -> Res.string.help_privacy_heading
                         HelpGuideKind.Support -> Res.string.help_support_heading
-                        HelpGuideKind.Correction -> Res.string.help_correction_heading
                     }), style = MaterialTheme.typography.headlineMedium)
                     Text(stringResource(when (state.kind) {
                         HelpGuideKind.Terms -> Res.string.help_terms_body
                         HelpGuideKind.PrivacyPolicy -> Res.string.help_privacy_body
                         HelpGuideKind.Support -> Res.string.help_support_body
-                        HelpGuideKind.Correction -> Res.string.help_correction_body
                     }))
                     if (state.isInquiry) {
-                        StatusCard(stringResource(Res.string.help_prepare_title), stringResource(
-                            if (state.kind == HelpGuideKind.Correction) Res.string.help_correction_prepare else Res.string.help_support_prepare))
+                        StatusCard(stringResource(Res.string.help_prepare_title), stringResource(Res.string.help_support_prepare))
                     }
                     when {
                         state.stage == HelpGuideStage.Loading -> {
@@ -85,7 +81,7 @@ fun HelpGuideScreen(state: HelpGuideState, onAction: (HelpGuideAction) -> Unit, 
     }
 }
 
-/** 약관 · 개인정보 · 문의 · 정정 요청을 한 화면에 줄로 모은다. 줄을 누르면 해당 안내 화면으로 간다(주소 확인 · 열기는 그 화면이 한다). */
+/** 약관 · 개인정보 · 문의를 한 화면에 줄로 모은다. 줄을 누르면 해당 안내 화면으로 간다(주소 확인 · 열기는 그 화면이 한다). */
 @Composable
 fun HelpHubScreen(onOpen: (HelpGuideKind) -> Unit, onBack: () -> Unit, modifier: Modifier = Modifier) {
     Surface(modifier.fillMaxSize(), color = AppColors.Screen) {
@@ -98,7 +94,6 @@ fun HelpHubScreen(onOpen: (HelpGuideKind) -> Unit, onBack: () -> Unit, modifier:
                         ServiceRow(stringResource(Res.string.account_terms), detail = stringResource(Res.string.help_hub_document), onClick = { onOpen(HelpGuideKind.Terms) })
                         ServiceRow(stringResource(Res.string.account_privacy), detail = stringResource(Res.string.help_hub_document), onClick = { onOpen(HelpGuideKind.PrivacyPolicy) })
                         ServiceRow(stringResource(Res.string.account_support), detail = stringResource(Res.string.account_support_detail), onClick = { onOpen(HelpGuideKind.Support) })
-                        ServiceRow(stringResource(Res.string.account_correction), detail = stringResource(Res.string.account_correction_detail), onClick = { onOpen(HelpGuideKind.Correction) })
                     }
                     StatusCard(stringResource(Res.string.help_prepare_title), stringResource(Res.string.help_hub_caution))
                 }

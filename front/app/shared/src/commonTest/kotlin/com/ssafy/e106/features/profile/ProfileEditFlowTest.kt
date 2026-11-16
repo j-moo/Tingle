@@ -21,6 +21,8 @@ private class EditServer : ProfileRepository, OptionalProfileRepository {
     var onGet: (suspend () -> ApiResult<ProfileResponse>)? = null
     var available = true
     var photoFailure = false
+    var onEmail: (suspend () -> ApiResult<ContactEmailResponse>)? = null
+    override suspend fun contactEmail(userId: Long) = onEmail?.invoke() ?: ApiResult.Ok(ContactEmailResponse("me@example.com"))
     override suspend fun get(userId: Long) = onGet?.invoke() ?: ApiResult.Ok(data)
     override suspend fun nickname(value: String): ApiResult<NicknameAvailability> {
         nicknameQueries += value; return ApiResult.Ok(NicknameAvailability(value, available, if (available) null else "DUPLICATED"))
@@ -52,7 +54,7 @@ class ProfileEditFlowTest {
     @BeforeTest fun setup() = Dispatchers.setMain(dispatcher)
     @AfterTest fun teardown() { store.clear(); Dispatchers.resetMain() }
     private fun vm(server: EditServer, session: TestSession = TestSession(OnboardingStatus.READY), dev: Boolean = false) =
-        ProfileEditViewModel(server, server, session, DevelopmentProfileAccess(dev)).also { store.put("edit", it); it.load() }
+        ProfileEditViewModel(server, server, session, DevelopmentProfileAccess(dev)).also { store.put("edit", it); it.load(withEmail = true) }
 
     // 프로필 보기 사진: 다시 받을 때 같은 사진이면 그대로, 못 받으면 실패(옛 사진을 남기지 않음), 사진을 지우면 비움
     @Test fun overviewPhotoKeepsSameBytesAndClearsOnFailureOrDeletion() = runTest(dispatcher) {
@@ -64,6 +66,50 @@ class ProfileEditFlowTest {
         assertNull(m.state.value.photo); assertTrue(m.state.value.photoFailed)
         server.photoFailure = false; server.data = server.data.copy(hasProfilePhoto = false); m.load(); runCurrent()
         assertNull(m.state.value.photo); assertFalse(m.state.value.photoFailed)
+    }
+
+    // 연락 이메일: 있으면 보이고, 없거나 실패하면 숨긴다(프로필은 그대로 불러온다)
+    @Test fun contactEmailShownWhenPresentHiddenWhenMissingOrFailed() = runTest(dispatcher) {
+        val server = EditServer(); val m = vm(server); runCurrent()
+        assertEquals("me@example.com", m.state.value.contactEmail)
+        server.onEmail = { ApiResult.Ok(ContactEmailResponse(null)) }; m.load(withEmail = true); runCurrent()
+        assertNull(m.state.value.contactEmail)
+        server.onEmail = { ApiResult.Ok(ContactEmailResponse(" ")) }; m.load(withEmail = true); runCurrent()
+        assertNull(m.state.value.contactEmail)
+    }
+    // 새로고침 중 잠깐 실패하면 보이던 카드를 지우지 않는다. 수정 화면 불러오기(withEmail 없음)는 이메일을 받지 않는다
+    @Test fun contactEmailKeptOnTransientFailureAndNotFetchedForEdit() = runTest(dispatcher) {
+        val server = EditServer(); val m = vm(server); runCurrent()
+        server.onEmail = { ApiResult.Fail(AppError.Offline) }; m.load(withEmail = true); runCurrent()
+        assertEquals("me@example.com", m.state.value.contactEmail)
+        var calls = 0; server.onEmail = { calls++; ApiResult.Ok(ContactEmailResponse(null)) }; m.load(); runCurrent()
+        assertEquals(0, calls); assertEquals("me@example.com", m.state.value.contactEmail)
+    }
+    // 이메일 응답이 오지 않아도 프로필을 불러오면 바로 고칠 수 있다(busy 를 붙잡지 않는다)
+    @Test fun hangingContactEmailDoesNotHoldBusy() = runTest(dispatcher) {
+        val server = EditServer(); val never = CompletableDeferred<ApiResult<ContactEmailResponse>>()
+        server.onEmail = { never.await() }
+        val m = vm(server); runCurrent()
+        assertFalse(m.state.value.busy); assertTrue(m.state.value.canEdit); assertNull(m.state.value.contactEmail)
+        never.cancel()
+    }
+    @Test fun profileStillLoadsWhenContactEmailFails() = runTest(dispatcher) {
+        val server = EditServer(); server.onEmail = { ApiResult.Fail(AppError.Offline) }
+        val m = vm(server); runCurrent()
+        assertNotNull(m.state.value.editor); assertNull(m.state.value.error); assertNull(m.state.value.contactEmail)
+        assertFalse(m.state.value.busy)
+    }
+    @Test fun otherAccountsLateContactEmailIsDropped() = runTest(dispatcher) {
+        val server = EditServer(); val late = CompletableDeferred<Unit>()
+        server.onEmail = { withContext(NonCancellable) { late.await() }; ApiResult.Ok(ContactEmailResponse("old@example.com")) }
+        val session = TestSession(OnboardingStatus.READY); val m = vm(server, session); runCurrent()
+        session.state.value = Session.SignedIn(2, OnboardingStatus.READY, false); runCurrent()
+        late.complete(Unit); runCurrent()
+        assertNull(m.state.value.contactEmail)
+    }
+    @Test fun contactEmailResponseToleratesMissingAndUnknownKeys() {
+        assertNull(ApiJson.decodeFromString<ContactEmailResponse>("{}").email)
+        assertEquals("a@b.com", ApiJson.decodeFromString<ContactEmailResponse>("""{"email":"a@b.com","extra":1}""").email)
     }
 
     // 완료 이동은 화면이 다시 붙을 때까지 보관하며, 재개 조회가 저장을 취소하지 않아야 한다.

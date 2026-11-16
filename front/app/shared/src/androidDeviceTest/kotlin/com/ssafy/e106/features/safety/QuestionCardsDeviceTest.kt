@@ -60,11 +60,15 @@ class QuestionCardsDeviceTest {
     private val first = "요즘 즐겨 듣는 음악은?"
     private fun launch() = ActivityScenario.launch<QuestionCardsTestActivity>(Intent(
         InstrumentationRegistry.getInstrumentation().context, QuestionCardsTestActivity::class.java))
-    private fun open() { compose.onNodeWithText("대화 주제 추천").performScrollTo().performClick() }
+    // 추천 칸은 첫 질문 확인 · 첫 메시지 페이지가 끝나야 생긴다
+    private fun waitCards() { compose.waitUntil(10_000) { compose.onAllNodesWithText("대화 주제 추천").fetchSemanticsNodes().isNotEmpty() } }
+    private fun open() { waitCards(); compose.onNodeWithText("대화 주제 추천").performScrollTo().performClick() }
     private fun pick() { compose.onNodeWithText(first).performScrollTo().performClick() }
 
     @Test fun toggleReusesResultAndEmptyDraftIsFilledWithoutSending() {
         launch().use { scenario ->
+            // 칸이 생긴 뒤에도 접혀 있어 질문은 보이지 않는다
+            waitCards()
             compose.onNodeWithText(first).assertDoesNotExist()
             // 여닫기 동작만 맞아도 가중치 배치 오류로 입력창 위에 큰 공백이 생길 수 있다.
             val toggleBottom = compose.onNodeWithText("대화 주제 추천").getUnclippedBoundsInRoot().bottom.value

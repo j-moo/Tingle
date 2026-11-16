@@ -1,11 +1,22 @@
 package com.ssafy.e106.features.home.ui
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.unit.dp
+import com.ssafy.e106.core.ui.theme.AppSizes
+import com.ssafy.e106.core.ui.theme.glassLayer
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -39,6 +50,9 @@ import org.koin.compose.viewmodel.koinViewModel
 // Keyrings는 서버의 등록 목록을 확인하는 경로이며 BLE 등록/초기화 경로와 구분한다.
 internal enum class ServicePage { Home, Proposals, Menu, Chats, Safety, Report, AiConsent, Profile, Survey, Settings, Help, HelpHub, Keyrings, BleProbe, KeyringRegistration, KeyringReset, KeyringSync, Preparing, Notifications }
 
+/** 하단 바 탭 순서. 이 페이지들의 루트 화면에서만 바를 보인다 */
+private val TabPages = listOf(ServicePage.Home, ServicePage.Proposals, ServicePage.Chats, ServicePage.Menu)
+
 /** 가입 중에는 가입 화면을 유지하되, 탈퇴 제한을 해소할 소유 키링 관리 경로만 허용한다. */
 @Composable fun SignedInServiceHost(session: Session.SignedIn, access: ProposalAccess = koinInject(),
     model: HomeSessionViewModel = koinViewModel(), pushes: PushEvents = koinInject(), inbox: NotificationInbox = koinInject(),
@@ -66,7 +80,12 @@ internal enum class ServicePage { Home, Proposals, Menu, Chats, Safety, Report, 
     // 앱이 화면에 떠 있는 동안 자동 발급한다(운영 · 개발 앱 같음). 회전/백그라운드에서는 취소 후 내구 기록으로 복구한다.
     // 새 키링의 등록 증명이 끝날 때까지 자동 동기화와 기록 전송이 같은 BLE 연결을 사용하지 않게 한다.
     foregroundSync(page == ServicePage.KeyringReset || page == ServicePage.KeyringRegistration || connectForReset)
-    fun go(destination: ServicePage) { model.leave(); page = destination }
+    // 바의 선택 표시. 바가 사라지는 동안에도 마지막 탭에 머문다
+    var tab by rememberSaveable(session.userId) { mutableIntStateOf(TabPages.indexOf(page).coerceAtLeast(0)) }
+    fun go(destination: ServicePage) {
+        model.leave(); page = destination
+        TabPages.indexOf(destination).takeIf { it >= 0 }?.let { tab = it }
+    }
     fun chats(room: Long? = null) { roomId = room; go(ServicePage.Chats) }
     fun proposals() { go(ServicePage.Proposals) }
     WithdrawalKeyringNavigation(session.userId, withdrawal) {
@@ -111,8 +130,20 @@ internal enum class ServicePage { Home, Proposals, Menu, Chats, Safety, Report, 
             ServicePage.HelpHub -> go(ServicePage.Menu)
             else -> go(ServicePage.Home)
         } }
-    Column(Modifier.fillMaxSize()) {
-        Box(Modifier.weight(1f)) {
+    // 제안은 목록일 때만 루트다(Route 가 알린다). 페이지가 바뀌면 기본값으로 다시 정한다
+    var tabRoot by remember(page) { mutableStateOf(true) }
+    var tabEnabled by remember(page) { mutableStateOf(true) }
+    // 채팅은 틀이 들고 있는 방 번호로 바로 판단한다(Route 의 알림을 기다리면 한 프레임 바가 남는다)
+    val showBar = page in TabPages && tabRoot && !(page == ServicePage.Chats && roomId != null)
+    // 바는 내용 위에 떠 있다. 탭 화면은 스크롤 끝에 바 높이(시스템 내비게이션 바 포함)만큼 여백을 둬 마지막 항목이 바 위로 올라오게 한다.
+    // 처음 재기 전에는 기본 높이로 둔다(첫 프레임에 홈 원 자리가 바뀌지 않게)
+    val density = LocalDensity.current
+    var barHeight by remember { mutableStateOf(AppSizes.BottomBarMinHeight) }
+    val navigationInset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+    // 틀은 내용에 인셋 · 배경을 주지 않는다. 탭 화면은 위 · 좌우 인셋만 스스로 적용한다
+    CompositionLocalProvider(LocalBottomBarPadding provides if (showBar) barHeight + navigationInset else 0.dp) { Box(Modifier.fillMaxSize()) {
+        // 내용은 바 뒤에서 흐리게 비친다
+        Box(Modifier.fillMaxSize().glassLayer()) {
             when (page) {
                 ServicePage.Home -> {
                     // 카드가 접혀 있어도 기기 연결이 끊기거나 복구되면 바로 표시한다.
@@ -123,22 +154,20 @@ internal enum class ServicePage { Home, Proposals, Menu, Chats, Safety, Report, 
                             connection.refresh?.invoke()
                             model.refreshHome()
                         }
-                        HomeAction.Proposals -> proposals()
-                        HomeAction.Profile -> go(ServicePage.Menu)
-                        HomeAction.Chats -> chats()
                         HomeAction.Notifications -> go(ServicePage.Notifications)
                         HomeAction.RegisterKeyring -> go(ServicePage.KeyringRegistration)
                     } }, onSaveKeyringAlias = model::saveKeyringAlias, keyringStatus = { connection.liveStatus },
-                        connectedKeyringId = connection.deviceId, checkingKeyringStatus = connection.liveStatus?.loading == true,
+                        connectedKeyringId = connection.deviceId,
                         keyringPublicName = { id, name ->
                             state.home.keyrings.singleOrNull { it.deviceId == id }?.let { device ->
                                 KeyringPublicNameControls(session.userId, device, name)
                             }
-                        }, error = state.error)
+                        }, error = state.error, busy = state.busy)
                 }
-                ServicePage.Proposals -> ConnectedProposalRoute(session, { go(ServicePage.Home) }, { go(ServicePage.Menu) },
-                    { chats() }, { chats(it) }, pushes = pushes)
+                ServicePage.Proposals -> ConnectedProposalRoute(session, { go(ServicePage.Home) }, { chats(it) }, pushes = pushes,
+                    onTabBar = { root, enabled -> tabRoot = root; tabEnabled = enabled })
                 ServicePage.Chats -> ConnectedChatRoute(session, roomId, { go(ServicePage.Home) }, { proposals() }, { go(ServicePage.Menu) },
+                    onRoom = { roomId = it },
                     onSafety = { id, operation ->
                         roomId = id
                         if(operation == "REPORT") go(ServicePage.Report) else {
@@ -198,9 +227,6 @@ internal enum class ServicePage { Home, Proposals, Menu, Chats, Safety, Report, 
                 }
                 ServicePage.Menu -> AccountMenuScreen(state.account, onAction = { action -> when (action) {
                     AccountMenuAction.Refresh -> model.account()
-                    AccountMenuAction.Home -> go(ServicePage.Home)
-                    AccountMenuAction.Proposals -> proposals()
-                    AccountMenuAction.Chats -> chats()
                     AccountMenuAction.Consents -> { consentFromChat = false; go(ServicePage.AiConsent) }
                     AccountMenuAction.Profile -> go(ServicePage.Profile)
                     AccountMenuAction.Survey -> go(ServicePage.Survey)
@@ -224,7 +250,22 @@ internal enum class ServicePage { Home, Proposals, Menu, Chats, Safety, Report, 
                 }
             }
         }
-    }
+        // 바는 한 번만 그리고 탭을 바꾸면 아래 내용만 바뀐다(내용 교체에는 전환 효과를 넣지 않는다).
+        // 내용 위에 떠 있어 나타나고 사라져도 내용 자리는 바뀌지 않는다
+        AnimatedVisibility(showBar, Modifier.align(Alignment.BottomCenter),
+            enter = slideInVertically { it } + fadeIn(), exit = slideOutVertically { it } + fadeOut()) {
+            AppBottomBar(listOf(stringResource(Res.string.home_tab), stringResource(Res.string.home_proposal_tab),
+                stringResource(Res.string.home_chat_tab), stringResource(Res.string.home_profile_tab)), tab,
+                // 지금 탭을 다시 누르면 아무것도 하지 않는다(go 가 조회만 취소하고 다시 받지 않는다)
+                // 사라지는 동안의 누름은 무시한다(방에 들어가자마자 다른 탭으로 가지 않게). 색은 바꾸지 않는다
+                onSelect = { index -> if (showBar) when (val target = TabPages[index]) {
+                    page -> Unit
+                    ServicePage.Chats -> chats()
+                    else -> go(target)
+                } }, modifier = Modifier.navigationBarsPadding().onSizeChanged { barHeight = with(density) { it.height.toDp() } },
+                enabled = page != ServicePage.Proposals || tabEnabled)
+        }
+    } }
     if (logoutPrompt) AppDialog(title = stringResource(Res.string.account_logout),
         description = stringResource(Res.string.account_logout_detail), confirmText = stringResource(Res.string.account_logout),
         dismissText = stringResource(Res.string.proposals_return), onConfirm = { logoutPrompt = false; model.logout() },

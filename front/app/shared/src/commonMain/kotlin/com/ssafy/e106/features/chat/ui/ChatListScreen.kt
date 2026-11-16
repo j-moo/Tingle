@@ -13,6 +13,8 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
@@ -47,7 +49,8 @@ fun ChatListScreen(state: ChatListState, onOpenChat: (Long) -> Unit,
             onAction(ChatListAction.LoadMore)
     }
     Surface(modifier.fillMaxSize(), color = AppColors.Screen) {
-        Column(Modifier.fillMaxSize().safeDrawingPadding()) {
+        // 아래쪽 인셋은 틀(SignedInServiceHost)의 하단 바가 맡는다
+        Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal))) {
             AppTopBar(stringResource(Res.string.chat_list_title))
             val refresh = { if (state.load != ChatListLoad.Loading && !state.refreshing) onAction(ChatListAction.Refresh) }
             // 불러오기 실패: 동의가 필요하면 그 안내와 동의 화면으로 가는 버튼, 아니면 오류 종류에 맞는 상태 화면
@@ -57,58 +60,59 @@ fun ChatListScreen(state: ChatListState, onOpenChat: (Long) -> Unit,
                     AppButton(stringResource(Res.string.chat_access_open_consent), Modifier.fillMaxWidth(), onClick = onConsent)
                 } else StateView(error.stateKind(), error.stateTitle(), onRetry = refresh, retryEnabled = !state.refreshing)
             }
-            // 당기기를 못 하는 사용자(TalkBack · 스위치)를 위한 "새로고침" 접근성 동작은 PullDownRefreshBox 가 둔다
-            PullDownRefreshBox(state.refreshing, refresh, Modifier.weight(1f).fillMaxWidth()) {
-                // 내용이 짧아도 화면 전체에서 당길 수 있게 높이를 채운다
-                LazyColumn(state = list, modifier = Modifier.widthIn(max = 640.dp).fillMaxSize(),
-                    contentPadding = screenPaddingValues(), verticalArrangement = Arrangement.spacedBy(AppSpacing.Large)) {
-                    item(key = "intro") {
-                        Text(stringResource(Res.string.chat_list_heading), style = MaterialTheme.typography.headlineMedium,
-                            modifier = Modifier.semantics { heading() })
-                        // 7일 뒤 종료 · 다시 볼 수 없음 안내는 어떤 상태에서도 지우지 않는다. 연한 회색 안내 박스에 담는다
-                        Text(stringResource(Res.string.chat_list_intro), Modifier.padding(top = AppSpacing.Medium).fillMaxWidth()
-                            .glass(RoundedCornerShape(14.dp), AppColors.SurfaceMuted).padding(14.dp),
-                            style = MaterialTheme.typography.bodyMedium, color = AppColors.TextSecondary)
-                    }
-                    when (state.load) {
-                        ChatListLoad.Loading -> item(key = "loading") { SkeletonGroup { repeat(4) { SkeletonRow() } } }
-                        ChatListLoad.Failed -> item(key = "failed") { failure() }
-                        ChatListLoad.Ready -> {
-                            when {
-                                // 보여 줄 목록이 없는 채로 새로고침이 실패하면 띠 대신 실패 화면
-                                rooms.isEmpty() && state.refreshFailed -> item(key = "empty") { failure() }
-                                // 불러온 쪽이 비어도 다음 쪽이 남았으면 비었다고 단정하지 않는다(아래 이어 받기 줄이 대신한다)
-                                rooms.isEmpty() && state.page == ChatListPage.End -> item(key = "empty") {
-                                    StateView(StateKind.Empty, stringResource(Res.string.chat_list_empty), onRetry = refresh)
+            // 하단 바와 아래 띠는 목록 위에 떠 있다. 목록 끝에 그만큼 여백을 둬 마지막 항목이 그 위로 올라오게 한다
+            val bar = LocalBottomBarPadding.current
+            val density = LocalDensity.current
+            var notices by remember { mutableStateOf(0.dp) }
+            Box(Modifier.weight(1f).fillMaxWidth()) {
+                // 당기기를 못 하는 사용자(TalkBack · 스위치)를 위한 "새로고침" 접근성 동작은 PullDownRefreshBox 가 둔다
+                PullDownRefreshBox(state.refreshing, refresh, Modifier.fillMaxSize()) {
+                    // 내용이 짧아도 화면 전체에서 당길 수 있게 높이를 채운다
+                    LazyColumn(state = list, modifier = Modifier.widthIn(max = 640.dp).fillMaxSize(),
+                        contentPadding = screenPaddingValues(bar + notices), verticalArrangement = Arrangement.spacedBy(AppSpacing.Large)) {
+                        item(key = "intro") {
+                            Text(stringResource(Res.string.chat_list_heading), style = MaterialTheme.typography.headlineMedium,
+                                modifier = Modifier.semantics { heading() })
+                            // 7일 뒤 종료 · 다시 볼 수 없음 안내는 어떤 상태에서도 지우지 않는다. 연한 회색 안내 박스에 담는다
+                            Text(stringResource(Res.string.chat_list_intro), Modifier.padding(top = AppSpacing.Medium).fillMaxWidth()
+                                .glass(RoundedCornerShape(14.dp), AppColors.SurfaceMuted).padding(14.dp),
+                                style = MaterialTheme.typography.bodyMedium, color = AppColors.TextSecondary)
+                        }
+                        when (state.load) {
+                            ChatListLoad.Loading -> item(key = "loading") { SkeletonGroup { repeat(4) { SkeletonRow() } } }
+                            ChatListLoad.Failed -> item(key = "failed") { failure() }
+                            ChatListLoad.Ready -> {
+                                when {
+                                    // 보여 줄 목록이 없는 채로 새로고침이 실패하면 띠 대신 실패 화면
+                                    rooms.isEmpty() && state.refreshFailed -> item(key = "empty") { failure() }
+                                    // 불러온 쪽이 비어도 다음 쪽이 남았으면 비었다고 단정하지 않는다(아래 이어 받기 줄이 대신한다)
+                                    rooms.isEmpty() && state.page == ChatListPage.End -> item(key = "empty") {
+                                        StateView(StateKind.Empty, stringResource(Res.string.chat_list_empty), onRetry = refresh)
+                                    }
                                 }
-                            }
-                            items(rooms, key = { "chat-${it.chatRoomId}" }) { room -> ChatCard(room, onOpenChat) }
-                            // 목록 이어 받기: 받는 중 = 뼈대 줄, 실패 = 한 줄 + 다시 시도(자동 재시도는 안 함), 끝 = 작은 글
-                            when {
-                                state.page == ChatListPage.Failed -> item(key = "page") {
-                                    ListTail(ListTailState.Failed, onRetry = { onAction(ChatListAction.LoadMore) }, retryEnabled = !state.refreshing)
+                                items(rooms, key = { "chat-${it.chatRoomId}" }) { room -> ChatCard(room, onOpenChat) }
+                                // 목록 이어 받기: 받는 중 = 뼈대 줄, 실패 = 한 줄 + 다시 시도(자동 재시도는 안 함), 끝 = 작은 글
+                                when {
+                                    state.page == ChatListPage.Failed -> item(key = "page") {
+                                        ListTail(ListTailState.Failed, onRetry = { onAction(ChatListAction.LoadMore) }, retryEnabled = !state.refreshing)
+                                    }
+                                    state.page == ChatListPage.Loading || rooms.isEmpty() && !state.refreshFailed && state.page == ChatListPage.More ->
+                                        item(key = "page") { ListTail(ListTailState.Loading) }
+                                    state.page == ChatListPage.End && rooms.isNotEmpty() -> item(key = "end") { ListTail(ListTailState.End) }
                                 }
-                                state.page == ChatListPage.Loading || rooms.isEmpty() && !state.refreshFailed && state.page == ChatListPage.More ->
-                                    item(key = "page") { ListTail(ListTailState.Loading) }
-                                state.page == ChatListPage.End && rooms.isNotEmpty() -> item(key = "end") { ListTail(ListTailState.End) }
                             }
                         }
                     }
                 }
+                // 보던 목록은 그대로 두고 새로고침 실패만 아래 띠로 알린다(동의가 필요해 실패했으면 동의 화면으로)
+                Column(Modifier.align(Alignment.BottomCenter).padding(bottom = bar).onSizeChanged { notices = with(density) { it.height.toDp() } }) {
+                    if (state.load == ChatListLoad.Ready && state.refreshFailed && rooms.isNotEmpty()) {
+                        if (onConsent != null) NoticeBar(stringResource(Res.string.chat_access_consent),
+                            actionText = stringResource(Res.string.chat_access_open_consent), onAction = onConsent)
+                        else NoticeBar(stringResource(Res.string.chat_list_refresh_failed), actionEnabled = !state.refreshing, onAction = refresh)
+                    }
+                }
             }
-            // 보던 목록은 그대로 두고 새로고침 실패만 아래 띠로 알린다(동의가 필요해 실패했으면 동의 화면으로)
-            if (state.load == ChatListLoad.Ready && state.refreshFailed && rooms.isNotEmpty()) {
-                if (onConsent != null) NoticeBar(stringResource(Res.string.chat_access_consent),
-                    actionText = stringResource(Res.string.chat_access_open_consent), onAction = onConsent)
-                else NoticeBar(stringResource(Res.string.chat_list_refresh_failed), actionEnabled = !state.refreshing, onAction = refresh)
-            }
-            AppBottomBar(labels = listOf(stringResource(Res.string.chat_list_home), stringResource(Res.string.chat_list_proposals),
-                stringResource(Res.string.chat_list_title), stringResource(Res.string.chat_list_profile)), selected = 2,
-                onSelect = { when (it) {
-                    0 -> onAction(ChatListAction.Home)
-                    1 -> onAction(ChatListAction.Proposals)
-                    3 -> onAction(ChatListAction.Profile)
-                } })
         }
     }
 }
