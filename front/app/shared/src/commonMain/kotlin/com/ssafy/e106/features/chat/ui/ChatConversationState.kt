@@ -1,5 +1,7 @@
 package com.ssafy.e106.features.chat.ui
 
+import androidx.compose.ui.graphics.ImageBitmap
+
 enum class ConversationLoad { Loading, Failed, Active, Closed, ConsentRequired, Unavailable }
 enum class HistoryLoad { Idle, Loading, Failed }
 enum class ChatRealtimeStatus { Connecting, Connected, Reconnecting, Stopped }
@@ -21,6 +23,8 @@ data class ConversationMessage(
 data class ChatConversationState(
     val load: ConversationLoad = ConversationLoad.Loading,
     val nickname: String? = null,
+    // 위쪽 작은 상대 사진. 화면을 떠나면(pause) 버리고 돌아오면 다시 받는다
+    val partnerPhoto: ImageBitmap? = null,
     val closesAtLabel: String? = null,
     // 호출부가 오래된 순서부터 전달한다. 상대 읽음 상태는 받지 않는다.
     val messages: List<ConversationMessage> = emptyList(),
@@ -56,7 +60,7 @@ data class ChatConversationState(
 
     // 닉네임도 지운다. 다음 접근 성공 때 다시 받는다
     private fun withoutContent() = copy(messages = emptyList(), draft = "", nextCursor = null,
-        historyLoad = HistoryLoad.Idle, submitting = false, nickname = null)
+        historyLoad = HistoryLoad.Idle, submitting = false, nickname = null, partnerPhoto = null)
 }
 
 enum class ConversationAction { Back, Reload, Send, OpenMenu, OpenPartner, OpenAiNotice, OpenConsent, LoadOlder }

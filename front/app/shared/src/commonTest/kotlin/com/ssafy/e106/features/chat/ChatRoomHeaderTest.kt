@@ -24,6 +24,9 @@ class ChatRoomHeaderTest {
         var profiles = 0
         var profileResult: ApiResult<ChatPartnerRecord>? = null
         var roomGate: CompletableDeferred<Unit>? = null
+        var photos = 0
+        var photoResult: ApiResult<ByteArray>? = null
+        override suspend fun photo(id: Long): ApiResult<ByteArray> { photos++; return photoResult ?: super.photo(id) }
         override suspend fun room(id: Long): ApiResult<ChatRoomRecord> { roomGate?.await(); return super.room(id) }
         override suspend fun profile(id: Long): ApiResult<ChatPartnerRecord> { profiles++; return profileResult ?: super.profile(id) }
     }
@@ -71,5 +74,25 @@ class ChatRoomHeaderTest {
         val m = room(api); runCurrent(); m.open(21); runCurrent()
         gate.complete(Unit); runCurrent()
         assertEquals("방21", m.state.value.ui.nickname)
+    }
+    @Test fun photoIsAskedOnlyWhenPartnerHasOne() = test {
+        val api = Server(); val m = room(api); runCurrent()
+        assertEquals(0, api.photos); assertTrue(m.state.value.ui.readable)
+    }
+    @Test fun photo404Or410DoesNotCloseRoomAndIsAskedAgainOnReturn() = test {
+        for (status in listOf(404, 410)) {
+            val api = Server().apply {
+                profileResult = ApiResult.Ok(ChatPartnerRecord("상대", 25, "FEMALE", "NON_SMOKER", "NEVER", null, null, true))
+                photoResult = ApiResult.Fail(AppError.Server(status, "RESOURCE_NOT_FOUND", ""))
+            }
+            // 목록에서 닉네임을 받아도 사진 유무는 모르므로 상대 프로필을 한 번 부른다
+            val m = room(api, "목록 이름"); runCurrent()
+            assertTrue(m.state.value.ui.readable); assertNull(m.state.value.error); assertNull(m.state.value.ui.partnerPhoto)
+            assertEquals(1, api.profiles); assertEquals(1, api.photos)
+            advanceTimeBy(5_001); runCurrent(); assertEquals(1, api.photos); assertTrue(m.state.value.ui.readable)
+            // 다시 들어오면 사진만 다시 받는다(닉네임 · 사진 유무는 그대로)
+            m.pause(); m.resume(); runCurrent()
+            assertEquals(1, api.profiles); assertEquals(2, api.photos); assertTrue(m.state.value.ui.readable)
+        }
     }
 }

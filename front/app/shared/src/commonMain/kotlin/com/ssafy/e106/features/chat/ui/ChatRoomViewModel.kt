@@ -37,6 +37,8 @@ class ChatRoomViewModel(private val api: ChatRepository, private val sessions: S
     private var recoveryRequested = false
     private var ackJob: Job? = null
     private var partnerJob: Job? = null
+    // 상대 사진이 있는지. null 이면 아직 모름(상대 프로필 API로 받는다)
+    private var partnerHasPhoto: Boolean? = null
     private val storage = local.mutex
     private val prefs = local.prefs
     private var records = emptyList<ChatMessageRecord>()
@@ -50,7 +52,7 @@ class ChatRoomViewModel(private val api: ChatRepository, private val sessions: S
 
     init { viewModelScope.launch(start = CoroutineStart.UNDISPATCHED) { sessions.state.collect { session ->
         epoch++; writeEpoch++; cancelReads(); lifetime.reset(); sendJob?.cancel(); draftJob?.cancel(); resumed = false
-        records = emptyList(); acknowledged.clear(); receivedThrough = 0; needsInitialPage = true
+        records = emptyList(); acknowledged.clear(); receivedThrough = 0; needsInitialPage = true; partnerHasPhoto = null
         mutable.value = ConnectedChatRoom(owner = session as? Session.SignedIn)
     } } }
     private fun valid(stamp: Long, owner: Session.SignedIn, id: Long) = stamp == epoch &&
@@ -68,7 +70,7 @@ class ChatRoomViewModel(private val api: ChatRepository, private val sessions: S
             if (mutable.value.sending) return
             persistDraft(); epoch++; writeEpoch++; cancelReads(); lifetime.reset(); records = emptyList(); acknowledged.clear(); receivedThrough = 0; needsInitialPage = true
             // 다른 방 진입은 같은 화면의 중복 ON_RESUME와 다르므로 첫 조회/구독을 새로 시작한다.
-            resumed = false
+            resumed = false; partnerHasPhoto = null
             mutable.update { ConnectedChatRoom(owner = it.owner, id = id, ui = ChatConversationState(nickname = nickname)) }
         } else if (nickname != null && mutable.value.ui.nickname == null) mutable.update { it.copy(ui = it.ui.copy(nickname = nickname)) }
         resume()
@@ -84,11 +86,11 @@ class ChatRoomViewModel(private val api: ChatRepository, private val sessions: S
     }
     fun pause() {
         persistDraft(); epoch++; resumed = false; cancelReads()
-        // 수신 본문은 백그라운드에서 숨기고, 복귀 시 현재 권한부터 다시 조회한다.
+        // 수신 본문과 상대 사진은 백그라운드에서 숨기고, 복귀 시 현재 권한부터 다시 조회한다.
         // 본문을 비울 때 복구 위치도 함께 초기화한다. 남은 순번 때문에 이전 메시지를 건너뛰지 않게 한다.
         records = emptyList(); receivedThrough = 0; needsInitialPage = true
         mutable.update { it.copy(ui = it.ui.copy(messages = emptyList(), canRead = false, canSend = false,
-            nextCursor = null, historyLoad = HistoryLoad.Idle)) }
+            nextCursor = null, historyLoad = HistoryLoad.Idle, partnerPhoto = null)) }
     }
     fun reload() = read { owner, id, stamp ->
         // 최초 페이지를 다시 읽을 때 구독과 복구 위치를 함께 초기화하여 이전 방 결과가 섞이지 않게 한다.
@@ -119,15 +121,25 @@ class ChatRoomViewModel(private val api: ChatRepository, private val sessions: S
 
     /**
      * 방 상세 응답엔 닉네임이 없어 상대 프로필 API로 따로 받는다. access()는 5초마다 불리므로 첫 페이지 조회 때만,
-     * 닉네임을 모를 때만 부른다. 방 열람 흐름(read) 밖이라 실패해도 방을 닫지 않고 제목은 "대화"로 둔다.
+     * 닉네임이나 사진 유무를 모를 때만 부른다. 사진은 있을 때만 받는다.
+     * 방 열람 흐름(read) 밖이라 실패해도(사진 404 · 410 포함) 방을 닫지 않고 제목은 "대화", 사진은 첫 글자로 둔다.
      */
     private fun loadPartner(owner: Session.SignedIn, id: Long, stamp: Long) {
-        if (mutable.value.ui.nickname != null || partnerJob?.isActive == true) return
+        val ui = mutable.value.ui
+        if (partnerJob?.isActive == true || ui.nickname != null && partnerHasPhoto != null && (partnerHasPhoto == false || ui.partnerPhoto != null)) return
         partnerJob = viewModelScope.launch {
-            val result = try { api.profile(id) } catch (e: CancellationException) { throw e } catch (_: Exception) { null }
-            // 그사이 방이 바뀌었거나 닫혔으면(stamp) 늦게 온 결과는 버린다
-            if (result is ApiResult.Ok && valid(stamp, owner, id))
-                mutable.update { it.copy(ui = it.ui.copy(nickname = result.value.nickname)) }
+            try {
+                if (ui.nickname == null || partnerHasPhoto == null) {
+                    val result = api.profile(id)
+                    // 그사이 방이 바뀌었거나 닫혔으면(stamp) 늦게 온 결과는 버린다
+                    if (result !is ApiResult.Ok || !valid(stamp, owner, id)) return@launch
+                    partnerHasPhoto = result.value.hasProfilePhoto
+                    mutable.update { it.copy(ui = it.ui.copy(nickname = result.value.nickname)) }
+                }
+                if (partnerHasPhoto != true) return@launch
+                val bitmap = (api.photo(id) as? ApiResult.Ok)?.value?.let { decodeChatImage(it, maxSide = LIST_PHOTO_SIDE) }
+                if (bitmap != null && valid(stamp, owner, id) && resumed) mutable.update { it.copy(ui = it.ui.copy(partnerPhoto = bitmap)) }
+            } catch (e: CancellationException) { throw e } catch (_: Exception) { }
         }
     }
 
