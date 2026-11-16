@@ -32,8 +32,9 @@ fun ConnectedProposalRoute(session: Session.SignedIn, onHome: () -> Unit, onOpen
     val state by model.state.collectAsStateWithLifecycle()
     // 목록(저장소 문제 · 채팅으로 넘어가는 순간 제외)일 때만 하단 바를 보인다
     val root = state.session != session || !state.storageIssue && state.page == ProposalPageMode.List && state.openChat == null
-    val writing = state.writing
-    SideEffect { onTabBar(root, !writing) }
+    // 조회(자동 · 수동)는 이동을 막지 않는다. 이탈 시 pause/refresh 가 취소와 응답 무효화를 맡고, 수락 · 거절을 보내는 중에만 막는다
+    val navigationBlocked = state.writing
+    SideEffect { onTabBar(root, !navigationBlocked) }
     // 목록 탭(응답 대기 | 기다리는 중): 프로필에 갔다 와도 그대로
     var listTab by rememberSaveable(session.userId) { mutableIntStateOf(0) }
     val lifecycle = LocalLifecycleOwner.current.lifecycle
@@ -66,8 +67,6 @@ fun ConnectedProposalRoute(session: Session.SignedIn, onHome: () -> Unit, onOpen
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { model.resume() }
     LifecycleEventEffect(Lifecycle.Event.ON_STOP) { model.pause() }
     if (state.session != session) return
-    // 조회(자동 · 수동)는 이동을 막지 않는다. 이탈 시 pause/refresh 가 취소와 응답 무효화를 맡고, 수락 · 거절을 보내는 중에만 막는다
-    val navigationBlocked = state.writing
     fun leave(action: () -> Unit) { if (!navigationBlocked) { model.pause(); action() } }
     // 서로 수락 · 채팅방 확인되면 결과 화면 없이 바로 채팅
     LaunchedEffect(state.openChat, navigationBlocked) {
