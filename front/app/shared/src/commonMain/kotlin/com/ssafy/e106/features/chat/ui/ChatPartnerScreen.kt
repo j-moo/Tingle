@@ -1,6 +1,7 @@
 package com.ssafy.e106.features.chat.ui
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
@@ -85,13 +86,11 @@ internal fun PublicChatPartner.lifestyle() = lifestyleOf(smokingStatus, drinking
     }
 }
 
-/** 뼈대: 사진 · 이름 · 나이 · 소개 · 생활 정보 자리 */
+/** 뼈대: 실제 화면 순서(큰 사진 · 생활 칩 · 소개 카드)대로 */
 @Composable private fun PartnerSkeleton() {
     SkeletonGroup {
         SkeletonBone(Modifier.aspectRatio(1f), shape = AppShapes.Card)
-        SkeletonBone(width = 160.dp, height = 28.dp)
-        SkeletonBone(width = 80.dp, height = 20.dp)
+        Row(horizontalArrangement = Arrangement.spacedBy(AppSpacing.Small)) { repeat(3) { SkeletonBone(width = 88.dp, height = 30.dp, shape = CircleShape) } }
         SkeletonBone(height = 96.dp, shape = AppShapes.Card)
-        SkeletonBone(height = 160.dp, shape = AppShapes.Card)
     }
 }

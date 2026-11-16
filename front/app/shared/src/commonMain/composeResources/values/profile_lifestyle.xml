@@ -29,4 +29,5 @@
     <string name="profile_chips_drinking">음주 %1$s</string>
     <string name="profile_chips_religion">종교 %1$s</string>
     <string name="profile_intro_card">소개</string>
+    <string name="profile_intro_empty">아직 소개가 없어요</string>
 </resources>

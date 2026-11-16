@@ -105,7 +105,7 @@ internal fun ProfileIntroCard(text: String?, modifier: Modifier = Modifier, acti
             Text(stringResource(Res.string.profile_intro_card), Modifier.weight(1f), style = MaterialTheme.typography.labelLarge, color = AppColors.TextSecondary)
             action?.invoke()
         }
-        Text(text?.takeIf { it.isNotBlank() } ?: stringResource(Res.string.chat_partner_intro_empty), style = MaterialTheme.typography.bodyLarge,
+        Text(text?.takeIf { it.isNotBlank() } ?: stringResource(Res.string.profile_intro_empty), style = MaterialTheme.typography.bodyLarge,
             color = if (text.isNullOrBlank()) AppColors.TextSecondary else AppColors.TextPrimary)
     }
 }
