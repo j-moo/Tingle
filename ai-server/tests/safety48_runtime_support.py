@@ -1,4 +1,4 @@
-"""Synthetic development artifacts only. Never an approved/reusable release.
+"""Synthetic artifacts only. Never an approved/reusable release.
 
 No private key or JWT is written to a fixture or artifact. Runtime code does
 not import this module and never generates a release automatically.
@@ -13,7 +13,10 @@ from uuid import uuid4
 
 import pytest
 
-from app.risk_detection.releases import FORMAT, source_hashes
+from app.risk_detection.releases import (
+    FORMAT, LOCAL_FORMAT, LOCAL_SCOPE, LOCAL_INPUT_VERSION, LOCAL_INPUT_LIMITS,
+    TOKENIZED_LOCAL_FORMAT, source_hashes,
+)
 from app.risk_detection.rule_engine import MODEL_VERSION, PROMPT_VERSION
 from app.risk_detection.tokenization import INPUT_VERSION, TOKENIZERS_VERSION
 from test_risk_detection_http import VERSION_FIELDS
@@ -55,16 +58,25 @@ class SyntheticRelease:
                                    encoding="utf-8")
 
 
-def synthetic_release(directory: Path, tokenizer=None) -> SyntheticRelease:
-    tokenizer = tokenizer if tokenizer is not None else synthetic_tokenizer()
+def synthetic_release(directory: Path, tokenizer=None, *, development_only=False, tokenized=True) -> SyntheticRelease:
+    tokenizer = (tokenizer if tokenizer is not None else synthetic_tokenizer()) if tokenized else None
     tokenizer_file = directory / "synthetic-only-tokenizer.json"
-    tokenizer_file.write_text(tokenizer.to_str(), encoding="utf-8")
+    if tokenized:
+        tokenizer_file.write_text(tokenizer.to_str(), encoding="utf-8")
     manifest = {field: "synthetic-test-only" for field in VERSION_FIELDS}
     manifest.update(releaseId=str(uuid4()))
     release = SyntheticRelease(directory / "synthetic-only-release.json",
                                directory / "synthetic-only-rules.json", tokenizer_file, manifest)
+    if not tokenized:
+        release.rewrite_artifact({
+            "format": LOCAL_FORMAT, "scope": LOCAL_SCOPE, "modelVersion": MODEL_VERSION,
+            "promptVersion": PROMPT_VERSION, "inputVersion": LOCAL_INPUT_VERSION,
+            "inputLimits": dict(LOCAL_INPUT_LIMITS), "sources": source_hashes(),
+        })
+        return release
     release.rewrite_artifact({
-        "format": FORMAT, "scope": "development-only", "modelVersion": MODEL_VERSION,
+        "format": FORMAT if development_only else TOKENIZED_LOCAL_FORMAT,
+        "scope": "development-only" if development_only else LOCAL_SCOPE, "modelVersion": MODEL_VERSION,
         "promptVersion": PROMPT_VERSION, "inputVersion": INPUT_VERSION,
         "tokenizersVersion": TOKENIZERS_VERSION, "sources": source_hashes(),
         "tokenizer": {"file": tokenizer_file.name, "sha256": hashlib.sha256(tokenizer_file.read_bytes()).hexdigest(),
@@ -97,7 +109,7 @@ def isolated_environment(directory: Path, *, environment="test", enabled=True, r
         "RISK_RELEASE_DESCRIPTOR_FILE": str(release.descriptor) if release else "",
         "RISK_LOCAL_RULES_DESCRIPTOR_SHA256": release.test_descriptor_pin if release else "",
         "AI_SERVICE_PUBLIC_KEYS": json.dumps(public_keys or {}),
-        "EXPLANATION_RELEASE_DESCRIPTOR_FILES": "[]", "PYTHONPATH": os.pathsep.join(paths),
+        "GMS_API_KEY": "synthetic-safety-startup-only", "PYTHONPATH": os.pathsep.join(paths),
         "PYTHONIOENCODING": "utf-8", "PYTHONDONTWRITEBYTECODE": "1", "TOKENIZERS_PARALLELISM": "false",
     })
     return env

@@ -1,5 +1,7 @@
 package com.ssafy.e106.features.keyring.ui
 
+import com.ssafy.e106.core.ui.theme.frost
+import com.ssafy.e106.core.ui.theme.glass
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
@@ -206,7 +208,7 @@ private fun step(availability: BleAvailability, state: BleProbeState, searched: 
     val canAct = !state.busy && !registering
     // 연결 중 · 연결된 뒤에도 목록의 다른 키링을 눌러 바꿀 수 있다(앞 연결은 끊는다). 등록 · 설정을 보내는 동안만 막는다
     val canSwitch = !registering && !syncBusy
-    Surface(Modifier.fillMaxSize(), color = AppColors.Background) {
+    Surface(Modifier.fillMaxSize(), color = AppColors.Screen) {
         Column(Modifier.fillMaxSize().safeDrawingPadding(), horizontalAlignment = Alignment.CenterHorizontally) {
             BackArrowBar(onBack)
             // 화면 높이를 최소 높이로 잡아 ① 단계의 제목 · 레이더 · 버튼 묶음을 남은 공간 가운데에 둔다(넘치면 스크롤)
@@ -312,7 +314,7 @@ private fun step(availability: BleAvailability, state: BleProbeState, searched: 
         }
     }
     Text(stringResource(Res.string.probe_missing_help), style = MaterialTheme.typography.bodySmall, color = AppColors.TextSecondary,
-        modifier = Modifier.fillMaxWidth().background(AppColors.SurfaceMuted, RoundedCornerShape(14.dp)).padding(14.dp))
+        modifier = Modifier.fillMaxWidth().glass(RoundedCornerShape(14.dp), AppColors.SurfaceMuted).padding(14.dp))
     Spacer(Modifier.weight(1f))
 }
 
@@ -341,7 +343,8 @@ private fun step(availability: BleAvailability, state: BleProbeState, searched: 
                 color = AppColors.TextSecondary)
         }
     }
-    if (state.busy) Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(AppSpacing.Small)) {
+    // 등록 화면은 아래 등록 패널이 진행 상태를 보여 준다. 같은 자리에 기기 응답 문구를 겹쳐 띄우지 않는다
+    if (state.busy && !registrationMode) Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(AppSpacing.Small)) {
         Spinner()
         Text(stringResource(if (syncBusy) Res.string.sync_live_sending else Res.string.ble_connecting), style = MaterialTheme.typography.bodyMedium)
     }
@@ -385,8 +388,8 @@ private fun step(availability: BleAvailability, state: BleProbeState, searched: 
         }
     }
     if (onClick != null) Surface(onClick = onClick, enabled = enabled, shape = RoundedCornerShape(16.dp), color = AppColors.Background,
-        border = border, modifier = modifier) { content() }
-    else Surface(shape = RoundedCornerShape(16.dp), color = AppColors.Background, border = border, modifier = modifier) { content() }
+        border = border, modifier = modifier.frost(RoundedCornerShape(16.dp))) { content() }
+    else Surface(shape = RoundedCornerShape(16.dp), color = AppColors.Background, border = border, modifier = modifier.frost(RoundedCornerShape(16.dp))) { content() }
 }
 
 @Composable private fun Title(text: StringResource) {
@@ -451,7 +454,7 @@ private fun signalBars(rssi: Int) = when {
             drawCircle(Brush.sweepGradient(0f to KeyringPebbleColors.Signal.copy(alpha = 0.5f), 0.2f to Color.Transparent,
                 1f to Color.Transparent))
         }
-        Box(Modifier.size(44.dp).background(AppColors.TextPrimary, CircleShape), contentAlignment = Alignment.Center) {
+        Box(Modifier.size(44.dp).background(AppColors.ActionPrimary, CircleShape), contentAlignment = Alignment.Center) {
             Text(stringResource(Res.string.probe_me), color = AppColors.OnPrimary, style = MaterialTheme.typography.labelMedium)
         }
     }

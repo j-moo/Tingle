@@ -23,11 +23,11 @@ internal fun registrationBlock(info: BleDeviceInfo?): RegistrationIssue? = when 
 }
 data class LiveRegistrationState(val owner: Long? = null, val loaded: Boolean = false, val busy: Boolean = false,
     val pending: PendingKeyringRegistration? = null, val confirmed: OwnedKeyring? = null,
-    val issue: RegistrationIssue? = null, val error: AppError? = null, val canRestart: Boolean = false)
+    val issue: RegistrationIssue? = null, val error: AppError? = null)
 
 /**
  * 등록 HTTP와 기기 통신을 조정한다. BLE 연결은 별도 모델 소유이며, 이 모델은 응답 유실 복구 기록을 관리한다.
- * 화면 중지/회전은 작업을 취소하지만 이미 저장한 요청은 지우지 않는다. 복귀 후 사용자가 같은 요청을 재시도한다.
+ * 화면 중지/회전은 작업을 취소하지만 이미 저장한 요청은 지우지 않는다. 증명을 보낸 요청은 화면이 자동으로 한 번 이어서 하고, 실패하면 사용자가 다시 시도한다.
  */
 @OptIn(ExperimentalUuidApi::class)
 class KeyringRegistrationViewModel(private val api: KeyringRegistrationRepository,
@@ -52,19 +52,24 @@ class KeyringRegistrationViewModel(private val api: KeyringRegistrationRepositor
         if (mutable.value.busy || mutable.value.loaded) return
         runAction { operation ->
             when (val saved = store.read(operation.owner)) {
-                is PrefRead.Found -> { operation.ensure(); mutable.update { it.copy(loaded = true, pending = saved.value,
-                    canRestart = saved.value != null && saved.value.body == null) } }
+                is PrefRead.Found -> { operation.ensure(); mutable.update { it.copy(loaded = true, pending = saved.value) } }
                 PrefRead.OtherUser -> throw CancellationException()
                 else -> throw RegistrationProblem(RegistrationIssue.Storage)
             }
         }
     }
 
-    /** 호출부는 사용자 귀속 확인 후에만 호출한다. 이미 미확인 요청이 있으면 새 키로 덮어쓰지 않는다. */
+    /**
+     * 호출부는 사용자 귀속 확인 후에만 호출한다. 서버에 보낸 증명이 있는 요청은 새 키로 덮어쓰지 않는다.
+     * 증명을 받기 전에 멈춘 요청은 같은 보드면 같은 challenge 키로 이어서, 다른 보드면 버리고 새로 시작한다.
+     */
     fun start(serial: String, proof: suspend (KeyringChallenge) -> RegisterKeyringBody) {
-        if (!mutable.value.loaded || mutable.value.pending != null || mutable.value.confirmed != null || !KeyringRegistrationProtocol.serial(serial)) return
+        val previous = mutable.value.pending
+        if (!mutable.value.loaded || previous?.body != null || mutable.value.confirmed != null || !KeyringRegistrationProtocol.serial(serial)) return
+        if (previous?.serial == serial) return retry(proof)
         runAction { operation ->
             operation.requireResetFinished(serial)
+            if (previous != null) operation.save(null)
             // 한 회원의 여러 키링 등록을 허용한다. 기존 소유 목록이 있다는 이유로 막거나
             // 기존 관계를 해제하지 않으며, 이번 기기의 등록 자격은 서버가 검증한다.
             val pending = PendingKeyringRegistration(operation.owner, serial, Uuid.random().toString(), Uuid.random().toString())
@@ -92,7 +97,7 @@ class KeyringRegistrationViewModel(private val api: KeyringRegistrationRepositor
         proof: suspend (KeyringChallenge) -> RegisterKeyringBody) {
         val challenge = operation.unwrap(api.challenge(pending.challengeKey))
         if (!KeyringRegistrationProtocol.validChallenge(challenge)) throw RegistrationProblem(RegistrationIssue.InvalidResponse)
-        if (Instant.parse(challenge.expiresAt) <= now()) throw RegistrationProblem(RegistrationIssue.ExpiredChallenge)
+        expireIfLate(operation, challenge)
         val body = try { proof(challenge) } catch (cancelled: CancellationException) { throw cancelled }
             // 이미 저장된 소유 설정은 재부팅으로 풀리지 않는다. 정상적인 정책 거절을 통신 오류와 구분한다.
             catch (failure: BleCommandException) { throw RegistrationProblem(when (failure.code) {
@@ -108,11 +113,18 @@ class KeyringRegistrationViewModel(private val api: KeyringRegistrationRepositor
         if (body.deviceSerial != pending.serial || body.challengeId != challenge.challengeId ||
             body.proof.protocolVersion != challenge.proofProtocolVersion || !KeyringRegistrationProtocol.validBody(body))
             throw RegistrationProblem(RegistrationIssue.InvalidResponse)
-        if (Instant.parse(challenge.expiresAt) <= now()) throw RegistrationProblem(RegistrationIssue.ExpiredChallenge)
+        expireIfLate(operation, challenge)
         // 등록 POST보다 먼저 디스크에 본문과 키를 기록한다. 이 지점부터는 새 challenge를 발급하지 않는다.
         val ready = pending.copy(body = body)
         operation.save(ready)
         send(operation, ready)
+    }
+
+    /** 같은 키로 다시 받은 challenge는 만료 후에도 같은 값이다. 만료되면 증명 전 기록을 지워 다음 "이 키링 등록하기"가 새 요청으로 시작되게 한다 */
+    private suspend fun expireIfLate(operation: Operation, challenge: KeyringChallenge) {
+        if (Instant.parse(challenge.expiresAt) > now()) return
+        operation.save(null)
+        throw RegistrationProblem(RegistrationIssue.ExpiredChallenge)
     }
 
     private suspend fun send(operation: Operation, pending: PendingKeyringRegistration) {
@@ -120,14 +132,12 @@ class KeyringRegistrationViewModel(private val api: KeyringRegistrationRepositor
         val response = api.register(pending.registerKey, requireNotNull(pending.body))
         operation.ensure()
         if (response is ApiResult.Fail) {
-            // 입력 · 기기 귀속의 명시적 거절은 사용자가 기록을 정리하고 다른 보드를 고를 수 있다(증명 거절은 아래에서 바로 지운다).
             // 모든 409를 거절로 취급하지 않는다. 멱등 충돌·5xx·통신 단절은 기존 요청을 보존한다.
             val code = (response.error as? AppError.Server)?.code
-            mutable.update { it.copy(canRestart = code in setOf("INVALID_REQUEST", "DEVICE_ALREADY_BOUND")) }
+            // 입력 · 귀속 · 증명의 명시적 거절은 같은 요청을 다시 보내도 결과가 같다. 기록을 지워 다음 시도가
+            // "이 키링 등록하기"의 새 요청으로 시작되게 한다(키링의 1분 등록 시간을 낡은 요청으로 쓰지 않는다)
+            if (code in setOf("INVALID_REQUEST", "DEVICE_ALREADY_BOUND", "INVALID_DEVICE_PROOF")) operation.save(null)
             if (code == "DEVICE_ALREADY_BOUND") throw RegistrationProblem(RegistrationIssue.DeviceBound)
-            // 증명 거절(기한 지남 등)은 같은 요청을 다시 보내도 결과가 같다. 사용자가 "다시 시작"을 누르지 않아도
-            // 다음 시도가 새 요청으로 시작되게 기록을 지운다(키링의 1분 등록 시간을 낡은 요청으로 쓰지 않는다)
-            if (code == "INVALID_DEVICE_PROOF") operation.save(null)
         }
         val receipt = operation.unwrap(response)
         if (!KeyringRegistrationProtocol.validReceipt(receipt) ||
@@ -153,14 +163,8 @@ class KeyringRegistrationViewModel(private val api: KeyringRegistrationRepositor
         operation.ensure()
         operation.save(null)
         operation.ensure()
-        mutable.update { it.copy(confirmed = match, pending = null, canRestart = false) }
+        mutable.update { it.copy(confirmed = match, pending = null) }
         operation.unwrap(sessions.refreshOnboarding())
-    }
-
-    /** 서버 요청 전 준비 기록, 또는 서버가 확실히 거절한 요청만 사용자 선택으로 지울 수 있다. */
-    fun restart() {
-        if (!mutable.value.loaded || !mutable.value.canRestart || mutable.value.pending?.receipt != null) return
-        runAction { operation -> operation.save(null) }
     }
 
     fun continueOnboarding() {
@@ -191,7 +195,7 @@ class KeyringRegistrationViewModel(private val api: KeyringRegistrationRepositor
             val saved = store.save(owner, pending)
             ensure()
             if (!saved) throw RegistrationProblem(RegistrationIssue.Storage)
-            mutable.update { it.copy(pending = pending, canRestart = pending != null && pending.body == null) }
+            mutable.update { it.copy(pending = pending) }
         }
     }
 

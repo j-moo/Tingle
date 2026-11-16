@@ -34,6 +34,8 @@ data class SurveyUiState(
     val serverDraftId: Long? = null,
     // null은 적용 여부 미확인이다. 분석 성공만 보고 매칭에 적용됐다고 표시하지 않는다.
     val analysisApplied: Boolean? = null,
+    /** 제출한 답을 고치는 중(이전 답을 채워 둔 새 회차). 문항 화면에 "수정 마치기"가 나와 끝까지 넘기지 않고 제출 단계로 갈 수 있다 */
+    val editing: Boolean = false,
     /** 아직 서버에 저장되지 않은 답(문항 → 보낼 값). 넣은 순서대로 뒤에서 보내고, 저장되면 뺀다 */
     val pending: Map<String, PendingAnswer> = emptyMap(),
 
@@ -47,7 +49,9 @@ data class SurveyUiState(
 data class PendingAnswer(val sessionId: Long, val value: JsonElement?)
 
 class SurveyAccess(private val development: Boolean = false) {
-    fun allowed(s: Session.SignedIn) = s.isReady || s.status == OnboardingStatus.SURVEY_REQUIRED ||
+    // 성향테스트를 마친 뒤의 가입 단계에서도 답을 고칠 수 있다(서버는 프로필만 등록돼 있으면 설문 API를 받는다)
+    fun allowed(s: Session.SignedIn) = s.isReady || s.status in setOf(OnboardingStatus.SURVEY_REQUIRED,
+        OnboardingStatus.PREFERENCES_REQUIRED, OnboardingStatus.SYNC_PENDING) ||
         (development && s.status == OnboardingStatus.KEYRING_REQUIRED)
 }
 
@@ -67,11 +71,14 @@ class SurveyViewModel(
     private var work: Job? = null
     private var sender: Job? = null
     private var poller: Job? = null
+    // 답 고치기로 새 회차를 열 때 채워 넣을 이전 회차의 답(새 회차 ID에 묶는다). 그 회차를 복원하는 순간 한 번만 쓰고,
+    // 계정이 바뀌면 버린다(다른 계정 · 다른 회차에 이전 답이 들어가지 않게)
+    private var prefill: Pair<Long, List<SavedAnswer>>? = null
     private var generation = 0
     init {
         viewModelScope.launch(start = CoroutineStart.UNDISPATCHED) {
             sessions.state.collect { value ->
-                work?.cancel(); sender?.cancel(); poller?.cancel(); generation++
+                work?.cancel(); sender?.cancel(); poller?.cancel(); generation++; prefill = null
                 mutable.value = SurveyUiState(owner = value as? Session.SignedIn)
             }
         }
@@ -92,8 +99,15 @@ class SurveyViewModel(
     fun leave() {
         // 제출 · 회차 전환 같은 쓰기(busy)는 화면 이탈로 취소하지 않는다. 서버의 늦은 처리와 다음 입력이 겹칠 수 있다.
         // 답 저장 대기열은 busy 가 아니다: 나가면 못 보낸 답은 버리고(화면에 "저장 대기 N개"로 알린다) 늦은 응답은 generation 으로 무시한다
+        // 답 고치기로 채운 이전 답을 아직 보내는 중이면 나가도 계속 보낸다. 버리면 새 회차에 이전 답이 일부만 남는다
         if (mutable.value.busy) return
+        if (mutable.value.editing && mutable.value.pending.isNotEmpty()) {
+            // 화면은 나가고 모델은 남긴다. 다시 열면 "수정 마치기"가 있는 같은 상태로 돌아온다
+            mutable.update { it.copy(exitRequested = false) }
+            return
+        }
         // 실제 화면 이탈에서만 초기화한다. 재생성·ON_STOP에서는 호출하지 않는다.
+        // prefill 은 남긴다: 새 회차 ID에 묶여 있어 같은 회차를 다시 열 때만 쓰인다(문항 조회 실패 뒤 나갔다 와도 이전 답을 채운다)
         work?.cancel(); sender?.cancel(); poller?.cancel(); generation++
         mutable.value = SurveyUiState(owner = mutable.value.owner)
     }
@@ -210,6 +224,30 @@ class SurveyViewModel(
             }
         }
     }
+    /**
+     * 제출한 답 고치기. 서버에는 제출한 회차의 답을 고치는 길이 없어 새 회차를 열고, 이전 답을 그대로 채워(뒤에서 저장) 고칠 문항만 다시 고르게 한다.
+     * "모르겠어요"로 남아 있던 답은 채우지 않아 그 문항부터 다시 묻는다. 다시 제출하면 분석도 다시 한다.
+     */
+    fun edit() {
+        val s = mutable.value
+        val definition = s.definition ?: return; val session = s.session ?: return
+        if (s.page != SurveyPage.Completed || session.status != "COMPLETED" || s.recoveryRequired || s.pending.isNotEmpty()) return
+        val answers = session.answers.filter { saved ->
+            val answer = definition.questions.find { it.questionId == saved.questionId }?.answer(saved.value)
+            answer != null && answer != SurveyAnswer.Unknown
+        }
+        launch { userId, stamp ->
+            when (val result = repository.start(definition.manifest.surveyVersion)) {
+                is ApiResult.Ok -> if (valid(stamp)) {
+                    require(result.value.manifest.surveyVersion == definition.manifest.surveyVersion && result.value.sessionId > 0)
+                    cursor.write(userId, result.value.sessionId)
+                    // 서버가 이미 답이 있는 작성 중 회차(다른 기기에서 시작한 재검사 등)를 돌려주면 이전 답을 섞지 않고 그 회차를 이어 간다
+                    if (valid(stamp)) { prefill = if (result.value.answeredCount == 0) result.value.sessionId to answers else null; restore(result.value, stamp, result.value.sessionId) }
+                }
+                is ApiResult.Fail -> fail(result.error, stamp)
+            }
+        }
+    }
     private suspend fun restore(rawSession: SurveySession, stamp: Int, expectedId: Long, accountRecovery: SurveyAccountRecovery? = null) {
         if (!valid(stamp)) return
         require(rawSession.sessionId == expectedId)
@@ -235,13 +273,22 @@ class SurveyViewModel(
                         else -> SurveyPage.Question
                     },
                     draft = null, saveState = SurveySaveState.Unanswered, recoveryRequired = false, error = null,
-                    analysisReference = null, analysisResult = null, analysisApplied = null) }
+                    analysisReference = null, analysisResult = null, analysisApplied = null, editing = false) }
+                // 답 고치기: 새 회차에 아직 없는 이전 답을 줄 세워 뒤에서 저장하고, 답이 빈 첫 문항부터 보여 준다
+                val fill = prefill?.takeIf { it.first == expectedId }?.second; prefill = null
+                if (fill != null && session.status == "DRAFT") {
+                    val saved = session.answers.map { it.questionId }.toSet()
+                    val queue = fill.filter { it.questionId !in saved }.associate { it.questionId to PendingAnswer(session.sessionId, it.value) }
+                    val first = definition.questions.indexOfFirst { it.questionId !in saved && it.questionId !in queue }.coerceAtLeast(0)
+                    mutable.update { it.copy(pending = queue, editing = true, page = SurveyPage.Question, index = first) }
+                    flush()
+                }
                 val owner = mutable.value.owner!!.userId
                 val previous = cursor.readPrevious(owner)
                 val pending = cursor.readChange(owner)
                 if (!valid(stamp)) return
                 mutable.update { it.copy(previousBookmark = previous, pendingChange = pending != null, pendingSourceId = pending?.sourceSessionId) }
-                if (mutable.value.page == SurveyPage.Question) select(index)
+                if (mutable.value.page == SurveyPage.Question) select(mutable.value.index)
                 if (session.status == "COMPLETED") {
                     // 앱 재실행 뒤에도 공존하는 DRAFT와 최신 분석 버전을 다시 찾는다. 직전 회차의 선택은 바꾸지 않는다.
                     val recovery = accountRecovery ?: when (val response = repository.recovery(owner)) {
@@ -284,6 +331,15 @@ class SurveyViewModel(
             saveState = if (value == null) SurveySaveState.Unanswered else SurveySaveState.Saved, error = null,
             returnedToMissing = false) }
     }
+    /** 답 고치기를 마친다: 남은 문항을 끝까지 넘기지 않고 제출 단계로 간다. 답이 빈 문항이 있으면 그 문항으로 보낸다 */
+    fun finishEdit() {
+        val s = mutable.value
+        if (!s.editing || s.inputBlocked || s.recoveryRequired || s.page != SurveyPage.Question) return
+        fun answered(id: String) = s.pending[id]?.let { it.value != null } ?: (s.session?.answers?.any { it.questionId == id } == true)
+        val missing = s.definition!!.questions.indexOfFirst { !answered(it.questionId) }
+        if (missing < 0) mutable.update { it.copy(page = SurveyPage.Review) }
+        else { select(missing); mutable.update { it.copy(returnedToMissing = true) } }
+    }
     fun previous() {
         val s = mutable.value
         if (!s.inputBlocked && !s.recoveryRequired && s.page == SurveyPage.Question && s.index > 0) select(s.index - 1)
@@ -291,9 +347,9 @@ class SurveyViewModel(
     fun next() {
         val s = mutable.value
         if (s.inputBlocked || s.recoveryRequired || s.page != SurveyPage.Question || s.questionScreen?.canContinue != true) return
-        if (s.index + 1 < s.definition!!.questionCount) { select(s.index + 1); return }
-        // 마지막 문항: 저장된 답 + 보내려고 줄 세운 답으로 빠진 문항을 찾는다(다른 기기에서 앞 답변이 삭제될 수 있다)
+        // 저장된 답 + 보내려고 줄 세운 답으로 빠진 문항을 찾는다(다른 기기에서 앞 답변이 삭제될 수 있다)
         fun answered(id: String) = s.pending[id]?.let { it.value != null } ?: (s.session?.answers?.any { it.questionId == id } == true)
+        if (s.index + 1 < s.definition!!.questionCount) { select(s.index + 1); return }
         val missing = s.definition.questions.indexOfFirst { !answered(it.questionId) }
         if (missing < 0) mutable.update { it.copy(page = SurveyPage.Review) }
         else { select(missing); mutable.update { it.copy(returnedToMissing = true) } }

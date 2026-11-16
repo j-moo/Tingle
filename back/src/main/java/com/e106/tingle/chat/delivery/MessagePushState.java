@@ -47,8 +47,22 @@ final class MessagePushState {
 		state.remove("leaseUntil");
 	}
 
+	/** 알림 미리보기 최대 글자 수. 넘으면 자르고 "…"를 붙인다(이모지를 반으로 자르지 않는다) */
+	static final int PREVIEW_LENGTH = 100;
+
+	static String preview(String body) {
+		if (body == null || body.isBlank()) {
+			return null;
+		}
+		String text = body.strip();
+		if (text.codePointCount(0, text.length()) <= PREVIEW_LENGTH) {
+			return text;
+		}
+		return text.substring(0, text.offsetByCodePoints(0, PREVIEW_LENGTH)) + "…";
+	}
+
 	static Map<String, String> payload(long messageId, long roomId, long sequence,
-		Map<String, Object> state, Candidate candidate, Instant deadline) {
+		Map<String, Object> state, Candidate candidate, Instant deadline, String title, String body) {
 		Map<String, String> data = new HashMap<>();
 		data.put("type", "CHAT_MESSAGE");
 		data.put("eventId", (String)state.get("eventId"));
@@ -59,6 +73,13 @@ final class MessagePushState {
 		data.put("bindingId", candidate.bindingId().toString());
 		data.put("installationId", candidate.installationId().toString());
 		data.put("expiresAt", deadline.toString());
+		// 앱은 title · body가 있으면 알림 제목 · 본문으로, 없으면 기본 문구로 보인다
+		if (title != null) {
+			data.put("title", title);
+		}
+		if (body != null) {
+			data.put("body", body);
+		}
 		return Map.copyOf(data);
 	}
 }

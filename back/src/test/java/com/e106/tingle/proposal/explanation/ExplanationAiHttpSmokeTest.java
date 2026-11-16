@@ -106,10 +106,23 @@ class ExplanationAiHttpSmokeTest {
 	@AfterAll
 	void stopSyntheticAi() throws InterruptedException {
 		if (process != null) {
+			// Windows venv의 launcher 자식도 종료해야 임시 로그 파일 잠금이 풀린다.
+			List<ProcessHandle> children = process.descendants().toList();
+			children.forEach(ProcessHandle::destroy);
 			process.destroy();
 			if (!process.waitFor(5, TimeUnit.SECONDS)) {
 				process.destroyForcibly();
 				process.waitFor(5, TimeUnit.SECONDS);
+			}
+			for (ProcessHandle child : children) {
+				if (child.isAlive()) {
+					child.destroyForcibly();
+				}
+				try {
+					child.onExit().get(5, TimeUnit.SECONDS);
+				} catch (java.util.concurrent.ExecutionException | java.util.concurrent.TimeoutException exception) {
+					throw new IllegalStateException("Synthetic AI child did not stop", exception);
+				}
 			}
 		}
 	}
@@ -141,6 +154,16 @@ class ExplanationAiHttpSmokeTest {
 	}
 
 	@Test
+	void invertedOneWayFactCannotBeRepairedByItsDirectionLabel() {
+		RuleExplanationTransport.Request valid = request();
+		ObjectNode bundle = (ObjectNode)valid.contextBundle().deepCopy();
+		((ObjectNode)bundle.path("context").path("evidence").get(0).path("evidence"))
+			.put("fact", "A가 바라는 연락 빈도에 B가 잘 맞아요.");
+		assertThat(transport.explain(new RuleExplanationTransport.Request(valid.attemptId(), 17, manifest,
+			bundle))).isEmpty();
+	}
+
+	@Test
 	void anUnapprovedTopicCannotBeSentAsPublicEvidence() {
 		RuleExplanationTransport.Request valid = request();
 		ObjectNode bundle = (ObjectNode)valid.contextBundle().deepCopy();
@@ -168,10 +191,10 @@ class ExplanationAiHttpSmokeTest {
 		Map<String, Object> reference = Map.of("encounter_id", 17, "evaluation_ref", "b".repeat(64),
 			"version_ref", manifest.path("releaseId").asString());
 		Map<String, Object> evidence = Map.of("id", "e1", "kind", "ONE_WAY_PREFERENCE_FIT", "topic", "contact",
-			"direction", "A_TO_B", "fact", "B의 실제 연락 빈도가 A의 허용 범위에 들어간다.");
+			"direction", "A_TO_B", "fact", "B가 바라는 연락 빈도에 A가 잘 맞아요.");
 		JsonNode bundle = json.valueToTree(Map.of(
 			"context", Map.of("reference", reference, "viewer", "A", "conflicting_source_refs", List.of(),
-				"evidence", List.of(Map.of("reference", reference, "source_ref", "synthetic-frozen-comparison",
+				"evidence", List.of(Map.of("reference", reference, "source_ref", "survey:SIS-Q-1.1-100:Q034",
 					"evidence", evidence))),
 			"scope", Map.of("reference", reference, "viewer", "A", "version", "synthetic-approved-scope",
 				"model_evidence_ids", List.of(), "display_evidence_ids", List.of("e1"))));

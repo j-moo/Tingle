@@ -54,7 +54,7 @@ fun AgePreferenceScreen(
 ) {
     state.conflict?.let { SettingsConflictScreen(it, onConflictAction); return }
     val editable = !state.saving
-    Surface(modifier.fillMaxSize(), color = AppColors.Background) {
+    Surface(modifier.fillMaxSize(), color = AppColors.Screen) {
         Column(Modifier.fillMaxSize().safeDrawingPadding().imePadding()) {
             // 제목 없이 왼쪽 위 < 하나. 눌러도 회색 원(물결)이 생기지 않게 표시 없이 누르기만, 터치 영역 48dp
             if (onBack != null) Box(Modifier.fillMaxWidth().heightIn(min = AppSizes.TopBarMinHeight).padding(horizontal = AppSpacing.Small),

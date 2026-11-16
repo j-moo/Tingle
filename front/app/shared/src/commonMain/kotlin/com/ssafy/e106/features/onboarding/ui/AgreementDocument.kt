@@ -47,7 +47,7 @@ internal fun AgreementDocument(title: String, url: String, onClose: () -> Unit) 
     var attempt by remember(url) { mutableIntStateOf(0) }
     var load by remember(url, attempt) { mutableStateOf(WebDocumentLoad.Loading) }
     ProfileBackHandler(enabled = true, onBack = onClose)
-    Surface(Modifier.fillMaxSize(), color = AppColors.Background) {
+    Surface(Modifier.fillMaxSize(), color = AppColors.Screen) {
         Column(Modifier.fillMaxSize().safeDrawingPadding()) {
             AppTopBar(title, onBack = onClose, backText = stringResource(Res.string.agreement_document_close))
             Box(Modifier.weight(1f).fillMaxSize()) {
@@ -55,15 +55,15 @@ internal fun AgreementDocument(title: String, url: String, onClose: () -> Unit) 
                     WebDocument(url, onLoad = { load = it }, onExternal = { runCatching { uri.openUri(it) } }, modifier = Modifier.fillMaxSize())
                 }
                 when (load) {
-                    // 받는 중: 웹 화면을 덮고 글 줄 자리에 뼈대
-                    WebDocumentLoad.Loading -> Surface(Modifier.fillMaxSize(), color = AppColors.Background) {
+                    // 받는 중: 웹 화면을 불투명하게 덮고(비치지 않게) 글 줄 자리에 뼈대
+                    WebDocumentLoad.Loading -> Surface(Modifier.fillMaxSize(), color = AppColors.Sheet) {
                         SkeletonGroup(Modifier.padding(screenPaddingValues())) {
                             SkeletonBone(Modifier.fillMaxWidth(0.5f), height = 24.dp)
                             repeat(8) { SkeletonBone(Modifier.fillMaxWidth(if (it % 3 == 2) 0.6f else 1f)) }
                         }
                     }
                     // 못 받음: 웹 화면은 오류 종류를 알려 주지 않아 "알 수 없는 오류" 모양으로. 당기거나 작은 "다시 시도"로 다시 받는다
-                    WebDocumentLoad.Failed -> Surface(Modifier.fillMaxSize(), color = AppColors.Background) {
+                    WebDocumentLoad.Failed -> Surface(Modifier.fillMaxSize(), color = AppColors.Sheet) {
                         PullDownRefreshBox(false, { attempt++ }, Modifier.fillMaxSize()) {
                             Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(screenPaddingValues()),
                                 verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {

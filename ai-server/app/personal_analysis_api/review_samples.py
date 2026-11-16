@@ -17,7 +17,7 @@ from .adapter import (
     question_id,
 )
 from .dto import PersonalAnalysisRequest
-from .proposals import proposed_label_only_policy
+from .proposals import PROPOSAL_REVIEW_VERSION, proposed_label_only_policy
 
 FIXTURE_DIR = Path(__file__).resolve().parents[2] / "tests/fixtures/personal-analysis-api"
 
@@ -71,9 +71,10 @@ def build_review_samples() -> dict[str, dict]:
         ),
         presentation=dict(
             approval="UNAPPROVED",
-            policy="label-only-gap-priority-2-1",
+            policy=PROPOSAL_REVIEW_VERSION,
             templateIds="15 fixed reading IDs and PA-D-SELF-WISH-FIT remain candidates",
-            gapText="label/self/wish only; fit remains in core selection/order, omitted from display text",
+            gapText="Survey upper-bound wording for Q089; explicit irregular exclusion note for Q087; fit/order unchanged and fit not displayed",
+            renderers="Verified readings in SUCCEEDED and INSUFFICIENT; formatter evidence mismatch uses existing 500 INTERNAL_ERROR; other presentation unavailability remains 503; never inferred-text fallback",
             priority="First gap 2, second gap 1; proposal, not a production severity score",
         ),
         source=dict(

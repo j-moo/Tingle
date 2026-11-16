@@ -128,7 +128,7 @@ class MainHarness:
 def main_factory(tmp_path, monkeypatch, synthetic_private_keys, caplog, capsys, record_property):
     """Load actual app.main with isolated in-memory Settings; never replace auth.
 
-    The runtime constructs DevelopmentReleaseCatalog, LocalFileTokenizer and
+    The runtime constructs the release catalog, optional LocalFileTokenizer and
     LocalRuleRiskEngine itself. Fault tests patch only engine/tokenizer methods;
     catalog/supports, hashes, JWT verifier and main router are never patched.
     """
@@ -146,17 +146,19 @@ def main_factory(tmp_path, monkeypatch, synthetic_private_keys, caplog, capsys, 
     stack = ExitStack()
 
     def make(*, environment="test", enabled=True, release=None, pin=None, keys=True,
-             engine_factory=None, gms_primary=None, start=True):
+             engine_factory=None, gms_primary=None, start=True, configured=True):
         directory = tmp_path / f"main-{len(hosts)}"
         directory.mkdir(exist_ok=True)
-        release = release if release is not None else synthetic_release(directory)
+        release = release if release is not None else synthetic_release(
+            directory, development_only=gms_primary is not None)
         public_file = directory / "synthetic-public-only.pem"
         public_file.write_bytes(synthetic_private_keys[0].public_key().public_bytes(
             serialization.Encoding.PEM, serialization.PublicFormat.SubjectPublicKeyInfo))
-        values = dict(app_env=environment, ai_service_public_keys={KID: str(public_file)} if keys else {},
-                      risk_release_descriptor_file=str(release.descriptor),
-                      risk_local_rules_descriptor_sha256=release.test_descriptor_pin if pin is None else pin)
-        if enabled is not None:  # None proves the actual Settings default OFF.
+        values = dict(gms_api_key="synthetic-safety-startup-only", app_env=environment, ai_service_public_keys={KID: str(public_file)} if keys else {},
+                      risk_release_descriptor_file=str(release.descriptor) if configured else "",
+                      risk_local_rules_descriptor_sha256=(release.test_descriptor_pin if pin is None else pin)
+                      if configured else "")
+        if enabled is not None:  # Legacy Safety GMS switch; local rules ignore it.
             values["risk_local_rules_enabled"] = enabled
         monkeypatch.setattr(config, "settings", Settings(_env_file=None, **values))
         sys.modules.pop("app.main", None)

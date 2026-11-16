@@ -2,7 +2,9 @@
     <!-- 서버 푸시는 data 전용이라 문구를 앱이 정한다(core/push/TingleMessagingService) -->
     <string name="push_channel_name">채팅 알림</string>
     <string name="push_chat_message">새 메시지가 왔어요</string>
+    <string name="push_message_count">새 메시지 %1$d개</string>
     <string name="push_chat_ending">대화가 곧 끝나요</string>
     <string name="push_other">새 알림이 있어요</string>
     <string name="push_new_proposal">새 매칭 제안이 도착했어요</string>
+    <string name="push_matched">우연한 만남이 있었어요!</string>
 </resources>

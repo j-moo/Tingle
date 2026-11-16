@@ -1,4 +1,4 @@
-"""BE가 검증한 직접 contextBundle과 등록 release를 받는 경계. 기본 경로는 규칙 전용이다.
+"""BE가 검증한 직접 contextBundle과 11필드 manifest를 받는 경계.
 
 인증 신원을 열람자로 쓰거나 callback·토큰 전달·신뢰 loader 재조회를 하지 않는다.
 실제 현재 권한·시도·과거 사실과 최종 저장 검증은 BE가 담당한다.
@@ -15,10 +15,9 @@ from fastapi import APIRouter, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from fastapi.routing import APIRoute
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_validator
 
 from .dto import DisclosureScope, Explanation, ResolvedContext
-from .releases import ReleaseError, ReleaseRegistry
 from .service import MatchExplanationService
 from .validation import unique_json_object
 
@@ -29,7 +28,7 @@ VersionText = Annotated[str, StringConstraints(strict=True, min_length=1, max_le
 
 
 class Manifest(BaseModel):
-    """기존 11필드 계약. 등록 descriptor와 실제 artifact bytes를 대조한다."""
+    """기존 11필드 형식·필수값 계약. Release 등록과 파일 대조는 BE가 담당한다."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
     releaseId: UuidText
@@ -43,6 +42,15 @@ class Manifest(BaseModel):
     productPolicyVersion: VersionText
     engineVersion: VersionText
     contentHash: Annotated[str, StringConstraints(strict=True, pattern=r"^[0-9a-f]{64}$")]
+
+    @field_validator("surveyVersion", "wordingVersion", "scoringVersion", "typeModelVersion",
+                     "analysisVersion", "typeReferenceVersion", "matchingVersion",
+                     "productPolicyVersion", "engineVersion")
+    @classmethod
+    def nonblank_version(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("Missing manifest version")
+        return value
 
 
 class AiInput(BaseModel):
@@ -112,14 +120,13 @@ def _bundle(raw: object, context_id: int, release_id: str) -> ContextBundle:
 
 
 class ContextResolver:
-    """직접 bundle의 내부 일치성과 고정 등록 release만 검증한다.
+    """직접 bundle의 내부 일치성과 manifest의 Release 참조를 검증한다.
 
     evaluation_ref는 BE Run.inputFingerprint이며 AI가 원문 해시를 다시 만들지 않는다.
     인증 서비스 신원은 업무 viewer와 무관하며 BE의 현재 권한 조회를 대체하지 않는다.
     """
 
-    def __init__(self, releases: ReleaseRegistry | None = None, *, generator=None, verifier=None) -> None:
-        self.releases = releases if releases is not None else ReleaseRegistry()
+    def __init__(self, *, generator=None, verifier=None) -> None:
         # Explicit Python composition only. No request/environment chooses a provider.
         self.generator, self.verifier = generator, verifier
         # 전송 허용 목록은 공급자 활성화와 별개다. OFF여도 목록의 무결성은
@@ -131,10 +138,6 @@ class ContextResolver:
             parsed = _bundle(payload.contextBundle, payload.contextId, payload.manifest.releaseId)
         except (ValueError, TypeError, KeyError):
             raise BoundaryError(400, "INVALID_REQUEST") from None
-        try:
-            self.releases.verify(payload.manifest.model_dump())
-        except ReleaseError:
-            raise BoundaryError() from None
         return parsed
 
     def explain(self, payload: AiInput, identity: object) -> Explanation:

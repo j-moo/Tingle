@@ -6,6 +6,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 
 import org.junit.jupiter.api.Test;
@@ -61,10 +62,19 @@ class RiskGatewayConfigurationTest {
 	}
 
 	@Test
-	void enabledWithoutTokenizerFailsAtStartup() {
+	void enabledWithoutRegisteredTokenizerCountsTheSerializedContextBytes() {
+		// AI 서버의 json.dumps(..., ensure_ascii=False, separators=(",", ":")) 결과와 같은 길이여야 한다.
+		String ai = """
+			{"contextBundle":[{"sequence":1,"speaker":"A","text":"안녕 \\"반가워\\"\\n","fresh":true,"urlMasked":false}]}"""
+			.strip();
+		Input input = new Input(List.of(new Message(1, "A", "안녕 \"반가워\"\n", true, false)), null);
 		runner.withPropertyValues("app.risk.external-enabled=true")
 			.withBean(AiInternalClient.class, () -> mock(AiInternalClient.class))
-			.run(context -> assertThat(context).hasFailed());
+			.run(context -> {
+				assertThat(context).hasNotFailed();
+				assertThat(context.getBean(RiskAnalysisGateway.class).countTokens(input))
+					.isEqualTo(ai.getBytes(StandardCharsets.UTF_8).length + 16);
+			});
 	}
 
 	@Test

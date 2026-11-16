@@ -12,6 +12,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
@@ -29,7 +30,7 @@ fun KeyringResetScreen(state: KeyringResetState, onAccepted: (Boolean) -> Unit, 
     onRecordChoice: (ResetRecordChoice) -> Unit = {}, onRecordDeletionAccepted: (Boolean) -> Unit = {},
     showPreviewNotice: Boolean = false) {
     val phase = state.displayStage
-    Surface(Modifier.fillMaxSize(), color = AppColors.Background) {
+    Surface(Modifier.fillMaxSize(), color = AppColors.Screen) {
         Column(Modifier.fillMaxSize().safeDrawingPadding()) {
             // 이 배너는 debug @Preview에서만 켠다. 제품 화면의 동작 상태와 혼동하지 않는다.
             if (showPreviewNotice) Text(stringResource(Res.string.reset_preview_notice), Modifier.padding(AppSpacing.Small))
@@ -79,6 +80,12 @@ fun KeyringResetScreen(state: KeyringResetState, onAccepted: (Boolean) -> Unit, 
                             CircularProgressIndicator(Modifier.size(48.dp).semantics { contentDescription = label }, color = AppColors.TextPrimary)
                             ResetHeadline(label, stringResource(Res.string.reset_running_help))
                         }
+                        // 결과 대기: 키링이 지우면서 연결이 끊겼거나 아직 지우는 중. 실패가 아니다. 같은 키링에 다시 붙으면 자동으로 이어 간다
+                        phase == KeyringResetStage.Waiting -> {
+                            // 제목이 같은 문구를 읽으므로 진행 표시는 읽지 않는다
+                            CircularProgressIndicator(Modifier.size(48.dp).clearAndSetSemantics {}, color = AppColors.TextPrimary)
+                            ResetHeadline(stringResource(Res.string.reset_waiting), stringResource(Res.string.reset_waiting_help))
+                        }
                         // 완료: 상태 화면(제목 한 줄) + 아래 "확인"
                         phase == KeyringResetStage.Complete -> StateView(StateKind.Done, stringResource(Res.string.reset_done))
                         phase == KeyringResetStage.Disconnected && state.stage != KeyringResetStage.Failed -> {
@@ -123,7 +130,8 @@ fun KeyringResetScreen(state: KeyringResetState, onAccepted: (Boolean) -> Unit, 
                     else -> true
                 }
                 // 진행 중에는 버튼 없이 가운데 로딩만 둔다
-                if (!state.busy) AppButton(stringResource(label), Modifier.fillMaxWidth(),
+                // 결과 대기 중에는 버튼 없이 자동으로 이어 간다(뒤로 가기는 된다. 다시 열면 같은 실행을 이어 간다)
+                if (!state.busy && phase != KeyringResetStage.Waiting) AppButton(stringResource(label), Modifier.fillMaxWidth(),
                     variant = if (action == KeyringResetAction.StartReset) AppButtonVariant.Danger else AppButtonVariant.Primary,
                     enabled = enabled,
                     onClick = { if (enabled) onAction(action) })

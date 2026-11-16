@@ -1,5 +1,6 @@
 package com.ssafy.e106.features.chat.ui
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -19,6 +20,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
@@ -59,7 +61,7 @@ fun ChatConversationScreen(
                 .mapNotNull { it.id.toLongOrNull() }
         }.distinctUntilChanged().collect { ids -> withFrameNanos { }; latestDisplayed(ids) }
     }
-    Surface(modifier.fillMaxSize(), color = AppColors.Background) {
+    Surface(modifier.fillMaxSize(), color = AppColors.Screen) {
         BoxWithConstraints(Modifier.fillMaxSize().safeDrawingPadding().imePadding()) {
             // 가로 IME 등으로 남은 높이가 짧으면 입력/전송을 우선한다. 높이가 확보되면 제목/메뉴가 복귀한다.
             // 입력 컴포지션 위치는 유지하고 높이만 조정해 초안과 포커스를 보존한다.
@@ -150,7 +152,7 @@ fun ChatConversationScreen(
     }
 }
 
-/** 위쪽: ‹ · 이름(누르면 상대 정보)과 종료 시각 · ⋯(차단 · 신고 메뉴). 읽을 수 없는 상태에선 ‹ 와 제목만 */
+/** 위쪽: ‹ · 상대 사진과 이름(누르면 상대 정보) · 종료 시각 · ⋯(차단 · 신고 메뉴). 읽을 수 없는 상태에선 ‹ 와 제목만 */
 @Composable
 private fun ConversationTopBar(state: ChatConversationState, onAction: (ConversationAction) -> Unit) {
     val back = stringResource(Res.string.button_previous)
@@ -163,15 +165,27 @@ private fun ConversationTopBar(state: ChatConversationState, onAction: (Conversa
             onClick = { onAction(ConversationAction.Back) }), contentAlignment = Alignment.Center) {
             Icon(painterResource(Res.drawable.ic_arrow_back), back, tint = AppColors.TextPrimary)
         }
-        // 제목(heading)은 포커스를 받는 이 영역에 둔다
-        Column(Modifier.weight(1f).heightIn(min = 48.dp).clip(AppShapes.Small).semantics(mergeDescendants = true) { heading() }
+        // 같은 방을 다시 불러오는 동안에도 닉네임 · 사진을 둔다("대화"로 깜빡이지 않게)
+        val named = state.load == ConversationLoad.Loading || state.readable
+        val name = state.nickname?.takeIf { it.isNotBlank() && named }
+        // 제목(heading)은 포커스를 받는 이 영역에 둔다. 사진과 이름을 함께 누르면 상대 정보(터치 영역 48dp 이상)
+        Row(Modifier.weight(1f).heightIn(min = 48.dp).clip(AppShapes.Small).semantics(mergeDescendants = true) { heading() }
             .then(if (state.readable) Modifier.clickable(role = Role.Button, onClickLabel = partner) { onAction(ConversationAction.OpenPartner) } else Modifier)
-            .padding(horizontal = AppSpacing.Small), verticalArrangement = Arrangement.Center) {
-            Text(if (state.readable) state.nickname?.takeIf { it.isNotBlank() } ?: stringResource(Res.string.chat_conversation_title)
-                else stringResource(Res.string.chat_conversation_title),
-                style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            if (state.readable) closesText(state.closesAtLabel)?.let {
-                Text(it, style = MaterialTheme.typography.bodySmall, color = AppColors.TextSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            .padding(horizontal = AppSpacing.Small), verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(AppSpacing.Small)) {
+            // 상대 사진(장식이라 읽지 않음). 없거나 받는 중 · 실패면 첫 글자, 읽을 수 없는 방이나 이름을 모르면 두지 않는다(빈 원 없이)
+            val photo = state.partnerPhoto?.takeIf { named }
+            if (name != null || photo != null) Box(Modifier.size(36.dp).clip(CircleShape).background(AppColors.SurfaceMuted), contentAlignment = Alignment.Center) {
+                if (photo != null) Image(photo, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+                else Text(name.initial(), style = MaterialTheme.typography.titleSmall, color = AppColors.TextSecondary,
+                    modifier = Modifier.clearAndSetSemantics {})
+            }
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.Center) {
+                Text(name ?: stringResource(Res.string.chat_conversation_title),
+                    style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                if (state.readable) closesText(state.closesAtLabel)?.let {
+                    Text(it, style = MaterialTheme.typography.bodySmall, color = AppColors.TextSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
             }
         }
         if (state.readable) Box(Modifier.size(48.dp).clip(CircleShape).semantics { contentDescription = menu }
@@ -204,9 +218,9 @@ private fun MessageRow(message: ConversationMessage, enabled: Boolean, onRecover
         Column(Modifier.semantics(mergeDescendants = true) { contentDescription = who }, horizontalAlignment = side,
             verticalArrangement = Arrangement.spacedBy(AppSpacing.ExtraSmall)) {
             Surface(Modifier.widthIn(max = 286.dp), shape = RoundedCornerShape(16.dp),
-                color = if (message.mine) AppColors.TextPrimary.copy(alpha = if (sent) 1f else 0.6f) else AppColors.SurfaceMuted) {
+                color = if (message.mine) AppColors.ActionPrimary.copy(alpha = if (sent) 1f else 0.6f) else AppColors.SurfaceMuted) {
                 Text(message.text, Modifier.padding(horizontal = AppSpacing.Large, vertical = AppSpacing.Medium),
-                    style = MaterialTheme.typography.bodyMedium, color = if (message.mine) AppColors.Background else AppColors.TextPrimary)
+                    style = MaterialTheme.typography.bodyMedium, color = if (message.mine) AppColors.OnPrimary else AppColors.TextPrimary)
             }
             if (sent) Text(chatTimeParts(message.timeLabel)?.let { clock(it) } ?: message.timeLabel?.takeIf { it.isNotBlank() }
                 ?: stringResource(Res.string.chat_conversation_time_unknown),
@@ -321,10 +335,10 @@ private fun ConversationComposer(state: ChatConversationState, onDraftChange: (S
                 .clickable(enabled = state.submitEnabled, role = Role.Button) { if (state.submitEnabled) onAction(ConversationAction.Send) },
                 contentAlignment = Alignment.Center) {
                 Box(Modifier.size(44.dp).clip(CircleShape)
-                    .background(if (state.submitEnabled || state.submitting) AppColors.TextPrimary else AppColors.BorderSubtle),
+                    .background(if (state.submitEnabled || state.submitting) AppColors.ActionPrimary else AppColors.BorderSubtle),
                     contentAlignment = Alignment.Center) {
-                    if (state.submitting) CircularProgressIndicator(Modifier.size(18.dp), color = AppColors.Background, strokeWidth = 2.dp)
-                    else Text("→", style = MaterialTheme.typography.titleMedium, color = AppColors.Background, modifier = Modifier.clearAndSetSemantics {})
+                    if (state.submitting) CircularProgressIndicator(Modifier.size(18.dp), color = AppColors.OnPrimary, strokeWidth = 2.dp)
+                    else Text("→", style = MaterialTheme.typography.titleMedium, color = AppColors.OnPrimary, modifier = Modifier.clearAndSetSemantics {})
                 }
             }
         }

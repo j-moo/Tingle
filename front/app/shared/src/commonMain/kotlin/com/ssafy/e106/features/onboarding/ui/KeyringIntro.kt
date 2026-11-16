@@ -48,6 +48,7 @@ import com.ssafy.e106.core.ui.theme.AppColors
 import com.ssafy.e106.core.ui.theme.AppSpacing
 import com.ssafy.e106.core.ui.theme.screenPaddingValues
 import com.ssafy.e106.resources.Res
+import com.ssafy.e106.resources.account_withdrawal
 import com.ssafy.e106.resources.onboarding_keyring_body
 import com.ssafy.e106.resources.onboarding_keyring_buy
 import com.ssafy.e106.resources.onboarding_keyring_find
@@ -74,8 +75,10 @@ internal fun KeyringIntro(
     onReload: () -> Unit,
     onRefresh: () -> Unit,
     onLogout: () -> Unit,
+    /** 가입을 마친 뒤 키링을 모두 초기화해 이 화면에 온 계정만: 탈퇴는 키링이 없어야 할 수 있어 여기서도 열어 준다 */
+    onWithdraw: (() -> Unit)? = null,
 ) {
-    Surface(Modifier.fillMaxSize(), color = AppColors.Background) {
+    Surface(Modifier.fillMaxSize(), color = AppColors.Screen) {
         Column(Modifier.fillMaxSize().safeDrawingPadding(), horizontalAlignment = Alignment.CenterHorizontally) {
             val (refreshing, pull) = pullRefresh(busy, onReload)
             PullDownRefreshBox(refreshing, pull, Modifier.weight(1f).fillMaxWidth()) {
@@ -118,6 +121,11 @@ internal fun KeyringIntro(
                         }
                         TextButton(onClick = onLogout) {   // 불러오는 중에도 나갈 수 있어야 한다(로그아웃은 진행 중 작업을 취소한다)
                             Text(stringResource(Res.string.onboarding_logout), style = MaterialTheme.typography.bodySmall, color = AppColors.TextSecondary)
+                        }
+                        onWithdraw?.let { withdraw ->
+                            TextButton(onClick = withdraw, enabled = !busy) {
+                                Text(stringResource(Res.string.account_withdrawal), style = MaterialTheme.typography.bodySmall, color = AppColors.Error)
+                            }
                         }
                     }
                 }

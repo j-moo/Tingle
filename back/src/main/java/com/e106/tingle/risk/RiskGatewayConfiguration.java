@@ -1,14 +1,28 @@
 package com.e106.tingle.risk;
 
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
 import com.e106.tingle.global.ai.AiInternalClient;
 
-/** 공통 AI 인증 활성화만으로 대화를 전송하지 않는다. 별도 승인과 로컬 tokenizer 등록이 필요하다. */
+/** 공통 AI 인증 활성화만으로 대화를 전송하지 않는다. app.risk.external-enabled 를 켜야 전송 어댑터가 등록된다. */
 @Configuration(proxyBeanMethods = false)
 public class RiskGatewayConfiguration {
+
+	/**
+	 * 특수 토큰(문장 앞뒤에 붙는 표시) 수는 토크나이저마다 다르지만 보통 1~4개다. 상한 계산이라 넉넉히 16으로 잡는다.
+	 * 승인된 토크나이저가 더 많이 붙이면 app.risk.tokenizer.special-tokens 로 올린다.
+	 * 실제 토크나이저 구현을 붙일 때는 이 기본 빈을 지운다(일반 설정 클래스의 ConditionalOnMissingBean 은 등록 순서에 따라 둘 다 남을 수 있다).
+	 */
+	@Bean
+	@ConditionalOnMissingBean
+	@ConditionalOnProperty(name = "app.risk.external-enabled", havingValue = "true")
+	RiskTokenizer riskTokenizer(@Value("${app.risk.tokenizer.special-tokens:16}") int specialTokens) {
+		return new ByteBoundRiskTokenizer(specialTokens);
+	}
 
 	@Bean
 	@ConditionalOnProperty(name = "app.risk.external-enabled", havingValue = "true")

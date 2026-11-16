@@ -11,6 +11,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import com.e106.tingle.global.error.BusinessException;
 import com.e106.tingle.global.error.ErrorCode;
+import com.e106.tingle.user.dto.ContactEmailResponse;
 import com.e106.tingle.user.dto.NicknameAvailabilityResponse;
 import com.e106.tingle.user.dto.OnboardingDetailResponse;
 import com.e106.tingle.user.dto.OnboardingResponse;
@@ -42,6 +43,13 @@ public class UserController {
 	@RequiresOnboarding(OnboardingStatus.KEYRING_REQUIRED)
 	public ProfileResponse getProfile(@AuthenticationPrincipal Jwt jwt) {
 		return profileService.get(userId(jwt));
+	}
+
+	// 네이버 로그인 검수: 수집한 이메일을 본인에게 보여 주는 곳. 프로필 조회와 같은 단계부터 허용한다.
+	@GetMapping("/api/users/{userId}/contact-email")
+	@RequiresOnboarding(OnboardingStatus.KEYRING_REQUIRED)
+	public ContactEmailResponse getContactEmail(@AuthenticationPrincipal Jwt jwt) {
+		return profileService.contactEmail(userId(jwt));
 	}
 
 	// 생략과 null 을 구분해야 해서(PATCH) 정해진 DTO 대신 JSON 그대로 받는다.

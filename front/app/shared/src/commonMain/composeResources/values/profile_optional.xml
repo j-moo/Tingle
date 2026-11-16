@@ -1,5 +1,6 @@
 <resources>
     <string name="optional_unavailable">선택 동의 상태를 확인하지 못했어요. 정보를 입력하려면 다시 조회해 주세요. 선택 정보 저장 없이 가입을 계속할 수 있어요.</string>
+    <string name="optional_unavailable_editing">선택 동의 상태를 확인하지 못했어요. 종교 · 소개를 고치려면 다시 조회해 주세요.</string>
     <string name="optional_unknown">요청 결과를 아직 확인하지 못했어요. 다시 조회한 뒤 계속해 주세요.</string>
     <string name="optional_version_changed">동의 문서가 변경됐어요. 최신 내용을 확인하고 다시 선택해 주세요.</string>
     <string name="optional_consent_required">동의 상태가 바뀌었어요. 현재 동의를 확인하고 다시 입력해 주세요.</string>

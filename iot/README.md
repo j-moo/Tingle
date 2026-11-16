@@ -4,7 +4,19 @@
 
 앱·서버 연동 담당자에게 공유할 내용은 기존 인계의 **[FE 전달문](app-flow-v2-handoff.md#fe-전달문)**·**[BE 전달문](app-flow-v2-handoff.md#be-전달문)**과 [합동 시험/완료 기준](app-flow-v2-handoff.md#합동-시험과-완료-기준)을 따른다. 현재 구현 기반·추가 연동 작업·제안 API·실물 미검증 범위를 구분했다.
 
-## 0.9.9 설정 복구와 원인 추적
+## 0.9.13 매칭 진동 10초 알림
+
+2026-11-13 실물 시험에서 0.9.11의 120ms 펄스가 약하게 느껴진다는 피드백을 받아, 매칭 진동만 `350ms ON → 150ms OFF → 350ms ON → 400ms OFF`의 1.25초 주기를 8회 반복하도록 변경했다. 총 알림 구간 10초·진동 16회·모터 ON 합계 5.6초이며 구동 전압은 변경하지 않는다. LED 30초, USB 충전 시 2초 단발 진동, 양쪽 진동 ON 조건, 전원/저전압/버튼/이탈/설정에 따른 중지, 중복 알림 억제와 저장·통신·매칭 계산은 유지한다. 0.9.12의 동일 펄스 5초 시험에서 사용자가 이전보다 또렷함을 확인했고, 후속 요청에 따라 총 시간을 10초로 늘렸다. 호스트 타이밍 검증과 실제 모터 체감은 구분한다.
+
+설계 근거는 [Precision Microdrives AB-013](https://www.precisionmicrodrives.com/ab-013)의 회전 관성·상승 시간 및 펄스 길이/간격 조절 원칙이다. 350/150/350/400ms는 본 기기의 실물 피드백에 따른 설계값이며, 제조사가 지정한 최적 수치나 해당 모터의 응답 시간 실측값은 아니다. 기존 120ms 패턴보다 모터 구동 시간이 늘어나므로 체감과 배터리 사용량은 구분해서 검증한다.
+
+## 0.9.10 만남 저장소 격리와 연동 복구
+
+`0.9.10-d31`에서 QSPI 접근 동안 공유 HFXO 참조를 유지하고, 완료된 무선 응답 재전송의 불필요한 Flash 쓰기를 제거했다. 손상된 만남 슬롯은 원본을 보존해 격리하며 정상 설정 적용과 다른 정상 기록 조회를 계속 지원한다. 이 복구 동작은 0.9.13에서도 유지한다. 상세 원인·상태 필드·FE/BE 작업·실물 검증 범위는 [저장 오류 복구 인계](storage-recovery-20261113.md)의 0.9.10 절을 따른다.
+
+시험 #8은 부팅과 저장 영역 보존을 확인했으나 앱에 남은 초기화 `PENDING_DEVICE` 저널로 새 동기화가 차단된다. 초기화 만료는 자동 취소가 아니다. 데이터 삭제나 등록 초기화로 우회하지 않으며 FE/BE의 실행 상태 조회와 안전한 복구 계약이 필요하다. 앱 종단 동기화까지 완료된 것으로 표시하지 않는다.
+
+## 0.9.9 설정 복구와 원인 추적 (이전 동작)
 
 설정만 손상됐을 때 블루투스까지 중단되던 경로를 보강했다. 상세 근거·FE/BE 작업·실물 확인 결과는 [저장 오류 복구 인계](storage-recovery-20261113.md)에 기록한다. `0.9.9-d31`은 SIS D3.1 Y3용이며, 기기 키·소유 세대·설정 레코드 형식·저장 파티션·만남 기록은 유지한다.
 
@@ -32,6 +44,8 @@
 정식 빌드의 USB `STORAGE CHECK`는 쓰기와 경합하지 않도록 잠금 후 두 저장 파티션의 SHA-256과 큐 개수만 읽는다. 초기화·키 재생성·레코드 수정 명령이 아니다. 진단 전후 동일 해시로 바이트 보존을 대조할 수 있다.
 
 ## SIS D3.1 Y3 PCB
+
+초기 `0.8.0-d31` 검증에서는 `01_SIS_D31_GERBER_CAM_Y3.zip`의 Gerber·드릴·FlyingProbe 파일 13개가 검토용 제조 ZIP의 원본과 바이트 단위로 일치했다. 핀 배치는 D3.1 회로도와 `06_PIN_NET_MAP.csv`를 기준으로 확인했다.
 
 `0.9.6-d31`은 제조 파일 `01_SIS_D31_GERBER_CAM_Y3.zip`과 D3.1의 `06_PIN_NET_MAP.csv`를 기준으로 한다. 기본 빌드와 `-Carrier d31`은 같은 설정을 사용한다. [공개 검색 이름 BLE 계약](keyring-app-ble-contract-v1.md#public-scan-name)과 [Fold6 검색·페어링 인계](app-flow-v2-handoff.md#fold6-ble-recovery)를 참조한다.
 
@@ -87,7 +101,9 @@ XIAO 회로도의 TS는 고정 저항으로 처리되어 배터리 온도를 읽
 
 ## Rev G PCB와 물리 안내
 
-`-Carrier revg`는 **Tingle Rev G 31x50 Connector** 프로필의 `0.9.5-revg`를 빌드한다. Rev F도 같은 GPIO와 모터 전원을 사용한다. Rev G는 배터리 입력 J1과 XIAO BAT 연결 J2를 구분하고 XIAO 내장 USB-C 충전을 사용한다. 동작 중에는 J6 RGB에 같은 충전 색을 표시한다. [Seeed XIAO 회로도](https://files.seeedstudio.com/wiki/XIAO-BLE/Seeed_Studio_XIAO_nRF52840_PDF.pdf)
+SIS D3.1 Y3를 조립한 키링에는 기본 빌드 또는 `-Carrier d31`을 사용한다. 아래의 Rev G 31×50 Connector 프로필은 표에 명시된 핀 배치에 해당한다. Rev G R4의 RGB D6·D8·D9 및 모터 D10 배선은 별도 기판 설계이며 현재 빌드에서 지원하지 않는다.
+
+`-Carrier revg`는 **Tingle Rev G 31x50 Connector** 프로필의 `-revg` 펌웨어를 빌드한다. Rev F도 같은 GPIO와 모터 전원을 사용한다. Rev G는 배터리 입력 J1과 XIAO BAT 연결 J2를 구분하고 XIAO 내장 USB-C 충전을 사용한다. 동작 중에는 J6 RGB에 같은 충전 색을 표시한다. [Seeed XIAO 회로도](https://files.seeedstudio.com/wiki/XIAO-BLE/Seeed_Studio_XIAO_nRF52840_PDF.pdf)
 
 | 기능 | XIAO 핀 | PCB 연결과 동작 |
 | --- | --- | --- |
@@ -100,7 +116,7 @@ XIAO 회로도의 TS는 고정 저항으로 처리되어 배터리 온도를 읽
 
 Rev G의 RGB 출력은 HIGH에서 고구동(S0H1)을 사용한다. 각 채널의 470Ω 직렬 저항은 PCB에 있다. [nRF52840 GPIO 전기 특성](https://docs.nordicsemi.com/r/bundle/ps_nrf52840/page/gpio.html)
 
-만남을 비휘발성 저장한 뒤에 물리 안내를 시작한다. LED는 각자의 설정을 따르고 동일 만남 ID에서 같은 색을 고른다. 계속 근접한 경우 점등 30초 후 종료한다. 진동은 양쪽 설정이 모두 ON일 때 120ms 구동, 150ms 간격, 120ms 구동을 한 묶음으로 실행한다. 진동 묶음과 겹친 추가 만남은 정상 저장하며 현재 물리 출력을 연장하거나 재시작하지 않는다.
+만남을 비휘발성 저장한 뒤에 물리 안내를 시작한다. LED는 각자의 설정을 따르고 동일 만남 ID에서 같은 색을 고른다. 계속 근접한 경우 점등 30초 후 종료한다. 진동은 양쪽 설정이 모두 ON일 때 350ms 구동, 150ms 간격, 350ms 구동, 400ms 쉬기를 1.25초 주기로 8회 반복한다(총 10초·16회 진동). 진동 묶음과 겹친 추가 만남은 정상 저장하며 현재 물리 출력을 연장하거나 재시작하지 않는다.
 
 SW2와 앱의 `STOP_FEEDBACK`은 현재 만남 LED와 남은 진동을 취소한다. 상대가 서명된 근접 관측 시간 안에 다시 감지되지 않거나 현재 설정·소유 세대·준비 상태가 유효하지 않으면 만남 출력을 종료한다. 매칭 OFF·초기화에서도 만남 안내를 종료한다. 재전송과 재부팅 뒤에도 동일 확정 기록의 안내는 다시 실행하지 않는다. 보드 자체 RGB는 부팅·Lab 진단과 위 USB 충전 잔량 표시에 사용한다.
 
@@ -201,17 +217,15 @@ iot/
 
 Zephyr 4.2.0, 보드 대상 `xiao_ble/nrf52840`, 공식 Zephyr SDK 0.17.2를 기준으로 한다. Python과 필요한 Zephyr 패키지, CMake, Ninja가 필요하며 빌드 스크립트가 SDK를 자동 설치하지는 않는다.
 
-저장소 루트에서 실행한다. 아래 예시는 실행 도구가 `PATH`에 등록된 환경이다. 그렇지 않으면 각 옵션에 해당 실행 파일의 절대 경로를 지정한다.
+저장소 루트에서 아래 명령을 실행한다.
 
 ```powershell
-# 현재 PC처럼 Python 패키지를 로컬 toolchain/site에 준비한 경우
-$env:PYTHONPATH = (Resolve-Path ./iot/build/toolchain/site).Path
-./iot/tools/build-firmware.ps1 -Python python -CMake cmake -Ninja ninja
+./iot/tools/build-firmware.ps1
 Get-FileHash ./iot/build/zephyr.uf2 -Algorithm SHA256
 Get-Content ./iot/build/firmware-manifest.json
 ```
 
-기본 Zephyr 경로는 `build/toolchain/zephyr`, SDK는 `build/toolchain/zephyr-sdk-0.17.2`다. 외부 설치를 사용하면 `-ZephyrBase`·`-ZephyrSdk`를 지정하고 그 Python 환경에 필요한 패키지를 준비한다. 위 `PYTHONPATH` 설정은 로컬 패키지 디렉터리가 있을 때만 사용한다.
+기본 Zephyr 경로는 `build/toolchain/zephyr`, SDK는 `build/toolchain/zephyr-sdk-0.17.2`다. 기본 Python으로 실행할 때 로컬 패키지 폴더 `build/toolchain/site`가 있고 `PYTHONPATH`가 비어 있으면 그 폴더를 사용한다. CMake나 Ninja를 `PATH`에서 찾지 못하면 `ANDROID_SDK_ROOT`의 `cmake/3.22.1/bin`에 설치된 실행 파일을 사용한다. 다른 설치를 사용하면 `-Python`, `-CMake`, `-Ninja`, `-ZephyrBase`, `-ZephyrSdk`로 경로를 지정한다.
 
 빌드 성공 시 UF2를 `build/zephyr.uf2`로 이동하고 manifest를 갱신한다. 실패하면 직전 UF2가 남을 수 있으므로 **종료 코드·빌드 로그·manifest를 확인**한다. `sourceCommit`은 기준 Git 커밋이며 `sourceDirty=true`이면 미커밋 소스가 포함된 빌드다. 이를 해당 커밋만으로 만든 바이너리라고 보고하지 않는다.
 

@@ -34,6 +34,9 @@ int kr_flash_write_verified(const struct kr_flash_io *io, uint32_t address,
 #ifndef KR_HOST
 #include <zephyr/device.h>
 #include <zephyr/drivers/flash.h>
+#include <zephyr/drivers/clock_control/nrf_clock_control.h>
+#include <zephyr/kernel.h>
+#include <zephyr/sys/onoff.h>
 #include <zephyr/storage/flash_map.h>
 #include <zephyr/sys/printk.h>
 
@@ -43,6 +46,38 @@ static int physical_write(void *ctx, uint32_t address, const void *bytes, size_t
 static int physical_read(void *ctx, uint32_t address, void *bytes, size_t length)
 { (void)ctx; return flash_read(physical(), address, bytes, length); }
 static const struct kr_flash_io physical_io = {.write = physical_write, .read = physical_read};
+K_MUTEX_DEFINE(flash_access);
+static int begin_access(struct onoff_client *client)
+{
+	/* nRF52840 anomaly 244: a HFINT/HFXO transition during QSPI corrupts
+	 * transfers. Hold the shared clock reference across write AND readback.
+	 * Do not directly toggle clock registers owned by the BLE controller. */
+	k_mutex_lock(&flash_access, K_FOREVER);
+	struct onoff_manager *manager = z_nrf_clock_control_get_onoff(CLOCK_CONTROL_NRF_SUBSYS_HF);
+	if (!manager) { k_mutex_unlock(&flash_access); return -ENODEV; }
+	sys_notify_init_spinwait(&client->notify);
+	int result = onoff_request(manager, client);
+	if (result < 0) { k_mutex_unlock(&flash_access); return result; }
+	int64_t deadline = k_uptime_get() + 1000;
+	int completed = 0;
+	while ((result = sys_notify_fetch_result(&client->notify, &completed)) == -EAGAIN) {
+		if (k_uptime_get() >= deadline) {
+			(void)onoff_cancel_or_release(manager, client);
+			k_mutex_unlock(&flash_access); return -ETIMEDOUT;
+		}
+		k_usleep(100); /* Wait for the oscillator, not an application queue delay. */
+	}
+	if (result < 0 || completed < 0) {
+		(void)onoff_cancel_or_release(manager, client);
+		k_mutex_unlock(&flash_access); return result < 0 ? result : completed;
+	}
+	return 0;
+}
+static void end_access(void)
+{
+	(void)onoff_release(z_nrf_clock_control_get_onoff(CLOCK_CONTROL_NRF_SUBSYS_HF));
+	k_mutex_unlock(&flash_access);
+}
 static bool valid_range(off_t offset, size_t length)
 {
 	/* Only the existing two IoT regions use this adapter; BLE bond/internal
@@ -50,17 +85,40 @@ static bool valid_range(off_t offset, size_t length)
 	return offset >= 0 && (uint64_t)offset <= 0x60000 && length <= 0x60000 - (uint64_t)offset;
 }
 static int guarded_read(const struct device *dev, off_t offset, void *bytes, size_t length)
-{ (void)dev; return valid_range(offset, length) ? flash_read(physical(), offset, bytes, length) : -EINVAL; }
+{
+	(void)dev; if (!valid_range(offset, length)) { return -EINVAL; }
+	struct onoff_client clock;
+	int result = begin_access(&clock); if (result) { return result; }
+	result = flash_read(physical(), offset, bytes, length);
+	end_access(); return result;
+}
 static int guarded_write(const struct device *dev, off_t offset, const void *bytes, size_t length)
 {
 	(void)dev; if (!valid_range(offset, length)) { return -EINVAL; }
+	struct onoff_client clock;
+	int result = begin_access(&clock); if (result) { return result; }
 	uint32_t failed;
-	int result = kr_flash_write_verified(&physical_io, (uint32_t)offset, bytes, length, &failed);
+	result = kr_flash_write_verified(&physical_io, (uint32_t)offset, bytes, length, &failed);
+	end_access();
 	if (result) { printk("FLASH VERIFY failed address=%x bytes=%u result=%d; NVS commit aborted\n", failed, (unsigned)length, result); }
 	return result;
 }
 static int guarded_erase(const struct device *dev, off_t offset, size_t length)
-{ (void)dev; return valid_range(offset, length) ? flash_erase(physical(), offset, length) : -EINVAL; }
+{
+	(void)dev; if (!valid_range(offset, length)) { return -EINVAL; }
+	struct onoff_client clock;
+	int result = begin_access(&clock); if (result) { return result; }
+	result = flash_erase(physical(), offset, length);
+	uint32_t words[16];
+	for (size_t pos = 0; !result && pos < length; pos += sizeof(words)) {
+		size_t count = length - pos; if (count > sizeof(words)) { count = sizeof(words); }
+		result = flash_read(physical(), offset + (off_t)pos, words, count);
+		for (size_t i = 0; !result && i < count; ++i) {
+			if (((uint8_t *)words)[i] != 0xff) { result = -EIO; }
+		}
+	}
+	end_access(); return result;
+}
 static const struct flash_parameters *parameters(const struct device *dev)
 { (void)dev; return flash_get_parameters(physical()); }
 static int size(const struct device *dev, uint64_t *out)

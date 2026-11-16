@@ -60,7 +60,7 @@ fun SignupSheet(onClose: () -> Unit, background: @Composable () -> Unit, animate
             Surface(
                 Modifier.fillMaxWidth().fillMaxHeight(0.92f)
                     .consumeWindowInsets(WindowInsets.safeDrawing.only(WindowInsetsSides.Top)),   // 시트는 상태 표시줄 아래라 안쪽 화면이 위 여백을 또 넣지 않게
-                shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp), color = AppColors.Background,
+                shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp), color = AppColors.Sheet,
             ) {
                 Column {
                     val close = stringResource(Res.string.agreement_sheet_close)

@@ -37,7 +37,7 @@ private const val BRAND = "tingle"   // 브랜드 이름(번역하지 않음)
 
 // 제공자 전용 팔레트. 공통 UI 기반의 테마·버튼 API를 바꾸지 않는다.
 private object LoginPalette {
-    val Background = Color.White
+    val Background = Color.Transparent
     val GoogleSurface = Color.White
     val GoogleText = Color(0xFF1F1F1F)
     val GoogleBorder = Color(0xFF747775)
@@ -45,8 +45,8 @@ private object LoginPalette {
     val KakaoText = Color.Black.copy(alpha = 0.85f)
     val NaverSurface = Color(0xFF03A94D)
     val NaverText = Color.White
-    val Brand = Color(0xFF333039)          // 기존 워드마크 글자색
-    val RecentSurface = Brand
+    val Brand = Color(0xFF333039)
+    val RecentSurface = Color(0xFF333039)
     val RecentText = Color.White
 }
 

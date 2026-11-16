@@ -30,7 +30,6 @@ import com.e106.tingle.chat.dto.MessagePage;
 import com.e106.tingle.chat.dto.MessageView;
 import com.e106.tingle.chat.dto.ReadMessagesResult;
 import com.e106.tingle.chat.notice.ChatNoticeJobs;
-import com.e106.tingle.chat.notice.EndNoticePolicy;
 import com.e106.tingle.global.error.BusinessException;
 import com.e106.tingle.global.error.ErrorCode;
 import com.e106.tingle.proposal.MatchProposal;
@@ -55,7 +54,6 @@ public class ChatService {
 	private final EntityManager entityManager;
 	private final Clock clock;
 	private final ChatNoticeJobs noticeJobs;
-	private final EndNoticePolicy endNotices;
 	private final ChatMessagePushEnqueuer messagePush;
 
 	// 제안 서비스가 쌍·제안 행 잠금을 보유한 트랜잭션에서만 호출한다.
@@ -82,10 +80,8 @@ public class ChatService {
 			ChatRoom room = rooms.saveAndFlush(new ChatRoom(pair.getId(), proposal.getId(), acceptedAt));
 			participants.save(new ChatMember(room.getId(), pair.getUserLow()));
 			participants.save(new ChatMember(room.getId(), pair.getUserHigh()));
-			if (endNotices.enabled()) {
-				noticeJobs.ensure(room, pair.getUserLow(), "END_NOTICE", clock.instant());
-				noticeJobs.ensure(room, pair.getUserHigh(), "END_NOTICE", clock.instant());
-			}
+			noticeJobs.ensure(room, pair.getUserLow(), "END_NOTICE", clock.instant());
+			noticeJobs.ensure(room, pair.getUserHigh(), "END_NOTICE", clock.instant());
 			return room;
 		});
 	}
@@ -162,8 +158,14 @@ public class ChatService {
 		return new ChatPage(page.stream().map(room -> {
 			var summary = summaries.get(room.getId());
 			String nickname = summary == null ? null : summary.getPartnerNickname();
-			return roomView(room, userId, true, summary != null && summary.getHasNewMessage(),
-				nickname == null || nickname.isBlank() ? null : nickname);
+			Long at = summary == null ? null : summary.getLastMessageAtMillis();
+			Integer unread = summary == null || summary.getUnreadCount() == null ? null
+				: summary.getUnreadCount().intValue();
+			return roomView(room, userId, true, unread != null && unread > 0,
+				nickname == null || nickname.isBlank() ? null : nickname,
+				summary == null ? null : summary.getLastMessageSeq(),
+				summary == null ? null : summary.getLastMessage(), at == null ? null : Instant.ofEpochMilli(at),
+				unread);
 		}).toList(), next, clock.instant());
 	}
 
@@ -400,11 +402,11 @@ public class ChatService {
 	}
 
 	private ChatRoomView roomView(ChatRoom room, long userId, boolean allowed) {
-		return roomView(room, userId, allowed, null, null);
+		return roomView(room, userId, allowed, null, null, null, null, null, null);
 	}
 
 	private ChatRoomView roomView(ChatRoom room, long userId, boolean allowed, Boolean hasNewMessage,
-		String partnerNickname) {
+		String partnerNickname, Long lastSequence, String lastMessage, Instant lastMessageAt, Integer unreadCount) {
 		Instant now = clock.instant();
 		boolean active = room.active(now);
 		Instant closed = room.getClosedAt() != null ? room.getClosedAt() : active ? null : room.getExpiresAt();
@@ -417,7 +419,11 @@ public class ChatService {
 			room.getExpiresAt(), closed, deletion, now, active && allowed, active && allowed,
 			active && allowed && (hasNewMessage != null ? hasNewMessage
 				: messages.hasUnacknowledgedPartnerMessage(room.getId(), userId)),
-			active && allowed ? partnerNickname : null);
+			active && allowed ? partnerNickname : null,
+			active && allowed ? lastSequence : null,
+			active && allowed && lastSequence != null && lastSequence > 0 ? lastMessage : null,
+			active && allowed && lastSequence != null && lastSequence > 0 ? lastMessageAt : null,
+			active && allowed ? unreadCount : null);
 	}
 
 	private String encode(String value) {

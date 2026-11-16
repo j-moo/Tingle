@@ -42,6 +42,8 @@ fun SurveyQuestionScreen(
     busy: Boolean = false,
     notice: String? = null,
     pendingCount: Int = 0,
+    /** 답 고치기 중에만 준다: 남은 문항을 넘기지 않고 제출 단계로 가는 "수정 마치기" */
+    onFinish: (() -> Unit)? = null,
 ) {
     val locked = busy
     SurveyFrame(modifier, scrollKey = state.questionId, centered = true, header = {
@@ -77,13 +79,19 @@ fun SurveyQuestionScreen(
             }
         }
         SpecialAnswers(state, !locked, onAnswerChange)
-        // "다음"은 선택지("모르겠어요") 아래: 답을 고르면 켜진다. "모르겠어요"와 붙어 보이지 않게 사이를 띄운다
+        // "다음"은 선택지("상관없어요") 아래: 답을 고르면 켜진다. 특수 답 버튼과 붙어 보이지 않게 사이를 띄운다
         AppButton(stringResource(if (state.ordinal == state.total) Res.string.survey_review_submit else Res.string.survey_next),
             Modifier.fillMaxWidth().padding(top = AppSpacing.Section), enabled = state.canContinue && !locked, onClick = onContinue)
         // "이전 문항"은 "다음" 아래에 테두리 없이 밑줄 글자로
         if (state.ordinal > 1) Box(Modifier.clip(AppShapes.Small).clickable(enabled = !locked, role = Role.Button, onClick = onPrevious)
             .heightIn(min = AppSizes.TouchTarget).padding(horizontal = AppSpacing.Large), contentAlignment = Alignment.Center) {
             Text(stringResource(Res.string.survey_previous), style = MaterialTheme.typography.labelLarge, textDecoration = TextDecoration.Underline,
+                color = if (locked) AppColors.TextDisabled else AppColors.TextPrimary)
+        }
+        // 답 고치기: 고칠 문항만 고친 뒤 끝까지 넘기지 않고 제출 단계로
+        if (onFinish != null) Box(Modifier.clip(AppShapes.Small).clickable(enabled = !locked, role = Role.Button, onClick = onFinish)
+            .heightIn(min = AppSizes.TouchTarget).padding(horizontal = AppSpacing.Large), contentAlignment = Alignment.Center) {
+            Text(stringResource(Res.string.survey_edit_finish), style = MaterialTheme.typography.labelLarge, textDecoration = TextDecoration.Underline,
                 color = if (locked) AppColors.TextDisabled else AppColors.TextPrimary)
         }
     }
@@ -103,7 +111,7 @@ internal fun SurveyFrame(
 ) {
     // 같은 문항의 회전은 위치를 복원하고 다른 문항으로 이동하면 맨 위에서 시작한다.
     val scroll = key(scrollKey) { rememberScrollState() }
-    Surface(modifier.fillMaxSize(), color = AppColors.Background) {
+    Surface(modifier.fillMaxSize(), color = AppColors.Screen) {
         Column(Modifier.fillMaxSize().safeDrawingPadding()) {
             // 문항 밖 화면(시안 01)은 제목 없이 왼쪽 위 < 하나로 나간다. 문항 화면은 지금처럼 제목만
             if (onBack != null) Box(Modifier.fillMaxWidth().heightIn(min = AppSizes.TopBarMinHeight).padding(horizontal = AppSpacing.Small),

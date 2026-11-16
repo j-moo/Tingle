@@ -38,6 +38,9 @@ private class ProbeFixture : KeyringBle {
     var otherSerial: String? = null
     var finiteScan = false
     var bondedCandidates = emptyList<String>()
+    var targetVisible = true
+    // Android 처럼 일련번호와 상관없이 마지막으로 연 기기를 "직전 기기"로 기억한다("target" · "other")
+    var previous: String? = null
     var scanFailure: BleFailure? = null
     // v2 검사에서 연결 이후 기기 정보가 바뀌는 상황과 실제 쓰기 전 재조회를 관찰한다.
     var extraInfo = emptyMap<String, JsonElement>()
@@ -80,7 +83,7 @@ private class ProbeFixture : KeyringBle {
         try {
             scanFailure?.let { throw BleException(it) }
             emit(if (visible) listOfNotNull(
-                otherSerial?.let { BleCandidate("other", "Test", -30) }, BleCandidate(currentId, "Test", -50),
+                otherSerial?.let { BleCandidate("other", "Test", -30) }, BleCandidate(currentId, "Test", -50).takeIf { targetVisible },
             ) else emptyList())
             if (!finiteScan) awaitCancellation()
         }
@@ -93,6 +96,7 @@ private class ProbeFixture : KeyringBle {
     override suspend fun connect(candidateId: String): BleConnection {
         assertFalse(scanning, "스캔 정리를 기다린 뒤 연결해야 한다")
         if (candidateId == "other" && otherSerial != null) {
+            previous = "other"
             val wrong = JsonPrimitive(requireNotNull(otherSerial))
             return object : BleConnection by link {
                 override suspend fun exchange(request: ByteArray, maxResponseBytes: Int, responseTimeoutMillis: Long): ByteArray {
@@ -104,10 +108,25 @@ private class ProbeFixture : KeyringBle {
         }
         assertTrue(candidateId == currentId || candidateId in bondedCandidates, "이전 탐색의 ID를 재사용하면 안 된다")
         connections++
+        previous = "target"
         linkState.value = BleLinkState.Ready
         return link
     }
-    override fun isPreviousDevice(candidateId: String) = connections > 0 && candidateId == currentId
+    override fun isPreviousDevice(candidateId: String) = when (previous) {
+        "target" -> candidateId == currentId
+        "other" -> candidateId == "other"
+        else -> false
+    }
+    override fun forgetPreviousDevice() { previous = null; pinned = null }
+    // 초기화 대상: 고정한 순간의 직전 기기. 이후 다른 연결로 바뀌지 않는다
+    var pinned: String? = null
+    override fun pinResetTarget() { pinned = previous }
+    override fun isResetTarget(candidateId: String) = when (pinned) {
+        "target" -> candidateId == currentId
+        "other" -> candidateId == "other"
+        else -> false
+    }
+    override fun hasResetTarget() = pinned != null
 }
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -731,6 +750,65 @@ class BleProbeViewModelTest {
         assertEquals(selected.deviceSerial, vm.state.value.info?.serial)
         assertTrue(vm.state.value.candidates.isEmpty())
         assertEquals(listOf("GET_DEVICE_INFO", "GET_DEVICE_INFO"), port.commands)
+    }
+
+    /** 초기화 중 끊긴 키링은 같은 일련번호에만 다시 붙는다. 초기화를 마친 UNOWNED 보드도 소유 목록 없이 연결한다. */
+    @Test fun resetReconnectAcceptsUnownedSameSerialOnly() = runTest(dispatcher) {
+        val port = ProbeFixture().apply {
+            otherSerial = "XIAO-other"; finiteScan = true
+            extraInfo = extraInfo + ("ownerState" to JsonPrimitive("UNOWNED"))
+        }
+        val vm = model(port) { ApiResult.Ok(emptyList()) }
+
+        vm.reconnectForReset(port.serial); runCurrent()
+
+        assertTrue(vm.state.value.connected)
+        assertEquals(port.serial, vm.state.value.info?.serial)
+        assertEquals("UNOWNED", vm.state.value.info?.ownerState)
+        // 키링이 지우면서 끊긴 뒤: 대상을 기억하면 더 가까운 다른 키링은 연결해 보지 않는다(그사이 다른 연결로 직전 기기가 바뀌어도)
+        port.linkState.value = BleLinkState.Closed; runCurrent()
+        port.previous = "other"
+        assertFalse(vm.state.value.connected)
+        val before = port.commands.size
+        vm.reconnectForReset(port.serial); runCurrent()
+        assertTrue(vm.state.value.connected)
+        assertEquals(listOf("GET_DEVICE_INFO"), port.commands.drop(before))   // 다른 키링(other)에 붙었다 끊지 않았다
+    }
+
+    /** 대상을 모르고 전체를 확인하다 다른 키링만 열었으면 그 키링을 대상으로 기억하지 않는다(다음 시도가 대상을 찾는다). */
+    @Test fun resetReconnectDoesNotLockOntoAProbedOtherBoard() = runTest(dispatcher) {
+        val port = ProbeFixture().apply {
+            otherSerial = "XIAO-other"; finiteScan = true; targetVisible = false
+            extraInfo = extraInfo + ("ownerState" to JsonPrimitive("UNOWNED"))
+        }
+        val vm = model(port) { ApiResult.Ok(emptyList()) }
+        vm.reconnectForReset(port.serial); advanceTimeBy(70_000); runCurrent()
+        assertFalse(vm.state.value.connected); assertFalse(port.hasResetTarget())   // 확인만 한 다른 키링은 대상으로 기억하지 않는다
+        port.targetVisible = true
+        vm.reconnectForReset(port.serial); advanceTimeBy(70_000); runCurrent()
+        assertTrue(vm.state.value.connected); assertEquals(port.serial, vm.state.value.info?.serial)
+    }
+
+    /** 다른 키링을 대상으로 기억하고 있으면, 지금 찾는 키링(다른 일련번호)은 그 대상에 묶이지 않고 전체를 확인해 찾는다. */
+    @Test fun resetReconnectForAnotherSerialIgnoresTheRememberedTarget() = runTest(dispatcher) {
+        val port = ProbeFixture().apply {
+            otherSerial = "XIAO-b"; finiteScan = true
+            extraInfo = extraInfo + ("ownerState" to JsonPrimitive("UNOWNED"))
+        }
+        val vm = model(port) { ApiResult.Ok(emptyList()) }
+        vm.reconnectForReset(port.serial); runCurrent()      // 키링 A(port.serial)를 대상으로 기억
+        assertTrue(vm.state.value.connected); assertTrue(port.hasResetTarget())
+        vm.leave(); port.linkState.value = BleLinkState.Ready   // 가짜 BLE 의 다른 키링 연결은 같은 링크 상태를 쓴다
+        vm.reconnectForReset("XIAO-b"); advanceTimeBy(70_000); runCurrent()
+        assertTrue(vm.state.value.connected); assertEquals("XIAO-b", vm.state.value.info?.serial)
+    }
+
+    /** 초기화 재연결은 같은 일련번호여도 BOUND · UNOWNED 가 아닌 보드(초기화 중 등)는 연결 완료로 공개하지 않는다. */
+    @Test fun resetReconnectRejectsUnexpectedOwnerState() = runTest(dispatcher) {
+        val port = ProbeFixture().apply { finiteScan = true; extraInfo = extraInfo + ("ownerState" to JsonPrimitive("RESETTING")) }
+        val vm = model(port) { ApiResult.Ok(emptyList()) }
+        vm.reconnectForReset(port.serial); runCurrent()
+        assertFalse(vm.state.value.connected); assertEquals(BleFailure.NotOwned, vm.state.value.error)
     }
 
     /** 탐색 중 선택 기기가 계정에서 빠지면 기기 정보만 읽고 연결을 닫는다. */

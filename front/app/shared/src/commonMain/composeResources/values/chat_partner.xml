@@ -1,24 +1,10 @@
 <resources>
     <string name="chat_partner_title">상대 프로필</string>
     <string name="chat_partner_open">상대 프로필 보기</string>
-    <string name="chat_partner_back">대화로 돌아가기</string>
     <string name="chat_partner_list">채팅 목록으로</string>
     <string name="chat_partner_closed">더 이상 프로필을 볼 수 없어요</string>
     <string name="chat_partner_continue">확인하러 가기</string>
     <string name="chat_partner_relogin">다시 로그인</string>
-    <string name="chat_partner_photo">상대 프로필 사진</string>
-    <string name="chat_partner_no_photo">등록된 사진이 없어요</string>
     <string name="chat_partner_photo_loading">사진을 불러오고 있어요</string>
-    <string name="chat_partner_photo_failed">사진을 불러오지 못했어요</string>
     <string name="chat_partner_name_unknown">닉네임 정보 없음</string>
-    <string name="chat_partner_age">만 %1$d세</string>
-    <string name="chat_partner_unknown">정보 없음</string>
-    <string name="chat_partner_intro">자기소개</string>
-    <string name="chat_partner_intro_empty">등록된 자기소개가 없어요.</string>
-    <string name="chat_partner_lifestyle">생활 정보</string>
-    <string name="chat_partner_gender">성별</string>
-    <string name="chat_partner_smoking">흡연</string>
-    <string name="chat_partner_drinking">음주</string>
-    <string name="chat_partner_religion">종교</string>
-    <string name="chat_partner_not_entered">미입력</string>
 </resources>

@@ -160,6 +160,6 @@ class IcebreakerQuestionsTest {
 
 	private IcebreakerQuestions source(String location) {
 		return new IcebreakerQuestions(new DefaultResourceLoader(), new ObjectMapper(),
-			new IcebreakerProperties(false, "", "", "", location));
+			new IcebreakerProperties("", "", "", location));
 	}
 }

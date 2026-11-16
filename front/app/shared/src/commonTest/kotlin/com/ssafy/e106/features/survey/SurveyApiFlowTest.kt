@@ -304,8 +304,10 @@ class SurveyApiFlowTest {
     @Test fun productionDoesNotOpenKeyringBypassAndAgreementGateAlwaysApplies() {
         for (stage in OnboardingStatus.entries) {
             val s = Session.SignedIn(1, stage, false)
-            assertEquals(stage in setOf(OnboardingStatus.SURVEY_REQUIRED, OnboardingStatus.READY), SurveyAccess().allowed(s))
-            assertEquals(stage in setOf(OnboardingStatus.KEYRING_REQUIRED, OnboardingStatus.SURVEY_REQUIRED, OnboardingStatus.READY), SurveyAccess(true).allowed(s))
+            // 성향테스트 단계와 그 뒤의 가입 단계(답 고치기)에서만 연다. 앞 단계는 운영 앱에서 열지 않는다
+            val after = setOf(OnboardingStatus.SURVEY_REQUIRED, OnboardingStatus.PREFERENCES_REQUIRED, OnboardingStatus.SYNC_PENDING, OnboardingStatus.READY)
+            assertEquals(stage in after, SurveyAccess().allowed(s))
+            assertEquals(stage in after + OnboardingStatus.KEYRING_REQUIRED, SurveyAccess(true).allowed(s))
         }
     }
 }

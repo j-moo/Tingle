@@ -62,7 +62,7 @@ def configured_main(main_factory, tmp_path):
     def make(handler=None, *, edit=None, **kwargs):
         directory = tmp_path / f"gms-{len(created)}"
         directory.mkdir()
-        release = synthetic_release(directory)
+        release = synthetic_release(directory, development_only=True)
         approval = directory / "synthetic-only-gms-approval.json"
         binding = {
             "format": "safety48-gms-primary-v1", "scope": "development-only",
@@ -102,10 +102,15 @@ def configured_main(main_factory, tmp_path):
     for injection in ("absent", "disabled", "enabled-without-runtime")
     if not (injection == "enabled-without-runtime" and rules_enabled is True and environment != "prod")
 ])
-def test_default_off_never_constructs_or_calls_gms(main_factory, monkeypatch, environment, rules_enabled, injection):
-    constructor = Mock(side_effect=AssertionError("OFF constructed GMS"))
+def test_local_rules_do_not_enable_a_safety_provider(main_factory, monkeypatch, environment, rules_enabled, injection):
+    original_init = GmsClient.__init__
+    shared_clients = []
+    def construct_shared(client, key, **kwargs):
+        assert key == "synthetic-safety-startup-only"
+        shared_clients.append(True)
+        original_init(client, key, **kwargs)
     request = Mock(side_effect=AssertionError("OFF called GMS"))
-    monkeypatch.setattr(GmsClient, "__init__", constructor)
+    monkeypatch.setattr(GmsClient, "__init__", construct_shared)
     monkeypatch.setattr(GmsClient, "request_text", request)
     factory = Mock(side_effect=AssertionError("OFF resolved a provider"))
     configuration = None if injection == "absent" else GmsPrimaryConfiguration(
@@ -114,13 +119,13 @@ def test_default_off_never_constructs_or_calls_gms(main_factory, monkeypatch, en
     monkeypatch.setenv("RISK_GMS_PRIMARY_ENABLED", "true")  # No Settings field consumes this.
     host = main_factory(environment=environment, enabled=rules_enabled, gms_primary=configuration)
     assert host.client.get("/health").status_code == 200
-    if rules_enabled is True and environment != "prod":
+    if injection == "absent" or rules_enabled is True and environment != "prod":
         assert type(host.client.app.state.risk_runtime.resources.engine) is LocalRuleRiskEngine
         assert expect(host.post(request_for(host.release, [message(DANGER)])))["verdict"]["kind"] == "RISK"
     else:
         expect(host.post(), 422, "POLICY_UNRESOLVED")
     factory.assert_not_called()
-    constructor.assert_not_called()
+    assert shared_clients  # Only the shared Match/Icebreaker startup path ran.
     request.assert_not_called()
 
 
@@ -227,6 +232,20 @@ def test_separately_pinned_but_incompatible_approval_cannot_construct_client(con
     with pytest.raises(DevelopmentReleaseError):
         with host.client:
             pytest.fail("Incompatible approval published a runtime")
+    assert host.client.app.state.risk_runtime.resources is None
+    provider.assert_not_called()
+    factory.assert_not_called()
+
+
+def test_new_approval_pin_cannot_reuse_pre_integration_main_source(configured_main):
+    # Actual source worktree main.py bytes before shared GMS composition.
+    previous = "eb4d80be5373c48fe30212b7a55b8ebebbb4d1ff787f0e8850aac66b67f95634"
+    assert gms_runtime.gms_source_hashes()["main.py"] != previous
+    host, provider, factory, _ = configured_main(
+        edit=lambda binding: binding["sources"].update({"main.py": previous}), start=False)
+    with pytest.raises(DevelopmentReleaseError):
+        with host.client:
+            pytest.fail("Old main.py provenance started a Safety GMS provider")
     assert host.client.app.state.risk_runtime.resources is None
     provider.assert_not_called()
     factory.assert_not_called()

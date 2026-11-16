@@ -74,7 +74,7 @@ def test_direct_bundle_preserves_wire_without_callbacks_tokens_or_models(release
     body = payload(release)
     before = copy.deepcopy(body)
     request_id = str(uuid4())
-    with client_for(ContextResolver(release[0])) as client:
+    with client_for(ContextResolver()) as client:
         response = client.post(PATH, json=body, headers={**HEADERS, "X-Request-Id": request_id})
     assert response.status_code == 200
     assert response.json() == {
@@ -86,10 +86,9 @@ def test_direct_bundle_preserves_wire_without_callbacks_tokens_or_models(release
     assert response.headers["X-Request-Id"] == request_id
 
 
-@pytest.mark.parametrize("missing", ["auth", "resolver", "release"])
+@pytest.mark.parametrize("missing", ["auth", "resolver"])
 def test_unconfigured_boundary_is_closed(release, missing):
-    resolver = None if missing == "resolver" else ContextResolver(
-        None if missing == "release" else release[0])
+    resolver = None if missing == "resolver" else ContextResolver()
     with client_for(resolver, None if missing == "auth" else synthetic_auth) as client:
         response = client.post(PATH, json=payload(release), headers=HEADERS)
     assert response.status_code == 503
@@ -98,7 +97,7 @@ def test_unconfigured_boundary_is_closed(release, missing):
 
 @pytest.mark.parametrize("identity", [None, True, False])
 def test_unverified_auth_identity_is_closed(release, identity):
-    with client_for(ContextResolver(release[0]), lambda request: identity) as client:
+    with client_for(ContextResolver(), lambda request: identity) as client:
         response = client.post(PATH, json=payload(release), headers=HEADERS)
     assert response.status_code == 503
 
@@ -113,7 +112,7 @@ def test_unverified_auth_identity_is_closed(release, identity):
 def test_authorization_header_errors_stop_authentication(release, headers, status, code):
     def forbidden(*args):
         pytest.fail("Invalid header must stop before auth hook")
-    with client_for(ContextResolver(release[0]), forbidden) as client:
+    with client_for(ContextResolver(), forbidden) as client:
         response = client.post(PATH, json=payload(release), headers=headers)
     assert response.status_code == status
     assert response.json()["code"] == code
@@ -128,7 +127,7 @@ def test_authorization_header_errors_stop_authentication(release, headers, statu
 def test_common_auth_failure_is_preserved(release, status, code):
     def auth(request):
         raise BoundaryError(status, code)
-    with client_for(ContextResolver(release[0]), auth) as client:
+    with client_for(ContextResolver(), auth) as client:
         response = client.post(PATH, json=payload(release), headers=HEADERS)
     assert response.status_code == status
     assert response.json()["code"] == code
@@ -138,7 +137,7 @@ def test_common_auth_failure_is_preserved(release, status, code):
 def test_unexpected_auth_error_does_not_expose_details(release):
     def auth(request):
         raise RuntimeError("synthetic-secret")
-    with client_for(ContextResolver(release[0]), auth) as client:
+    with client_for(ContextResolver(), auth) as client:
         response = client.post(PATH, json=payload(release), headers=HEADERS)
     assert response.status_code == 503
     assert "synthetic-secret" not in response.text
@@ -151,14 +150,14 @@ def test_unexpected_auth_error_does_not_expose_details(release):
 def test_only_strict_four_field_request_is_accepted(release, field, value):
     body = payload(release)
     body[field] = value
-    with client_for(ContextResolver(release[0])) as client:
+    with client_for(ContextResolver()) as client:
         response = client.post(PATH, json=body, headers=HEADERS)
     assert response.status_code == 400
     assert response.json()["code"] == "INVALID_REQUEST"
 
 
 def test_three_field_legacy_request_and_any_missing_field_are_rejected(release):
-    with client_for(ContextResolver(release[0])) as client:
+    with client_for(ContextResolver()) as client:
         for field in payload(release):
             body = payload(release)
             del body[field]
@@ -167,12 +166,13 @@ def test_three_field_legacy_request_and_any_missing_field_are_rejected(release):
 
 @pytest.mark.parametrize(("field", "value"), [
     ("releaseId", 1), ("surveyVersion", 1), ("engineVersion", ""),
+    ("surveyVersion", " "), ("engineVersion", "\t\n"),
     ("wordingVersion", "x" * 101), ("contentHash", "A" * 64), ("unknown", "extra"),
 ])
 def test_manifest_keeps_exact_eleven_field_shape(release, field, value):
     body = payload(release)
     body["manifest"][field] = value
-    with client_for(ContextResolver(release[0])) as client:
+    with client_for(ContextResolver()) as client:
         assert client.post(PATH, json=body, headers=HEADERS).status_code == 400
 
 
@@ -212,7 +212,7 @@ def test_bundle_mismatch_is_rejected_before_rule_success(release, change):
         raw["scope"]["reference"]["evaluation_ref"] = "d" * 64
     else:
         raw["context"]["unexpected"] = True
-    with client_for(ContextResolver(release[0])) as client:
+    with client_for(ContextResolver()) as client:
         response = client.post(PATH, json=body, headers=HEADERS)
     assert response.status_code == 400
     assert "text" not in response.json()
@@ -229,47 +229,37 @@ def test_unusable_evidence_never_becomes_generic_explanation(release, change):
         raw["context"]["conflicting_source_refs"] = ["synthetic-verified-comparison"]
     else:
         raw["context"]["evidence"][0]["evidence"]["fact"] = "비교에서 확인한 연락 관련 요약이다."
-    with client_for(ContextResolver(release[0])) as client:
+    with client_for(ContextResolver()) as client:
         assert client.post(PATH, json=body, headers=HEADERS).status_code == 503
 
 
 def test_service_identity_is_not_used_as_business_viewer(release):
-    with client_for(ContextResolver(release[0]), lambda request: {"subject": "service-A"}) as client:
+    with client_for(ContextResolver(), lambda request: {"subject": "service-A"}) as client:
         response = client.post(PATH, json=payload(release), headers=HEADERS)
     assert response.status_code == 200
     assert response.json()["text"] == "상대의 연락 방식이 당신의 선호와 맞아요."
 
 
-def test_changed_artifact_before_return_discards_result(release, monkeypatch):
-    registry, _, artifact = release
-    original = registry.verify
-    calls = []
-    def verify(manifest):
-        calls.append(1)
-        if len(calls) == 3:
-            artifact.write_bytes(b"changed-synthetic-content")
-        original(manifest)
-    monkeypatch.setattr(registry, "verify", verify)
-    with client_for(ContextResolver(registry)) as client:
-        response = client.post(PATH, json=payload(release), headers=HEADERS)
-    assert response.status_code == 503
-    assert "text" not in response.json()
-    assert len(calls) == 3
-
-
-@pytest.mark.parametrize("change", ["release", "version", "artifact"])
-def test_unregistered_release_manifest_mismatch_or_changed_bytes_is_closed(release, change):
+@pytest.mark.parametrize("change", ["release", "version", "artifact", "descriptor"])
+def test_explanation_needs_no_descriptor_registration_or_file_access(release, change, monkeypatch):
     body = payload(release)
     if change == "release":
         body["manifest"]["releaseId"] = str(uuid4())
         body["contextBundle"] = context(body["manifest"])
     elif change == "version":
         body["manifest"]["matchingVersion"] = "other"
+    elif change == "artifact":
+        release[2].unlink()
     else:
-        release[2].write_bytes(b"changed")
-    with client_for(ContextResolver(release[0])) as client:
+        (release[2].parent / "synthetic-descriptor.json").unlink()
+    def forbidden(*args):
+        pytest.fail("Match HTTP must not register or verify descriptors")
+    monkeypatch.setattr(ReleaseRegistry, "__init__", forbidden)
+    monkeypatch.setattr(ReleaseRegistry, "verify", forbidden)
+    with client_for(ContextResolver()) as client:
         response = client.post(PATH, json=body, headers=HEADERS)
-    assert response.status_code == 503
+    assert response.status_code == 200
+    assert response.json()["source"] == "RULE_FALLBACK"
 
 
 @pytest.mark.parametrize("headers", [
@@ -278,7 +268,7 @@ def test_unregistered_release_manifest_mismatch_or_changed_bytes_is_closed(relea
 ])
 def test_invalid_or_duplicate_request_id_is_replaced(release, headers):
     auth_headers = list(HEADERS.items()) + (headers if isinstance(headers, list) else list(headers.items()))
-    with client_for(ContextResolver(release[0])) as client:
+    with client_for(ContextResolver()) as client:
         response = client.post(PATH, json=payload(release), headers=auth_headers)
     assert UUID(response.headers["X-Request-Id"]).version == 4
     assert response.headers["Cache-Control"] == "no-store"

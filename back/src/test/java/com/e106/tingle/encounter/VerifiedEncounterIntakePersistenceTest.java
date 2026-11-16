@@ -129,7 +129,7 @@ class VerifiedEncounterIntakePersistenceTest {
 		submissions = mock(VerifiedEncounterSubmissionMapper.class);
 		inputs = mock(StoredEncounterInputLookup.class);
 		members = mock(MemberAccessRepository.class);
-		when(members.canRespondToProposal(anyLong())).thenReturn(true);
+		when(members.canReceiveNewProposal(anyLong())).thenReturn(true);
 		Prepared firstInput = prepared(low, firstDevice, high, secondDevice, firstGeneration, first);
 		Prepared secondInput = prepared(high, secondDevice, low, firstDevice, secondGeneration, second);
 		when(submissions.prepare(low, firstDevice, first)).thenReturn(firstInput);
@@ -246,7 +246,7 @@ class VerifiedEncounterIntakePersistenceTest {
 		assertThatThrownBy(() -> intake.accept(low, firstDevice, first)).isInstanceOf(BusinessException.class);
 		assertThat(pairCount()).isZero();
 		jdbc.update("update keyring set owner_generation=? where id=?", firstGeneration, firstDevice);
-		when(members.canRespondToProposal(high)).thenReturn(false);
+		when(members.canReceiveNewProposal(high)).thenReturn(false);
 		assertThatThrownBy(() -> intake.accept(low, firstDevice, first)).isInstanceOf(BusinessException.class);
 		assertThat(pairCount()).isZero();
 	}

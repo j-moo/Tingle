@@ -1,4 +1,4 @@
-"""Offline rules; runtime registration is explicit and development-only."""
+"""Offline rules; tokenizer-free by default, with an optional exact counter."""
 
 from typing import Callable
 
@@ -15,17 +15,20 @@ class EngineUnavailableError(RuntimeError):
 class LocalRuleRiskEngine:
     """RiskEngine implementation with no provider or storage.
 
-    A token counter is mandatory and has no estimate/default implementation.
-    It receives the entire canonical JSON context consumed by the rules, with
-    old/new messages and metadata. A real, versioned tokenizer must be supplied
-    before runtime registration. Synthetic test counters prove transport only.
-    ReleaseCatalog verification and the 3,000-token limit belong to the router.
+    Plain rules use the existing 10-message/4,000-character input boundary and
+    do not consume a model token budget. Optional tokenized releases retain the
+    exact canonical-context counter and router's 3,000-token limit. No estimate
+    or invented token count replaces a missing or failed counter.
     """
 
-    def __init__(self, *, count_input_tokens: Callable[[str], int]):
-        if not callable(count_input_tokens):
+    def __init__(self, *, count_input_tokens: Callable[[str], int] | None = None):
+        if count_input_tokens is not None and not callable(count_input_tokens):
             raise TypeError("A token counter is required")
         self._count_input_tokens = count_input_tokens
+
+    @property
+    def requires_token_budget(self) -> bool:
+        return self._count_input_tokens is not None
 
     @staticmethod
     def _input(messages: list[dict], manifest: dict):
@@ -33,6 +36,8 @@ class LocalRuleRiskEngine:
         return approved_messages(messages)
 
     def count_tokens(self, messages: list[dict], manifest: dict) -> int:
+        if self._count_input_tokens is None:
+            raise EngineUnavailableError("No model token budget for local rules")
         parsed = self._input(messages, manifest)
         text = serialize_context(parsed)
         try:

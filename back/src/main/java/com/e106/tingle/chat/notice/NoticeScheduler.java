@@ -10,8 +10,8 @@ import lombok.RequiredArgsConstructor;
 @Configuration
 @EnableScheduling
 @RequiredArgsConstructor
-@ConditionalOnProperty(name = {"app.chat-notices.end-notice-enabled", "app.chat-notices.scheduling-enabled"},
-	havingValue = "true")
+// 종료 1시간 전 안내는 항상 동작한다. 이 설정은 자동 테스트에서 주기 실행을 멈추는 용도로만 쓴다.
+@ConditionalOnProperty(name = "app.chat-notices.scheduling-enabled", havingValue = "true")
 public class NoticeScheduler {
 	private final NoticeDispatcher dispatcher;
 

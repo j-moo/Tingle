@@ -176,7 +176,13 @@ class ReleaseCatalog:
             if not self.descriptor_file:
                 return False
             path = Path(self.descriptor_file)
-            descriptor = _json(_read_bounded(path, 65536))
+            raw = _read_bounded(path, 65536)
+            try:
+                descriptor = _json(raw)
+            except RecursionError:
+                # Only malformed JSON nesting is a policy rejection. Recursion
+                # failures in later validation/verification remain internal errors.
+                return False
             if not isinstance(descriptor, dict) or set(descriptor) != {"manifest", "artifact"}:
                 return False
             if Manifest.model_validate(descriptor["manifest"]) != manifest:
@@ -263,10 +269,16 @@ def create_router(authenticate: Callable, catalog: ReleaseCatalog | None = None,
                 if not fresh_seen or sum(len(message["text"]) for message in messages) > 4000:
                     raise ValueError("Invalid batch")
                 try:
-                    tokens = await execution.invoke(engine.count_tokens, messages, manifest, deadline=deadline)
+                    # Only plain offline rules skip the model token budget.
+                    # Authentication, masking, release and size checks above stay.
+                    from app.risk_detection.local_engine import LocalRuleRiskEngine
+
+                    token_budget = not (type(engine) is LocalRuleRiskEngine and engine.requires_token_budget is False)
+                    if token_budget:
+                        tokens = await execution.invoke(engine.count_tokens, messages, manifest, deadline=deadline)
                 except Exception:
                     raise _error(503, "SERVICE_UNAVAILABLE") from None
-                if type(tokens) is not int or not 0 <= tokens <= 3000:
+                if token_budget and (type(tokens) is not int or not 0 <= tokens <= 3000):
                     raise ValueError("Invalid token count")
             except (ValueError, TypeError, ValidationError):
                 raise _error(400, "INVALID_REQUEST") from None

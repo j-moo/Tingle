@@ -12,6 +12,20 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 $projectRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
+$localPythonPackages = Join-Path $projectRoot 'build/toolchain/site'
+if (!$env:PYTHONPATH -and !$PSBoundParameters.ContainsKey('Python') -and
+    !$PSBoundParameters.ContainsKey('ZephyrBase') -and (Test-Path -LiteralPath $localPythonPackages -PathType Container)) {
+    $env:PYTHONPATH = $localPythonPackages
+}
+if ($env:ANDROID_SDK_ROOT) {
+    $androidCmakeBin = Join-Path $env:ANDROID_SDK_ROOT 'cmake/3.22.1/bin'
+    $androidCmake = Join-Path $androidCmakeBin 'cmake.exe'
+    $androidNinja = Join-Path $androidCmakeBin 'ninja.exe'
+    if (!$PSBoundParameters.ContainsKey('CMake') -and !(Get-Command $CMake -CommandType Application -ErrorAction SilentlyContinue) -and
+        (Test-Path -LiteralPath $androidCmake -PathType Leaf)) { $CMake = $androidCmake }
+    if (!$PSBoundParameters.ContainsKey('Ninja') -and !(Get-Command $Ninja -CommandType Application -ErrorAction SilentlyContinue) -and
+        (Test-Path -LiteralPath $androidNinja -PathType Leaf)) { $Ninja = $androidNinja }
+}
 if (!$ZephyrBase) { $ZephyrBase = Join-Path $projectRoot 'build/toolchain/zephyr' }
 if (!$ZephyrSdk -and !$ArmToolchain) {
     $localSdk = Join-Path $projectRoot 'build/toolchain/zephyr-sdk-0.17.2'
@@ -84,7 +98,7 @@ $commit = & git -C $projectRoot rev-parse HEAD
 $dirty = [bool](& git -C $projectRoot status --porcelain -- .)
 $manifest = [ordered]@{
     artifact = 'iot/build/zephyr.uf2'
-    firmwareVersion = "0.9.9-$Carrier"
+    firmwareVersion = "0.9.13-$Carrier"
     storageInspectOnly = [bool]$StorageInspectOnly
     carrierRevision = if ($Carrier -eq 'd31') { 'SIS D3.1 Y3' } else { 'Tingle Rev G 31x50 Connector' }
     sourceCommit = $commit

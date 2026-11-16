@@ -3,7 +3,9 @@ package com.e106.tingle.auth;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -96,6 +98,16 @@ public class MemberAccessRepository {
 		return signupCompleted(userId) && requiredAgreementsSatisfied(userId, true);
 	}
 
+	/**
+	 * 새 제안을 받을 수 있는지. 기존 제안 응답 조건에 더해, 키링이 필수인 환경에서는 키링이 있어야 한다.
+	 * 마지막 키링을 초기화한 회원은 기존 기능은 그대로 쓰지만, 키링을 다시 등록할 때까지 새 제안은 만들지 않는다.
+	 * 차단 · 신고 · 방 나가기 같은 기존 응답 경로는 [canRespondToProposal] 을 그대로 쓴다.
+	 */
+	public boolean canReceiveNewProposal(long userId) {
+		return canRespondToProposal(userId)
+			&& (!environment.getProperty("app.signup.keyring-required", Boolean.class, true) || hasKeyring(userId));
+	}
+
 	public boolean signupCompleted(long userId) {
 		return Boolean.TRUE.equals(jdbc.queryForObject("select exists (select 1 from users "
 			+ "where id=? and status='ACTIVE' and signup_completed_at is not null)", Boolean.class, userId));
@@ -109,15 +121,15 @@ public class MemberAccessRepository {
 		if (required.isEmpty()) {
 			return false;
 		}
-		for (AgreementItem item : required) {
-			List<Boolean> agreed = jdbc.query("select agreed and document_version=? from user_consents "
-				+ "where user_id=? and consent_type=? order by recorded_at desc, consent_id desc limit 1",
-				(rs, row) -> rs.getBoolean(1), item.version(), userId, item.type());
-			if (agreed.isEmpty() || !agreed.getFirst()) {
-				return false;
-			}
-		}
-		return true;
+		// 유형별 최신 동의를 한 번에 읽는다(항목마다 조회하지 않는다). 최신 기록이 현재 버전 동의일 때만 통과한다.
+		Map<String, String> agreedVersions = new HashMap<>();
+		jdbc.query("select distinct on (consent_type) consent_type, agreed, document_version from user_consents "
+			+ "where user_id=? order by consent_type, recorded_at desc, consent_id desc", rs -> {
+				if (rs.getBoolean(2)) {
+					agreedVersions.put(rs.getString(1), rs.getString(3));
+				}
+			}, userId);
+		return required.stream().allMatch(item -> item.version().equals(agreedVersions.get(item.type())));
 	}
 
 	private boolean signupDataReady(long userId, Instant now, boolean requireKeyring) {

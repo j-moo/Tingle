@@ -93,12 +93,12 @@ class ChatPollingDeviceTest {
             scenario.onActivity { assertEquals("아직 저장 전인 초안", it.room.state.value.ui.draft) }
         }
     }
-    // 이전 메시지가 남은 방에서도 AI 분석 안내에 닿도록 메뉴에 둔 항목
+    // 이전 메시지가 남은 방에서도 AI 위험 분석 안내에 닿도록 메뉴에 둔 항목
     @Test fun menuOpensAiNotice() {
         launch().use { scenario ->
             compose.waitUntil(10_000) { var ready = false; scenario.onActivity { ready = it.room.state.value.ui.readable }; ready }
             compose.onNodeWithContentDescription("더보기").performClick()
-            compose.onNodeWithText("AI 대화 분석 안내").performClick()
+            compose.onNodeWithText("AI 위험 분석 안내").performClick()
             compose.onNodeWithText("동의 화면 테스트 도착").assertExists()
             assertEquals(1, ChatPollingTestActivity.consentCalls.get())
         }

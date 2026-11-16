@@ -107,8 +107,9 @@ app:
       encounters-enabled: ${KEYRING_PEER_ENCOUNTERS_ENABLED:false}
       review-intake-approved: ${KEYRING_PEER_REVIEW_INTAKE_APPROVED:false}
       business-intake-enabled: ${KEYRING_PEER_BUSINESS_INTAKE_ENABLED:false}
-      business-rule-release-id: ${KEYRING_PEER_BUSINESS_RULE_RELEASE_ID:}
-      business-release-hash: ${KEYRING_PEER_BUSINESS_RELEASE_HASH:}
+      # 코드에 포함한 릴리즈(resources/database/keyring-rule-release.sql)의 번호와 해시. 운영·개발이 같은 값을 쓴다.
+      business-rule-release-id: 603836ce-358a-4863-abcb-31f2b0468afb
+      business-release-hash: 81c466388be59fcdae1fec53609d28922f1bc59e199392cac77cb0ca1fed7540
       release-policy-approved: ${KEYRING_PEER_RELEASE_POLICY_APPROVED:false}
       policy-approved: ${KEYRING_PEER_POLICY_APPROVED:false}
       policy-version: ${KEYRING_PEER_POLICY_VERSION:0}

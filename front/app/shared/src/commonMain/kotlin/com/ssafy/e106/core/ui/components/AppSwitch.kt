@@ -55,7 +55,7 @@ fun AppSwitch(
         Switch(
             checked = checked, onCheckedChange = null, enabled = enabled, interactionSource = interaction,
             colors = SwitchDefaults.colors(
-                checkedThumbColor = AppColors.OnPrimary, checkedTrackColor = AppColors.TextPrimary, checkedBorderColor = Color.Transparent,
+                checkedThumbColor = AppColors.OnPrimary, checkedTrackColor = AppColors.SelectionBorder, checkedBorderColor = Color.Transparent,
                 uncheckedThumbColor = AppColors.TextSecondary, uncheckedTrackColor = AppColors.Background, uncheckedBorderColor = AppColors.BorderControl,
                 disabledCheckedThumbColor = AppColors.TextSecondary, disabledCheckedTrackColor = AppColors.ActionDisabled, disabledCheckedBorderColor = Color.Transparent,
                 disabledUncheckedThumbColor = AppColors.TextSecondary, disabledUncheckedTrackColor = AppColors.ActionDisabled, disabledUncheckedBorderColor = AppColors.BorderSubtle,

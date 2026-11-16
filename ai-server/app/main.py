@@ -6,6 +6,7 @@ from fastapi import FastAPI, HTTPException, Request
 
 from app.config import Settings, settings
 from app.icebreakers.http_api import create_router as create_icebreaker_router
+from app.match_explanation.gms import GmsClient
 from app.match_explanation.runtime import create_runtime_router
 from app.middleware.request_id import RequestIdMiddleware, install_error_handlers
 from app.risk_detection.runtime import DevelopmentRuntime, create_development_router
@@ -19,13 +20,19 @@ def create_app(app_settings: Settings | None = None, *, _risk_engine_factory: Ca
                _match_gms_client=None, _icebreaker_gms_client=None) -> FastAPI:
     """Build the real application with explicit Python-only dependency injection.
 
-    No setting or HTTP input selects a model. The default application keeps
-    Safety Guard OFF. Development opt-in uses local rules unless a separately
-    pinned GMS approval and an explicit internal configuration are supplied.
+    Match Insight and Icebreaker share the required GMS client in every
+    environment. Python-only injection replaces providers in offline tests.
+    Local Safety rules validate releases in every environment, without a
+    tokenizer or activation switch. Legacy Safety GMS keeps its separate gate.
     """
     configured = app_settings if app_settings is not None else settings
+    try:
+        gms_client = GmsClient(configured.gms_api_key.get_secret_value())
+    except ValueError:
+        raise RuntimeError("GMS_API_KEY is required and must be valid") from None
     risk_runtime = DevelopmentRuntime(
-        environment=configured.app_env, enabled=configured.risk_local_rules_enabled,
+        environment=configured.app_env,
+        enabled=configured.risk_local_rules_enabled if _risk_gms_primary is not None else False,
         descriptor_file=configured.risk_release_descriptor_file,
         descriptor_sha256=configured.risk_local_rules_descriptor_sha256,
         engine_factory=_risk_engine_factory,
@@ -51,15 +58,15 @@ def create_app(app_settings: Settings | None = None, *, _risk_engine_factory: Ca
     application.state.service_auth = service_auth
     application.state.risk_runtime = risk_runtime
     application.include_router(create_icebreaker_router(
-        service_auth, configured.icebreaker_release_descriptor_file, dev_enabled=configured.icebreaker_dev_enabled,
-        gms_client=_icebreaker_gms_client if configured.app_env in {"local", "test", "dev"} else None,
+        service_auth, configured.icebreaker_release_descriptor_file,
+        gms_client=_icebreaker_gms_client if _icebreaker_gms_client is not None else gms_client,
     ))
     application.include_router(create_development_router(
         authenticate=service_auth, environment=configured.app_env, runtime=risk_runtime,
     ))
     application.include_router(create_runtime_router(
-        service_auth, configured.explanation_release_descriptor_files,
-        gms_client=_match_gms_client if configured.app_env in {"local", "test", "dev"} else None,
+        service_auth,
+        gms_client=_match_gms_client if _match_gms_client is not None else gms_client,
     ))
 
     def authorize_personal_analysis(request: Request) -> bool:
@@ -70,20 +77,17 @@ def create_app(app_settings: Settings | None = None, *, _risk_engine_factory: Ca
             raise ServiceAuthError(error.detail["code"]) from None
         return True
 
-    if configured.app_env in {"local", "test", "dev"}:
-        # Importing the adapter loads and verifies personal-only reference data.
-        from app.personal_analysis_api.adapter import PersonalAnalysisAdapter
-        from app.personal_analysis_api.proposals import proposed_label_only_policy
-        from app.personal_analysis_api.router import PersonalAnalysisRuntime, router as personal_analysis_router
+    from app.personal_analysis_api.adapter import PersonalAnalysisAdapter
+    from app.personal_analysis_api.proposals import proposed_label_only_policy
+    from app.personal_analysis_api.router import PersonalAnalysisRuntime, router as personal_analysis_router
 
-        application.state.personal_analysis_runtime = PersonalAnalysisRuntime(
-            authorize=authorize_personal_analysis,
-            adapter=PersonalAnalysisAdapter(
-                # Explicit candidate for development E2E; wording/template approval is still pending.
-                presentation=proposed_label_only_policy(),
-            ),
-        )
-        application.include_router(personal_analysis_router)
+    # The reviewed v2 wording is shared by every environment. Authentication,
+    # version/reference integrity and per-request evidence validation stay intact.
+    application.state.personal_analysis_runtime = PersonalAnalysisRuntime(
+        authorize=authorize_personal_analysis,
+        adapter=PersonalAnalysisAdapter(presentation=proposed_label_only_policy()),
+    )
+    application.include_router(personal_analysis_router)
 
     application.get("/health", tags=["health"])(health_check)
     return application

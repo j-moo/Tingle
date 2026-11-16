@@ -113,11 +113,14 @@ public class OnboardingService {
 	 */
 	@Transactional(readOnly = true)
 	public boolean canAccess(long userId, OnboardingStatus required) {
-		OnboardingStatus status = statusUpTo(userId, required, keyringRequirement());
-		if (status == required) {
-			return true;
+		// 가입 완료 회원은 약관 단계만 통과하면 나머지 단계와 무관하게 허용되므로, 뒤 단계 조회를 하지 않는다.
+		// 약관 판단의 가입 완료 기준은 MemberAccessRepository.signupCompleted 와 같다(ACTIVE 이고 가입 완료 시각이 있음).
+		User user = userRepository.findById(userId).orElse(null);
+		if (user != null && user.getSignupCompletedAt() != null) {
+			return required == OnboardingStatus.AGREEMENT_REQUIRED
+				|| agreementService.hasAgreedRequiredForAccess(userId, user.getStatus() == UserStatus.ACTIVE);
 		}
-		return status != OnboardingStatus.AGREEMENT_REQUIRED && signupCompleted(userId);
+		return statusUpTo(userId, required, keyringRequirement()) == required;
 	}
 
 	@Transactional(readOnly = true)

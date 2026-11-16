@@ -2,6 +2,7 @@ package com.ssafy.e106.core.ui.components
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -31,10 +32,11 @@ fun AppButton(
     val colors = MaterialTheme.colorScheme
     val interaction = remember { MutableInteractionSource() }
     val clickable = enabled && !loading
+    val pressed by interaction.collectIsPressedAsState()
     val container = when (variant) {
-        AppButtonVariant.Primary -> colors.primary
+        AppButtonVariant.Primary -> colors.primary.copy(alpha = 0.72f)
         AppButtonVariant.Secondary -> colors.surface
-        AppButtonVariant.Danger -> colors.error
+        AppButtonVariant.Danger -> colors.error.copy(alpha = 0.8f)
         AppButtonVariant.Selected -> AppColors.SelectionContainer
     }
     val foreground = when (variant) {
@@ -48,6 +50,7 @@ fun AppButton(
         onClick = { if (clickable) onClick() },
         enabled = clickable,
         modifier = modifier.heightIn(min = AppSpacing.ControlMinHeight)
+            .frost(AppShapes.Control)
             .focusRing(interaction, AppShapes.Control)
             .semantics {
                 role = Role.Button
@@ -64,7 +67,8 @@ fun AppButton(
             else -> null
         },
         colors = ButtonDefaults.buttonColors(
-            containerColor = container, contentColor = foreground,
+            // 누르는 동안 회색은 밝은 버튼에만. 흰 글자 버튼(Primary · Danger)은 바탕을 그대로 둬 글자가 묻히지 않게 한다
+            containerColor = if (pressed && variant in PressedGrayVariants) AppColors.Pressed else container, contentColor = foreground,
             disabledContainerColor = if (loading) container else AppColors.ActionDisabled,
             disabledContentColor = if (loading) foreground else AppColors.TextDisabled,
         ),
@@ -85,3 +89,5 @@ fun AppButton(
         }
     }
 }
+
+private val PressedGrayVariants = setOf(AppButtonVariant.Secondary, AppButtonVariant.Selected)

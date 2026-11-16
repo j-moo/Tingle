@@ -2,6 +2,7 @@ package com.ssafy.e106.core.push
 
 import android.content.Context
 import android.content.SharedPreferences
+import androidx.core.app.NotificationManagerCompat
 import com.google.firebase.messaging.FirebaseMessaging
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -17,8 +18,16 @@ import kotlin.coroutines.resume
  * 디스크 쓰기(`commit()`)가 false 면 예외로 알린다 — 등록기가 저장 실패를 성공으로 보지 않고 다음 기회에 다시 한다.
  * 실패해도 값은 메모리에 남고, 다음에 성공하는 commit 이 파일 전체를 쓰므로 그때 함께 저장된다(binding 은 그 설치 ID 로 등록한 뒤에만 저장)
  */
-internal class AndroidPushDevice(private val prefs: SharedPreferences) : PushDevice {
-    constructor(context: Context) : this(context.applicationContext.getSharedPreferences("tingle.push", Context.MODE_PRIVATE))
+internal class AndroidPushDevice(private val prefs: SharedPreferences,
+    /** 로그아웃 · 계정 전환. 알림에 닉네임 · 메시지가 들어가므로 남은 알림을 지운다 */
+    private val onAccountChanged: () -> Unit = {},
+    private val onRoomShown: (Long) -> Unit = {}) : PushDevice {
+    constructor(context: Context) : this(context.applicationContext.getSharedPreferences("tingle.push", Context.MODE_PRIVATE),
+        { NotificationManagerCompat.from(context.applicationContext).cancelAll() },
+        // TingleMessagingService 가 메시지 알림을 띄울 때 쓰는 tag · id 와 같아야 한다
+        { room -> NotificationManagerCompat.from(context.applicationContext).cancel(PushKind.CHAT_MESSAGE.name, chatNotificationId(room.toString())) })
+
+    override fun clearChat(roomId: Long) = onRoomShown(roomId)
 
     override val platform = "ANDROID"
 
@@ -44,6 +53,8 @@ internal class AndroidPushDevice(private val prefs: SharedPreferences) : PushDev
     }
 
     override suspend fun saveBinding(binding: PushBinding?) = withContext(Dispatchers.IO) {
+        val previous = prefs.getLong(KEY_BINDING_USER, 0).takeIf { prefs.contains(KEY_BINDING) }
+        if (previous != null && previous != binding?.userId) onAccountChanged()
         val edit = prefs.edit()
         if (binding == null) edit.remove(KEY_BINDING).remove(KEY_BINDING_USER) else edit.putString(KEY_BINDING, binding.id).putLong(KEY_BINDING_USER, binding.userId)
         check(edit.commit()) { "푸시 등록 정보 저장 실패" }

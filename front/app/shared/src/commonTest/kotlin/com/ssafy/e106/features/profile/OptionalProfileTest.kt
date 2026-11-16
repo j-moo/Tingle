@@ -17,7 +17,7 @@ private val religion = OptionalConsentType.PROFILE_RELIGION
 private val photo = OptionalConsentType.PROFILE_PHOTO
 
 /** Test-only server: records writes and can delay, fail, or lose responses. */
-private class OptionalServer : OptionalProfileRepository, ProfileRepository {
+internal class OptionalServer : OptionalProfileRepository, ProfileRepository {
     var data = ProfileResponse(1, "Tester", "2000-01-01", "MALE", "NON_SMOKER", "NEVER")
     var records = OptionalConsentType.entries.map { OptionalConsentRecord(it, "v2", false) }
     var docs = records.map { AgreementItem(it.type.name, "v2", it.type.name, false, "https://tingle.test/terms") }
@@ -55,6 +55,7 @@ private class OptionalServer : OptionalProfileRepository, ProfileRepository {
     }
     override suspend fun nickname(value: String) = ApiResult.Ok(NicknameAvailability(value, true))
     override suspend fun complete(userId: Long) = ApiResult.Ok(Unit)
+    override suspend fun contactEmail(userId: Long) = ApiResult.Ok(ContactEmailResponse(null))
     override suspend fun photo(userId: Long) = ApiResult.Ok(byteArrayOf(1, 2, 3))
     override suspend fun upload(userId: Long, jpeg: ByteArray): ApiResult<ProfileResponse> {
         uploaded++; data = data.copy(hasProfilePhoto = true); return ApiResult.Ok(data)

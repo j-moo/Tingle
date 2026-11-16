@@ -30,12 +30,21 @@ class ResetApiException(val error: AppError) : Exception("Reset API failed")
 class KeyringResetRecovery(private val api: KeyringResetRepository, private val store: KeyringResetStore,
     private val owned: OwnedKeyringRepository, private val sessions: SessionStore, private val syncStore: KeyringSyncStore) {
     private val lock = Mutex()
-    /** 화면 진입은 저장 기록과 GET만 조회한다. 실행 ID가 없는 미확인 POST도 사용자 재시도 전에는 보내지 않는다. */
+    /** 화면 진입은 저장 기록과 GET만 조회한다(완료 기록이면 다시 등록됐는지 내 키링 목록도 본다). 실행 ID가 없는 미확인 POST도 사용자 재시도 전에는 보내지 않는다. */
     suspend fun inspect(owner: Long, deviceId: Long): ResetTicket? = lock.withLock {
         ensure(owner)
         val ticket = store.read(owner).singleOrNull { it.deviceId == deviceId }; ensure(owner)
         if (ticket?.run == null) ticket
-        else accept(owner, ticket, unwrap(api.get(deviceId, ticket.run.resetRunId), owner))
+        else {
+            val current = accept(owner, ticket, unwrap(api.get(deviceId, ticket.run.resetRunId), owner))
+            // 초기화를 끝낸 뒤 같은 키링을 다시 등록했으면(서버가 같은 기기 번호를 준다) 지난 완료 기록은 끝난 일이다.
+            // 남겨 두면 새 등록에서도 "초기화되었어요"만 보이고 새 초기화를 시작할 수 없다
+            // 목록 조회 실패는 오류로 바꾸지 않는다(완료를 그대로 보이고 다음 진입 때 다시 판정한다)
+            val mine = if (current.run?.state == "COMPLETED") (owned.list() as? ApiResult.Ok)?.value else null; ensure(owner)
+            if (mine?.any { it.deviceId == deviceId } == true) {
+                store.removeCompleted(owner, deviceId); ensure(owner); null
+            } else current
+        }
     }
     @OptIn(ExperimentalUuidApi::class)
     suspend fun start(owner: Long, deviceId: Long, serial: String, accepted: Boolean,

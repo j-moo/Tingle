@@ -496,7 +496,7 @@ int kr_board_storage_check(void)
 {
 	/* Called with the runtime owner lock, so settings/record writes cannot race.
 	 * USB exposes only whole-partition hashes, never keys or payload bytes. */
-	const struct device *flash = FIXED_PARTITION_DEVICE(registration_store);
+	const struct device *flash = kr_flash_guard_device();
 	const uint32_t starts[] = {FIXED_PARTITION_OFFSET(registration_store), FIXED_PARTITION_OFFSET(keyring_store)};
 	const uint32_t sizes[] = {FIXED_PARTITION_SIZE(registration_store), FIXED_PARTITION_SIZE(keyring_store)};
 	uint32_t buffer[64]; uint8_t digest[32]; char hex[65];

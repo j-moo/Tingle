@@ -248,6 +248,32 @@ class SurveyIntegrationTest extends IntegrationTestSupport {
 	}
 
 	@Test
+	@DisplayName("완료와 답 저장이 동시에 와도 완료 뒤에 저장된 답은 없다(회차 행 잠금)")
+	void concurrentSavesNeverLandAfterCompletion() throws Exception {
+		JsonNode tokens = registeredMember();
+		long sessionId = json(start(tokens, SURVEY_VERSION)).get("sessionId").asLong();
+		jdbc.update("insert into survey_answer(survey_id,question_id,answer_value,answer_type,answered_at) "
+			+ "select ?, 'Q' || lpad(g::text, 3, '0'), 'unknown', 'STRING', now() - interval '1 day' "
+			+ "from generate_series(1, 100) g",
+			sessionId);
+
+		List<Integer> codes = runConcurrently(
+			() -> perform(post(SESSIONS + "/" + sessionId + "/complete"), tokens, null).andReturn().getResponse()
+				.getStatus(),
+			() -> saveAnswer(tokens, sessionId, "Q001", "unknown").andReturn().getResponse().getStatus(),
+			() -> saveAnswer(tokens, sessionId, "Q002", "unknown").andReturn().getResponse().getStatus(),
+			() -> saveAnswer(tokens, sessionId, "Q003", "unknown").andReturn().getResponse().getStatus(),
+			() -> saveAnswer(tokens, sessionId, "Q004", "unknown").andReturn().getResponse().getStatus());
+
+		assertThat(codes.getFirst()).isEqualTo(200);
+		assertThat(codes.subList(1, codes.size())).allMatch(code -> code == 200 || code == 409);
+		assertThat(jdbc.queryForObject("select count(*) from survey_answer a join survey s on s.id=a.survey_id "
+			+ "where s.id=? and a.answered_at > s.completed_at", Long.class, sessionId)).isZero();
+		assertThat(jdbc.queryForObject("select count(*) from survey_answer where survey_id=?", Long.class,
+			sessionId)).isEqualTo(100);
+	}
+
+	@Test
 	@DisplayName("이관 미리보기는 규칙 파일대로 문항을 나누고, 이관은 원본을 그대로 둔 채 새 버전 회차에 옮길 답만 복사한다")
 	void migratesToNewVersion() throws Exception {
 		JsonNode tokens = registeredMember();

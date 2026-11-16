@@ -37,7 +37,7 @@ fun ProfileConfirmationScreen(
     modifier: Modifier = Modifier,
     error: String? = null,
 ) {
-    Surface(modifier.fillMaxSize(), color = AppColors.Background) {
+    Surface(modifier.fillMaxSize(), color = AppColors.Screen) {
         Column(Modifier.fillMaxSize().safeDrawingPadding()) {
             AppTopBar(stringResource(Res.string.profile_confirmation_title))
             Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.TopCenter) {
@@ -112,7 +112,7 @@ fun ProfileConfirmationScreen(
 @Composable
 private fun SummarySection(title: StringResource, editLabel: StringResource, editable: Boolean,
     onEdit: () -> Unit, content: @Composable ColumnScope.() -> Unit) {
-    Column(Modifier.fillMaxWidth().background(AppColors.SurfaceMuted, AppShapes.Card).padding(AppSpacing.Large),
+    Column(Modifier.fillMaxWidth().glass(AppShapes.Card, AppColors.SurfaceMuted).padding(AppSpacing.Large),
         verticalArrangement = Arrangement.spacedBy(AppSpacing.Large)) {
         Text(stringResource(title), style = MaterialTheme.typography.titleMedium,
             modifier = Modifier.semantics { heading() })

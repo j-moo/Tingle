@@ -1,5 +1,6 @@
 package com.ssafy.e106.features.survey.ui
 
+import com.ssafy.e106.core.ui.theme.frost
 import com.ssafy.e106.core.ui.theme.AppSizes
 import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.Canvas
@@ -105,7 +106,8 @@ internal fun SingleTiles(options: List<SurveyOption>, chosen: Set<String>, enabl
                         Text(('A' + i).toString(), Modifier.background(if (on) AppColors.SelectionBorder else AppColors.SurfaceMuted, RoundedCornerShape(7.dp))
                             .padding(horizontal = 7.dp, vertical = 2.dp), style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold,
                             color = if (on) AppColors.OnPrimary else AppColors.TextSecondary)
-                        Text(option.label, style = MaterialTheme.typography.bodyMedium, fontWeight = if (on) FontWeight.Bold else null,
+                        // 고르면 굵기를 바꾸지 않는다(글자 폭이 넓어져 줄이 바뀐다). 배경 · 테두리 · 글자색으로만 표시
+                        Text(option.label, style = MaterialTheme.typography.bodyMedium,
                             color = if (on) AppColors.OnSelection else AppColors.TextPrimary)
                     }
                 }
@@ -124,10 +126,11 @@ internal fun MultiChips(options: List<SurveyOption>, chosen: Set<String>, maxCho
             options.forEach { option ->
                 val on = option.key in chosen
                 val canToggle = enabled && (on || chosen.size < maxChoices)
-                Text((if (on) "✓ " else "") + option.label,
+                // 고르면 굵기 · 체크 글자를 더하지 않는다(칩이 넓어져 다음 줄로 밀린다). 배경 · 테두리 · 글자색으로만 표시
+                Text(option.label,
                     Modifier.heightIn(min = 44.dp).clipChip(on, canToggle).toggleable(on, canToggle, Role.Checkbox) { onToggle(option.key, it) }
                         .padding(horizontal = 14.dp, vertical = 11.dp),
-                    style = MaterialTheme.typography.bodyMedium, fontWeight = if (on) FontWeight.Bold else null,
+                    style = MaterialTheme.typography.bodyMedium,
                     color = when { on -> AppColors.OnSelection; canToggle -> AppColors.TextPrimary; else -> AppColors.TextDisabled })
             }
         }
@@ -187,12 +190,11 @@ internal fun LevelSlider(options: List<SurveyOption>, chosen: Set<String>, enabl
     }
 }
 
-/** 모르겠어요 · 상관없어요 — 보기와 섞지 않고 아래에 알약 모양 버튼으로 */
+/** 상관없어요 — 보기와 섞지 않고 아래에 알약 모양 버튼으로. "모르겠어요"는 버튼을 두지 않는다 */
 @Composable
 internal fun SpecialAnswers(state: SurveyQuestionState, enabled: Boolean, onAnswerChange: (SurveyAnswer) -> Unit) {
-    if (!state.allowUnknown && !state.allowAny) return
+    if (!state.allowAny) return
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(AppSpacing.Small, Alignment.CenterHorizontally)) {
-        if (state.allowUnknown) SpecialButton(stringResource(Res.string.survey_unknown), state.answer == SurveyAnswer.Unknown, enabled) { onAnswerChange(SurveyAnswer.Unknown) }
         if (state.allowAny) SpecialButton(stringResource(Res.string.survey_any), state.answer == SurveyAnswer.Any, enabled) { onAnswerChange(SurveyAnswer.Any) }
     }
 }
@@ -211,11 +213,13 @@ private fun SpecialButton(label: String, selected: Boolean, enabled: Boolean, on
 
 private fun stopAlign(i: Int) = when (i) { 0 -> Alignment.CenterStart; 1 -> Alignment.Center; else -> Alignment.CenterEnd }
 
-private fun Modifier.clipTile(on: Boolean) = this
+@Composable
+private fun Modifier.clipTile(on: Boolean) = frost(RoundedCornerShape(14.dp))
     .background(if (on) AppColors.SelectionContainer else AppColors.Background, RoundedCornerShape(14.dp))
     .border(1.5.dp, if (on) AppColors.SelectionBorder else AppColors.BorderSubtle, RoundedCornerShape(14.dp))
 
-private fun Modifier.clipChip(on: Boolean, enabled: Boolean) = this
+@Composable
+private fun Modifier.clipChip(on: Boolean, enabled: Boolean) = frost(RoundedCornerShape(50))
     .background(if (on) AppColors.SelectionContainer else AppColors.Background, RoundedCornerShape(50))
     .border(1.5.dp, when { on -> AppColors.SelectionBorder; enabled -> AppColors.BorderSubtle; else -> AppColors.ActionDisabled }, RoundedCornerShape(50))
 

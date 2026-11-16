@@ -17,6 +17,7 @@ from app.personal_analysis.reference import (
     QUESTIONS, QUESTION_IDS,
 )
 from app.personal_analysis.service import analyze_personal
+from app.personal_analysis.validation import valid_answer
 
 from .dto import PersonalAnalysisRequest, PersonalAnalysisResponse, Reading, TypeReference
 
@@ -29,6 +30,14 @@ class VersionUnsupported(ValueError):
 class PresentationUnavailable(RuntimeError):
     def __init__(self) -> None:
         super().__init__("Personal analysis contract or presentation is not configured")
+
+
+class FormatterEvidenceMismatch(RuntimeError):
+    """Internal formatter invariant failure; never retain answers or source rows."""
+
+    def __init__(self, template_id: str | None = None) -> None:
+        self.template_id = template_id
+        super().__init__("Formatter evidence mismatch")
 
 
 @dataclass(frozen=True)
@@ -136,12 +145,30 @@ def reference_evidence(row: dict, answers: AnswerContext) -> list[str]:
     return list(dict.fromkeys(ids))
 
 
+def verified_reading_labels(row: dict, answers: AnswerContext, ordinals: tuple[int, ...]) -> tuple[str, ...]:
+    """Only measured catalogue values with exact, ordered core evidence may render."""
+    evidence = row.get("evidence") if isinstance(row, dict) else None
+    if not isinstance(evidence, list) or len(evidence) != len(ordinals):
+        raise FormatterEvidenceMismatch()
+    labels = []
+    for item, ordinal in zip(evidence, ordinals, strict=True):
+        value = answers.get(ordinal)
+        if not core.known(value) or not valid_answer(CATALOGUE["questions"][ordinal - 1], value):
+            raise FormatterEvidenceMismatch()
+        label = core.answer_label(ordinal, value)
+        if (not isinstance(item, dict) or type(item.get("id")) is not int
+                or item["id"] != ordinal or item.get("answer") != label):
+            raise FormatterEvidenceMismatch()
+        labels.append(label)
+    return tuple(labels)
+
+
 def format_expression_reading(row: dict, answers: AnswerContext) -> str:
-    """Describe the two catalogue answers only when the core evidence agrees."""
-    fallback = row["text"]
+    """Restate verified Q030/Q032 in either result state; never use inferred fallback."""
+    verified_reading_labels(row, answers, (30, 32))
     approach, frequency = answers.get(30), answers.get(32)
     if not core.numeric(approach) or not core.numeric(frequency):
-        return fallback
+        raise FormatterEvidenceMismatch()
     approach_text = {
         4: "먼저 마음을 표현하는 편이라고",
         5: "먼저 마음을 분명하게 표현한다고",
@@ -151,17 +178,7 @@ def format_expression_reading(row: dict, answers: AnswerContext) -> str:
         2: "가끔 한다고",
     }.get(frequency)
     if approach_text is None or frequency_text is None:
-        return fallback
-
-    evidence = row.get("evidence")
-    if not isinstance(evidence, list) or len(evidence) != 2:
-        return fallback
-    for item, ordinal, value in zip(evidence, (30, 32), (approach, frequency), strict=True):
-        if (
-            not isinstance(item, dict) or item.get("id") != ordinal
-            or item.get("answer") != core.answer_label(ordinal, value)
-        ):
-            return fallback
+        raise FormatterEvidenceMismatch()
 
     return (
         f"호감이 생기면 {approach_text} 답했어요. "
@@ -176,7 +193,7 @@ class PresentationPolicy:
     difference_reading: Callable[[dict, int, AnswerContext], Reading] | None = None
     # Evidence semantics are confirmed, independently of wording approval.
     reference_evidence: Callable[[dict, AnswerContext], list[str]] | None = reference_evidence
-    # Optional wording for successful results, keyed by the existing branch ID.
+    # Optional wording in either result state, keyed by the existing branch ID.
     reading_text_formatters: Mapping[str, Callable[[dict, AnswerContext], str]] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
@@ -200,24 +217,30 @@ def to_be_response(
 ) -> PersonalAnalysisResponse:
     """Preserve order, evidence, scores, and the response DTO schema.
 
-    An explicitly enabled presentation policy may format only the targeted
-    Reading.text for successful PA-R-EXPRESSION-01 results with verified
-    Q030/Q032 answers. BE alone owns public filtering.
+    Explicit policy formatters change Reading.text only, including partial results
+    with measured evidence. Formatter evidence mismatches are internal errors;
+    other presentation availability checks retain their existing error path.
+    BE alone owns public filtering.
     """
     if (result.surveyVersion, result.calculationVersion) != (
         binding.survey_version, binding.calculation_version,
     ):
         raise PresentationUnavailable()
     readings = []
-    formatters = policy.reading_text_formatters if result.status == "SUCCEEDED" else {}
+    formatters = policy.reading_text_formatters
     for row in result.readings:
         template_id = policy.reading_template_ids.get((row["key"], row["title"]))
         if not template_id:
             raise PresentationUnavailable()
         formatter = formatters.get(template_id)
+        try:
+            text = formatter(row, answers) if formatter else row["text"]
+        except FormatterEvidenceMismatch:
+            # Bind the server-selected ID, never any answer, row or exception text.
+            raise FormatterEvidenceMismatch(template_id) from None
         readings.append(Reading(
             key=row["key"], templateId=template_id, priority=row["priority"],
-            text=formatter(row, answers) if formatter else row["text"],
+            text=text,
             evidenceQuestionIds=[question_id(e["id"]) for e in row["evidence"]],
         ))
     if result.selfPreferenceDifferences and policy.difference_reading is None:

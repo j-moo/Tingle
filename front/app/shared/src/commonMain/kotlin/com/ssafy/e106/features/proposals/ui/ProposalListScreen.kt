@@ -1,6 +1,5 @@
 package com.ssafy.e106.features.proposals.ui
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -13,6 +12,8 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.semantics.*
 import androidx.compose.ui.text.style.TextOverflow
@@ -52,78 +53,80 @@ fun ProposalListScreen(state: ProposalListState, onOpenProposal: (Long) -> Unit,
     }
     // 1분마다 남은 시간을 다시 그린다(값은 서버 기준 마감에서 받은 뒤 흐른 시간만 빼서 계산 — 기기 시계를 쓰지 않음)
     val tick by produceState(0) { while (true) { delay(60_000); value++ } }
-    Surface(modifier.fillMaxSize(), color = AppColors.Background) {
-        Column(Modifier.fillMaxSize().safeDrawingPadding()) {
+    Surface(modifier.fillMaxSize(), color = AppColors.Screen) {
+        // 아래쪽 인셋은 틀(SignedInServiceHost)의 하단 바가 맡는다
+        Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal))) {
             AppTopBar(stringResource(Res.string.proposal_list_title))
             val refresh = { if (state.load != ProposalListLoad.Loading && !state.refreshing) onAction(ProposalListAction.Refresh) }
-            // 당기기를 못 하는 TalkBack 사용자를 위한 "새로고침" 접근성 동작은 PullDownRefreshBox 가 둔다
-            PullDownRefreshBox(state.refreshing, refresh, Modifier.weight(1f).fillMaxWidth()) {
-                // 내용이 짧아도 화면 전체에서 당길 수 있게 높이를 채운다
-                LazyColumn(state = list, modifier = Modifier.widthIn(max = 640.dp).fillMaxSize(),
-                    contentPadding = screenPaddingValues(), verticalArrangement = Arrangement.spacedBy(AppSpacing.Large)) {
-                    item(key = "intro") {
-                        Text(stringResource(Res.string.proposal_list_heading), style = MaterialTheme.typography.headlineMedium,
-                            modifier = Modifier.semantics { heading() })
-                    }
-                    when (state.load) {
-                        // 뼈대: 탭 자리 + 제안 줄
-                        ProposalListLoad.Loading -> item(key = "loading") {
-                            SkeletonGroup {
-                                SkeletonBone(height = 50.dp, shape = RoundedCornerShape(12.dp))
-                                repeat(3) { SkeletonRow() }
-                            }
+            // 하단 바와 아래 띠는 목록 위에 떠 있다. 목록 끝에 그만큼 여백을 둬 마지막 항목이 그 위로 올라오게 한다
+            val bar = LocalBottomBarPadding.current
+            val density = LocalDensity.current
+            var notices by remember { mutableStateOf(0.dp) }
+            Box(Modifier.weight(1f).fillMaxWidth()) {
+                // 당기기를 못 하는 TalkBack 사용자를 위한 "새로고침" 접근성 동작은 PullDownRefreshBox 가 둔다
+                PullDownRefreshBox(state.refreshing, refresh, Modifier.fillMaxSize()) {
+                    // 내용이 짧아도 화면 전체에서 당길 수 있게 높이를 채운다
+                    LazyColumn(state = list, modifier = Modifier.widthIn(max = 640.dp).fillMaxSize(),
+                        contentPadding = screenPaddingValues(bar + notices), verticalArrangement = Arrangement.spacedBy(AppSpacing.Large)) {
+                        item(key = "intro") {
+                            Text(stringResource(Res.string.proposal_list_heading), style = MaterialTheme.typography.headlineMedium,
+                                modifier = Modifier.semantics { heading() })
                         }
-                        ProposalListLoad.Failed -> item(key = "failure") {
-                            StateView(error.stateKind(), error.stateTitle(), onRetry = { onAction(ProposalListAction.Refresh) })
-                        }
-                        ProposalListLoad.Ready -> {
-                            // 받은 제안이 없어도 탭은 늘 보인다
-                            item(key = "tabs") {
-                                AppSegmentedTabs(listOf(stringResource(Res.string.proposal_list_tab_pending, entries.count { it.ended == null } - waiting.size),
-                                    stringResource(Res.string.proposal_list_tab_waiting, waiting.size)), tab, onTab)
-                            }
-                            when {
-                                // 보여 줄 목록이 없는 채로 새로고침이 실패하면 띠 대신 실패 화면
-                                entries.isEmpty() && state.refreshFailed -> item(key = "empty") {
-                                    StateView(error.stateKind(), error.stateTitle(), onRetry = refresh, retryEnabled = !state.refreshing)
-                                }
-                                // 현재 페이지가 만료/접근불가 항목으로 비어도 다음 커서가 있으면 조회는 끝나지 않았다(아래 이어 받기 줄이 대신한다)
-                                entries.isEmpty() && state.page == ProposalPageState.End -> item(key = "empty") {
-                                    StateView(StateKind.Empty, stringResource(Res.string.proposal_list_empty), onRetry = refresh)
-                                }
-                                entries.isNotEmpty() && shown.isEmpty() -> item(key = "tab-empty") {
-                                    StateView(StateKind.Empty, stringResource(if (tab == 0) Res.string.proposal_list_pending_empty else Res.string.proposal_list_waiting_empty))
+                        when (state.load) {
+                            // 뼈대: 탭 자리 + 제안 줄
+                            ProposalListLoad.Loading -> item(key = "loading") {
+                                SkeletonGroup {
+                                    SkeletonBone(height = 50.dp, shape = RoundedCornerShape(12.dp))
+                                    repeat(3) { SkeletonRow() }
                                 }
                             }
-                            items(shown, key = { "proposal-${it.proposalId}" }) {
-                                if (it.ended != null) EndedRow(it, onOpenProposal) else ProposalRow(it, tick, onOpenProposal)
+                            ProposalListLoad.Failed -> item(key = "failure") {
+                                StateView(error.stateKind(), error.stateTitle(), onRetry = { onAction(ProposalListAction.Refresh) })
                             }
-                            // 목록 이어 받기: 받는 중 = 뼈대 줄, 실패 = 한 줄 + 다시 시도(자동 재시도는 안 함), 끝 = 작은 글
-                            // 새로고침이 실패해 다음 쪽을 자동으로 받지 않는 동안엔 아래 띠의 "다시 시도"로 첫 쪽부터 다시 받는다
-                            when {
-                                state.page == ProposalPageState.Failed -> item(key = "paging") {
-                                    ListTail(ListTailState.Failed, onRetry = { onAction(ProposalListAction.LoadMore) }, retryEnabled = !state.refreshing)
+                            ProposalListLoad.Ready -> {
+                                // 받은 제안이 없어도 탭은 늘 보인다
+                                item(key = "tabs") {
+                                    AppSegmentedTabs(listOf(stringResource(Res.string.proposal_list_tab_pending, entries.count { it.ended == null } - waiting.size),
+                                        stringResource(Res.string.proposal_list_tab_waiting, waiting.size)), tab, onTab)
                                 }
-                                state.refreshFailed -> Unit
-                                state.page == ProposalPageState.Loading || entries.isEmpty() && state.page == ProposalPageState.More ->
-                                    item(key = "paging") { ListTail(ListTailState.Loading) }
-                                state.page == ProposalPageState.End && shown.isNotEmpty() -> item(key = "end") { ListTail(ListTailState.End) }
+                                when {
+                                    // 보여 줄 목록이 없는 채로 새로고침이 실패하면 띠 대신 실패 화면
+                                    entries.isEmpty() && state.refreshFailed -> item(key = "empty") {
+                                        StateView(error.stateKind(), error.stateTitle(), onRetry = refresh, retryEnabled = !state.refreshing)
+                                    }
+                                    // 현재 페이지가 만료/접근불가 항목으로 비어도 다음 커서가 있으면 조회는 끝나지 않았다(아래 이어 받기 줄이 대신한다)
+                                    entries.isEmpty() && state.page == ProposalPageState.End -> item(key = "empty") {
+                                        StateView(StateKind.Empty, stringResource(Res.string.proposal_list_empty), onRetry = refresh)
+                                    }
+                                    entries.isNotEmpty() && shown.isEmpty() -> item(key = "tab-empty") {
+                                        StateView(StateKind.Empty, stringResource(if (tab == 0) Res.string.proposal_list_pending_empty else Res.string.proposal_list_waiting_empty))
+                                    }
+                                }
+                                items(shown, key = { "proposal-${it.proposalId}" }) {
+                                    if (it.ended != null) EndedRow(it, onOpenProposal) else ProposalRow(it, tick, onOpenProposal)
+                                }
+                                // 목록 이어 받기: 받는 중 = 뼈대 줄, 실패 = 한 줄 + 다시 시도(자동 재시도는 안 함), 끝 = 작은 글
+                                // 새로고침이 실패해 다음 쪽을 자동으로 받지 않는 동안엔 아래 띠의 "다시 시도"로 첫 쪽부터 다시 받는다
+                                when {
+                                    state.page == ProposalPageState.Failed -> item(key = "paging") {
+                                        ListTail(ListTailState.Failed, onRetry = { onAction(ProposalListAction.LoadMore) }, retryEnabled = !state.refreshing)
+                                    }
+                                    state.refreshFailed -> Unit
+                                    state.page == ProposalPageState.Loading || entries.isEmpty() && state.page == ProposalPageState.More ->
+                                        item(key = "paging") { ListTail(ListTailState.Loading) }
+                                    state.page == ProposalPageState.End && shown.isNotEmpty() -> item(key = "end") { ListTail(ListTailState.End) }
+                                }
                             }
                         }
                     }
                 }
+                // 보던 목록은 그대로 두고 새로고침 실패만 아래 띠로 알린다
+                Column(Modifier.align(Alignment.BottomCenter).padding(bottom = bar).onSizeChanged { notices = with(density) { it.height.toDp() } }) {
+                    if (state.load == ProposalListLoad.Ready && state.refreshFailed && entries.isNotEmpty())
+                        NoticeBar(stringResource(Res.string.proposal_list_refresh_failed), actionEnabled = !state.refreshing, onAction = refresh)
+                    notice()
+                }
             }
-            // 보던 목록은 그대로 두고 새로고침 실패만 아래 띠로 알린다
-            if (state.load == ProposalListLoad.Ready && state.refreshFailed && entries.isNotEmpty())
-                NoticeBar(stringResource(Res.string.proposal_list_refresh_failed), actionEnabled = !state.refreshing, onAction = refresh)
-            notice()
-            AppBottomBar(labels = listOf(stringResource(Res.string.proposal_list_home), stringResource(Res.string.proposal_list_tab),
-                stringResource(Res.string.proposal_list_chats), stringResource(Res.string.proposal_list_profile)), selected = 1,
-                onSelect = { when (it) {
-                    0 -> onAction(ProposalListAction.Home)
-                    2 -> onAction(ProposalListAction.Chats)
-                    3 -> onAction(ProposalListAction.Profile)
-                } })
         }
     }
 }
@@ -164,8 +167,7 @@ private fun ProposalRow(item: ProposalListItem, tick: Int, onOpenProposal: (Long
 /** 끝난 제안 한 줄: "매칭이 안 된 제안이 있어요" / "기한이 지난 제안이 있어요"(상대 이름은 남기지 않음). 누르면 결과 화면 → 확인하면 사라짐 */
 @Composable
 private fun EndedRow(item: ProposalListItem, onOpenProposal: (Long) -> Unit) {
-    Row(Modifier.fillMaxWidth().heightIn(min = AppSpacing.ControlMinHeight).clip(AppShapes.Card)
-        .background(AppColors.SurfaceMuted)
+    Row(Modifier.fillMaxWidth().heightIn(min = AppSpacing.ControlMinHeight).glass(AppShapes.Card, AppColors.SurfaceMuted)
         .clickable(role = Role.Button) { onOpenProposal(item.proposalId) }
         .padding(AppSpacing.Large),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(AppSpacing.Medium)) {

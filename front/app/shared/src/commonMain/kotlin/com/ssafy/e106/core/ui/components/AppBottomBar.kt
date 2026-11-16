@@ -1,34 +1,103 @@
 package com.ssafy.e106.core.ui.components
 
-import androidx.compose.foundation.background
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.wrapContentHeight
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.compositionLocalOf
+import androidx.compose.runtime.remember
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.unit.dp
 import com.ssafy.e106.core.ui.theme.AppColors
 import com.ssafy.e106.core.ui.theme.AppSizes
 import com.ssafy.e106.core.ui.theme.AppSpacing
+import com.ssafy.e106.core.ui.theme.focusRing
+import com.ssafy.e106.core.ui.theme.glass
+import com.ssafy.e106.core.ui.theme.glassBlurAvailable
 
-/** 하단 내비게이션. 글자 탭을 같은 폭으로 늘어놓는다. Figma 01 Tingle/BottomNavigation. 최소 높이 72, 위 구분선 1. */
+private val TabShape = RoundedCornerShape(50)
+// 뒤 내용이 흐리게 비치는 반투명 흰 유리. 블러가 없으면 글자가 읽히게 더 진하게 덮는다
+private val BarGlass = Color(0x8CFFFFFF)
+private val BarGlassFallback = Color(0xD9FFFFFF)
+// 안 고른 탭 글자. 반투명 바 뒤로 회색 내용이 비쳐도 대비 4.5:1 이상이 되게 [AppColors.TextSecondary] 보다 진하게
+private val BarInk = Color(0xFF3D3D3D)
+
+/**
+ * 내용 위에 떠 있는 하단 바가 가리는 높이(시스템 내비게이션 바 포함). 바가 없으면 0.
+ * 탭 화면은 스크롤 끝 여백으로 더해 마지막 항목 · 당기기 자리가 바 위로 올라오게 한다
+ */
+val LocalBottomBarPadding = compositionLocalOf { 0.dp }
+
+/**
+ * 하단 내비게이션. 글자 탭을 같은 폭으로 늘어놓는다. 화면 아래에 떠 있는 유리 캡슐(visionOS 탭 바).
+ * 선택 캡슐은 탭을 바꾸면 새 자리로 미끄러진다. [AppTabRow] 와 달리 캡슐을 탭마다 그리지 않고 줄 전체에 하나만 그린다
+ */
 @Composable
 fun AppBottomBar(
     labels: List<String>,
     selected: Int,
     onSelect: (Int) -> Unit,
     modifier: Modifier = Modifier,
+    enabled: Boolean = true,
 ) {
-    AppTabRow(
-        labels = labels, selected = selected, onSelect = onSelect,
-        modifier = modifier.heightIn(min = AppSizes.BottomBarMinHeight)
-            .background(AppColors.Background)
+    val position by animateFloatAsState(selected.toFloat(), spring(dampingRatio = 0.7f))
+    val highlight = if (enabled) AppColors.ActionPrimary.copy(alpha = 0.14f) else AppColors.BorderSubtle
+    Row(
+        modifier.padding(horizontal = AppSpacing.Large, vertical = AppSpacing.Small)
+            .heightIn(min = AppSizes.BottomBarMinHeight - AppSpacing.Small * 2)
+            .glass(TabShape, if (glassBlurAvailable()) BarGlass else BarGlassFallback, blur = true)
+            .padding(horizontal = AppSpacing.Small)
+            .wrapContentHeight()
+            .fillMaxWidth().selectableGroup()
             .drawBehind {
-                val stroke = AppSpacing.Stroke.toPx()
-                drawLine(AppColors.BorderSubtle, Offset(0f, stroke / 2), Offset(size.width, stroke / 2), stroke)
+                if (labels.isEmpty()) return@drawBehind
+                // 왼쪽→오른쪽 배치만 계산한다(RTL 미지원). 스프링이 끝을 넘어가도 유리 밖으로 나가지 않게 자른다
+                val cell = size.width / labels.size
+                val x = (cell * position).coerceIn(0f, size.width - cell)
+                drawRoundRect(highlight, Offset(x, 0f), Size(cell, size.height), CornerRadius(size.height / 2))
+            },
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        labels.forEachIndexed { i, label ->
+            val interaction = remember { MutableInteractionSource() }
+            val color by animateColorAsState(when {
+                !enabled -> AppColors.TextDisabled
+                i == selected -> AppColors.TextPrimary
+                else -> BarInk
+            })
+            Box(
+                Modifier.weight(1f).heightIn(min = AppSpacing.ControlMinHeight)
+                    .clip(TabShape)
+                    .focusRing(interaction, TabShape)
+                    // 누름 효과(회색 원)는 두지 않는다. 미끄러지는 선택 캡슐 하나로만 보여 준다. 키보드 초점 테두리는 유지
+                    .selectable(selected = i == selected, enabled = enabled, role = Role.Tab,
+                        interactionSource = interaction, indication = null, onClick = { onSelect(i) })
+                    .padding(AppSpacing.Small),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(label, style = MaterialTheme.typography.labelLarge, color = color, maxLines = 1)
             }
-            .padding(horizontal = AppSpacing.Medium)
-            .wrapContentHeight(),
-    )
+        }
+    }
 }

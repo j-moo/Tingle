@@ -33,6 +33,7 @@ private class TestProfiles : ProfileRepository {
         return ApiResult.Ok(data)
     }
     override suspend fun complete(userId: Long): ApiResult<Unit> { completed++; return ApiResult.Ok(Unit) }
+    override suspend fun contactEmail(userId: Long) = ApiResult.Ok(ContactEmailResponse(null))
 }
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -179,6 +180,9 @@ class ProfileFlowTest {
             assertEquals(status == OnboardingStatus.KEYRING_REQUIRED || status == OnboardingStatus.PROFILE_REQUIRED,
                 development.canEditProfile(session))
             assertFalse(development.canEditProfile(session.copy(signupCompleted = true)))
+            // 가입 준비에서 프로필 고치기: 프로필을 이미 쓴 단계(성향테스트 · 희망 나이 · 동기화)와 가입을 마친 회원만
+            assertEquals(status in setOf(OnboardingStatus.READY, OnboardingStatus.SURVEY_REQUIRED,
+                OnboardingStatus.PREFERENCES_REQUIRED, OnboardingStatus.SYNC_PENDING), production.canManageProfile(session))
         }
     }
     @Test fun invalidDatesAndNicknameNeverReachServer() = runTest(dispatcher) {

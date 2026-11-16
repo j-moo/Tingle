@@ -34,6 +34,8 @@ import org.springframework.web.socket.adapter.NativeWebSocketSession;
 import com.e106.tingle.chat.ChatService;
 import com.e106.tingle.chat.dto.MessagePage;
 import com.e106.tingle.chat.dto.MessageView;
+import com.e106.tingle.global.error.BusinessException;
+import com.e106.tingle.global.error.ErrorCode;
 
 import jakarta.websocket.Session;
 import tools.jackson.databind.json.JsonMapper;
@@ -58,6 +60,7 @@ class ChatSocketHandlerTest {
 		json = mock(JsonMapper.class);
 		given(json.writeValueAsString(any())).willAnswer(call -> ((Map<?, ?>)call.getArgument(0)).get("type"));
 		given(access.require("access-token", 1)).willReturn(2L);
+		given(access.requireMember("access-token")).willReturn(2L);
 		given(chats.recover(1, 2, 0, 100)).willReturn(new MessagePage(List.of(
 			new MessageView(7L, UUID.randomUUID(), "PARTNER", 1, "saved content", NOW)), null, NOW));
 		session = mock(WebSocketSession.class, withSettings().extraInterfaces(NativeWebSocketSession.class));
@@ -107,6 +110,19 @@ class ChatSocketHandlerTest {
 		startup.get(5, TimeUnit.SECONDS);
 		assertThat(messageSent.await(5, TimeUnit.SECONDS)).isTrue();
 		assertThat(frames).containsExactly("CHAT_SUBSCRIBED", "CHAT_MESSAGE");
+	}
+
+	// 주기 확인은 방 권한을 recover 에만 맡긴다. recover 가 닫힌 방을 알리면 오류 프레임을 보내고 끊어야 한다.
+	@Test
+	void closedRoomFoundByThePeriodicRecoveryRejectsTheConnection() throws Exception {
+		given(chats.recover(1, 2, 0, 100)).willThrow(new BusinessException(ErrorCode.CHAT_CLOSED));
+		doAnswer(call -> {
+			frames.add(((TextMessage)call.getArgument(0)).getPayload());
+			return null;
+		}).when(session).sendMessage(any());
+		establish();
+		assertThat(release.await(5, TimeUnit.SECONDS)).isTrue();
+		assertThat(frames).containsExactly("CHAT_SUBSCRIBED", "CHAT_ERROR");
 	}
 
 	@Test

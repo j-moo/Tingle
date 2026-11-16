@@ -51,22 +51,26 @@ struct kr_feedback_output kr_feedback_step(struct kr_feedback *state, int64_t no
 	const int64_t age = now - state->started_ms;
 	struct kr_feedback_output out = {0};
 	const int second_start = KR_FEEDBACK_PULSE_MS + KR_FEEDBACK_GAP_MS;
-	const int motor_end = second_start + KR_FEEDBACK_PULSE_MS;
+	const int second_end = second_start + KR_FEEDBACK_PULSE_MS;
 	if (state->options.rgb && age < KR_FEEDBACK_LED_MS) {
 		out.rgb = state->options.rgb;
 		out.wake_ms = (uint32_t)(KR_FEEDBACK_LED_MS - age);
 	} else {
 		state->options.rgb = 0;
 	}
-	if (!motor_power || age >= motor_end) {
+	if (!motor_power || age >= KR_FEEDBACK_VIBRATION_MS) {
 		/* Power returning must not replay the rest of a previous alert. */
 		state->options.vibrate = false;
 	}
 	if (state->options.vibrate) {
-		out.motor = age < KR_FEEDBACK_PULSE_MS || age >= second_start;
-		const int64_t boundary = age < KR_FEEDBACK_PULSE_MS ? KR_FEEDBACK_PULSE_MS :
-			age < second_start ? second_start : motor_end;
-		const int64_t remaining = boundary - age;
+		/* Sustained double pulses leave time for the motor to spin up. */
+		const int64_t phase = age % KR_FEEDBACK_CYCLE_MS;
+		out.motor = phase < KR_FEEDBACK_PULSE_MS ||
+			(phase >= second_start && phase < second_end);
+		const int64_t boundary = phase < KR_FEEDBACK_PULSE_MS ? KR_FEEDBACK_PULSE_MS :
+			phase < second_start ? second_start : phase < second_end ? second_end : KR_FEEDBACK_CYCLE_MS;
+		int64_t remaining = boundary - phase;
+		if (remaining > KR_FEEDBACK_VIBRATION_MS - age) { remaining = KR_FEEDBACK_VIBRATION_MS - age; }
 		out.wake_ms = remaining < MOTOR_POWER_CHECK_MS ? (uint32_t)remaining : MOTOR_POWER_CHECK_MS;
 	}
 	return out;

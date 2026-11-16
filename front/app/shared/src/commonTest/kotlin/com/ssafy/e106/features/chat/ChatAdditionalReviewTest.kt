@@ -183,6 +183,31 @@ class ChatAdditionalReviewTest {
         assertEquals(ChatPartnerPhoto.Empty, m.state.value.photo); assertEquals(1, api.photos)
     }
 
+    @Test fun unreadBadgeShowsCountUpTo99AndDotForOldServers() {
+        assertEquals(listOf("", null, null, "1", "99", "99+"), listOf(unreadBadge(null, true), unreadBadge(null, false),
+            unreadBadge(0, true), unreadBadge(1, true), unreadBadge(99, true), unreadBadge(100, true)))
+    }
+
+    @Test fun listKeepsUnreadCountOnlyForReadableRoomsAndAsksPhotoOncePerRefresh() = test {
+        val asked = mutableListOf<Long>()
+        val api = object : ChatTestServer() {
+            override suspend fun list(cursor: String?) = ApiResult.Ok(ChatRoomsPage(listOf(
+                roomRecord.copy(unreadCount = 3),
+                roomRecord.copy(chatRoomId = 21, canRead = false, unreadCount = 5),
+            ), null, now))
+            override suspend fun photo(id: Long): ApiResult<ByteArray> { asked += id; return ApiResult.Fail(AppError.Offline) }
+        }
+        val m = ChatListViewModel(api, TestSession(OnboardingStatus.READY), ChatLocalStorage(ChatMemoryPrefs()))
+            .also { models.put("list", it); it.refresh() }
+        runCurrent()
+        assertEquals(mapOf(20L to 3, 21L to null), m.state.value.ui.rooms.associate { it.chatRoomId to it.unreadCount })
+        // 읽을 수 있는 방만, 한 번만 묻는다. 사진을 못 받아도 목록은 그대로
+        assertEquals(listOf(20L), asked)
+        assertEquals(ChatListLoad.Ready, m.state.value.ui.load); assertNull(m.state.value.ui.rooms.first().photo)
+        m.refresh(); runCurrent()
+        assertEquals(listOf(20L, 20L), asked)   // 새로고침하면 다시 받는다(상대가 사진을 바꾸거나 지웠을 수 있다)
+    }
+
     @Test fun listKeepsNicknameOnlyForReadableRooms() = test {
         val api = object : ChatTestServer() {
             override suspend fun list(cursor: String?) = ApiResult.Ok(ChatRoomsPage(listOf(
@@ -196,6 +221,29 @@ class ChatAdditionalReviewTest {
         runCurrent()
         val names = m.state.value.ui.rooms.associate { it.chatRoomId to it.nickname }
         assertEquals(mapOf(20L to "하늘", 21L to null, 22L to null), names)
+    }
+
+    @Test fun listShowsServerLastMessageOnlyForReadableRooms() = test {
+        val api = object : ChatTestServer() {
+            override suspend fun list(cursor: String?) = ApiResult.Ok(ChatRoomsPage(listOf(
+                roomRecord.copy(lastMessageSeq = 4, lastMessage = "커피 한잔 어때요?", lastMessageAt = "2026-11-15T06:05:00Z"),
+                roomRecord.copy(chatRoomId = 21, lastMessageSeq = 0),
+                roomRecord.copy(chatRoomId = 22),   // 옛 서버: 필드 없음
+                roomRecord.copy(chatRoomId = 23, canRead = false, lastMessageSeq = 2, lastMessage = "숨김"),
+                roomRecord.copy(chatRoomId = 24, lastMessageSeq = 3, lastMessage = " "),   // 순번은 있는데 본문이 비었으면 모름
+            ), null, now))
+        }
+        val m = ChatListViewModel(api, TestSession(OnboardingStatus.READY), ChatLocalStorage(ChatMemoryPrefs()))
+            .also { models.put("list", it); it.refresh() }
+        runCurrent()
+        val rooms = m.state.value.ui.rooms.associateBy { it.chatRoomId }
+        assertEquals(LastMessageKind.Text, rooms.getValue(20).lastMessageKind)
+        assertEquals("커피 한잔 어때요?", rooms.getValue(20).lastMessage)
+        assertEquals("2026-11-15T06:05:00Z", rooms.getValue(20).lastMessageTimeLabel)
+        assertEquals(LastMessageKind.None, rooms.getValue(21).lastMessageKind)
+        assertEquals(LastMessageKind.Unknown, rooms.getValue(22).lastMessageKind)
+        assertEquals(LastMessageKind.Unknown, rooms.getValue(23).lastMessageKind); assertNull(rooms.getValue(23).lastMessage)
+        assertEquals(LastMessageKind.Unknown, rooms.getValue(24).lastMessageKind); assertNull(rooms.getValue(24).lastMessageTimeLabel)
     }
 
     @Test fun absentClosedRoomIsRecheckedAndCleanedAfterStorageRecreation() = test {

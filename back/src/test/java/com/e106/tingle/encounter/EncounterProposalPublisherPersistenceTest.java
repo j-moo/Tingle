@@ -46,7 +46,9 @@ import tools.jackson.databind.json.JsonMapper;
 	"spring.jpa.hibernate.ddl-auto=none", "spring.docker.compose.enabled=false",
 	"spring.sql.init.mode=always", "spring.sql.init.schema-locations=classpath:database/schema.sql",
 	"app.agreement.items[0].type=TERMS", "app.agreement.items[0].version=test",
-	"app.agreement.items[0].required=true"
+	"app.agreement.items[0].required=true",
+	// 이 시험의 회원은 키링 행 없이 만든다. 키링 없는 회원 제외는 MemberAccessReadinessPersistenceTest 에서 본다
+	"app.signup.keyring-required=false"
 })
 class EncounterProposalPublisherPersistenceTest {
 	private static final Instant NOW = Instant.parse("2026-10-29T03:00:00Z");

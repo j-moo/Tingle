@@ -68,6 +68,82 @@ class SurveyCompletionTest {
         advanceTimeBy(2_501); runCurrent(); assertEquals(gets + 1, s.analysisGets)
         m.leave(); advanceTimeBy(60_000); runCurrent(); assertEquals(gets + 1, s.analysisGets)
     }
+    // 제출한 답 고치기: 새 회차를 열어 이전 답을 채우고("모르겠어요"는 비워 둔다) 답이 빈 문항부터 보여 준다.
+    // "다음"은 한 문항씩 넘기고(다른 답도 고칠 수 있게), "수정 마치기"는 빈 문항이 있으면 그리로, 없으면 제출 단계로 간다
+    @Test fun editOpensNewSessionPrefilledWithPreviousAnswersAndJumpsToGaps() = runTest(dispatcher) {
+        val s = SurveyServer().apply {
+            persist("Q001", JsonPrimitive("unknown")); persist("Q002", JsonArray(listOf(JsonPrimitive("walk"))))
+        }
+        val m = vm(s); review(m); m.submit(); runCurrent()
+        assertEquals(SurveyPage.Completed, m.state.value.page)
+        s.data = s.data.copy(sessionId = 12, status = "DRAFT", answeredCount = 0, nextQuestionId = "Q001", answers = emptyList(), completedAt = null)
+        val saves = s.saves
+        m.edit(); runCurrent()
+        assertEquals(12L, m.state.value.session?.sessionId); assertTrue(m.state.value.editing)
+        assertEquals(SurveyPage.Question, m.state.value.page); assertEquals(0, m.state.value.index); assertNull(m.state.value.draft)
+        assertEquals(saves + 1, s.saves); assertEquals(listOf("Q002"), s.data.answers.map { it.questionId })   // 이전 답만 다시 저장됐다
+        m.finishEdit(); assertEquals(SurveyPage.Question, m.state.value.page); assertEquals(0, m.state.value.index)   // 빈 문항이 남아 있으면 마치지 못한다
+        assertTrue(m.state.value.returnedToMissing)
+        m.answer(SurveyAnswer.Choices(setOf("4"))); runCurrent(); m.next()
+        assertEquals(SurveyPage.Question, m.state.value.page); assertEquals(1, m.state.value.index)             // "다음"은 다음 문항으로(건너뛰지 않는다)
+        m.previous(); m.finishEdit()
+        assertEquals(SurveyPage.Review, m.state.value.page)                                                    // 빈 문항이 없으면 어디서든 제출 단계로
+        m.submit(); runCurrent(); assertEquals(2, s.completes)
+    }
+    // 답 고치기에서 새 회차는 열렸는데 문항을 못 받은 채 계정이 바뀌면, 이전 계정의 답이 새 계정 회차에 채워지거나 저장되면 안 된다
+    @Test fun editPrefillIsDroppedWhenQuestionsFailAndAccountChanges() = runTest(dispatcher) {
+        val s = completedAnswers(); val session = TestSession(OnboardingStatus.KEYRING_REQUIRED)
+        val m = vm(s, session = session); review(m); m.submit(); runCurrent()
+        s.data = s.data.copy(sessionId = 12, status = "DRAFT", answeredCount = 0, nextQuestionId = "Q001", answers = emptyList(), completedAt = null)
+        s.failDefinition = true
+        m.edit(); runCurrent()
+        assertTrue(m.state.value.recoveryRequired)
+        session.state.value = Session.SignedIn(2, OnboardingStatus.KEYRING_REQUIRED, false); runCurrent()
+        // 같은 회차 번호를 돌려줘도(회차 비교로 막히지 않게) 계정이 바뀌었으니 이전 답을 채우지 않는다
+        s.failDefinition = false
+        val saves = s.saves
+        m.load(); runCurrent(); m.start(); runCurrent()
+        assertEquals(12L, m.state.value.session?.sessionId)
+        assertEquals(saves, s.saves); assertTrue(m.state.value.pending.isEmpty()); assertFalse(m.state.value.editing)
+    }
+    // 답 고치기로 채운 이전 답을 보내는 중에 나가면 버리지 않고 계속 보낸다. 다시 열면 "수정 마치기"가 있는 상태 그대로다
+    @Test fun leavingWhileEditPrefillIsSendingKeepsTheQueue() = runTest(dispatcher) {
+        val s = completedAnswers(); val m = vm(s); review(m); m.submit(); runCurrent()
+        s.data = s.data.copy(sessionId = 12, status = "DRAFT", answeredCount = 0, nextQuestionId = "Q001", answers = emptyList(), completedAt = null)
+        val pending = CompletableDeferred<ApiResult<SurveySession>>(); s.pendingSave = pending
+        m.edit(); runCurrent()
+        assertTrue(m.state.value.editing); assertTrue(m.state.value.pending.isNotEmpty())
+        m.requestLeave(); m.leave(); runCurrent()
+        assertTrue(m.state.value.editing); assertTrue(m.state.value.pending.isNotEmpty()); assertFalse(m.state.value.exitRequested)
+        val saves = s.saves
+        s.persist("Q001", JsonPrimitive(4))   // 멈춰 있던 첫 저장이 서버에 반영된 것으로 둔다
+        s.pendingSave = null; pending.complete(ApiResult.Ok(s.data)); runCurrent()
+        assertTrue(m.state.value.editing); assertTrue(m.state.value.pending.isEmpty())   // 나간 뒤에도 남은 답을 다 보냈다
+        // 나간 뒤에 남은 답(Q002)까지 보내 이전 답이 모두 저장됐다
+        assertTrue(s.saves > saves); assertEquals(listOf("Q001", "Q002"), s.data.answers.map { it.questionId })
+    }
+    // 서버가 이미 답이 있는 작성 중 회차를 돌려주면(다른 기기에서 시작한 재검사 등) 이전 답을 섞지 않고 이어하기로 간다
+    @Test fun editDoesNotMixPreviousAnswersIntoAnAnsweredDraft() = runTest(dispatcher) {
+        val s = completedAnswers(); val m = vm(s); review(m); m.submit(); runCurrent()
+        s.data = s.data.copy(sessionId = 12, status = "DRAFT", completedAt = null, answers = emptyList(), answeredCount = 0)
+        s.persist("Q001", JsonPrimitive(2))
+        val saves = s.saves
+        m.edit(); runCurrent()
+        assertEquals(12L, m.state.value.session?.sessionId); assertEquals(SurveyPage.Resume, m.state.value.page)
+        assertFalse(m.state.value.editing); assertTrue(m.state.value.pending.isEmpty()); assertEquals(saves, s.saves)
+    }
+    // 문항 조회가 실패한 채 나갔다가 다시 열어도(같은 계정) 새 회차에 이전 답을 채운다
+    @Test fun editPrefillSurvivesLeavingAfterQuestionsFail() = runTest(dispatcher) {
+        val s = completedAnswers(); val m = vm(s); review(m); m.submit(); runCurrent()
+        s.data = s.data.copy(sessionId = 12, status = "DRAFT", answeredCount = 0, nextQuestionId = "Q001", answers = emptyList(), completedAt = null)
+        s.failDefinition = true
+        m.edit(); runCurrent(); assertTrue(m.state.value.recoveryRequired)
+        m.requestLeave(); m.leave(); runCurrent()
+        s.failDefinition = false
+        m.load(); runCurrent()
+        assertEquals(12L, m.state.value.session?.sessionId); assertTrue(m.state.value.editing)
+        assertEquals(listOf("Q001", "Q002"), s.data.answers.map { it.questionId })
+    }
     @Test fun submitLocksCompletedAnswersAndRequestsAnalysisOnce() = runTest(dispatcher) {
         val server = completedAnswers(); val m = vm(server); review(m)
         m.submit(); m.submit(); runCurrent()

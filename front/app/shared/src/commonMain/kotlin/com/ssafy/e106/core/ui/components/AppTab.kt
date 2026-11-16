@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -17,15 +18,15 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.semantics.Role
 import com.ssafy.e106.core.ui.theme.AppColors
-import com.ssafy.e106.core.ui.theme.AppShapes
 import com.ssafy.e106.core.ui.theme.AppSpacing
 import com.ssafy.e106.core.ui.theme.focusRing
 
-/** 글자 탭 하나. 선택됨은 진한 글자와 2dp 밑줄로 표시한다. Figma 01 Tingle/Tab. */
+private val TabShape = RoundedCornerShape(50)
+
+/** 글자 탭 하나. 선택됨은 진한 글자와 옅은 캡슐 바탕으로 표시한다. */
 @Composable
 fun AppTab(
     label: String,
@@ -40,20 +41,14 @@ fun AppTab(
         selected -> AppColors.TextPrimary
         else -> AppColors.TextSecondary
     }
-    val underline = if (enabled) AppColors.TextPrimary else AppColors.BorderSubtle
+    val highlight = if (enabled) AppColors.ActionPrimary.copy(alpha = 0.14f) else AppColors.BorderSubtle
     Box(
         modifier = modifier.heightIn(min = AppSpacing.ControlMinHeight)
-            .clip(AppShapes.Small)
-            .focusRing(interaction)
+            .clip(TabShape)
+            .focusRing(interaction, TabShape)
             .selectable(selected = selected, enabled = enabled, role = Role.Tab,
                 interactionSource = interaction, indication = LocalIndication.current, onClick = onClick)
-            .drawBehind {
-                if (selected) {
-                    val inset = AppSpacing.Small.toPx()
-                    val stroke = AppSpacing.FocusStroke.toPx()
-                    drawRect(underline, topLeft = Offset(inset, size.height - stroke), size = Size(size.width - inset * 2, stroke))
-                }
-            }
+            .drawBehind { if (selected) drawRoundRect(highlight, cornerRadius = CornerRadius(size.height / 2)) }
             .padding(AppSpacing.Small),
         contentAlignment = Alignment.Center,
     ) {

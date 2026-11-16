@@ -28,7 +28,7 @@ import com.ssafy.e106.core.ui.theme.AppSizes
 import com.ssafy.e106.core.ui.theme.AppSpacing
 
 /**
- * 화면 아래에서 올라온 확인 시트 모양(어두운 바탕 + 위가 둥근 흰 판). 차단 · 나가기 · 신고처럼 짧게 확인하는 화면에 쓴다.
+ * 화면 아래에서 올라온 확인 시트 모양(어두운 바탕 + 위가 둥근 연회색 판). 차단 · 나가기 · 신고처럼 짧게 확인하는 화면에 쓴다.
  * 열림 · 닫힘 상태는 호출 화면이 소유한다. 바탕을 누르면 [onDismiss](null 이면 닫지 않음 — 처리 중).
  * 바탕 탭은 보조 수단이다(화면 리더에는 보이지 않고, 시트가 화면을 다 채우면 누를 곳도 없다). 닫는 버튼은 호출 화면이 시트 안에 둔다.
  * 내용이 길거나 키보드가 올라오면 시트 안에서 스크롤한다.
@@ -43,8 +43,8 @@ fun ActionSheet(onDismiss: (() -> Unit)?, modifier: Modifier = Modifier, content
         Surface(Modifier.widthIn(max = 640.dp).fillMaxWidth()
             // 시트 안을 눌러도 바탕의 닫기가 실행되지 않게 탭을 여기서 끝낸다
             .pointerInput(Unit) { detectTapGestures {} },
-            shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp), color = AppColors.Background) {
-            // 키보드 높이는 스크롤 바깥에서 빼야 입력칸이 키보드 위로 따라 올라온다. 나머지 아래 · 좌우 안전영역은 안쪽 여백으로 줘서 흰 판이 화면 맨 아래까지 닿게 한다
+            shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp), color = AppColors.Sheet) {
+            // 키보드 높이는 스크롤 바깥에서 빼야 입력칸이 키보드 위로 따라 올라온다. 나머지 아래 · 좌우 안전영역은 안쪽 여백으로 줘서 판이 화면 맨 아래까지 닿게 한다
             Column(Modifier.imePadding().verticalScroll(rememberScrollState())
                 .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Bottom + WindowInsetsSides.Horizontal))
                 .padding(AppSpacing.Section), verticalArrangement = Arrangement.spacedBy(AppSpacing.Medium)) {

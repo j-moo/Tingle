@@ -1,6 +1,6 @@
 package com.ssafy.e106.features.profile.ui
 
-import androidx.compose.foundation.background
+import com.ssafy.e106.core.ui.theme.glass
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -20,6 +20,7 @@ import com.ssafy.e106.core.ui.theme.AppColors
 import com.ssafy.e106.core.ui.theme.AppShapes
 import com.ssafy.e106.core.ui.theme.AppSpacing
 import com.ssafy.e106.resources.*
+import org.jetbrains.compose.resources.StringResource
 import org.jetbrains.compose.resources.stringResource
 
 /**
@@ -28,7 +29,7 @@ import org.jetbrains.compose.resources.stringResource
  */
 @Composable
 internal fun ReligionConsentAsk(enabled: Boolean, onRequest: () -> Unit) {
-    Column(Modifier.fillMaxWidth().background(AppColors.SurfaceMuted, AppShapes.Card).padding(AppSpacing.Large),
+    Column(Modifier.fillMaxWidth().glass(AppShapes.Card, AppColors.SurfaceMuted).padding(AppSpacing.Large),
         verticalArrangement = Arrangement.spacedBy(AppSpacing.Small)) {
         Text(stringResource(Res.string.religion_ask_title), style = MaterialTheme.typography.labelLarge, color = AppColors.TextPrimary)
         Text(stringResource(Res.string.religion_ask_help), style = MaterialTheme.typography.bodyMedium, color = AppColors.TextSecondary)
@@ -36,22 +37,30 @@ internal fun ReligionConsentAsk(enabled: Boolean, onRequest: () -> Unit) {
     }
 }
 
+/** 종교 정보 동의 시트: 종교는 민감정보라 무엇에 동의하는지 세 줄로 적는다 */
+@Composable
+internal fun ReligionConsentSheet(busy: Boolean, onAgree: () -> Unit, onDismiss: () -> Unit, document: @Composable () -> Unit) =
+    ConsentSheet(Res.string.religion_sheet_title,
+        listOf(Res.string.religion_sheet_use, Res.string.religion_sheet_free, Res.string.religion_sheet_withdraw), busy, onAgree, onDismiss, document)
+
 /**
- * 종교 정보 동의 확인 시트. 종교는 민감정보라 무엇에 동의하는지 세 줄로 적고 전문 링크([document])를 둔다.
+ * 선택 정보 동의 확인 시트. 무엇에 동의하는지 [lines] 로 적고 전문 링크([document])를 둔다.
  * "동의하고 입력하기"를 눌러야 동의가 저장된다. 바깥 · 뒤로 가기 · "동의하지 않기"는 아무것도 저장하지 않는다.
  */
 @Composable
-internal fun ReligionConsentSheet(busy: Boolean, onAgree: () -> Unit, onDismiss: () -> Unit, document: @Composable () -> Unit) {
+internal fun ConsentSheet(title: StringResource, lines: List<StringResource>, busy: Boolean, onAgree: () -> Unit, onDismiss: () -> Unit,
+    document: @Composable () -> Unit) {
     Dialog(onDismissRequest = { if (!busy) onDismiss() }, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         ActionSheet(onDismiss = onDismiss.takeIf { !busy }) {
-            Text(stringResource(Res.string.religion_sheet_title), style = MaterialTheme.typography.titleLarge,
+            Text(stringResource(title), style = MaterialTheme.typography.titleLarge,
                 color = AppColors.TextPrimary, modifier = Modifier.semantics { heading() })
-            listOf(Res.string.religion_sheet_use, Res.string.religion_sheet_free, Res.string.religion_sheet_withdraw).forEach {
+            lines.forEach {
                 Text(stringResource(it), style = MaterialTheme.typography.bodyMedium, color = AppColors.TextSecondary)
             }
             document()
             AppButton(stringResource(Res.string.religion_sheet_agree), Modifier.fillMaxWidth(), loading = busy, onClick = onAgree)
-            AppButton(stringResource(Res.string.religion_sheet_decline), Modifier.fillMaxWidth(), variant = AppButtonVariant.Secondary, enabled = !busy, onClick = onDismiss)
+            AppButton(stringResource(Res.string.religion_sheet_decline), Modifier.fillMaxWidth(), variant = AppButtonVariant.Secondary,
+                enabled = !busy, onClick = onDismiss)
         }
     }
 }

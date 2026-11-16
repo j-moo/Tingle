@@ -3,6 +3,7 @@ package com.ssafy.e106.core.ui.theme
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.border
 import androidx.compose.foundation.interaction.InteractionSource
 import androidx.compose.foundation.interaction.collectIsFocusedAsState
@@ -12,15 +13,12 @@ import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
-import androidx.compose.ui.draw.dropShadow
-import androidx.compose.ui.graphics.shadow.Shadow
-import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 
 /**
  * 레이어 5단계. 숫자가 클수록 위에 뜬다.
- * - elevation: 그림자 높이
+ * - elevation: 레이어 높이. 지금은 읽는 곳이 없다(그림자를 그리지 않는다. 11-16 결정)
  * - scrimAlpha: 이 레이어가 뜰 때 뒤 배경을 어둡게 하는 정도 (0 = 안 함)
  * - blur: 이 레이어가 뜰 때 뒤 배경을 흐리는 반경 (0 = 안 함). Android 12 미만은 블러를 무시하고 스크림만 적용된다.
  */
@@ -41,17 +39,8 @@ fun Modifier.focusRing(interaction: InteractionSource, shape: Shape = AppShapes.
     return border(AppSpacing.FocusStroke, if (focused) AppColors.TextPrimary else Color.Transparent, shape)
 }
 
-/** 그림자 색. 흰 바닥 위 흰 카드도 떠 보이도록 시스템 기본보다 진하다. */
-private val ShadowColor = AppColors.TextPrimary.copy(alpha = 0.28f)
-
-/** 이 요소를 [layer] 높이로 띄운다. layer 가 바뀌면 그림자가 부드럽게 움직인다. */
-@androidx.compose.runtime.Composable
-fun Modifier.appLayer(layer: AppLayer, shape: androidx.compose.ui.graphics.Shape = AppShapes.Control): Modifier {
-    val elevation by animateDpAsState(layer.elevation, tween(AppMotion.MEDIUM_MS, easing = AppMotion.Standard), label = "layerElevation")
-    if (elevation <= 0.dp) return this
-    // 높이의 3배만큼 퍼지고 높이만큼 아래로 치우친다
-    return dropShadow(shape, Shadow(radius = elevation * 3, color = ShadowColor, offset = DpOffset(0.dp, elevation)))
-}
+/** 유리 가장자리: 밝은 흰 선. */
+val GlassBorder = BorderStroke(1.dp, Color.White.copy(alpha = 0.9f))
 
 /**
  * [layer] 가 뜬 동안 그 뒤에 깔리는 내용에 붙인다. layer 가 Sheet 이상이면 흐려지고 어두워지며,
@@ -63,6 +52,6 @@ fun Modifier.behindLayer(layer: AppLayer): Modifier {
     val radius by animateDpAsState(layer.blur, tween(AppMotion.MEDIUM_MS, easing = AppMotion.Standard), label = "layerBlur")
     return blur(radius).drawWithContent {
         drawContent()
-        if (alpha > 0f) drawRect(AppColors.TextPrimary.copy(alpha = alpha))
+        if (alpha > 0f) drawRect(Color.Black.copy(alpha = alpha))
     }
 }

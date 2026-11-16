@@ -33,7 +33,7 @@ data class ProposalListState(
     val refreshFailed: Boolean = false,
 )
 
-enum class ProposalListAction { Refresh, LoadMore, Home, Chats, Profile }
+enum class ProposalListAction { Refresh, LoadMore }
 
 /** 서버 기준 남은 시간 = 마감 시각 − 서버 시각(기기 시계와 무관). 못 읽으면 null, 이미 지났으면 0. */
 fun remainingUntil(expiresAt: String?, serverTime: String?): Duration? {

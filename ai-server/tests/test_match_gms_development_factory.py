@@ -1,58 +1,39 @@
-"""개발용 별도 entrypoint만 Match GMS를 명시적으로 주입한다."""
+"""Legacy entrypoints delegate; required keys also work through Settings/.env."""
 
-import httpx2 as httpx
 import pytest
 
+from app import development
 from app.config import Settings
-from app.match_explanation import development
-from app.match_explanation.gms import GmsClient
+from app.main import create_app
+from app.match_explanation import development as legacy_match
 
 
-@pytest.mark.parametrize("environment", ["local", "dev", "test", "prod"])
-def test_factory_is_off_by_default_even_when_a_key_exists(monkeypatch, environment):
-    monkeypatch.delenv("MATCH_INSIGHT_GMS_DEV_ENABLED", raising=False)
-    monkeypatch.setenv("GMS_API_KEY", "synthetic-only")
-    monkeypatch.setattr(development, "Settings", lambda: Settings(_env_file=None, app_env=environment))
-    def forbidden():
-        pytest.fail("개발 factory도 명시적 opt-in 전에는 키를 읽으면 안 됩니다")
-    monkeypatch.setattr(GmsClient, "from_environment", forbidden)
-    captured = []
-    monkeypatch.setattr("app.main.create_app", lambda configured, **kwargs: captured.append(kwargs) or object())
-    development.create_app()
-    assert captured == [{"_match_gms_client": None}]
+def test_legacy_match_factory_is_the_common_compatibility_factory():
+    assert legacy_match.create_app is development.create_app
 
 
-@pytest.mark.parametrize("environment", ["local", "dev", "test"])
-def test_explicit_development_factory_injects_only_match_client(monkeypatch, environment):
-    monkeypatch.setenv("MATCH_INSIGHT_GMS_DEV_ENABLED", "true")
-    monkeypatch.setattr(development, "Settings", lambda: Settings(_env_file=None, app_env=environment))
-    client = GmsClient("synthetic-only", transport=httpx.MockTransport(lambda _: pytest.fail("기동만으로 외부 전송하면 안 됩니다")))
-    monkeypatch.setattr(GmsClient, "from_environment", lambda: client)
-    captured = []
-    monkeypatch.setattr("app.main.create_app", lambda configured, **kwargs: captured.append(kwargs) or object())
-    development.create_app()
-    assert captured == [{"_match_gms_client": client}]
+def test_compatibility_factory_delegates_once_with_fresh_settings(monkeypatch):
+    configured = Settings(_env_file=None, app_env="prod", gms_api_key="synthetic-only")
+    monkeypatch.setattr(development, "Settings", lambda: configured)
+    calls = []
+    sentinel = object()
+    monkeypatch.setattr("app.main.create_app", lambda value: calls.append(value) or sentinel)
+    assert development.create_app() is sentinel
+    assert calls == [configured]
 
 
-@pytest.mark.parametrize("environment", ["prod", "production", "unknown"])
-def test_production_cannot_read_key_or_enable_gms(monkeypatch, environment):
-    monkeypatch.setenv("MATCH_INSIGHT_GMS_DEV_ENABLED", "true")
-    monkeypatch.setattr(development, "Settings", lambda: Settings(_env_file=None, app_env=environment))
-    monkeypatch.setattr(GmsClient, "from_environment", lambda: pytest.fail("운영 환경에서는 키를 읽으면 안 됩니다"))
-    with pytest.raises(RuntimeError, match="development environment"):
-        development.create_app()
+def test_key_is_redacted_and_loads_from_dotenv(tmp_path, monkeypatch):
+    monkeypatch.delenv("GMS_API_KEY", raising=False)
+    example = tmp_path / ".env"
+    example.write_text("GMS_API_KEY=synthetic-private-marker\n", encoding="utf-8")
+    configured = Settings(_env_file=example)
+    assert "synthetic-private-marker" not in repr(configured)
+    assert create_app(configured) is not None
 
 
-def test_missing_key_fails_explicit_opt_in_without_exposing_configuration(monkeypatch):
-    monkeypatch.setenv("MATCH_INSIGHT_GMS_DEV_ENABLED", "true")
-    monkeypatch.setattr(development, "Settings", lambda: Settings(_env_file=None, app_env="dev"))
-    monkeypatch.setattr(GmsClient, "from_environment", lambda: None)
-    with pytest.raises(RuntimeError, match="credentials are missing"):
-        development.create_app()
-
-
-@pytest.mark.parametrize("value", ["1", "yes", "TRUE", " "])
-def test_malformed_opt_in_is_rejected(monkeypatch, value):
-    monkeypatch.setenv("MATCH_INSIGHT_GMS_DEV_ENABLED", value)
-    with pytest.raises(RuntimeError, match="Invalid Match Insight"):
-        development.create_app()
+@pytest.mark.parametrize("environment", ["dev", "prod"])
+@pytest.mark.parametrize("value", ["", " "])
+def test_dependency_injection_cannot_bypass_required_startup_key(environment, value):
+    configured = Settings(_env_file=None, app_env=environment, gms_api_key=value)
+    with pytest.raises(RuntimeError, match="GMS_API_KEY"):
+        create_app(configured, _match_gms_client=object(), _icebreaker_gms_client=object())

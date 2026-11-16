@@ -5,7 +5,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.ui.Modifier
-import androidx.compose.foundation.background
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -141,16 +140,17 @@ fun OptionalProfileScreen(
  * 안내 문구는 줄이지 않는다(같은 요청을 두 번 보내지 않게 하는 설명 · 선택 정보 없이 이어 간다는 설명). 불러오는 중 표시는 두지 않는다
  */
 @Composable
-internal fun OptionalProfileStatus(state: OptionalProfileState, onReload: () -> Unit, onRetryConsent: () -> Unit) {
+internal fun OptionalProfileStatus(state: OptionalProfileState, onReload: () -> Unit, onRetryConsent: () -> Unit, editing: Boolean = false) {
     val unavailable = !state.loaded && !state.busy
     // 결과 미확인 문구는 한 번만 적는다
     val notice = state.notice?.takeIf { it != OptionalProfileNotice.Unknown || !state.recoveryRequired }
     val reload = unavailable || state.recoveryRequired || state.error != null || state.photoFailed
     if (!unavailable && !state.recoveryRequired && notice == null && state.error == null && !reload && !state.canRetryConsent) return
     // 안내 · 오류 · 버튼을 한 상자에 모은다(흩어져 있으면 무엇이 무엇의 버튼인지 알 수 없다)
-    Column(Modifier.fillMaxWidth().background(AppColors.SurfaceMuted, AppShapes.Card).padding(AppSpacing.Large),
+    Column(Modifier.fillMaxWidth().glass(AppShapes.Card, AppColors.SurfaceMuted).padding(AppSpacing.Large),
         verticalArrangement = Arrangement.spacedBy(AppSpacing.Small)) {
-        if (unavailable) StatusText(Res.string.optional_unavailable)
+        // 가입 중에는 선택 정보 없이 이어 갈 수 있다는 설명, 프로필 수정 중에는 다시 조회하라는 설명
+        if (unavailable) StatusText(if (editing) Res.string.optional_unavailable_editing else Res.string.optional_unavailable)
         if (state.recoveryRequired) StatusText(Res.string.optional_unknown)
         notice?.let { StatusText(when (it) {
             OptionalProfileNotice.VersionChanged -> Res.string.optional_version_changed

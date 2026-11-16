@@ -95,7 +95,7 @@ public final class VerifiedEncounterIntake {
 		}
 		jdbc.queryForList("select id from keyring where id in (?,?) order by id for update", Long.class,
 			claims.deviceId(), claims.peerDeviceId());
-		if (!members.canRespondToProposal(low) || !members.canRespondToProposal(high)
+		if (!members.canReceiveNewProposal(low) || !members.canReceiveNewProposal(high)
 			|| members.restrictedPair(low, high)) {
 			throw unresolved();
 		}

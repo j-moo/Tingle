@@ -24,6 +24,8 @@ import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertTrue
+import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.time.Instant
 
@@ -76,14 +78,46 @@ class PushMessageTest {
         assertEquals(PushTarget.Chat(42), m.target)
         assertEquals(7L, m.recipientUserId)
         assertEquals("b", m.bindingId)
+        // 서버가 제목 · 본문을 안 주면 앱 기본 문구
+        assertNull(m.title); assertNull(m.body)
     }
 
     @Test
-    fun endingNoticeHasUuidRoomSoOpensHome() {
-        val m = pushMessageOf(mapOf("type" to "ONE_HOUR_BEFORE_END", "chatRoomId" to "2f1c6a4e-0000-0000-0000-000000000000"))
+    fun matchedOpensNewChatRoom() {
+        val m = pushMessageOf(mapOf("type" to "CHAT_ROOM_CREATED", "chatRoomId" to "42", "bindingId" to "b"))
+        assertEquals(PushKind.CHAT_ROOM_CREATED, m.kind)
+        assertEquals(PushTarget.Chat(42), m.target)
+        assertEquals(PushTarget.Home, pushMessageOf(mapOf("type" to "CHAT_ROOM_CREATED", "chatRoomId" to "x")).target)
+    }
+
+    @Test
+    fun serverTitleAndBodyAreTrimmedAndCapped() {
+        val m = pushMessageOf(mapOf("type" to "CHAT_MESSAGE", "chatRoomId" to "42", "title" to " 초록 ", "body" to "가".repeat(400)))
+        assertEquals("초록", m.title)
+        assertEquals(300, m.body?.length)
+        assertNull(pushMessageOf(mapOf("type" to "CHAT_MESSAGE", "title" to "  ", "body" to "")).title)
+        // 자르는 자리에 이모지가 걸리면 반쪽을 남기지 않는다
+        assertEquals("가".repeat(79), ("가".repeat(79) + "😀").clip(80))
+        assertEquals("가".repeat(78) + "😀", ("가".repeat(78) + "😀😀").clip(80))
+    }
+
+    @Test
+    fun onlyMessagesOfTheRoomOnScreenAreHidden() {
+        val message = pushMessageOf(mapOf("type" to "CHAT_MESSAGE", "chatRoomId" to "42"))
+        assertTrue(message.seenIn(42))
+        assertFalse(message.seenIn(43)); assertFalse(message.seenIn(null))   // 다른 방 · 방을 안 보는 중
+        // 같은 방이어도 종료 안내 · 매칭 성사는 알린다
+        assertFalse(pushMessageOf(mapOf("type" to "ONE_HOUR_BEFORE_END", "chatRoomId" to "42")).seenIn(42))
+        assertFalse(pushMessageOf(mapOf("type" to "CHAT_ROOM_CREATED", "chatRoomId" to "42")).seenIn(42))
+    }
+
+    @Test
+    fun endingNoticeOpensItsChatRoom() {
+        val m = pushMessageOf(mapOf("type" to "ONE_HOUR_BEFORE_END", "chatRoomId" to "42"))
         assertEquals(PushKind.ONE_HOUR_BEFORE_END, m.kind)
-        assertEquals(PushTarget.Home, m.target)
+        assertEquals(PushTarget.Chat(42), m.target)
         assertNull(m.recipientUserId)
+        assertEquals(PushTarget.Home, pushMessageOf(mapOf("type" to "ONE_HOUR_BEFORE_END", "chatRoomId" to "x")).target)
     }
 
     @Test
@@ -373,5 +407,13 @@ class PushRegistrarTest {
         h.session.state.value = ready(7)
         runCurrent()
         assertEquals(0, h.bodies.size)
+    }
+
+    @Test
+    fun messageNotificationCountsEveryMessageButKeepsRecentLines() {
+        assertEquals(1 to listOf("a"), mergedLines(0, emptyList(), "a", 6))
+        val (count, lines) = mergedLines(6, listOf("1", "2", "3", "4", "5", "6"), "7", 6)
+        assertEquals(7, count)
+        assertEquals(listOf("2", "3", "4", "5", "6", "7"), lines)
     }
 }

@@ -73,7 +73,7 @@ def async_host(main_factory, monkeypatch):
     created = []
 
     def make(*, primary=None, review=None, rule_kind="NORMAL", rule_error=False,
-             limits=None, environment="test", enabled=True):
+             limits=None, environment="test", enabled=True, configured=True):
         primary = primary or SyntheticModel()
         review = review or SyntheticModel()
 
@@ -96,7 +96,7 @@ def async_host(main_factory, monkeypatch):
         # catalog/supports, hashes, tokenizer, app or route replacement.
         monkeypatch.setattr(local_engine, "LocalRuleRiskEngine", construct)
         before = len(created)
-        host = main_factory(environment=environment, enabled=enabled)
+        host = main_factory(environment=environment, enabled=enabled, configured=configured)
         return host, created[-1] if len(created) > before else None, primary, review
 
     try:
@@ -287,8 +287,8 @@ def test_actual_manifest_gate_precedes_async_engine(async_host):
 
 
 @pytest.mark.parametrize("environment,enabled", [("local", None), ("test", None), ("dev", None), ("prod", True)])
-def test_no_runtime_setting_registers_synthetic_luna(async_host, environment, enabled):
-    host, engine, primary, review = async_host(environment=environment, enabled=enabled)
+def test_missing_release_never_registers_synthetic_luna(async_host, environment, enabled):
+    host, engine, primary, review = async_host(environment=environment, enabled=enabled, configured=False)
     expect(host.post(), 422, "POLICY_UNRESOLVED")
     assert engine is None and primary.calls == review.calls == 0
 
@@ -531,18 +531,20 @@ def test_slow_shadow_cannot_starve_the_final_release_check(async_host, monkeypat
 def test_shadow_skips_a_stage_without_enough_budget(async_host, monkeypatch, skip_stage):
     now = 0.0
     start = Deadline.start
-    host, engine, primary, review = async_host(rule_kind="RISK")
+    # Keep the same remaining <= cleanup boundary, with enough real wall time
+    # for source-hash I/O on Windows. A 20ms remainder made this clock probe flaky.
+    host, engine, primary, review = async_host(rule_kind="RISK", limits=ExecutionLimits(cleanup_seconds=0.5))
     rule = engine.rules.analyze
     rule_calls = 0
 
     def finish_primary(*_):
         nonlocal now
-        now = 7.98 if skip_stage == "rule" else 7.50
+        now = 7.75 if skip_stage == "rule" else 7.0
 
     def slow_rule(*args):
         nonlocal now, rule_calls
         rule_calls += 1
-        now = 7.98
+        now = 7.75
         return rule(*args)
 
     primary.change = finish_primary

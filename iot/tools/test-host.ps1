@@ -16,7 +16,8 @@ $fixture = Join-Path $projectRoot 'tests/sync-v1.hex'
 & $Zig cc -target x86_64-windows-gnu -std=c11 -O0 -UNDEBUG -Wall -Wextra -Werror `
     -I (Join-Path $projectRoot 'include') `
     (Join-Path $projectRoot 'src/codec.c') (Join-Path $projectRoot 'src/engine.c') `
-    (Join-Path $projectRoot 'src/phone.c') (Join-Path $projectRoot 'tests/test_engine.c') -o $testExe
+    (Join-Path $projectRoot 'src/phone.c') (Join-Path $projectRoot 'src/record_restore.c') `
+    (Join-Path $projectRoot 'tests/test_engine.c') -o $testExe
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 & $testExe $fixture
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

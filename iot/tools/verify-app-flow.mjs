@@ -12,7 +12,12 @@ if (values.statusResponse) {
   // IoT 자체 복사본과 비교한다. 앱 복사본과의 일치는 같은 SHA-256 고정으로 보장한다 (app BleOwnerFlowFixtureTest).
   const fixture = readFileSync(new URL('../tests/data/status-0.7.json', import.meta.url));
   assert.equal(createHash('sha256').update(fixture).digest('hex'), 'e8809676ee5f40cd75c0769143ccbef19659c20d5e87b436a18f0f4811894bcd');
-  assert.deepEqual(fixture, values.statusResponse);
+  const status = JSON.parse(values.statusResponse);
+  const {quarantinedRecordCount, recordsRecoveryRequired, recordRecoveryBlocksMatching, ...legacy} = status;
+  assert.deepEqual(legacy, JSON.parse(fixture));
+  assert.equal(quarantinedRecordCount, 0);
+  assert.equal(recordsRecoveryRequired, false);
+  assert.equal(recordRecoveryBlocksMatching, false);
   assert(values.statusResponse.length > 512 && values.statusResponse.length <= 2304);
 }
 const hash = bytes => createHash('sha256').update(bytes).digest();

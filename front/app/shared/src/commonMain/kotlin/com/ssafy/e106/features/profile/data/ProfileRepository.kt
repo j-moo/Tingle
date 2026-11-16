@@ -14,6 +14,8 @@ import kotlinx.serialization.json.JsonObject
     val religion: String? = null, val introduction: String? = null,
     val hasProfilePhoto: Boolean = false, val completed: Boolean = false,
 )
+// 연락 이메일(본인만). 화면에만 쓰고 저장 · 로그에 남기지 않는다
+@Serializable data class ContactEmailResponse(val email: String? = null)
 @Serializable data class NicknameAvailability(val nickname: String, val available: Boolean, val reason: String? = null)
 
 interface ProfileRepository {
@@ -21,6 +23,7 @@ interface ProfileRepository {
     suspend fun nickname(value: String): ApiResult<NicknameAvailability>
     suspend fun save(userId: Long, fields: JsonObject): ApiResult<ProfileResponse>
     suspend fun complete(userId: Long): ApiResult<Unit>
+    suspend fun contactEmail(userId: Long): ApiResult<ContactEmailResponse>
 }
 class HttpProfileRepository(private val client: HttpClient) : ProfileRepository {
     override suspend fun get(userId: Long) = client.call<ProfileResponse> { get("users/$userId/profile") }
@@ -31,4 +34,5 @@ class HttpProfileRepository(private val client: HttpClient) : ProfileRepository 
         patch("users/$userId/profile") { contentType(ContentType.Application.Json); setBody(fields) }
     }
     override suspend fun complete(userId: Long) = client.call<Unit> { post("users/$userId/profile/complete") }
+    override suspend fun contactEmail(userId: Long) = client.call<ContactEmailResponse> { get("users/$userId/contact-email") }
 }

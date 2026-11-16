@@ -43,6 +43,7 @@ import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpMethod
+import io.ktor.http.HttpStatusCode
 import io.ktor.http.headersOf
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -73,6 +74,9 @@ class HomeNavigationTestActivity : ComponentActivity() {
             "canRead":true,"canSend":true,"hasNewMessage":false,"partnerNickname":"하늘"}],
             "nextCursor":null,"serverTime":"2026-11-11T09:00:00Z"}"""
         client = createHttpClient("https://test/dev/api/", false, engine = MockEngine { request ->
+            // 대화방 안은 바가 사라지는지만 본다. 방 조회는 없는 방으로 답한다
+            if (request.url.encodedPath.startsWith("/dev/api/chat-rooms/")) return@MockEngine respond("""{"code":"NOT_FOUND"}""",
+                HttpStatusCode.NotFound, headersOf(HttpHeaders.ContentType to listOf("application/json")))
             check(request.method == HttpMethod.Get)
             val body = when (request.url.encodedPath) {
                 "/dev/api/users/75/settings" -> """{"matchingEnabled":true,"requirePartnerPhoto":false,"settingsVersion":1}"""
@@ -93,6 +97,7 @@ class HomeNavigationTestActivity : ComponentActivity() {
                     single { client }
                     single<SessionStore> { sessions }
                     single<AppPrefs> { ChatMemoryPrefs() }
+                    single { com.ssafy.e106.core.push.NotificationInbox(get()) }
                     single<ChatEvents> { IdleChatEvents }
                     single { KeyringSettingsChanges() }
                     single<OwnedKeyringRepository> { HttpOwnedKeyringRepository(get()) }
@@ -156,7 +161,7 @@ class HomeNavigationDeviceTest {
             openAccount()
             compose.onNodeWithText("홈").performClick()
             awaitText("새 인연을 기다리는 중")
-            compose.onNodeWithText("키링 설정").assertExists()
+            compose.onNodeWithContentDescription("알림").assertExists()   // 오른쪽 위 종 모양(받은 알림 모음)
 
             openAccount()
             compose.onNodeWithText("제안").performClick()
@@ -166,6 +171,39 @@ class HomeNavigationDeviceTest {
             compose.onNodeWithText("채팅").performClick()
             awaitText("하늘")
             compose.onNodeWithText("상대 정보 확인 필요").assertDoesNotExist()
+        }
+    }
+
+    // 하단 바는 틀에 하나만 있고, 탭 루트가 아닌 화면(대화방 · 알림)에서는 사라진다
+    @Test fun bottomBarIsSharedAndHiddenInChatRoom() {
+        launch {
+            awaitText("새 인연을 기다리는 중")
+            compose.onAllNodesWithText("마이").assertCountEquals(1)
+            compose.onNodeWithText("채팅").performClick()
+            awaitText("하늘")
+            compose.onAllNodesWithText("마이").assertCountEquals(1)
+            compose.onNodeWithText("하늘").performClick()
+            awaitGone("마이")
+        }
+    }
+
+    @Test fun bottomBarIsHiddenInNotifications() {
+        launch {
+            awaitText("새 인연을 기다리는 중")
+            compose.onNodeWithContentDescription("알림").performClick()
+            awaitGone("마이")
+        }
+    }
+
+    private fun launch(block: () -> Unit) {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        ActivityScenario.launch<HomeNavigationTestActivity>(Intent(context, HomeNavigationTestActivity::class.java)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)).use { block() }
+    }
+
+    private fun awaitGone(text: String) {
+        compose.waitUntil(timeoutMillis = 5_000) {
+            compose.onAllNodesWithText(text).fetchSemanticsNodes().isEmpty()
         }
     }
 

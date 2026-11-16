@@ -5,9 +5,10 @@
     <string name="profile_manage_invalid">수정할 프로필을 확인하지 못했어요</string>
     <string name="profile_manage_saved">프로필을 저장했어요.</string>
     <string name="profile_manage_unknown">저장 결과를 확인하지 못했어요. 입력은 유지했으니 서버 상태를 다시 조회해 주세요. 자동으로 다시 저장하지 않아요.</string>
-    <string name="profile_manage_optional">사진·자기소개·종교 관리</string>
-    <string name="profile_manage_optional_help">사진·자기소개·종교를 바꾸려면 화면 위쪽의 ‘사진·자기소개·종교 관리’를 눌러 주세요. 수정 중인 닉네임·흡연·음주는 그대로 유지돼요.</string>
-    <string name="profile_manage_none">등록하지 않음</string>
     <string name="profile_manage_optional_save">선택 정보 저장</string>
     <string name="profile_manage_optional_back">저장 없이 돌아가기</string>
+    <string name="profile_view_age">만 %1$d세</string>
+    <string name="profile_hero_photo">프로필 사진</string>
+    <string name="profile_contact_email_title">연락 이메일</string>
+    <string name="profile_contact_email_purpose">서비스 관련 안내를 보낼 때 사용해요.</string>
 </resources>

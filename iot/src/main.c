@@ -875,9 +875,9 @@ static bool poll_usb_commands(bool allow_lab, bool radio_ready)
 			kr_runtime_owner_lock();
 			int result = kr_board_storage_check();
 			if (radio_ready) {
-				printk("STORAGE CHECK result=%d queues=%u/%u/%u storageError=%u\n", result,
+				printk("STORAGE CHECK result=%d queues=%u/%u/%u storageError=%u quarantinedRecords=%u\n", result,
 					kr_count(&engine, KR_MATCH), kr_count(&engine, KR_CONFIRMED),
-					kr_count(&engine, KR_REVIEW), engine.storage_error);
+					kr_count(&engine, KR_REVIEW), engine.storage_error, kr_quarantine_count(&engine));
 			} else {
 				printk("STORAGE CHECK result=%d queues=unavailable storageError=1\n", result);
 			}

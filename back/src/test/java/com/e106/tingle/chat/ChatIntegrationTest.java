@@ -303,6 +303,23 @@ class ChatIntegrationTest extends IntegrationTestSupport {
 	}
 
 	@Test
+	void listShowsLastMessagePreviewForReadableRooms() {
+		// 메시지가 없으면 순번 0 · 본문 없음, 보내면 마지막 메시지(내가 보낸 것 포함)와 시각
+		var empty = chats.list(firstId, null, 20).items().getFirst();
+		assertThat(empty.lastMessageSeq()).isZero();
+		assertThat(empty.lastMessage()).isNull();
+		assertThat(empty.lastMessageAt()).isNull();
+		send("첫 메시지");
+		MessageView last = send("x".repeat(150));
+		var item = chats.list(secondId, null, 20).items().getFirst();
+		assertThat(item.lastMessageSeq()).isEqualTo(2);
+		assertThat(item.lastMessage()).isEqualTo("x".repeat(100));
+		assertThat(item.lastMessageAt()).isEqualTo(last.createdAt().truncatedTo(java.time.temporal.ChronoUnit.MILLIS));
+		// 방 상세에는 싣지 않는다
+		assertThat(chats.room(room.getPublicId(), firstId).lastMessageSeq()).isNull();
+	}
+
+	@Test
 	void messagePaginationKeepsOrderAndDoesNotAcceptAnotherRoomCursor() {
 		MessageView firstMessage = send("1");
 		send("2");

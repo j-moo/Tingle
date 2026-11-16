@@ -1,5 +1,6 @@
 #include "storage.h"
 #include "flash_guard.h"
+#include "record_restore.h"
 #include <errno.h>
 #include <string.h>
 #include <zephyr/device.h>
@@ -9,6 +10,7 @@
 
 static struct nvs_fs fs;
 static bool mounted;
+static uint32_t quarantined;
 static uint8_t verification[sizeof(struct kr_record)];
 static int remove_value(uint16_t id);
 static int write_value(uint16_t id, const void *value, size_t len);
@@ -48,6 +50,7 @@ int kr_storage_record(void *ctx, unsigned slot, const struct kr_record *record)
 	if (slot >= KR_RECORDS || !mounted) {
 		return -EINVAL;
 	}
+	if (quarantined & (UINT32_C(1) << slot)) { return -EILSEQ; }
 	if (record->kind == KR_EMPTY) {
 		return remove_value((uint16_t)(100 + slot));
 	}
@@ -66,13 +69,14 @@ int kr_storage_suppression(void *ctx, unsigned slot, const struct kr_suppression
 	return write_value((uint16_t)(200 + slot), s, sizeof(*s));
 }
 
-static int restore(uint16_t id, void *value, size_t len)
+static int restore(void *ctx, uint16_t id, void *value, size_t len)
 {
+	ARG_UNUSED(ctx);
 	ssize_t result = nvs_read(&fs, id, value, len);
-	if (result == -ENOENT) {
-		return 0;
+	if (result != -ENOENT && result != (ssize_t)len) {
+		printk("RECORD STORE read id=%u expected=%u result=%d; original retained\n", id, (unsigned)len, (int)result);
 	}
-	return result == (ssize_t)len ? 0 : -EILSEQ;
+	return (int)result;
 }
 
 static int remove_value(uint16_t id)
@@ -99,6 +103,7 @@ int kr_storage_clear_owner(struct kr_engine *e)
 	for (unsigned i = 0; !result && i < KR_SUPPRESSIONS; ++i) { result = remove_value((uint16_t)(800 + i)); }
 	for (unsigned i = 0; !result && i < KR_SUPPRESSIONS; ++i) { result = remove_value((uint16_t)(900 + i)); }
 	if (!result) {
+		quarantined = 0;
 		uint64_t device = e->config.device;
 		uint32_t next = e->next_sequence; uint8_t cursor[16]; memcpy(cursor, e->cursor_epoch, 16);
 		struct kr_io io = e->io;
@@ -114,7 +119,10 @@ int kr_storage_blob(void *ctx, uint16_t key, void *data, size_t length, bool wri
 	if (!mounted || !(key == KR_PUBLIC_NAME_STORAGE_KEY || (key >= 300 && key < 332) ||
 		(key >= 500 && key < 516) || (key >= 800 && key < 864) ||
 		(key >= 900 && key < 964))) { return -EINVAL; }
-	if (write) { return length ? write_value(key, data, length) : remove_value(key); }
+	if (write) {
+		if (key >= 300 && key < 332 && (quarantined & (UINT32_C(1) << (key - 300)))) { return -EILSEQ; }
+		return length ? write_value(key, data, length) : remove_value(key);
+	}
 	ssize_t count = nvs_read(&fs, key, data, length);
 	return count == (ssize_t)length ? 0 : count < 0 ? (int)count : -EILSEQ;
 }
@@ -148,24 +156,19 @@ int kr_storage_open(struct kr_engine *e)
 		return result; /* Never automatically erase a failed/corrupt store. */
 	}
 	mounted = true;
-	uint64_t hardware_id = e->config.device;
-	result = restore(1, &e->config, sizeof(e->config));
-	for (unsigned i = 0; !result && i < KR_RECORDS; ++i) {
-		result = restore((uint16_t)(100 + i), &e->records[i], sizeof(e->records[i]));
-	}
-	for (unsigned i = 0; !result && i < KR_SUPPRESSIONS; ++i) {
-		result = restore((uint16_t)(200 + i), &e->suppressed[i], sizeof(e->suppressed[i]));
-	}
-	if (!result && (hardware_id != e->config.device || !kr_restored_valid(e))) {
-		result = -EILSEQ;
-	}
+	result = kr_records_restore(e, restore, NULL);
+	quarantined = e->quarantined_records;
+	if (quarantined) { printk("RECORD STORE quarantined mask=%08x count=%u; no overwrite/rollback\n", quarantined, kr_quarantine_count(e)); }
 	if (!result) {
 		uint8_t counter[8]; ssize_t got = nvs_read(&fs, 2, counter, sizeof(counter));
 		if (got != -ENOENT && (got != 8 || memcmp(counter, "KSQ1", 4) || !kr_get32(counter + 4))) { return -EILSEQ; }
+		if (quarantined && got == -ENOENT) { return -EILSEQ; }
+		if (got == 8 && kr_get32(counter + 4) < e->next_sequence) { return -EILSEQ; }
 		if (got == 8 && kr_get32(counter + 4) > e->next_sequence) { e->next_sequence = kr_get32(counter + 4); }
 		result = kr_storage_sequence(NULL, e->next_sequence);
 		got = nvs_read(&fs, 3, e->cursor_epoch, sizeof(e->cursor_epoch));
 		if (!result && got == -ENOENT) {
+			if (quarantined) { return -EILSEQ; }
 			result = sys_csrand_get(e->cursor_epoch, 16);
 			if (!result) { result = write_value(3, e->cursor_epoch, 16); }
 		} else if (got != 16) { result = -EILSEQ; }

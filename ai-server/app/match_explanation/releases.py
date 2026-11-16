@@ -73,7 +73,11 @@ class ReleaseRegistry:
             for configured in descriptor_paths:
                 path = Path(configured).resolve(strict=True)
                 raw = path.read_bytes()
-                descriptor = json.loads(raw, object_pairs_hook=_object)
+                try:
+                    descriptor = json.loads(raw, object_pairs_hook=_object)
+                except RecursionError:
+                    # Limit malformed-input handling to JSON decoding itself.
+                    raise ReleaseError("Invalid release descriptor") from None
                 if not isinstance(descriptor, dict) or set(descriptor) != {"manifest", "artifact"}:
                     raise ReleaseError("Invalid release descriptor")
                 manifest = _manifest(descriptor["manifest"])

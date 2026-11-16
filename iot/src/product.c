@@ -179,6 +179,7 @@ void kr_product_forget_owner(struct kr_product *p)
 	memset(p->duplicate_suppression, 0, sizeof(p->duplicate_suppression));
 	p->policy_loaded = p->clock_ready = false; p->session_deadline = p->challenge_deadline = 0;
 	p->applied_hash[0] = 0; p->applied_version = 0; p->permissions = 0;
+	p->quarantine_unresolved = p->engine->quarantined_records;
 }
 bool kr_product_apply(struct kr_product *p, struct kr_peer_runtime *peers, int64_t verified_time)
 {
@@ -190,6 +191,7 @@ bool kr_product_apply(struct kr_product *p, struct kr_peer_runtime *peers, int64
 	if (!kr_policy_decode(p->settings, s->payload_size, &p->policy) ||
 		verified_time <= 0 || !kr_peer_grant(p->policy.grant, p->server_key, (uint64_t)verified_time)) { return false; }
 	set_time(p, verified_time);
+	if (p->engine->quarantined_records) { load_accounts(p); }
 	p->policy_loaded = true; p->applied_version = s->version; strcpy(p->applied_hash, s->hash);
 	p->applied_generation = p->io.generation ? p->io.generation(p->io.ctx) : 0;
 	return true;
@@ -211,7 +213,7 @@ static bool matching_conditions_ready(const struct kr_product *p)
 }
 bool kr_product_ready(const struct kr_product *p)
 {
-	return matching_conditions_ready(p) && !missing_accounts(p) && p->engine->ready;
+	return matching_conditions_ready(p) && !p->quarantine_unresolved && !missing_accounts(p) && p->engine->ready;
 }
 static bool scope_equal(const struct kr_owner_scope *scope, const struct kr_peer_verified *remote)
 { return scope->epoch == remote->ownership_epoch && !memcmp(scope->tag, remote->scope, 16); }
@@ -264,6 +266,10 @@ static bool allow_peer(void *ctx, const struct kr_peer_verified *remote, uint64_
 	struct kr_product *p = ctx;
 	if (!remote->policy_ready || remote->valid_until <= now || !kr_product_ready(p) ||
 		!kr_policy_allows(&p->policy, remote->owner_ref, now)) { return false; }
+	for (unsigned i = 0; i < KR_RECORDS; ++i) {
+		if (kr_quarantined(p->engine, i) && (p->engine->records[i].peer == remote->device ||
+			!memcmp(p->accounts[i], remote->owner_ref, 16))) { return false; }
+	}
 	for (unsigned i = 0; i < KR_RECORDS + KR_SUPPRESSIONS; ++i) {
 		if (i < KR_RECORDS && (p->engine->records[i].kind == KR_MATCH || kr_retired_reason(p->engine->records[i].reason))) { continue; }
 		if (i >= KR_RECORDS && p->duplicate_suppression[i - KR_RECORDS]) { continue; }
@@ -336,8 +342,32 @@ static bool evidence_matches(const uint8_t *b, const struct kr_record *r)
 }
 static void load_accounts(struct kr_product *p)
 {
+	p->quarantine_unresolved = p->engine->quarantined_records;
 	for (unsigned i = 0; i < KR_RECORDS; ++i) {
 		const struct kr_record *r = &p->engine->records[i];
+		if (kr_quarantined(p->engine, i)) {
+			/* Independent evidence is ONLY a deny-list anchor, not a repaired meeting. */
+			struct kr_peer_verified own, remote;
+			char owner[37]; uint64_t epoch; uint8_t scope[16];
+			p->engine->records[i].peer = 0;
+			memset(p->accounts[i], 0, sizeof(p->accounts[i]));
+			if (p->io.blob(p->io.ctx, (uint16_t)(300 + i), evidence, sizeof(evidence), false) ||
+				memcmp(evidence, "KEV2", 4) || !evidence[794] ||
+				(evidence[80] != 3 && evidence[80] != 4) || (evidence[437] != 3 && evidence[437] != 4) ||
+				!kr_peer_certificate(evidence + 80, evidence + 405, p->server_key, kr_get64(evidence + 205), &own) ||
+				!kr_peer_certificate(evidence + 437, evidence + 762, p->server_key, kr_get64(evidence + 562), &remote) ||
+				memcmp(evidence + 245, p->core->identity.public_key, 32) ||
+				own.device != p->engine->config.device || kr_get64(evidence + 89) != (uint64_t)p->core->current.device_id ||
+				remote.device != kr_get64(evidence + 8) || !kr_get32(evidence + 4) ||
+				kr_get32(evidence + 4) >= p->engine->next_sequence) { continue; }
+			uuid_text(evidence + 109, owner);
+			kr_peer_scope(evidence + 80, &epoch, scope);
+			if (strcmp(owner, p->core->current.owner_generation) || epoch != (uint64_t)p->core->reset.ownership_epoch) { continue; }
+			p->engine->records[i].peer = remote.device;
+			remember_peer(p, i, evidence + 437);
+			p->quarantine_unresolved &= ~(UINT32_C(1) << i);
+			continue;
+		}
 		if (r->kind && !p->io.blob(p->io.ctx, (uint16_t)(300 + i), evidence, sizeof(evidence), false) &&
 			evidence_matches(evidence, r) && evidence[794] && (evidence[437] == 3 || evidence[437] == 4)) {
 			remember_peer(p, i, evidence + 437);
@@ -408,6 +438,7 @@ int kr_product_suppression(struct kr_product *p, unsigned slot, const struct kr_
 int kr_product_record(struct kr_product *p, unsigned slot, const struct kr_record *r)
 {
 	if (slot >= KR_RECORDS) { return -EINVAL; }
+	if (kr_quarantined(p->engine, slot)) { return -EILSEQ; }
 	uint16_t key = (uint16_t)(300 + slot);
 	if (r->kind == KR_EMPTY) {
 		int result = p->record(p->record_ctx, slot, r);
@@ -676,7 +707,8 @@ bool kr_product_dispatch(struct kr_product *p, const struct kr_json *j, const ch
 			"\"storedPayloadFormat\":\"%s\",\"storedPayloadBytes\":%u,\"profileStorageCharacteristic\":\"6e400004-b5a3-f393-e0a9-e50e24dcca9e\","
 			"\"profileRequiresEncryption\":true,\"peerExchangeProtocol\":\"tingle-peer-v3\",\"peerOwnerScopeVersion\":1,"
 			"\"accountLockProofVersion\":\"tingle-account-lock-v2\",\"maxPeerSessions\":16,\"recordCursorEpoch\":\"%s\","
-			"\"multiKeyringAccounts\":true,\"applied\":%s,\"timeReady\":%s,\"matchingReady\":%s,\"storageHealthy\":%s%s}\n",
+			"\"multiKeyringAccounts\":true,\"applied\":%s,\"timeReady\":%s,\"matchingReady\":%s,\"storageHealthy\":%s,"
+			"\"quarantinedRecordCount\":%u,\"recordsRecoveryRequired\":%s,\"recordRecoveryBlocksMatching\":%s%s}\n",
 			request, p->core->identity.serial, p->core->identity.key_id, encoded, KR_FIRMWARE_VERSION,
 			KR_PUBLIC_NAME_MAX,
 			KR_DEV_PAYLOAD_FORMAT, KR_PROFILE_STORAGE_FORMAT, KR_POLICY_FORMAT, KR_POLICY_LEGACY_FORMAT, p->core->reset.ownership_epoch,
@@ -684,7 +716,8 @@ bool kr_product_dispatch(struct kr_product *p, const struct kr_json *j, const ch
 			KR_PROOF_VERSION, KR_PROOF_VERSION_2, KR_RESET_VERSION, KR_FRAME_MAX, KR_PAYLOAD_MAX, KR_RESPONSE_MAX,
 			p->core->current.version, p->core->current.hash, p->core->current.format, p->core->current.payload_size, cursor,
 			kr_product_applied(p) ? "true" : "false", p->clock_ready ? "true" : "false", kr_product_ready(p) ? "true" : "false",
-			p->core->storage_error || p->core->settings_recovery_required || p->engine->storage_error ? "false" : "true",
+			p->core->storage_error || p->core->settings_recovery_required || p->engine->storage_error || p->engine->quarantined_records ? "false" : "true",
+			kr_quarantine_count(p->engine), p->engine->quarantined_records ? "true" : "false", p->quarantine_unresolved ? "true" : "false",
 			p->core->settings_recovery_required ? ",\"settingsRecoveryRequired\":true" : ""); return true;
 	}
 	if (!strcmp(type, "GET_STATUS")) {
@@ -713,7 +746,8 @@ bool kr_product_dispatch(struct kr_product *p, const struct kr_json *j, const ch
 			"\"batteryPercentSource\":\"%s\",\"batteryPresence\":\"%s\",\"powerSource\":\"%s\",\"charging\":%s,"
 			"\"batteryProtectionState\":\"%s\",\"chargeMonitorState\":\"%s\",\"configuredChargeCurrentMa\":%s,\"usbConnectedSeconds\":%s,\"storageTotalBytes\":%s,"
 			"\"storageUsedBytes\":%s,\"storageState\":\"%s\",\"pendingRecordCount\":%s,\"reviewRecordCount\":%s,\"candidateCount\":%s,"
-			"\"ownerAuthorized\":%s,\"unresolvedAccountLockCount\":%s,\"recordCursorEpoch\":\"%s\",\"applied\":%s,\"timeReady\":%s,\"matchingReady\":%s,\"storedSettingsVersion\":%" PRId64 "%s}\n",
+			"\"ownerAuthorized\":%s,\"unresolvedAccountLockCount\":%s,\"recordCursorEpoch\":\"%s\",\"applied\":%s,\"timeReady\":%s,\"matchingReady\":%s,\"storedSettingsVersion\":%" PRId64 ","
+			"\"quarantinedRecordCount\":%u,\"recordsRecoveryRequired\":%s,\"recordRecoveryBlocksMatching\":%s%s}\n",
 			request, battery, mv, reading.source, reading.presence, reading.power,
 			status.presence_valid && !status.battery_present ? "false" : status.charging < 0 ? "null" : status.charging ? "true" : "false",
 			status.battery_power_state ? status.battery_power_state : "MEASUREMENT_UNKNOWN",
@@ -721,6 +755,7 @@ bool kr_product_dispatch(struct kr_product *p, const struct kr_json *j, const ch
 			total, used, state, pending, review, candidates, authorized(p, KR_OWNER_READ) ? "true" : "false",
 			missing, cursor, kr_product_applied(p) ? "true" : "false",
 			p->clock_ready ? "true" : "false", kr_product_ready(p) ? "true" : "false", p->core->current.version,
+			kr_quarantine_count(p->engine), p->engine->quarantined_records ? "true" : "false", p->quarantine_unresolved ? "true" : "false",
 			p->core->settings_recovery_required ? ",\"settingsRecoveryRequired\":true" : ""); return true;
 	}
 	if (!strcmp(type, "GET_PUBLIC_NAME") || !strcmp(type, "SET_PUBLIC_NAME") || !strcmp(type, "CLEAR_PUBLIC_NAME")) {
@@ -757,7 +792,13 @@ bool kr_product_dispatch(struct kr_product *p, const struct kr_json *j, const ch
 						if ((r->kind == KR_CONFIRMED || r->kind == KR_REVIEW) && r->sequence > (uint32_t)sequence &&
 							(slot < 0 || r->sequence < p->engine->records[slot].sequence)) { slot = (int)i; }
 					}
-					if (slot < 0) { snprintf(response, KR_RESPONSE_MAX, "{\"protocolVersion\":1,\"type\":\"RECORD_END\",\"requestId\":%s,\"recordCursorEpoch\":\"%s\"}\n", request, cursor); return true; }
+					if (slot < 0) {
+						/* End of readable rows, not proof that every original was uploaded.
+						 * Keep the existing type so older apps still upload healthy rows. */
+						snprintf(response, KR_RESPONSE_MAX, "{\"protocolVersion\":1,\"type\":\"RECORD_END\",\"requestId\":%s,\"recordCursorEpoch\":\"%s\","
+							"\"quarantinedRecordCount\":%u,\"recordsRecoveryRequired\":%s}\n", request, cursor,
+							kr_quarantine_count(p->engine), p->engine->quarantined_records ? "true" : "false"); return true;
+					}
 				}
 			} else if (!kr_positive(kr_json_number(j, "sequence"), &sequence) || sequence > UINT32_MAX) { failure = "INVALID_CURSOR"; }
 			else { slot = find_sequence(p, (uint32_t)sequence); if (slot < 0) { failure = "RECORD_NOT_FOUND"; } }

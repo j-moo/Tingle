@@ -18,7 +18,7 @@ import org.jetbrains.compose.resources.stringResource
 @Composable
 internal fun SettingsPage(title: StringResource, busy: Boolean, onBack: () -> Unit, onRefresh: () -> Unit,
     content: @Composable ColumnScope.() -> Unit) {
-    Surface(Modifier.fillMaxSize(), color = AppColors.Background) {
+    Surface(Modifier.fillMaxSize(), color = AppColors.Screen) {
         Column(Modifier.fillMaxSize().safeDrawingPadding()) {
             AppTopBar(stringResource(title), onBack = onBack,
                 actionText = if (busy) null else stringResource(Res.string.settings_refresh), onAction = onRefresh)

@@ -1,5 +1,6 @@
 package com.ssafy.e106.features.survey.ui
 
+import com.ssafy.e106.core.auth.OnboardingStatus
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -57,13 +58,15 @@ internal fun SurveyStepScreen(
     onSubmit: () -> Unit, onRequestAnalysis: () -> Unit,
     onRefreshAnalysis: () -> Unit, onRefreshStage: () -> Unit,
     onRetest: () -> Unit, onVersion: () -> Unit, onPreviousSession: () -> Unit, onServerDraft: () -> Unit,
+    onEdit: () -> Unit = {},
 ) {
     val step = state.step()
     val kind = state.stepKind()
     val count = state.definition?.questionCount ?: state.session?.questionCount
     // 마이에서 결과를 다시 연 가입 완료 계정은 남은 가입 단계가 없으니 "다음 단계로" 대신 돌아가기.
     // 분석 성공과 서비스 이용 가능 여부는 별개이며, 인증 기반의 서버 판정(isReady)을 그대로 따른다.
-    val signupReady = state.owner?.isReady == true
+    // 성향테스트 단계를 이미 지난 가입 중 계정(답을 고치러 다시 들어옴)도 넘어갈 다음 단계가 없으니 돌아가기
+    val signupReady = state.owner?.let { it.isReady || it.status in setOf(OnboardingStatus.PREFERENCES_REQUIRED, OnboardingStatus.SYNC_PENDING) } == true
     val retry = Res.string.state_retry
     // 제목 · 설명 · 버튼(문구, 동작). 버튼이 null 이면 불러오는 중이라 뼈대만 둔다
     val (title, body, primary) = when (step) {
@@ -96,11 +99,18 @@ internal fun SurveyStepScreen(
             stageError?.let { InlineError(it.message) }
             // 보내지 못한 답이 남아 있으면 제출만 기다린다(뒤에서 계속 다시 보내는 중)
             val waiting = step == SurveyStep.Done && state.pending.isNotEmpty()
-            if (primary != null) AppButton(stringResource(if (stageError != null) retry else primary.first), Modifier.fillMaxWidth(), loading = state.busy, enabled = !waiting,
+            // 분석 중 화면은 가운데에 로딩 모션이 늘 돌아서 버튼에는 로딩 원을 두지 않는다(확인하는 동안은 눌리지만 않게)
+            val analyzing = step == SurveyStep.Pending
+            if (primary != null) AppButton(stringResource(if (stageError != null) retry else primary.first), Modifier.fillMaxWidth(),
+                loading = state.busy && !analyzing, enabled = !waiting && !(analyzing && state.busy),
                 loadingText = stringResource(primary.first), onClick = primary.second)
             // 제출한 뒤에는 "재검사하기" 하나만 흰 버튼으로 둔다. 나가기는 왼쪽 위 <
             // (작성 중 회차 이어하기는 재검사 안내 화면이 이어 주고, 질문지 버전 · 직전 회차 확인 버튼은 두지 않는다)
-            if (!state.busy && state.session != null && state.page == SurveyPage.Completed) Minor(Res.string.survey_change_retest, onRetest)
+            if (!state.busy && state.session != null && state.page == SurveyPage.Completed) {
+                // 답 고치기: 이전 답을 채워 둔 새 회차에서 고칠 문항만 다시 고른다. 재검사: 처음부터 다시 답한다
+                Minor(Res.string.survey_change_edit, onEdit)
+                Minor(Res.string.survey_change_retest, onRetest)
+            }
         }
     }) {
         if (step == SurveyStep.Loading) SkeletonGroup {
@@ -113,6 +123,8 @@ internal fun SurveyStepScreen(
                 step == SurveyStep.Done && count != null -> stringResource(title, count)
                 else -> stringResource(title)
             }
+            // 분석 중에는 제목 위에 로딩 모션을 계속 보여 준다
+            if (step == SurveyStep.Pending) CircularProgressIndicator(Modifier.size(40.dp), color = AppColors.TextPrimary, strokeWidth = 3.dp)
             // 실패 · 부족 · 완료는 상태 화면 모양(아이콘 + 제목), 그 밖의 단계는 큰 제목
             if (kind != null) StateView(kind, text)
             else Text(text, style = MaterialTheme.typography.headlineMedium, textAlign = TextAlign.Center, modifier = Modifier.semantics { heading(); liveRegion = LiveRegionMode.Polite })
@@ -133,7 +145,11 @@ internal fun SurveyStepScreen(
         }
         if (step == SurveyStep.Succeeded && state.analysisApplied == false) Notice(stringResource(Res.string.survey_api_application_pending))
         // 조회 성공 후 같은 화면에 남아 있어도 READY는 정상 완료다. BLE 매칭 준비 완료를 뜻하지는 않는다.
-        if (state.stageUnchanged) Notice(stringResource(if (signupReady) Res.string.survey_api_signup_ready else Res.string.survey_api_stage_unchanged))
+        // 가입을 마친 계정에만 "가입이 완료된 계정" 안내를 붙인다. 답을 고치러 온 가입 중 계정에는 단계 안내를 붙이지 않는다
+        if (state.stageUnchanged) {
+            if (state.owner?.isReady == true) Notice(stringResource(Res.string.survey_api_signup_ready))
+            else if (!signupReady) Notice(stringResource(Res.string.survey_api_stage_unchanged))
+        }
         if (state.exitRequested) Notice(stringResource(Res.string.survey_api_leaving))
         // 저장 여부를 모르는 채로 다음 답을 보내지 않는다는 안내는 줄이지 않는다
         if (state.recoveryRequired) Notice(stringResource(Res.string.survey_api_recovery))

@@ -9,9 +9,10 @@
   },
   "presentation": {
     "approval": "UNAPPROVED",
-    "policy": "label-only-gap-priority-2-1",
+    "policy": "mr357-wording-review-20261115-v2",
     "templateIds": "15 fixed reading IDs and PA-D-SELF-WISH-FIT remain candidates",
-    "gapText": "label/self/wish only; fit remains in core selection/order, omitted from display text",
+    "gapText": "Survey upper-bound wording for Q089; explicit irregular exclusion note for Q087; fit/order unchanged and fit not displayed",
+    "renderers": "Verified readings in SUCCEEDED and INSUFFICIENT; formatter evidence mismatch uses existing 500 INTERNAL_ERROR; other presentation unavailability remains 503; never inferred-text fallback",
     "priority": "First gap 2, second gap 1; proposal, not a production severity score"
   },
   "source": {
@@ -23,8 +24,8 @@
   },
   "files": {
     "succeeded.request.json": "fde0a769f2b8521c890cd23de3a1fad6d854f3cddbe5f1ded6adbc0bef165038",
-    "succeeded.response.proposal.json": "86d5dffd6321408a7ce5e88e5bc401dd9e9c91bf75fa2575bdf47233a86ff01d",
+    "succeeded.response.proposal.json": "a4bbe127ab33de5bb553ad8c0217bbc5467489d0150f34bcab3b3e1c8da095c6",
     "insufficient.request.json": "ed45b0c61b6014b855d40b8d7ea63d2c4960ec6153d255fe443056d5fb0df47c",
-    "insufficient.response.proposal.json": "c4c006c80c179e9d4427db37caa064d7ca89a52b5e74415d01b66b185155280d"
+    "insufficient.response.proposal.json": "665ebecf5215ac8470b2bdcc09c932f5a940c1c70f7465394c866fbacfa5f05b"
   }
 }
