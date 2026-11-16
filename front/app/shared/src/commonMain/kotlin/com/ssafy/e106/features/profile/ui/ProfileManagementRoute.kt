@@ -84,7 +84,7 @@ fun ProfileManagementRoute(session: Session.SignedIn, onExit: () -> Unit, model:
         onExit = { unknownExitPrompt = false; exit() })
     // 선택 정보 쪽 확인은 고치던 닉네임 · 흡연 · 음주를 지키는 기존 "나갈까요?"를 거쳐 보기 화면으로 간다
     // 기본 정보를 다시 불러오는 중(busy)이면 requestBack 이 무시되므로, 끝날 때까지 기다렸다 나간다
-    var optionalExitPending by remember { mutableStateOf(false) }
+    var optionalExitPending by rememberSaveable(session) { mutableStateOf(false) }
     LaunchedEffect(optionalExitPending, state.busy) {
         if (optionalExitPending && !state.busy) { optionalExitPending = false; model.requestBack(::overview) }
     }
