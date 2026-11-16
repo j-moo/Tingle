@@ -105,7 +105,7 @@ import kotlinx.coroutines.delay
     // 결과를 모르는 전송은 다시 보내지 않고 같은 메시지로 결과부터 확인한다(안내 문구는 그대로 둔다)
     val pending = conversation.pending?.takeIf { !conversation.sending }
     // 보낸 추천 질문을 거르는 본문 모음. 입력할 때마다 다시 만들지 않게 메시지가 바뀔 때만 계산한다
-    val usedTexts = remember(conversation.ui.messages) { conversation.ui.messages.mapTo(HashSet()) { it.text.trim() } }
+    val usedTexts = remember(conversation.ui.messages, conversation.ui.firstPageLoaded) { usedMessageTexts(conversation.ui) }
     ChatConversationScreen(conversation.ui, roomModel::draft, { action -> when(action) {
         ConversationAction.Back -> back()
         ConversationAction.Reload -> roomModel.reload()
@@ -118,7 +118,7 @@ import kotlinx.coroutines.delay
         onMessagesDisplayed = { displayed = it; roomModel.displayed(it) },
         conversationSupport = support?.let { block -> { block(room!!, conversation.ui.readable, conversation.ui.inputEnabled, conversation.ui.draft, roomModel::draft,
             { if (!conversation.sending) { roomModel.leave(); onSafety(room!!, "BLOCK") } }, conversation.ui.messages.lastOrNull()?.id,
-            usedTexts.takeIf { conversation.ui.firstPageLoaded }) } },
+            usedTexts) } },
         // 화면 위 빨간 글 · 버튼 대신 입력창 위 아래 띠로 알린다. 불러오기 실패는 화면이 상태 화면으로 보여 준다
         error = conversation.error, notices = {
             pending?.let { sent ->

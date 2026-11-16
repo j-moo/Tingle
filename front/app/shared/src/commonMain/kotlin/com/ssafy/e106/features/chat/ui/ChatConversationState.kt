@@ -65,4 +65,8 @@ data class ChatConversationState(
         historyLoad = HistoryLoad.Idle, submitting = false, nickname = null, partnerPhoto = null, firstPageLoaded = false)
 }
 
+/** 보낸 추천 질문을 거르는 본문 모음(앞뒤 공백 무시). 첫 페이지를 받기 전엔 모르므로 null */
+internal fun usedMessageTexts(state: ChatConversationState): Set<String>? =
+    if (state.firstPageLoaded) state.messages.mapTo(HashSet()) { it.text.trim() } else null
+
 enum class ConversationAction { Back, Reload, Send, OpenMenu, OpenPartner, OpenAiNotice, OpenConsent, LoadOlder }

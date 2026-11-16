@@ -21,9 +21,8 @@ class ChatQuestionCardsVisibilityTest {
     @AfterTest fun teardown() { store.clear(); Dispatchers.resetMain() }
     private fun test(block: suspend TestScope.() -> Unit) = runTest(dispatcher) { try { block() } finally { store.clear() } }
     private val questions = listOf("하나", "둘", "셋")
-    // 연결부(ConnectedChatRoute)와 같은 규칙: 첫 페이지 전엔 보낸 메시지 목록을 모른다(null)
-    private fun used(room: ChatRoomViewModel) = room.state.value.ui.let { ui ->
-        ui.messages.mapTo(HashSet()) { it.text.trim() }.takeIf { ui.firstPageLoaded } }
+    // 연결부(ConnectedChatRoute)와 같은 함수: 첫 페이지 전엔 보낸 메시지 목록을 모른다(null)
+    private fun used(room: ChatRoomViewModel) = usedMessageTexts(room.state.value.ui)
 
     @Test fun cardsNeedCheckedAndUsed() {
         val done = ChatExtrasState(questions = questions, checked = true)
