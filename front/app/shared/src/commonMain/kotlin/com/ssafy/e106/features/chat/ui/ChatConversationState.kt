@@ -54,8 +54,9 @@ data class ChatConversationState(
         else -> ConversationLoad.Failed
     }, canRead = false, canSend = false).withoutContent()
 
+    // 닉네임도 지운다. 다음 접근 성공 때 다시 받는다
     private fun withoutContent() = copy(messages = emptyList(), draft = "", nextCursor = null,
-        historyLoad = HistoryLoad.Idle, submitting = false)
+        historyLoad = HistoryLoad.Idle, submitting = false, nickname = null)
 }
 
 enum class ConversationAction { Back, Reload, Send, OpenMenu, OpenPartner, OpenAiNotice, OpenConsent, LoadOlder }

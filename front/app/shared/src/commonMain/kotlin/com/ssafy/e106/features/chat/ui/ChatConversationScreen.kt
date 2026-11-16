@@ -167,8 +167,9 @@ private fun ConversationTopBar(state: ChatConversationState, onAction: (Conversa
         Column(Modifier.weight(1f).heightIn(min = 48.dp).clip(AppShapes.Small).semantics(mergeDescendants = true) { heading() }
             .then(if (state.readable) Modifier.clickable(role = Role.Button, onClickLabel = partner) { onAction(ConversationAction.OpenPartner) } else Modifier)
             .padding(horizontal = AppSpacing.Small), verticalArrangement = Arrangement.Center) {
-            Text(if (state.readable) state.nickname?.takeIf { it.isNotBlank() } ?: stringResource(Res.string.chat_conversation_title)
-                else stringResource(Res.string.chat_conversation_title),
+            // 같은 방을 다시 불러오는 동안에도 닉네임을 둔다("대화"로 깜빡이지 않게)
+            Text(state.nickname?.takeIf { it.isNotBlank() && (state.load == ConversationLoad.Loading || state.readable) }
+                ?: stringResource(Res.string.chat_conversation_title),
                 style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
             if (state.readable) closesText(state.closesAtLabel)?.let {
                 Text(it, style = MaterialTheme.typography.bodySmall, color = AppColors.TextSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)

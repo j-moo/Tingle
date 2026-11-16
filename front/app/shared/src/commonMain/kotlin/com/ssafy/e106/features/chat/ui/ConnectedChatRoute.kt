@@ -39,9 +39,11 @@ import kotlinx.coroutines.delay
     val conversation by roomModel.state.collectAsStateWithLifecycle()
     val partner by partnerModel.state.collectAsStateWithLifecycle()
     var displayed by remember(room) { mutableStateOf(emptyList<Long>()) }
+    // 목록에서 누른 방의 상대 닉네임. 방에 들어가면 목록이 비워지므로 누를 때 받아 둔다
+    var entry by remember { mutableStateOf<Pair<Long, String?>?>(null) }
     fun load() { if (room == null) listModel.refresh() else when(page) {
         "partner" -> partnerModel.load(room!!)
-        else -> roomModel.open(room!!)
+        else -> roomModel.open(room!!, entry?.takeIf { it.first == room }?.second)
     } }
     fun back() { if (conversation.sending) return
         if (page != "conversation") { partnerModel.clear(); page = "conversation" }
@@ -66,7 +68,8 @@ import kotlinx.coroutines.delay
         if (list.owner != session) return
         // 오류는 화면 위 빨간 글 대신 목록의 상태 화면 · 아래 띠가 알린다.
         // 목록 조회부터 동의가 필요할 수 있으므로 방에 들어가지 않아도 동의 관리로 이동할 수 있다.
-        ChatListScreen(list.ui, { room = it; page = "conversation" }, { action -> when(action) {
+        ChatListScreen(list.ui, { id -> entry = id to list.ui.rooms.firstOrNull { it.chatRoomId == id }?.nickname
+            room = id; page = "conversation" }, { action -> when(action) {
             ChatListAction.Refresh -> listModel.refresh()
             ChatListAction.LoadMore -> listModel.more()
             ChatListAction.Home -> onHome()

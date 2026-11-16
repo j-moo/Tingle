@@ -36,6 +36,7 @@ class ChatRoomViewModel(private val api: ChatRepository, private val sessions: S
     private var realtimeJob: Job? = null
     private var recoveryRequested = false
     private var ackJob: Job? = null
+    private var partnerJob: Job? = null
     private val storage = local.mutex
     private val prefs = local.prefs
     private var records = emptyList<ChatMessageRecord>()
@@ -58,17 +59,18 @@ class ChatRoomViewModel(private val api: ChatRepository, private val sessions: S
         owner == sessions.state.value && mutable.value.id == id
     // 화면 이탈은 수신/조회만 정리한다. 전송 작업은 회전 중에도 유지하며 계정 변경 시 별도로 취소한다.
     private fun stopRealtime() { realtimeJob?.cancel(); realtimeJob = null; recoveryRequested = false }
-    private fun cancelReads() { readGeneration++; visiblePending.clear(); readJob?.cancel(); expiryJob?.cancel(); pollJob?.cancel(); stopRealtime(); ackJob?.cancel(); readPending = false }
+    private fun cancelReads() { readGeneration++; visiblePending.clear(); readJob?.cancel(); expiryJob?.cancel(); pollJob?.cancel(); stopRealtime(); ackJob?.cancel(); partnerJob?.cancel(); readPending = false }
 
-    fun open(id: Long) {
+    /** [nickname]: 목록에서 들어오면 목록의 상대 닉네임을 첫 제목으로 쓴다(방 상세 응답엔 닉네임이 없다) */
+    fun open(id: Long, nickname: String? = null) {
         if (id <= 0) return
         if (mutable.value.id != id) {
             if (mutable.value.sending) return
             persistDraft(); epoch++; writeEpoch++; cancelReads(); lifetime.reset(); records = emptyList(); acknowledged.clear(); receivedThrough = 0; needsInitialPage = true
             // 다른 방 진입은 같은 화면의 중복 ON_RESUME와 다르므로 첫 조회/구독을 새로 시작한다.
             resumed = false
-            mutable.update { ConnectedChatRoom(owner = it.owner, id = id) }
-        }
+            mutable.update { ConnectedChatRoom(owner = it.owner, id = id, ui = ChatConversationState(nickname = nickname)) }
+        } else if (nickname != null && mutable.value.ui.nickname == null) mutable.update { it.copy(ui = it.ui.copy(nickname = nickname)) }
         resume()
     }
     fun resume() {
@@ -98,6 +100,7 @@ class ChatRoomViewModel(private val api: ChatRepository, private val sessions: S
         // 입력창을 열기 전에 초안을 복원한다. 늦게 온 메시지 목록은 새로 입력한 초안을 건드리지 않는다.
         mutable.update { it.copy(pending = pending, ui = it.ui.copy(draft = if (pending?.room == id) "" else draft)) }
         if (!access(owner, id, stamp)) return@read
+        loadPartner(owner, id, stamp)
         val result = api.messages(id)
         currentCoroutineContext().ensureActive()
         when (result) {
@@ -111,6 +114,20 @@ class ChatRoomViewModel(private val api: ChatRepository, private val sessions: S
                 startRealtime(owner, id, stamp)
             }
             is ApiResult.Fail -> fail(result.error, owner, id, stamp)
+        }
+    }
+
+    /**
+     * 방 상세 응답엔 닉네임이 없어 상대 프로필 API로 따로 받는다. access()는 5초마다 불리므로 첫 페이지 조회 때만,
+     * 닉네임을 모를 때만 부른다. 방 열람 흐름(read) 밖이라 실패해도 방을 닫지 않고 제목은 "대화"로 둔다.
+     */
+    private fun loadPartner(owner: Session.SignedIn, id: Long, stamp: Long) {
+        if (mutable.value.ui.nickname != null || partnerJob?.isActive == true) return
+        partnerJob = viewModelScope.launch {
+            val result = try { api.profile(id) } catch (e: CancellationException) { throw e } catch (_: Exception) { null }
+            // 그사이 방이 바뀌었거나 닫혔으면(stamp) 늦게 온 결과는 버린다
+            if (result is ApiResult.Ok && valid(stamp, owner, id))
+                mutable.update { it.copy(ui = it.ui.copy(nickname = result.value.nickname)) }
         }
     }
 
