@@ -13,4 +13,5 @@
     <string name="profile_view_age">만 %1$d세</string>
     <string name="profile_view_intro">자기소개</string>
     <string name="profile_view_religion">종교</string>
+    <string name="profile_hero_photo">프로필 사진</string>
 </resources>

@@ -1,9 +1,5 @@
 package com.ssafy.e106.features.profile.ui
 
-import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.foundation.background
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -12,9 +8,6 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.semantics.heading
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
@@ -81,7 +74,7 @@ fun ProfileManagementRoute(session: Session.SignedIn, onExit: () -> Unit, model:
 
 /**
  * 내 프로필: 불러오는 중은 뼈대, 처음 불러오기 실패는 상태 화면, 보던 중 새로고침 실패는 아래 띠.
- * 다시 불러오기는 당겨서 새로고침으로 하고, 아래 "프로필 수정"은 화면 바닥에 붙여 둔다.
+ * 위쪽은 사진이 상태 바까지 꽉 찬 [ProfileHero] 이고, 수정은 그 오른쪽 위 ✏️로 간다. 다시 불러오기는 당겨서 새로고침으로 한다.
  */
 @Composable
 private fun ProfileOverviewScreen(state: ProfileManagementState, devNotice: Boolean, onEdit: () -> Unit, onReload: () -> Unit, onBack: () -> Unit) {
@@ -89,7 +82,7 @@ private fun ProfileOverviewScreen(state: ProfileManagementState, devNotice: Bool
     val profile = state.profile
     if (profile == null) {
         if (state.loadFailed) ProfileLoadFailed(state, title, onBack, onReload)
-        else ProfileSkeletonFrame(title, stringResource(Res.string.profile_edit_title)) {
+        else ProfileSkeletonFrame(title, null) {
             SkeletonGroup {
                 // 실제 화면 순서(큰 사진 · 닉네임 · 나이 성별 · 자기소개 · 종교)대로
                 SkeletonBone(Modifier.align(Alignment.CenterHorizontally).widthIn(max = 360.dp).fillMaxWidth().aspectRatio(1f), shape = AppShapes.Card)
@@ -102,40 +95,27 @@ private fun ProfileOverviewScreen(state: ProfileManagementState, devNotice: Bool
         return
     }
     val (refreshing, refresh) = pullRefresh(state.busy, onReload)
+    val (photo, image) = rememberHeroPhoto(state.photo, profile.hasProfilePhoto, state.photoFailed)
     Surface(Modifier.fillMaxSize(), color = AppColors.Screen) {
-        Column(Modifier.fillMaxSize().safeDrawingPadding()) {
-            AppTopBar(title, onBack = onBack.takeIf { !state.busy })
-            PullDownRefreshBox(refreshing, refresh, Modifier.weight(1f).fillMaxWidth()) {
-                Column(Modifier.widthIn(max = 640.dp).fillMaxSize().verticalScroll(rememberScrollState()).padding(screenPaddingValues()),
-                    verticalArrangement = Arrangement.spacedBy(AppSpacing.Large)) {
-                    if (devNotice) Text(stringResource(Res.string.profile_manage_dev_notice), style = MaterialTheme.typography.bodySmall, color = AppColors.TextSecondary)
-                    ProfileManagementNotice(state, onReload)
-                    // 사진은 마이가 아니라 여기서 크게 보여 준다. 없으면 기본 사람 모양, 받는 중이면 회색 칸
-                    Box(Modifier.align(Alignment.CenterHorizontally).widthIn(max = 360.dp).fillMaxWidth().aspectRatio(1f)
-                        .clip(AppShapes.Card).background(AppColors.SurfaceMuted), contentAlignment = Alignment.Center) {
-                        when {
-                            state.photo != null -> ProfilePhotoBytes(state.photo)
-                            !profile.hasProfilePhoto || state.photoFailed -> Canvas(Modifier.fillMaxSize()) {
-                                val w = size.width
-                                drawCircle(PhotoSilhouette, radius = w * 0.17f, center = Offset(w / 2, w * 0.38f))
-                                drawOval(PhotoSilhouette, topLeft = Offset(w * 0.16f, w * 0.62f), size = Size(w * 0.68f, w * 0.8f))
-                            }
-                        }
+        // 사진은 상태 바 밑까지 깔고, 나머지는 가로 · 아래 안전 영역만 피한다
+        Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom))) {
+            PullDownRefreshBox(refreshing, refresh, Modifier.weight(1f).fillMaxWidth(), indicatorInsets = WindowInsets.statusBars) {
+                Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
+                    ProfileHero(profile.heroInfo(), photo, image, onBack.takeIf { !state.busy }, title,
+                        onRetryPhoto = onReload.takeIf { !state.busy },
+                        // 수정할 수 없는 상태(결과 미확인 등)면 숨기고, 불러오는 동안은 깜빡이지 않게 끄기만 한다
+                        action = { if (state.editor != null && !state.recoveryRequired) HeroRoundButton(Res.drawable.ic_pencil,
+                            stringResource(Res.string.profile_edit_title), onEdit, enabled = state.canEdit) })
+                    Column(Modifier.align(Alignment.CenterHorizontally).widthIn(max = 640.dp).fillMaxWidth().padding(screenPaddingValues()),
+                        verticalArrangement = Arrangement.spacedBy(AppSpacing.Large)) {
+                        if (devNotice) Text(stringResource(Res.string.profile_manage_dev_notice), style = MaterialTheme.typography.bodySmall, color = AppColors.TextSecondary)
+                        ProfileManagementNotice(state, onReload)
+                        OptionalProfileSummary(state)
                     }
-                    Text(profile.nickname.orEmpty(), style = MaterialTheme.typography.headlineMedium, modifier = Modifier.semantics { heading() })
-                    // 상대에게 보이는 것처럼 나이(만) · 성별을 닉네임 아래에. 모르는 값은 빼고 보여 준다
-                    val age = profile.birthDate?.let { internationalAge(it, todayKst()) }?.let { stringResource(Res.string.profile_view_age, it) }
-                    val gender = when (profile.gender) { "MALE" -> stringResource(Res.string.profile_male); "FEMALE" -> stringResource(Res.string.profile_female); else -> null }
-                    listOfNotNull(age, gender).takeIf { it.isNotEmpty() }?.let {
-                        Text(it.joinToString(" · "), style = MaterialTheme.typography.bodyLarge, color = AppColors.TextSecondary)
-                    }
-                    OptionalProfileSummary(state)
                 }
             }
             // 보던 내용은 그대로 두고 새로고침 실패만 아래 띠로 알린다(결과 미확인은 위 안내가 따로 맡는다)
             if (state.error != null && !state.unknown) NoticeBar(state.error.stateTitle(), actionEnabled = !state.busy, onAction = onReload)
-            AppButton(stringResource(Res.string.profile_edit_title), Modifier.align(Alignment.CenterHorizontally).widthIn(max = 640.dp).fillMaxWidth()
-                .padding(horizontal = screenGutter(), vertical = AppSpacing.Large), enabled = state.canEdit, onClick = onEdit)
         }
     }
 }
@@ -226,9 +206,6 @@ private val ProfileManagementState.unknown get() = recoveryRequired || problem =
         TextAction(stringResource(Res.string.profile_state_recheck), onReload, enabled = !state.busy)
     }
 }
-
-/** 사진이 없을 때 기본 사람 모양 색(회색 바탕 위에서 보이는 정도). */
-private val PhotoSilhouette = androidx.compose.ui.graphics.Color(0xFFD4D4D4)
 
 /** 오늘 날짜(한국 시간) 연 · 월 · 일. */
 internal fun todayKst(nowMillis: Long = kotlin.time.Clock.System.now().toEpochMilliseconds()): Triple<Int, Int, Int> {

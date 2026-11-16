@@ -179,7 +179,7 @@ class ProfileLifecycleDeviceTest {
             compose.waitUntil(5_000) {
                 var ready = false; scenario.onActivity { ready = it.editModel.state.value.canEdit }; ready
             }
-            compose.onNodeWithText("프로필 수정").performClick()
+            compose.onNodeWithContentDescription("프로필 수정").performClick()
             lateinit var original: ProfileEditViewModel
             scenario.onActivity {
                 original = it.editModel
@@ -201,7 +201,7 @@ class ProfileLifecycleDeviceTest {
             compose.waitUntil(5_000) {
                 var ready = false; scenario.onActivity { ready = it.editModel.state.value.canEdit }; ready
             }
-            compose.onNodeWithText("프로필 수정").performClick()
+            compose.onNodeWithContentDescription("프로필 수정").performClick()
             compose.onNode(hasSetTextAction()).performScrollTo().performTextReplacement("Layout Draft")
             scenario.recreate()
             compose.waitUntil(5_000) {
