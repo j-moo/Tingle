@@ -9,6 +9,8 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
@@ -123,6 +125,7 @@ private fun ProfileOverviewScreen(state: ProfileManagementState, devNotice: Bool
                         ProfileManagementNotice(state, onReload)
                         ProfileLifestyleChips(profile.lifestyle())
                         ProfileIntroCard(profile.introduction)
+                        state.contactEmail?.let { ProfileContactEmailCard(it) }
                     }
                 }
             }
@@ -167,6 +170,18 @@ fun ProfileConnectedEditScreen(
         heroPhoto = photo, heroImage = image, onRetryPhoto = onReload, religionChip = religionChip, belowChips = belowChips, introduction = introduction,
         header = { ProfileManagementNotice(state, onReload) },
         refreshing = refreshing, onRefresh = refresh)
+}
+
+/** 연락 이메일(읽기 전용). 수집한 이메일이 어디에 쓰이는지 보여 준다. 읽기 도구에는 한 덩어리로 읽힌다 */
+@Composable private fun ProfileContactEmailCard(email: String) {
+    val title = stringResource(Res.string.profile_contact_email_title)
+    val purpose = stringResource(Res.string.profile_contact_email_purpose)
+    Column(Modifier.fillMaxWidth().glass(AppShapes.Card, AppColors.SurfaceMuted).clearAndSetSemantics { contentDescription = "$title, $email, $purpose" }
+        .padding(AppSpacing.Large), verticalArrangement = Arrangement.spacedBy(AppSpacing.Small)) {
+        Text(title, style = MaterialTheme.typography.labelLarge, color = AppColors.TextSecondary)
+        Text(email, style = MaterialTheme.typography.bodyLarge, color = AppColors.TextPrimary)
+        Text(purpose, style = MaterialTheme.typography.bodySmall, color = AppColors.TextSecondary)
+    }
 }
 
 /** 프로필이 없는데 불러오기도 끝났다 = 못 불러왔다(오류) 또는 수정할 프로필이 아니다(입력 미완료) */

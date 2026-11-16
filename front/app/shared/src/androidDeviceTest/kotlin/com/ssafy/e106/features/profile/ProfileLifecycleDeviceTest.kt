@@ -106,6 +106,7 @@ class LifecycleProfileServer : ProfileRepository, OptionalProfileRepository {
         if (offline) ApiResult.Fail(AppError.Offline) else ApiResult.Ok(data)
     override suspend fun nickname(value: String) = ApiResult.Ok(NicknameAvailability(value, true))
     override suspend fun complete(userId: Long) = ApiResult.Ok(Unit)
+    override suspend fun contactEmail(userId: Long) = ApiResult.Ok(ContactEmailResponse(null))
     override suspend fun save(userId: Long, fields: JsonObject): ApiResult<ProfileResponse> {
         writes++; saveGate?.await()
         if (offline) return ApiResult.Fail(AppError.Offline)

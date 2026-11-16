@@ -53,6 +53,7 @@ class HomeSessionKeepTest {
                 override suspend fun nickname(value: String) = error("unused")
                 override suspend fun save(userId: Long, fields: kotlinx.serialization.json.JsonObject) = error("unused")
                 override suspend fun complete(userId: Long) = error("unused")
+                override suspend fun contactEmail(userId: Long) = error("unused")
             }
             val auth = object : AuthRepository {
                 override fun available(provider: Provider) = error("unused")

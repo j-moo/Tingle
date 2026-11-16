@@ -55,6 +55,7 @@ internal class OptionalServer : OptionalProfileRepository, ProfileRepository {
     }
     override suspend fun nickname(value: String) = ApiResult.Ok(NicknameAvailability(value, true))
     override suspend fun complete(userId: Long) = ApiResult.Ok(Unit)
+    override suspend fun contactEmail(userId: Long) = ApiResult.Ok(ContactEmailResponse(null))
     override suspend fun photo(userId: Long) = ApiResult.Ok(byteArrayOf(1, 2, 3))
     override suspend fun upload(userId: Long, jpeg: ByteArray): ApiResult<ProfileResponse> {
         uploaded++; data = data.copy(hasProfilePhoto = true); return ApiResult.Ok(data)

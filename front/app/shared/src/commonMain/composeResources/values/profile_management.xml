@@ -9,4 +9,6 @@
     <string name="profile_manage_optional_back">저장 없이 돌아가기</string>
     <string name="profile_view_age">만 %1$d세</string>
     <string name="profile_hero_photo">프로필 사진</string>
+    <string name="profile_contact_email_title">연락 이메일</string>
+    <string name="profile_contact_email_purpose">서비스 관련 안내를 보낼 때 사용해요.</string>
 </resources>

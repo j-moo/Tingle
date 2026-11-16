@@ -25,6 +25,8 @@ data class ProfileManagementState(
     val photoFailed: Boolean = false,
     // 저장 성공 후 이동은 현재 화면이 소비한다. 회전 전 화면의 콜백을 붙잡지 않는다.
     val saveCompleted: Boolean = false,
+    // 보기 화면의 연락 이메일 카드. 없거나 못 받으면 null(카드를 숨긴다)
+    val contactEmail: String? = null,
 ) {
     val canEdit get() = editor != null && !busy && !recoveryRequired
 }
@@ -88,14 +90,19 @@ class ProfileEditViewModel(
                 ProfileGender.entries.first { it.code() == p.gender }, p.hasProfilePhoto), error = null, problem = null)
         }
     }
-    fun load() = work { user, stamp ->
+    fun load() = work { user, stamp -> coroutineScope {
+        // 연락 이메일은 선택 카드라 따로 받는다. 실패해도 프로필 불러오기에는 영향이 없다
+        launch {
+            val email = (profiles.contactEmail(user) as? ApiResult.Ok)?.value?.email?.takeIf { it.isNotBlank() }
+            if (valid(stamp)) mutable.update { it.copy(contactEmail = email) }
+        }
         // 다시 불러오는 동안 보던 사진은 지우지 않는다(돌아올 때마다 사진 칸이 깜빡이지 않게). 새 사진이 오면 바꾼다
         when (val result = profiles.get(user)) {
             is ApiResult.Fail -> if (valid(stamp)) mutable.update { it.copy(error = result.error) }
             is ApiResult.Ok -> if (valid(stamp)) {
                 if (!accepts(result.value, user)) {
                     mutable.update { it.copy(profile = null, editor = null, problem = ProfileEditProblem.InvalidProfile) }
-                    return@work
+                    return@coroutineScope
                 }
                 val confirmed = pending?.let { expected -> matches(result.value, expected) } == true
                 accept(result.value, preserve = !confirmed)
@@ -109,7 +116,7 @@ class ProfileEditViewModel(
                 } else mutable.update { it.copy(photo = null, photoFailed = false) }
             }
         }
-    }
+    } }
     fun change(value: ProfileEditDraft) {
         val s = mutable.value; val e = s.editor ?: return
         if (!s.canEdit || s.session != sessions.state.value) return

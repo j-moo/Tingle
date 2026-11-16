@@ -35,6 +35,7 @@ class HomeAccountNicknameTest {
                 override suspend fun nickname(value: String) = error("unused")
                 override suspend fun save(userId: Long, fields: kotlinx.serialization.json.JsonObject) = error("unused")
                 override suspend fun complete(userId: Long) = error("unused")
+                override suspend fun contactEmail(userId: Long) = error("unused")
             }
             // 마이 닉네임 조회에는 쓰이지 않는 연결들. 불리면 실패한다
             val settings = object : MatchingSettingsRepository {
@@ -95,6 +96,7 @@ class HomeAccountNicknameTest {
                 override suspend fun nickname(value: String) = error("unused")
                 override suspend fun save(userId: Long, fields: kotlinx.serialization.json.JsonObject) = error("unused")
                 override suspend fun complete(userId: Long) = error("unused")
+                override suspend fun contactEmail(userId: Long) = error("unused")
             }
             val settings = object : MatchingSettingsRepository {
                 override suspend fun get(userId: Long, kind: SettingsKind) = error("unused")
