@@ -32,7 +32,6 @@ def create_app(app_settings: Settings | None = None, *, _risk_engine_factory: Ca
         raise RuntimeError("GMS_API_KEY is required and must be valid") from None
     risk_runtime = DevelopmentRuntime(
         environment=configured.app_env,
-        enabled=configured.risk_local_rules_enabled if _risk_gms_primary is not None else False,
         descriptor_file=configured.risk_release_descriptor_file,
         descriptor_sha256=configured.risk_local_rules_descriptor_sha256,
         engine_factory=_risk_engine_factory,

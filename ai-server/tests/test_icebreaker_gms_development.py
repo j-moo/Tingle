@@ -28,8 +28,7 @@ def host(tmp_path, signing_key, release, monkeypatch):
     def make(handler, *, environment="test"):
         configured = Settings(_env_file=None, app_env=environment,
             ai_service_public_keys={KID: str(public)},
-            icebreaker_release_descriptor_file=str(release[0]),
-            risk_local_rules_enabled=False)
+            icebreaker_release_descriptor_file=str(release[0]))
         provider = GmsClient("synthetic-only", transport=httpx.MockTransport(handler))
         return TestClient(create_app(configured, _icebreaker_gms_client=provider, _match_gms_client=object()))
     return make

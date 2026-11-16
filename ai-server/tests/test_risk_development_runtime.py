@@ -33,9 +33,7 @@ def client(release=None, *, enabled=True, environment="test"):
     return TestClient(app)
 
 
-def test_legacy_gms_switch_and_release_pin_defaults(monkeypatch):
-    monkeypatch.delenv("RISK_LOCAL_RULES_ENABLED", raising=False)
-    assert Settings(_env_file=None).risk_local_rules_enabled is False
+def test_release_pin_default(monkeypatch):
     monkeypatch.delenv("RISK_LOCAL_RULES_DESCRIPTOR_SHA256", raising=False)
     assert Settings(_env_file=None).risk_local_rules_descriptor_sha256 == ""
 

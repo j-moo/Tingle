@@ -158,8 +158,6 @@ def main_factory(tmp_path, monkeypatch, synthetic_private_keys, caplog, capsys, 
                       risk_release_descriptor_file=str(release.descriptor) if configured else "",
                       risk_local_rules_descriptor_sha256=(release.test_descriptor_pin if pin is None else pin)
                       if configured else "")
-        if enabled is not None:  # Legacy Safety GMS switch; local rules ignore it.
-            values["risk_local_rules_enabled"] = enabled
         monkeypatch.setattr(config, "settings", Settings(_env_file=None, **values))
         sys.modules.pop("app.main", None)
         module = import_module("app.main")
