@@ -7,5 +7,4 @@
     <string name="chat_partner_relogin">다시 로그인</string>
     <string name="chat_partner_photo_loading">사진을 불러오고 있어요</string>
     <string name="chat_partner_name_unknown">닉네임 정보 없음</string>
-    <string name="chat_partner_intro_empty">등록된 자기소개가 없어요.</string>
 </resources>
