@@ -9,6 +9,8 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
@@ -36,12 +38,12 @@ fun ProfileManagementRoute(session: Session.SignedIn, onExit: () -> Unit, model:
         if (state.session == session && model.takeSaveCompletion()) { optionalModel.leave(); page = ProfileDestination.Overview }
     }
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
-        if (page != ProfileDestination.Optional) model.load()
+        if (page != ProfileDestination.Optional) model.load(withEmail = page == ProfileDestination.Overview)
         if (page == ProfileDestination.Edit) optionalModel.load()
     }
     if (state.session != session) return
     // 수정 화면을 떠날 때만 선택 정보 요청을 끊는다(📷 선택 정보 화면은 같은 모델을 이어 쓴다)
-    fun overview() { optionalModel.leave(); page = ProfileDestination.Overview; model.load() }
+    fun overview() { optionalModel.leave(); page = ProfileDestination.Overview; model.load(withEmail = true) }
     fun edit() { page = ProfileDestination.Edit; optionalModel.load() }
     fun returnFromOptional() { edit(); model.load() }
     fun exit() { model.leave(); optionalModel.leave(); onExit() }
@@ -67,7 +69,7 @@ fun ProfileManagementRoute(session: Session.SignedIn, onExit: () -> Unit, model:
             onBack = ::back, onDiscard = { model.discard(::overview) },
             onOptional = { if (state.canEdit) page = ProfileDestination.Optional })
         ProfileDestination.Overview -> ProfileOverviewScreen(state, devNotice = !session.isReady,
-            onEdit = ::edit, onReload = model::load, onBack = ::back)
+            onEdit = ::edit, onReload = { model.load(withEmail = true) }, onBack = ::back)
     }
     // 오프라인에서도 사용자를 가두지 않는다. 나가더라도 서버 반영 여부는 미확인으로 남긴다.
     if (unknownExitPrompt) ProfileUnknownExitDialog(
@@ -123,6 +125,7 @@ private fun ProfileOverviewScreen(state: ProfileManagementState, devNotice: Bool
                         ProfileManagementNotice(state, onReload)
                         ProfileLifestyleChips(profile.lifestyle())
                         ProfileIntroCard(profile.introduction)
+                        state.contactEmail?.let { ProfileContactEmailCard(it) }
                     }
                 }
             }
@@ -167,6 +170,18 @@ fun ProfileConnectedEditScreen(
         heroPhoto = photo, heroImage = image, onRetryPhoto = onReload, religionChip = religionChip, belowChips = belowChips, introduction = introduction,
         header = { ProfileManagementNotice(state, onReload) },
         refreshing = refreshing, onRefresh = refresh)
+}
+
+/** 연락 이메일(읽기 전용). 수집한 이메일이 어디에 쓰이는지 보여 준다. 읽기 도구에는 한 덩어리로 읽힌다 */
+@Composable private fun ProfileContactEmailCard(email: String) {
+    val title = stringResource(Res.string.profile_contact_email_title)
+    val purpose = stringResource(Res.string.profile_contact_email_purpose)
+    Column(Modifier.fillMaxWidth().glass(AppShapes.Card, AppColors.SurfaceMuted).clearAndSetSemantics { contentDescription = "$title, $email, $purpose" }
+        .padding(AppSpacing.Large), verticalArrangement = Arrangement.spacedBy(AppSpacing.Small)) {
+        Text(title, style = MaterialTheme.typography.labelLarge, color = AppColors.TextSecondary)
+        Text(email, style = MaterialTheme.typography.bodyLarge, color = AppColors.TextPrimary)
+        Text(purpose, style = MaterialTheme.typography.bodySmall, color = AppColors.TextSecondary)
+    }
 }
 
 /** 프로필이 없는데 불러오기도 끝났다 = 못 불러왔다(오류) 또는 수정할 프로필이 아니다(입력 미완료) */

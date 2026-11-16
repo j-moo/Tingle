@@ -33,6 +33,7 @@ private class TestProfiles : ProfileRepository {
         return ApiResult.Ok(data)
     }
     override suspend fun complete(userId: Long): ApiResult<Unit> { completed++; return ApiResult.Ok(Unit) }
+    override suspend fun contactEmail(userId: Long) = ApiResult.Ok(ContactEmailResponse(null))
 }
 
 @OptIn(ExperimentalCoroutinesApi::class)
