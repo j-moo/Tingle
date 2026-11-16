@@ -124,7 +124,8 @@ public class ChatSocketHandler extends TextWebSocketHandler {
 				return;
 			}
 			ChatSocketHandshake.Subscription subscription = connection.subscription;
-			long userId = access.require(subscription.token(), subscription.roomId());
+			// 방 권한(닫힘·나감·차단·동의)은 바로 아래 recover 가 같은 기준으로 검사하므로 여기서는 회원 자격만 본다.
+			long userId = access.requireMember(subscription.token());
 			// Fresh transactions read committed rows on every node and exclude rolled-back messages.
 			var page = chats.recover(subscription.roomId(), userId, connection.afterSequence, 100);
 			for (MessageView message : page.items()) {
