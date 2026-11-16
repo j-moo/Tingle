@@ -177,7 +177,7 @@ stderr/JSON에 자격 증명·경로·저널 내용·예외 원문을 출력하�
 
 ### 권한과 INFRA 연결 기준
 
-개발 호스트의 `/srv/tingle/state/chat-retention/dev/journal`을 `/run/tingle/chat-journal`에 연결한다.
+호스트의 `/data/chat-journal/dev`(개발)·`/data/chat-journal/prod`(운영, 블루·그린 공용)를 `/run/tingle/chat-journal`에 연결한다. 매일 백업에는 넣지 않는다.
 저널은 신뢰된 BE 삭제 프로세스(uid1000)와 운영 복원 도구만 RW로 사용한다. 일반 사용자·다른 서비스의
 쓰기를 허용하지 않는다. 현재 snapshot도 lock을 WRITE로 열기 때문에 journal 전체 RO는 동작하지 않는다.
 여기서 privileged는 허용된 신뢰 작성 프로세스라는 뜻이며 OS root 실행을 필수로 요구하지 않는다.

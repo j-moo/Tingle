@@ -16,6 +16,7 @@ for db in tingle tingle_dev; do
 done
 tar czf "daily-uploads-$day.tar.gz" -C /data uploads
 # 업로드 사진은 DB 백업과 별도 수명이다. 기존 사진 정리 범위만 유지한다.
+# 채팅 삭제 저널(/data/chat-journal)은 백업하지 않는다. 옛 사본으로 되돌리면 지운 채팅이 되살아난다(docker-compose.yml back-env 주석).
 find /backup -maxdepth 1 -type f -name 'daily-uploads-*.tar.gz' -mtime +6 -delete
 if [ -n "${BACKUP_EVIDENCE_DIR:-}" ]; then
   if ! sh "$script_dir/backup-evidence-refresh.sh"; then
