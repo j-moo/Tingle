@@ -182,27 +182,20 @@ sh gradlew check ${APP_CHECK_ARGS:-} :androidApp:$APK_TASK --no-daemon -Dorg.gra
       // 값을 바꾸거나 더할 때는 파일을 고쳐 Credentials 에 다시 올린다 (공유 사본: 자율 프로젝트/infra/app.env). 값에 $ 가 있으면 compose 가 변수로 읽으니 $$ 로 넣는다.
       when { expression { env.gitlabActionType == 'PUSH' && DEPLOY[env.gitlabSourceBranch] } }
       steps {
-        withCredentials([file(credentialsId: 'tingle-app-env', variable: 'APP_ENV')]) {
+        // 푸시(FCM, -141)는 늘 켜져 있다. Credentials tingle-fcm(Secret file, Firebase 서비스 계정 JSON)으로 키 파일을 쓰고 JSON 의 project_id 를 FIREBASE_PROJECT_ID 로 덧붙인다.
+        // tingle-fcm 이 없거나 project_id 가 비면 여기서 배포가 멈춘다. app.env 는 .tmp 에 다 만든 뒤 마지막에 한 번만 바꿔, 실패해도 반쯤 쓴 파일이 남지 않는다.
+        withCredentials([file(credentialsId: 'tingle-app-env', variable: 'APP_ENV'), file(credentialsId: 'tingle-fcm', variable: 'FCM_JSON')]) {
           sh '''
             set +x
             umask 077
-            { cat "$APP_ENV"; echo; } | tr -d '\\r' > /srv/tingle/app.env.tmp # 끝 줄바꿈 보장(FCM 값을 뒤에 덧붙인다) · 윈도우 줄끝 제거
-            mv /srv/tingle/app.env.tmp /srv/tingle/app.env
             mkdir -p /srv/tingle/secrets # back 이 읽기 전용으로 마운트한다. 없으면 docker 가 root 소유로 만들어 Jenkins 가 못 쓴다
-            echo "app.env 갱신: $(grep -c = /srv/tingle/app.env)개 값"
-          '''
-        }
-        // 푸시(FCM, -141): 푸시는 늘 켜져 있다. Credentials tingle-fcm(Secret file, Firebase 서비스 계정 JSON)으로 키 파일을 쓰고 프로젝트 ID 를 app.env 에 덧붙인다.
-        // tingle-fcm 이 없으면 여기서 배포가 멈춘다 (compose 도 FIREBASE_PROJECT_ID 가 비면 거절한다). 프로젝트 ID 는 JSON 의 project_id 를 쓴다.
-        withCredentials([file(credentialsId: 'tingle-fcm', variable: 'FCM_JSON')]) {
-          sh '''
-            set +x
-            umask 077
+            project=$(sed -n 's/.*"project_id": *"\\([^"]*\\)".*/\\1/p' "$FCM_JSON")
+            [ -n "$project" ] || { echo "tingle-fcm 에 project_id 가 없습니다"; exit 1; }
+            { cat "$APP_ENV"; echo; printf 'FIREBASE_PROJECT_ID=%s\\n' "$project"; } | tr -d '\\r' > /srv/tingle/app.env.tmp # 끝 줄바꿈 보장 · 윈도우 줄끝 제거
             cp "$FCM_JSON" /srv/tingle/secrets/fcm.json.tmp
             mv /srv/tingle/secrets/fcm.json.tmp /srv/tingle/secrets/fcm.json
-            project=$(sed -n 's/.*"project_id": *"\\([^"]*\\)".*/\\1/p' /srv/tingle/secrets/fcm.json)
-            printf 'FIREBASE_PROJECT_ID=%s\\n' "$project" >> /srv/tingle/app.env
-            echo "FCM 키 반영 (Firebase 프로젝트 $project)"
+            mv /srv/tingle/app.env.tmp /srv/tingle/app.env
+            echo "app.env 갱신: $(grep -c = /srv/tingle/app.env)개 값 · FCM 키 반영 (Firebase 프로젝트 $project)"
           '''
         }
       }
