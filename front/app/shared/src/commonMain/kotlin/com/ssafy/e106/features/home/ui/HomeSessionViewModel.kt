@@ -36,14 +36,18 @@ class HomeSessionViewModel(private val profiles: ProfileRepository, private val 
     val state = mutable.asStateFlow()
     private var generation = 0L
     private var job: Job? = null
+    private var nicknameCache: Job? = null
     init { viewModelScope.launch(start = CoroutineStart.UNDISPATCHED) { sessions.state.collect {
-        generation++; job?.cancel()
+        generation++; job?.cancel(); nicknameCache?.cancel()
         val session = it as? Session.SignedIn
         mutable.value = HomeSessionState(session = session)
-        // 마이 닉네임은 세션이 정해질 때 미리 읽어 둔다. 마이에 들어갈 때 읽으면 한두 프레임 뼈대가 보인다
-        val cached = session?.let { user -> prefs.read(NicknameKey, user.userId) as? PrefRead.Found }?.value ?: return@collect
-        mutable.update { state -> if (state.session != session || state.account.load != AccountMenuLoad.Loading) state
-            else state.copy(account = AccountMenuState(AccountMenuLoad.Ready, cached)) }
+        // 마이 닉네임은 세션이 정해질 때 미리 읽어 둔다. 마이에 들어갈 때 읽으면 한두 프레임 뼈대가 보인다.
+        // 따로 읽어서 다음 세션 변화(로그아웃 · 계정 전환) 처리를 늦추지 않는다
+        if (session != null) nicknameCache = viewModelScope.launch(start = CoroutineStart.UNDISPATCHED) {
+            val cached = (prefs.read(NicknameKey, session.userId) as? PrefRead.Found)?.value ?: return@launch
+            mutable.update { state -> if (state.session != session || state.account.load != AccountMenuLoad.Loading) state
+                else state.copy(account = AccountMenuState(AccountMenuLoad.Ready, cached)) }
+        }
     } } }
     private fun valid(stamp: Long) = generation == stamp && mutable.value.session == sessions.state.value
     private fun read(block: suspend (Long, Long) -> Unit) {
