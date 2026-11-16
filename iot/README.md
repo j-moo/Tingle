@@ -87,7 +87,9 @@ XIAO 회로도의 TS는 고정 저항으로 처리되어 배터리 온도를 읽
 
 ## Rev G PCB와 물리 안내
 
-`-Carrier revg`는 **Tingle Rev G 31x50 Connector** 프로필의 `0.9.5-revg`를 빌드한다. Rev F도 같은 GPIO와 모터 전원을 사용한다. Rev G는 배터리 입력 J1과 XIAO BAT 연결 J2를 구분하고 XIAO 내장 USB-C 충전을 사용한다. 동작 중에는 J6 RGB에 같은 충전 색을 표시한다. [Seeed XIAO 회로도](https://files.seeedstudio.com/wiki/XIAO-BLE/Seeed_Studio_XIAO_nRF52840_PDF.pdf)
+SIS D3.1 Y3를 조립한 키링에는 기본 빌드 또는 `-Carrier d31`을 사용한다. 아래의 Rev G 31×50 Connector 프로필은 표에 명시된 핀 배치에 해당한다. Rev G R4의 RGB D6·D8·D9 및 모터 D10 배선은 별도 기판 설계이며 현재 빌드에서 지원하지 않는다.
+
+`-Carrier revg`는 **Tingle Rev G 31x50 Connector** 프로필의 `-revg` 펌웨어를 빌드한다. Rev F도 같은 GPIO와 모터 전원을 사용한다. Rev G는 배터리 입력 J1과 XIAO BAT 연결 J2를 구분하고 XIAO 내장 USB-C 충전을 사용한다. 동작 중에는 J6 RGB에 같은 충전 색을 표시한다. [Seeed XIAO 회로도](https://files.seeedstudio.com/wiki/XIAO-BLE/Seeed_Studio_XIAO_nRF52840_PDF.pdf)
 
 | 기능 | XIAO 핀 | PCB 연결과 동작 |
 | --- | --- | --- |
