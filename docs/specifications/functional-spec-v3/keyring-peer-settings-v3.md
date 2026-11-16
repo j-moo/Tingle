@@ -218,13 +218,13 @@ FE는 이 null 필드까지 그대로 BLE 명령에 넣지 않고, 해당 proofP
 peer 기능(TER2 접수, REVIEW 접수, 업무 접수/평가 연결, release 발급, TSV3 정책 공급)은 운영·개발 모두 늘 켜져 있고
 켜고 끄는 설정은 없다(S15P31E106-407). 정책/규칙 버전·기한 값은 두 환경이 같은 `app.keyring.peer` 값을 쓴다.
 별도 승인 없는 공유 DB 변경을 수행하지 않는다.
-선택적 peer 테이블은 JPA 자동 생성·앱 시작 시 자동 마이그레이션 대상이 아니며 수동 검토/반영이 필요하다.
+peer 테이블은 JPA 자동 생성·앱 시작 시 자동 마이그레이션 대상이 아니며 수동 검토/반영이 필요하다.
 운영 수동 반영본은 `infra/db/prod-changes/2026-11-06-peer-flow-270.sql`이다.
 이는 신규 테이블·인덱스의 재실행을 허용하며 기존 정의를 교정하거나 과거 소유를 추정하지 않는다.
 실행 SQL은 `back/src/main/resources/database/`의 keyring-peer-ownership-270.sql,
 keyring-peer-commands-270.sql, keyring-peer-encounter-270.sql 세 파일이다.
 입력 철회의 원문·credential·hash·receipt 정리는 늘 수행한다.
-선택 테이블이 아예 없는 기존 배포에서는 테이블 존재를 확인한 뒤 해당 정리를 생략한다.
+탈퇴 정리는 방어적으로 테이블 존재를 확인하고 없으면 해당 정리를 생략하지만, 두 환경 모두 배포 전에 이 테이블이 있어야 한다.
 
 TSV3 공급에는 DB에 등록된 XIAO 기기 + 폐기되지 않은 credential, 펌웨어에 고정한 서버 공개키와 일치하는 전용 서명 공급,
 승인한 policy/rule·lease/opportunity/presence 값 및 실제 사용자 입력이 필요하다.
