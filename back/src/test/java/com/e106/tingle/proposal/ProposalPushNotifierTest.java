@@ -26,6 +26,8 @@ import org.mockito.ArgumentCaptor;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
+import com.e106.tingle.chat.ChatRoom;
+import com.e106.tingle.chat.ChatService;
 import com.e106.tingle.push.PushDeliveryLookup;
 import com.e106.tingle.push.PushDeliveryTarget;
 import com.e106.tingle.push.PushGateway;
@@ -36,7 +38,9 @@ class ProposalPushNotifierTest {
 	private static final Instant PROPOSED = Instant.parse("2026-11-11T06:21:09Z");
 	private final PushDeliveryLookup deliveries = mock(PushDeliveryLookup.class);
 	private final PushGateway gateway = mock(PushGateway.class);
-	private final ProposalPushNotifier notifier = new ProposalPushNotifier(deliveries, gateway);
+	private final ChatService chats = mock(ChatService.class);
+	private final ChatRoom room = mock(ChatRoom.class);
+	private final ProposalPushNotifier notifier = new ProposalPushNotifier(deliveries, gateway, chats);
 
 	@AfterEach
 	void clearSynchronization() {
@@ -68,6 +72,8 @@ class ProposalPushNotifierTest {
 	void matchedPushCarriesRoomAndPartnerName() {
 		PushDeliveryLookup.Candidate candidate = reachable(89, "fcm-token", PushGateway.Result.ACCEPTED);
 		Instant deadline = PROPOSED.plusSeconds(7 * 86400);
+		given(chats.linkedForMatching(9)).willReturn(Optional.of(room));
+		given(chats.available(room, 89)).willReturn(true);
 		notifier.sendMatched(9, 89, 31, deadline, "초록");
 		@SuppressWarnings("unchecked")
 		ArgumentCaptor<Map<String, String>> data = ArgumentCaptor.forClass(Map.class);
@@ -75,6 +81,18 @@ class ProposalPushNotifierTest {
 		assertThat(data.getValue()).containsEntry("type", "CHAT_ROOM_CREATED").containsEntry("chatRoomId", "31")
 			.containsEntry("recipientUserId", "89").containsEntry("title", "우연한 만남이 있었어요!")
 			.containsEntry("body", "초록님과 대화를 시작할 수 있어요.");
+	}
+
+	@Test
+	@DisplayName("받는 사람이 그 방에서 대화할 수 없으면(AI 동의 철회 등) 매칭 성사 알림을 보내지 않는다")
+	void matchedPushIsSkippedWhenRecipientCannotChat() {
+		reachable(89, "fcm-token", PushGateway.Result.ACCEPTED);
+		given(chats.linkedForMatching(9)).willReturn(Optional.of(room));
+		given(chats.available(room, 89)).willReturn(false);
+
+		notifier.sendMatched(9, 89, 31, PROPOSED.plusSeconds(7 * 86400), "초록");
+
+		verify(gateway, never()).send(anyString(), anyString(), anyMap(), any());
 	}
 
 	@Test

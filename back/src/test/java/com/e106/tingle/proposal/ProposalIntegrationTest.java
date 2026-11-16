@@ -137,13 +137,12 @@ class ProposalIntegrationTest {
 
 	@ParameterizedTest
 	@ValueSource(strings = {"accept", "decline"})
-	void existingProposalIsBlockedUntilKeyringIsRegisteredAgain(String action) throws Exception {
-		// 가입을 마쳤어도 키링을 모두 초기화하면 키링을 다시 등록할 때까지 제안도 막힌다(앱이 키링 등록 화면으로 보낸다)
+	void existingProposalCanBeAnsweredWithoutKeyring(String action) throws Exception {
 		jdbc.update("update keyring set owner_user_id=null,state='UNBOUND',synced_at=? where owner_user_id=1",
 			java.sql.Timestamp.from(NOW));
 		assertThat(members.ready(1, NOW)).isFalse();
-		mvc.perform(get(path()).header("Authorization", bearer(1))).andExpect(status().isForbidden());
-		decide(proposal.getId(), 1, action, UUID.randomUUID()).andExpect(status().isForbidden());
+		mvc.perform(get(path()).header("Authorization", bearer(1))).andExpect(status().isOk());
+		decide(proposal.getId(), 1, action, UUID.randomUUID()).andExpect(status().isOk());
 	}
 
 	@ParameterizedTest
@@ -158,17 +157,13 @@ class ProposalIntegrationTest {
 	}
 
 	@Test
-	void aiWithdrawalKeepsProposalAccessButKeyringResetBlocksIt() throws Exception {
-		// AI 동의 철회만으로는 막지 않는다
+	void aiWithdrawalAndKeyringResetKeepExistingProposalAccess() throws Exception {
 		withdrawConsent("AI_RISK_DETECTION", "2026-10-22");
-		mvc.perform(get("/api/match-proposals").header("Authorization", bearer(1)))
-			.andExpect(status().isOk());
-		// 키링까지 모두 초기화하면 막는다
 		jdbc.update("update keyring set owner_user_id=null,state='UNBOUND',synced_at=? where owner_user_id=1",
 			java.sql.Timestamp.from(NOW));
 		mvc.perform(get("/api/match-proposals").header("Authorization", bearer(1)))
-			.andExpect(status().isForbidden());
-		decide(proposal.getId(), 1, "accept", UUID.randomUUID()).andExpect(status().isForbidden());
+			.andExpect(status().isOk());
+		decide(proposal.getId(), 1, "accept", UUID.randomUUID()).andExpect(status().isOk());
 	}
 
 	@ParameterizedTest

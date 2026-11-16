@@ -12,6 +12,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
+import com.e106.tingle.chat.ChatRoom;
+import com.e106.tingle.chat.ChatService;
 import com.e106.tingle.global.i18n.Messages;
 import com.e106.tingle.push.PushDeliveryLookup;
 import com.e106.tingle.push.PushDeliveryTarget;
@@ -38,6 +40,7 @@ public class ProposalPushNotifier {
 
 	private final PushDeliveryLookup deliveries;
 	private final PushGateway gateway;
+	private final ChatService chats;
 	private final ExecutorService worker = Executors.newVirtualThreadPerTaskExecutor();
 
 	/** 현재 트랜잭션이 커밋된 뒤에만 보낸다. 롤백되면 보내지 않는다. */
@@ -61,6 +64,7 @@ public class ProposalPushNotifier {
 	/**
 	 * 서로 수락해 채팅방이 생겼을 때 먼저 수락하고 기다리던 사람에게 CHAT_ROOM_CREATED 를 커밋 뒤 한 번 보낸다.
 	 * 롤백되면 보내지 않는다. 같은 매칭은 noticeId 로 기기에서 하나로 합쳐진다.
+	 * 받는 사람이 그 방에서 지금 대화할 수 없으면(AI 위험 감지 동의 철회 등) 보내지 않는다. 메시지 알림 · 종료 안내와 같은 확인이다.
 	 */
 	public void afterCommitMatched(long matchingId, long recipientUserId, long roomId, Instant roomExpiresAt,
 		String partnerNickname) {
@@ -80,6 +84,11 @@ public class ProposalPushNotifier {
 	void sendMatched(long matchingId, long userId, long roomId, Instant deadline, String partnerNickname) {
 		try {
 			if (!gateway.ready()) {
+				return;
+			}
+			// "대화를 시작할 수 있어요"는 들어가서 실제로 대화할 수 있는 사람에게만 보낸다
+			ChatRoom room = chats.linkedForMatching(matchingId).orElse(null);
+			if (room == null || !chats.available(room, userId)) {
 				return;
 			}
 			String noticeId = "match-" + matchingId;

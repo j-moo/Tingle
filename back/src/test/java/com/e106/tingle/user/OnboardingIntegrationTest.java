@@ -357,8 +357,8 @@ class OnboardingIntegrationTest extends IntegrationTestSupport {
 	}
 
 	@Test
-	@DisplayName("가입을 마친 회원도 마지막 키링을 초기화하면 키링을 다시 등록할 때까지 서비스 API가 막힌다(키링 단계 API · 탈퇴는 열림)")
-	void completedMemberWithoutKeyringIsBlockedUntilKeyringIsRegisteredAgain() throws Exception {
+	@DisplayName("가입을 마친 회원은 마지막 키링을 초기화해도 기존 기능을 쓰고, 새 매칭만 보류된다")
+	void completedMemberKeepsAccessWithoutKeyring() throws Exception {
 		JsonNode tokens = login("kakao", newSocialId());
 		completeOnboarding(tokens);
 		jdbc.update("update keyring set owner_user_id=null,state='UNBOUND',synced_settings_version=null,"
@@ -368,9 +368,7 @@ class OnboardingIntegrationTest extends IntegrationTestSupport {
 			.andExpect(jsonPath("$.nextStep").value("KEYRING_REQUIRED"))
 			.andExpect(jsonPath("$.signupCompleted").value(true))
 			.andExpect(jsonPath("$.matchingReady").value(false));
-		// 서비스 API(READY)는 막히고, 키링 단계까지의 API(키링 목록 등)는 열린다
-		perform(get("/api/v1/test/protected"), tokens, null).andExpect(status().isForbidden());
-		perform(get("/api/keyrings"), tokens, null).andExpect(status().isOk());
+		perform(get("/api/v1/test/protected"), tokens, null).andExpect(status().isOk());
 	}
 
 	@Test
