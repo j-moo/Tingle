@@ -97,7 +97,8 @@ class ProfileEditViewModel(
         loadProfile()
     }
     // 연락 이메일은 선택 카드라 프로필 불러오기(busy)와 따로 받는다. 실패하면 보이던 값을 그대로 둔다(계정이 바뀌면 상태 전체가 초기화된다)
-    private fun loadContactEmail() {
+    /** 연락 이메일만 다시 받는다(프로필 · 사진은 받지 않는다). 저장 뒤 보기 화면으로 돌아갈 때 쓴다 */
+    fun loadContactEmail() {
         val user = mutable.value.session ?: return
         if (user != sessions.state.value || !access.canManageProfile(user)) return
         val stamp = generation
