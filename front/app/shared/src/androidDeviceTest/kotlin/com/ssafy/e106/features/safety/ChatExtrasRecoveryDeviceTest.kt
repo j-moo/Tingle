@@ -43,6 +43,8 @@ class ChatExtrasRecoveryDeviceTest {
     @Test fun pollingFailureEnablesRetryAndDoesNotCreateAnotherJob() {
         ActivityScenario.launch<ChatExtrasRecoveryTestActivity>(Intent(
             InstrumentationRegistry.getInstrumentation().context,ChatExtrasRecoveryTestActivity::class.java)).use { scenario ->
+            // 추천 칸은 첫 질문 확인이 끝나야 생긴다
+            compose.waitUntil(10_000) { compose.onAllNodesWithText("대화 주제 추천").fetchSemanticsNodes().isNotEmpty() }
             compose.onNodeWithText("대화 주제 추천").performClick()
             scenario.onActivity {
                 it.chats.roomFailure = null
@@ -67,6 +69,8 @@ class ChatExtrasRecoveryDeviceTest {
         ActivityScenario.launch<ChatExtrasRecoveryTestActivity>(Intent(
             InstrumentationRegistry.getInstrumentation().context,ChatExtrasRecoveryTestActivity::class.java)).use { scenario ->
             // 추천은 기본 접힘이다. 열어도 생성 요청 없이 기존 오류의 재조회를 제공한다.
+            // 추천 칸은 첫 질문 확인이 끝나야 생긴다
+            compose.waitUntil(10_000) { compose.onAllNodesWithText("대화 주제 추천").fetchSemanticsNodes().isNotEmpty() }
             compose.onNodeWithText("대화 주제 추천").performClick()
             compose.onNodeWithText("인터넷 연결을 확인해 주세요").assertExists()
             compose.onNodeWithText("다시 시도").assertIsEnabled()

@@ -17,7 +17,7 @@ import org.koin.compose.viewmodel.koinViewModel
 
 /** 질문 선택은 초안 교체만 한다. 전송과 동의는 각각 사용자의 별도 행동이다. */
 @Composable fun ConnectedChatExtras(room: Long, readable: Boolean, editable: Boolean, insert: (String) -> Unit,
-    model: ChatExtrasViewModel = koinViewModel(), draft: String = "", onBlock: () -> Unit = {}, latestMessage: String? = null, used: Set<String> = emptySet()) {
+    model: ChatExtrasViewModel = koinViewModel(), draft: String = "", onBlock: () -> Unit = {}, latestMessage: String? = null, used: Set<String>? = emptySet()) {
     val state by model.state.collectAsStateWithLifecycle()
     LaunchedEffect(room, readable) { model.bind(room, readable) }
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { model.bind(room, readable) }
