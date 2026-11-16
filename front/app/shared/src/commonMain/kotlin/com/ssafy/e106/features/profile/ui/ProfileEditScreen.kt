@@ -28,7 +28,7 @@ import org.jetbrains.compose.resources.painterResource
 import org.jetbrains.compose.resources.stringResource
 
 /**
- * 가입 후 수정용 순수 화면. 저장·뒤로가기·사진·정정 문의의 실행은 호출자가 담당한다.
+ * 가입 후 수정용 순수 화면. 저장·뒤로가기·사진의 실행은 호출자가 담당한다.
  * 위쪽은 보기 화면과 같은 [ProfileHero](사진 약 42%, ‹ 만), 아래는 닉네임 · 생활 칩 · 소개 · 잠긴 생년월일 · 성별 순서로 한 스크롤이다.
  * 흡연 · 음주는 칩을 눌러 아래 시트에서 고르고 "저장"으로 저장한다. 종교 칩([religionChip]) · 소개([introduction])는 호출자가 그린다.
  */

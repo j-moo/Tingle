@@ -81,7 +81,7 @@ fun HelpGuideScreen(state: HelpGuideState, onAction: (HelpGuideAction) -> Unit, 
     }
 }
 
-/** 약관 · 개인정보 · 문의 · 정정 요청을 한 화면에 줄로 모은다. 줄을 누르면 해당 안내 화면으로 간다(주소 확인 · 열기는 그 화면이 한다). */
+/** 약관 · 개인정보 · 문의를 한 화면에 줄로 모은다. 줄을 누르면 해당 안내 화면으로 간다(주소 확인 · 열기는 그 화면이 한다). */
 @Composable
 fun HelpHubScreen(onOpen: (HelpGuideKind) -> Unit, onBack: () -> Unit, modifier: Modifier = Modifier) {
     Surface(modifier.fillMaxSize(), color = AppColors.Screen) {
