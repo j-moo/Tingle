@@ -47,8 +47,7 @@ import com.e106.tingle.push.dto.RegisterPushRequest;
 
 import tools.jackson.databind.JsonNode;
 
-@SpringBootTest(properties = {"app.push.token-encryption-key=MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDA=",
-	"app.chat-notices.end-notice-enabled=true"})
+@SpringBootTest(properties = "app.push.token-encryption-key=MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDA=")
 @AutoConfigureMockMvc
 @ActiveProfiles({"test", "erd"})
 @Import(TestcontainersConfiguration.class)
