@@ -1,5 +1,6 @@
 package com.ssafy.e106.features.profile.ui
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.rememberScrollState
@@ -9,6 +10,8 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
@@ -20,7 +23,6 @@ import com.ssafy.e106.features.account.ui.HelpGuideAction
 import com.ssafy.e106.features.account.ui.HelpGuideKind
 import com.ssafy.e106.features.account.ui.HelpGuideScreen
 import com.ssafy.e106.features.account.ui.HelpGuideState
-import com.ssafy.e106.features.profile.photo.ProfilePhotoBytes
 import com.ssafy.e106.resources.*
 import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.viewmodel.koinViewModel
@@ -134,8 +136,7 @@ fun ProfileConnectedEditScreen(
             SkeletonGroup(spacing = AppSpacing.Section) {
                 BoneField(Res.string.profile_photo_title) { PhotoBone() }
                 BoneField(Res.string.profile_nickname)
-                BoneField(Res.string.profile_edit_smoking)
-                BoneField(Res.string.profile_edit_drinking)
+                Row(horizontalArrangement = Arrangement.spacedBy(AppSpacing.Small)) { repeat(3) { SkeletonBone(width = 88.dp, height = 30.dp, shape = CircleShape) } }
             }
         }
         return
@@ -148,16 +149,34 @@ fun ProfileConnectedEditScreen(
         else -> state.error?.message
     }
     val (refreshing, refresh) = pullRefresh(state.busy, onReload)
+    val (photo, image) = rememberHeroPhoto(state.photo, state.profile?.hasProfilePhoto == true, state.photoFailed)
     ProfileEditScreen(editor.copy(saving = state.busy, interactionEnabled = !state.recoveryRequired, saveError = saveError),
         onChange, onSave, onBack, onDiscard, onKeep, onOptional, onCorrection,
-        photoContent = { state.photo?.let { ProfilePhotoBytes(it) } ?: Text(stringResource(Res.string.optional_photo_unavailable)) },
-        optionalContent = {
-            OptionalProfileSummary(state)
-            Text(stringResource(Res.string.profile_manage_optional_help), style = MaterialTheme.typography.bodySmall)
-        },
-        photoActionLabel = stringResource(Res.string.profile_manage_optional),
+        heroPhoto = photo, heroImage = image,
+        // 종교 · 소개는 선택 정보 화면(동의 포함)에서 고친다
+        religionChip = { ReligionChip(state.profile?.religion.religion(), state.canEdit, onOptional) },
+        introduction = { EditIntroCard(state.profile?.introduction, added = true, state.canEdit, onOptional) },
         header = { ProfileManagementNotice(state, onReload) },
         refreshing = refreshing, onRefresh = refresh)
+}
+
+/** 수정 화면 종교 칩: 값이 없으면 점선 "종교 추가", 공개하지 않음이면 "종교 비공개" */
+@Composable private fun ReligionChip(religion: ProfileReligion?, enabled: Boolean, onClick: () -> Unit) {
+    val text = when (religion) {
+        null -> stringResource(Res.string.profile_religion_add)
+        ProfileReligion.Private -> stringResource(Res.string.profile_religion_hidden)
+        else -> stringResource(religion.label())
+    }
+    EditChip(Res.drawable.ic_church, text, religion?.let { stringResource(Res.string.profile_chip_change,
+        stringResource(Res.string.profile_religion_title).withoutTag(), stringResource(it.label())) }, enabled, onClick = onClick)
+}
+
+/** 수정 화면 소개 카드: 오른쪽 위에 "고치기"(동의 전이면 "소개 추가"), 카드 전체를 누를 수 있다 */
+@Composable private fun EditIntroCard(text: String?, added: Boolean, enabled: Boolean, onClick: () -> Unit) {
+    val action = stringResource(if (added) Res.string.profile_intro_edit else Res.string.profile_intro_add)
+    ProfileIntroCard(text, Modifier.clip(AppShapes.Card).clickable(enabled, onClickLabel = action, role = Role.Button, onClick = onClick)) {
+        Text(action, style = MaterialTheme.typography.labelLarge, color = if (enabled) AppColors.FreshInk else AppColors.TextDisabled)
+    }
 }
 
 /** 프로필이 없는데 불러오기도 끝났다 = 못 불러왔다(오류) 또는 수정할 프로필이 아니다(입력 미완료) */
@@ -170,15 +189,6 @@ private val ProfileManagementState.unknown get() = recoveryRequired || problem =
     StateScreen(if (invalid) StateKind.Locked else state.error.stateKind(),
         if (invalid) stringResource(Res.string.profile_manage_invalid) else state.error.stateTitle(),
         barTitle = title, onBack = onBack, refreshing = state.busy, onRefresh = onReload)
-}
-
-@Composable private fun OptionalProfileSummary(state: ProfileManagementState) {
-    val p = state.profile ?: return
-    // 수정 화면은 입력 항목답게 "선택" 표시를 그대로 둔다
-    TagLabel(stringResource(Res.string.profile_intro_title), style = MaterialTheme.typography.titleMedium)
-    Text(p.introduction?.takeIf { it.isNotBlank() } ?: stringResource(Res.string.profile_manage_none))
-    TagLabel(stringResource(Res.string.profile_religion_title), style = MaterialTheme.typography.titleMedium)
-    Text(p.religion.religion()?.let { stringResource(it.label()) } ?: stringResource(Res.string.profile_manage_none))
 }
 
 /** 저장했어요 · 결과 미확인 안내. 결과 미확인 문구는 같은 내용을 두 번 저장하지 않게 하는 설명이라 줄이지 않는다 */
