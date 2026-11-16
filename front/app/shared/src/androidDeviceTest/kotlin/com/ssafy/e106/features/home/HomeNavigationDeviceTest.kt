@@ -93,6 +93,7 @@ class HomeNavigationTestActivity : ComponentActivity() {
                     single { client }
                     single<SessionStore> { sessions }
                     single<AppPrefs> { ChatMemoryPrefs() }
+                    single { com.ssafy.e106.core.push.NotificationInbox(get()) }
                     single<ChatEvents> { IdleChatEvents }
                     single { KeyringSettingsChanges() }
                     single<OwnedKeyringRepository> { HttpOwnedKeyringRepository(get()) }
@@ -156,7 +157,7 @@ class HomeNavigationDeviceTest {
             openAccount()
             compose.onNodeWithText("홈").performClick()
             awaitText("새 인연을 기다리는 중")
-            compose.onNodeWithText("키링 설정").assertExists()
+            compose.onNodeWithContentDescription("알림").assertExists()   // 오른쪽 위 종 모양(받은 알림 모음)
 
             openAccount()
             compose.onNodeWithText("제안").performClick()

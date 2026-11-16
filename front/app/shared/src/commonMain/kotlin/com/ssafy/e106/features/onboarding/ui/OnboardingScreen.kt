@@ -40,6 +40,8 @@ fun OnboardingRoute(
     settingsAccess: SettingsAccess = koinInject(),
     // 서비스 호스트가 키링 연결 · 설정 전송을 맡으면 true(실제 앱). 호스트 없이 이 화면만 쓰면 화면이 연결을 정리한다
     managedKeyringConnection: Boolean = false,
+    /** 회원탈퇴 열기. 가입을 마친 계정이 키링 단계로 돌아왔을 때만 키링 화면에 보인다 */
+    onWithdraw: (() -> Unit)? = null,
 ) {
     val state by model.state.collectAsStateWithLifecycle()
     // 키링 등록(KEYRING_REQUIRED) · 첫 동기화(SYNC_PENDING) 단계의 키링 연결 화면은 운영 앱 · 개발 앱이 같다.
@@ -68,7 +70,8 @@ fun OnboardingRoute(
         state.session != session -> when {
             session.status == OnboardingStatus.AGREEMENT_REQUIRED -> OnboardingPanel(stringResource(Res.string.onboarding_agreements_title)) { AgreementSkeleton() }
             !session.isReady && session.status == OnboardingStatus.KEYRING_REQUIRED -> KeyringIntro(busy = true, error = null, linkFailed = false,
-                purchaseUrl = null, onFind = null, onOpen = {}, onReload = {}, onRefresh = {}, onLogout = model::logout)
+                purchaseUrl = null, onFind = null, onOpen = {}, onReload = {}, onRefresh = {}, onLogout = model::logout,
+                onWithdraw = onWithdraw.takeIf { session.signupCompleted })
             else -> OnboardingPanel(stringResource(Res.string.onboarding_title)) { HubSkeleton() }
         }
         canSettings && openSettings -> ConnectedSettingsRoute(session, { openSettings = false })
@@ -76,6 +79,7 @@ fun OnboardingRoute(
         canManage && manageProfile -> ProfileManagementRoute(session, { manageProfile = false })
         openProfile && !session.isReady && session.status == OnboardingStatus.PROFILE_REQUIRED -> ProfileRoute(session, onBack = { openProfile = false })
         else -> OnboardingScreen(state, model::check, model::submit, model::load, model::refresh, model::logout,
+            onWithdraw = onWithdraw.takeIf { session.signupCompleted },
             canManageProfile = canManage, onManageProfile = { if (canManage) manageProfile = true },
             canOpenSurvey = canSurvey, onOpenSurvey = { if (canSurvey) openSurvey = true },
             canOpenSettings = canSettings, onOpenSettings = { if (canSettings) openSettings = true },
@@ -112,6 +116,7 @@ fun OnboardingScreen(
     hubPreferences: (@Composable ColumnScope.() -> Unit)? = null,
     /** 희망 나이 단계에서 미리 열어 두는 키링 동기화 줄의 버튼 */
     hubSync: (@Composable ColumnScope.() -> Unit)? = null,
+    onWithdraw: (() -> Unit)? = null,
 ) {
     val session = state.session ?: return
     val agreements = session.status == OnboardingStatus.AGREEMENT_REQUIRED
@@ -125,7 +130,7 @@ fun OnboardingScreen(
     // 키링 단계: 가운데 키링 그림 · 키링 찾기 · 구매 안내(시안 02). 개발용 진입(설정 · 성향테스트 · 프로필 수정)은 두지 않는다
     if (keyring && !state.submitted) {
         KeyringIntro(state.busy, state.error?.let { it.stateTitle() }, linkFailed, state.purchaseUrl, onFind = onBleProbe, onOpen = ::open,
-            onReload = onReload, onRefresh = onRefresh, onLogout = onLogout)
+            onReload = onReload, onRefresh = onRefresh, onLogout = onLogout, onWithdraw = onWithdraw)
         return
     }
     // 프로필 · 성향테스트 · 희망 나이 · 동기화: 가입 준비 허브(아코디언). 단계별 시작 버튼만 두고 개발용 진입 · 다시 확인 버튼은 두지 않는다

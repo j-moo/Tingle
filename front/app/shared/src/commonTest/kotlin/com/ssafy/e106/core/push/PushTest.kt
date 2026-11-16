@@ -76,6 +76,27 @@ class PushMessageTest {
         assertEquals(PushTarget.Chat(42), m.target)
         assertEquals(7L, m.recipientUserId)
         assertEquals("b", m.bindingId)
+        // 서버가 제목 · 본문을 안 주면 앱 기본 문구
+        assertNull(m.title); assertNull(m.body)
+    }
+
+    @Test
+    fun matchedOpensNewChatRoom() {
+        val m = pushMessageOf(mapOf("type" to "CHAT_ROOM_CREATED", "chatRoomId" to "42", "bindingId" to "b"))
+        assertEquals(PushKind.CHAT_ROOM_CREATED, m.kind)
+        assertEquals(PushTarget.Chat(42), m.target)
+        assertEquals(PushTarget.Home, pushMessageOf(mapOf("type" to "CHAT_ROOM_CREATED", "chatRoomId" to "x")).target)
+    }
+
+    @Test
+    fun serverTitleAndBodyAreTrimmedAndCapped() {
+        val m = pushMessageOf(mapOf("type" to "CHAT_MESSAGE", "chatRoomId" to "42", "title" to " 초록 ", "body" to "가".repeat(400)))
+        assertEquals("초록", m.title)
+        assertEquals(300, m.body?.length)
+        assertNull(pushMessageOf(mapOf("type" to "CHAT_MESSAGE", "title" to "  ", "body" to "")).title)
+        // 자르는 자리에 이모지가 걸리면 반쪽을 남기지 않는다
+        assertEquals("가".repeat(79), ("가".repeat(79) + "😀").clip(80))
+        assertEquals("가".repeat(78) + "😀", ("가".repeat(78) + "😀😀").clip(80))
     }
 
     @Test

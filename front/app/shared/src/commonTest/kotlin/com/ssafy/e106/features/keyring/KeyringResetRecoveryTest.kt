@@ -58,9 +58,12 @@ internal class ResetServer : KeyringResetRepository, OwnedKeyringRepository {
     override suspend fun ack(deviceId: Long, runId: String, body: ResetAckBody): ApiResult<KeyringResetRun> {
         acknowledgements += body; return ackAction()
     }
+    // 실제 서버처럼 초기화가 끝나면 내 키링 목록에서 빠진다. 같은 키링을 다시 등록한 경우만 다시 보인다
+    var registeredAgain = false
     override suspend fun list(): ApiResult<List<OwnedKeyring>> {
         ownershipReads++; ownershipFailure?.let { return ApiResult.Fail(it) }
-        return ApiResult.Ok(listOf(OwnedKeyring(run.deviceId, "REGISTERED", "test")))
+        return ApiResult.Ok(if (run.state == "COMPLETED" && !registeredAgain) emptyList()
+            else listOf(OwnedKeyring(run.deviceId, "REGISTERED", "test")))
     }
 }
 internal class ResetBoard : ResetDevicePort {
@@ -171,6 +174,26 @@ class KeyringResetRecoveryTest {
         f.sync.rememberTarget(1, resetRun.deviceId, resetSerial)
         assertEquals(ResetRecoveryPhase.Completed, f.model().resume(1, resetRun.deviceId).phase)
         assertEquals(resetRun.deviceId, f.sync.read(1).single().deviceId)
+    }
+    @Test fun completedResetIsForgottenOnceSameKeyringIsRegisteredAgain() = runTest {
+        val f = ResetFixture(); f.seed(run = resetDone()); f.server.run = resetDone(); f.server.registeredAgain = true
+        // 다시 등록돼 내 키링 목록에 있으면 지난 완료 기록은 지우고 새 초기화를 시작할 수 있다
+        assertNull(f.model().inspect(1, resetRun.deviceId))
+        assertTrue(f.store.read(1).isEmpty())
+        f.server.run = resetRun; f.start()
+        assertEquals(1, f.server.starts.size)
+    }
+    @Test fun completedResetIsShownWhenOwnedListFails() = runTest {
+        val f = ResetFixture(); f.seed(run = resetDone()); f.server.run = resetDone()
+        f.server.registeredAgain = true; f.server.ownershipFailure = AppError.Offline
+        // 목록을 못 읽으면 지우지 않고 완료를 그대로 보인다(오류 · 부분 완료로 바꾸지 않음)
+        assertEquals("COMPLETED", f.model().inspect(1, resetRun.deviceId)?.run?.state)
+        assertEquals(1, f.store.read(1).size)
+    }
+    @Test fun completedResetStaysWhileKeyringIsNotRegistered() = runTest {
+        val f = ResetFixture(); f.seed(run = resetDone()); f.server.run = resetDone()
+        assertEquals("COMPLETED", f.model().inspect(1, resetRun.deviceId)?.run?.state)
+        assertEquals(1, f.store.read(1).size)
     }
     @Test fun accountChangeDuringHttpStopsBeforeBleAndDoesNotSaveLateResponse() = runTest {
         val f = ResetFixture()

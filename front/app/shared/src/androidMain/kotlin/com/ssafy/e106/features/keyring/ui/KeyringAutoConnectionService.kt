@@ -60,7 +60,7 @@ internal class KeyringAutoConnectionService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ACTION_STOP) {
-            controller.forget(this)
+            controller.stopByUser(this)
             stopSelf()
             return START_NOT_STICKY
         }

@@ -77,7 +77,7 @@ fun SurveyQuestionScreen(
             }
         }
         SpecialAnswers(state, !locked, onAnswerChange)
-        // "다음"은 선택지("모르겠어요") 아래: 답을 고르면 켜진다. "모르겠어요"와 붙어 보이지 않게 사이를 띄운다
+        // "다음"은 선택지("상관없어요") 아래: 답을 고르면 켜진다. 특수 답 버튼과 붙어 보이지 않게 사이를 띄운다
         AppButton(stringResource(if (state.ordinal == state.total) Res.string.survey_review_submit else Res.string.survey_next),
             Modifier.fillMaxWidth().padding(top = AppSpacing.Section), enabled = state.canContinue && !locked, onClick = onContinue)
         // "이전 문항"은 "다음" 아래에 테두리 없이 밑줄 글자로

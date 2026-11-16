@@ -96,7 +96,10 @@ internal fun SurveyStepScreen(
             stageError?.let { InlineError(it.message) }
             // 보내지 못한 답이 남아 있으면 제출만 기다린다(뒤에서 계속 다시 보내는 중)
             val waiting = step == SurveyStep.Done && state.pending.isNotEmpty()
-            if (primary != null) AppButton(stringResource(if (stageError != null) retry else primary.first), Modifier.fillMaxWidth(), loading = state.busy, enabled = !waiting,
+            // 분석 중 화면은 가운데에 로딩 모션이 늘 돌아서 버튼에는 로딩 원을 두지 않는다(확인하는 동안은 눌리지만 않게)
+            val analyzing = step == SurveyStep.Pending
+            if (primary != null) AppButton(stringResource(if (stageError != null) retry else primary.first), Modifier.fillMaxWidth(),
+                loading = state.busy && !analyzing, enabled = !waiting && !(analyzing && state.busy),
                 loadingText = stringResource(primary.first), onClick = primary.second)
             // 제출한 뒤에는 "재검사하기" 하나만 흰 버튼으로 둔다. 나가기는 왼쪽 위 <
             // (작성 중 회차 이어하기는 재검사 안내 화면이 이어 주고, 질문지 버전 · 직전 회차 확인 버튼은 두지 않는다)
@@ -113,6 +116,8 @@ internal fun SurveyStepScreen(
                 step == SurveyStep.Done && count != null -> stringResource(title, count)
                 else -> stringResource(title)
             }
+            // 분석 중에는 제목 위에 로딩 모션을 계속 보여 준다
+            if (step == SurveyStep.Pending) CircularProgressIndicator(Modifier.size(40.dp), color = AppColors.TextPrimary, strokeWidth = 3.dp)
             // 실패 · 부족 · 완료는 상태 화면 모양(아이콘 + 제목), 그 밖의 단계는 큰 제목
             if (kind != null) StateView(kind, text)
             else Text(text, style = MaterialTheme.typography.headlineMedium, textAlign = TextAlign.Center, modifier = Modifier.semantics { heading(); liveRegion = LiveRegionMode.Polite })

@@ -5,4 +5,5 @@
     <string name="push_chat_ending">대화가 곧 끝나요</string>
     <string name="push_other">새 알림이 있어요</string>
     <string name="push_new_proposal">새 매칭 제안이 도착했어요</string>
+    <string name="push_matched">우연한 만남이 있었어요!</string>
 </resources>

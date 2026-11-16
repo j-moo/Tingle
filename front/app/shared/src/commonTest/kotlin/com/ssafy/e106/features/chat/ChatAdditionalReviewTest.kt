@@ -198,6 +198,29 @@ class ChatAdditionalReviewTest {
         assertEquals(mapOf(20L to "하늘", 21L to null, 22L to null), names)
     }
 
+    @Test fun listShowsServerLastMessageOnlyForReadableRooms() = test {
+        val api = object : ChatTestServer() {
+            override suspend fun list(cursor: String?) = ApiResult.Ok(ChatRoomsPage(listOf(
+                roomRecord.copy(lastMessageSeq = 4, lastMessage = "커피 한잔 어때요?", lastMessageAt = "2026-11-15T06:05:00Z"),
+                roomRecord.copy(chatRoomId = 21, lastMessageSeq = 0),
+                roomRecord.copy(chatRoomId = 22),   // 옛 서버: 필드 없음
+                roomRecord.copy(chatRoomId = 23, canRead = false, lastMessageSeq = 2, lastMessage = "숨김"),
+                roomRecord.copy(chatRoomId = 24, lastMessageSeq = 3, lastMessage = " "),   // 순번은 있는데 본문이 비었으면 모름
+            ), null, now))
+        }
+        val m = ChatListViewModel(api, TestSession(OnboardingStatus.READY), ChatLocalStorage(ChatMemoryPrefs()))
+            .also { models.put("list", it); it.refresh() }
+        runCurrent()
+        val rooms = m.state.value.ui.rooms.associateBy { it.chatRoomId }
+        assertEquals(LastMessageKind.Text, rooms.getValue(20).lastMessageKind)
+        assertEquals("커피 한잔 어때요?", rooms.getValue(20).lastMessage)
+        assertEquals("2026-11-15T06:05:00Z", rooms.getValue(20).lastMessageTimeLabel)
+        assertEquals(LastMessageKind.None, rooms.getValue(21).lastMessageKind)
+        assertEquals(LastMessageKind.Unknown, rooms.getValue(22).lastMessageKind)
+        assertEquals(LastMessageKind.Unknown, rooms.getValue(23).lastMessageKind); assertNull(rooms.getValue(23).lastMessage)
+        assertEquals(LastMessageKind.Unknown, rooms.getValue(24).lastMessageKind); assertNull(rooms.getValue(24).lastMessageTimeLabel)
+    }
+
     @Test fun absentClosedRoomIsRecheckedAndCleanedAfterStorageRecreation() = test {
         val prefs = ChatMemoryPrefs(); val firstLocal = ChatLocalStorage(prefs)
         firstLocal.mutex.withLock { firstLocal.trackLocked(1, 20) }

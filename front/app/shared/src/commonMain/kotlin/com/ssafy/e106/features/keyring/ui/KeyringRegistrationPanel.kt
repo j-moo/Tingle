@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextAlign
@@ -25,14 +26,14 @@ import org.koin.compose.viewmodel.koinViewModel
         managedConnection = managedConnection, autoScan = true, onRegistrationDone = onRegistrationDone)
 }
 
-/** 재시도는 새 등록이 아니라 보관한 동일 요청의 결과 확인이다. 자동으로 서버 등록을 시작하지 않는다. */
+/** 새 등록은 사용자가 시작한다. 서버로 보낸 증명이 남은 요청만 화면에 들어오면 같은 요청으로 이어서 확인한다. */
 @Composable internal fun KeyringRegistrationPanel(model: KeyringRegistrationViewModel, ble: BleProbeViewModel,
     bleState: BleProbeState, syncBusy: Boolean = false, onRegistrationDone: (() -> Unit)? = null) {
     val state by model.state.collectAsStateWithLifecycle()
     // 가입 화면은 서버의 다음 단계를 다시 확인하고, 관리 화면은 확인된 등록 결과를 목록에서 보여준다.
     KeyringRegistrationPanelContent(state, bleState, syncBusy, onRestore = model::restore,
         onContinue = onRegistrationDone ?: model::continueOnboarding,
-        onRetry = { serial -> model.retry { challenge -> ble.registrationProof(challenge, serial) } }, onRestart = model::restart,
+        onRetry = { serial -> model.retry { challenge -> ble.registrationProof(challenge, serial) } },
         onStart = { serial -> model.start(serial) { challenge -> ble.registrationProof(challenge, serial) } })
 }
 
@@ -44,7 +45,6 @@ import org.koin.compose.viewmodel.koinViewModel
     onRestore: () -> Unit = {},
     onContinue: () -> Unit = {},
     onRetry: (serial: String) -> Unit = {},
-    onRestart: () -> Unit = {},
     onStart: (serial: String) -> Unit = {},
 ) {
     val serial = bleState.info?.serial
@@ -54,15 +54,22 @@ import org.koin.compose.viewmodel.koinViewModel
     val blocked = registrationBlock(bleState.info)
     // 실제 기기/회원이 바뀌면 이전 확인창의 동의를 재사용하지 않는다. 회전 후 확인창도 다시 연다.
     var confirm by remember(serial, state.owner) { mutableStateOf(false) }
+    val pending = state.pending
+    // 증명을 서버로 보낸 요청은 보드 없이 같은 요청으로 끝낼 수 있다. 요청마다 한 번만 자동으로 이어서 하고, 실패하면 버튼으로 넘긴다
+    var resumed by rememberSaveable(state.owner) { mutableStateOf<String?>(null) }
+    LaunchedEffect(state.loaded, pending?.registerKey, pending?.body != null) {
+        if (state.loaded && pending?.body != null && !state.busy && resumed != pending.registerKey) {
+            resumed = pending.registerKey; onRetry(pending.serial)
+        }
+    }
     // 위쪽 키링 선택 묶음과 맞춰 패널 글자 · 로딩 원도 가운데 정렬
     val center = TextAlign.Center
     Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(AppSpacing.Medium)) {
-        Text(stringResource(Res.string.registration_live_title), style = MaterialTheme.typography.titleMedium, textAlign = center)
         if (state.busy) { CircularProgressIndicator(); Text(stringResource(Res.string.registration_live_busy), textAlign = center) }
         if (!state.loaded && !state.busy) AppButton(stringResource(Res.string.registration_live_restore), full, enabled = !syncBusy, onClick = onRestore)
         state.error?.let { Text(it.message, color = MaterialTheme.colorScheme.error, textAlign = center) }
-        val visibleIssue = if (state.pending?.body == null && state.confirmed == null) blocked ?: state.issue else state.issue
+        val visibleIssue = if (pending?.body == null && state.confirmed == null) blocked ?: state.issue else state.issue
         visibleIssue?.let { issue -> Text(stringResource(when (issue) {
             RegistrationIssue.Storage -> Res.string.registration_live_storage
             RegistrationIssue.ExpiredChallenge -> Res.string.registration_live_expired
@@ -78,23 +85,17 @@ import org.koin.compose.viewmodel.koinViewModel
                 Text(stringResource(Res.string.registration_live_success), textAlign = center)
                 AppButton(stringResource(Res.string.registration_live_continue), full, enabled = !state.busy && !syncBusy, onClick = onContinue)
             }
-            state.pending != null -> {
-                val pending = state.pending
-                Text(stringResource(Res.string.registration_live_pending), textAlign = center)
-                val needsBoard = pending.body == null
-                AppButton(stringResource(Res.string.registration_live_retry), full, enabled = state.loaded && !state.busy && !syncBusy &&
-                    (!needsBoard || (blocked == null && bleState.connected && !bleState.busy && serial == pending.serial)),
-                    onClick = { onRetry(pending.serial) })
-                if (state.canRestart) AppButton(stringResource(Res.string.registration_live_restart), full, enabled = !state.busy && !syncBusy,
-                    variant = AppButtonVariant.Secondary, onClick = onRestart)
-            }
+            // 서버로 보낸 증명이 남은 요청: 화면에 들어오면 자동으로 이어서 하고, 실패했을 때만 다시 시도를 보여 준다
+            pending?.body != null -> if (!state.busy) AppButton(stringResource(Res.string.registration_live_retry), full,
+                enabled = state.loaded && !syncBusy, onClick = { onRetry(pending.serial) })
+            // 증명 전에 멈춘 요청은 새 등록과 같다(같은 보드면 같은 요청을 이어서, 다른 보드면 새로 시작한다)
             serial != null && bleState.info.supportsRegistration && blocked == null -> {
                 AppButton(stringResource(Res.string.registration_live_review), full, enabled = state.loaded && !state.busy &&
                     !bleState.busy && bleState.connected && !syncBusy, onClick = { confirm = true })
             }
         }
     }
-    if (confirm && serial != null && blocked == null && state.pending == null && state.confirmed == null) AlertDialog(
+    if (confirm && serial != null && blocked == null && pending?.body == null && state.confirmed == null) AlertDialog(
         onDismissRequest = { confirm = false }, title = { Text(stringResource(Res.string.registration_live_confirm_title)) },
         text = { Text(stringResource(Res.string.registration_live_confirm_body, serial)) },
         confirmButton = { TextButton(enabled = state.loaded && !state.busy && bleState.connected && !bleState.busy && !syncBusy,

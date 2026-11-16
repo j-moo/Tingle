@@ -21,6 +21,8 @@ data class ProfileManagementState(
     val recoveryRequired: Boolean = false,
     val savedNotice: Boolean = false,
     val photo: ByteArray? = null,
+    // 사진이 있다는데 받지 못함(보기 화면은 빈 칸 대신 기본 사람 모양)
+    val photoFailed: Boolean = false,
     // 저장 성공 후 이동은 현재 화면이 소비한다. 회전 전 화면의 콜백을 붙잡지 않는다.
     val saveCompleted: Boolean = false,
 ) {
@@ -64,7 +66,8 @@ class ProfileEditViewModel(
         // 화면 구성 해제(dispose)가 아니라 사용자의 실제 이탈에서만 요청을 취소한다.
         val uncertain = writing
         generation++; job?.cancel(); writing = false
-        mutable.update { it.copy(busy = false, photo = null, saveCompleted = false, recoveryRequired = it.recoveryRequired || uncertain,
+        // 사진은 지우지 않는다: 다시 들어올 때 같은 사진을 처음부터 그리지 않게(계정이 바뀌면 상태 전체가 초기화된다)
+        mutable.update { it.copy(busy = false, saveCompleted = false, recoveryRequired = it.recoveryRequired || uncertain,
             editor = it.editor?.copy(confirmDiscard = false)) }
     }
     private fun unexpected() = AppError.Unknown(IllegalStateException("Invalid profile response"))
@@ -86,7 +89,7 @@ class ProfileEditViewModel(
         }
     }
     fun load() = work { user, stamp ->
-        mutable.update { it.copy(photo = null) }
+        // 다시 불러오는 동안 보던 사진은 지우지 않는다(돌아올 때마다 사진 칸이 깜빡이지 않게). 새 사진이 오면 바꾼다
         when (val result = profiles.get(user)) {
             is ApiResult.Fail -> if (valid(stamp)) mutable.update { it.copy(error = result.error) }
             is ApiResult.Ok -> if (valid(stamp)) {
@@ -99,9 +102,11 @@ class ProfileEditViewModel(
                 pending = null
                 mutable.update { it.copy(recoveryRequired = false, savedNotice = it.savedNotice || confirmed) }
                 if (result.value.hasProfilePhoto) {
-                    val image = optional.photo(user)
-                    if (valid(stamp)) mutable.update { it.copy(photo = (image as? ApiResult.Ok)?.value) }
-                }
+                    val image = (optional.photo(user) as? ApiResult.Ok)?.value
+                    // 같은 사진이면 그대로 둬 다시 그리지 않는다. 못 받으면 옛 사진(바뀌었을 수 있다)을 남기지 않고 실패로 둔다
+                    if (valid(stamp)) mutable.update { it.copy(photo = if (image != null && it.photo?.contentEquals(image) == true) it.photo else image,
+                        photoFailed = image == null) }
+                } else mutable.update { it.copy(photo = null, photoFailed = false) }
             }
         }
     }

@@ -38,11 +38,11 @@ import org.koin.compose.koinInject
 import org.koin.compose.viewmodel.koinViewModel
 
 // Keyrings는 서버의 등록 목록을 확인하는 경로이며 BLE 등록/초기화 경로와 구분한다.
-internal enum class ServicePage { Home, Proposals, Menu, Chats, Safety, Report, AiConsent, Profile, Survey, Settings, Help, HelpHub, Keyrings, BleProbe, KeyringRegistration, KeyringReset, KeyringSync, Preparing }
+internal enum class ServicePage { Home, Proposals, Menu, Chats, Safety, Report, AiConsent, Profile, Survey, Settings, Help, HelpHub, Keyrings, BleProbe, KeyringRegistration, KeyringReset, KeyringSync, Preparing, Notifications }
 
 /** 가입 중에는 가입 화면을 유지하되, 탈퇴 제한을 해소할 소유 키링 관리 경로만 허용한다. */
 @Composable fun SignedInServiceHost(session: Session.SignedIn, access: ProposalAccess = koinInject(),
-    model: HomeSessionViewModel = koinViewModel(), pushes: PushEvents = koinInject(),
+    model: HomeSessionViewModel = koinViewModel(), pushes: PushEvents = koinInject(), inbox: NotificationInbox = koinInject(),
     // 기기 시험에서 BLE 부작용만 분리한다. 제품에서는 기존 Activity 범위의 자동 동기화를 사용한다.
     foregroundSync: @Composable (Boolean) -> Unit = { KeyringForegroundSync(suspendSync = it, allowEncounter = session.isReady) }) {
     val withdrawal: WithdrawalCoordinator = koinInject()
@@ -57,8 +57,6 @@ internal enum class ServicePage { Home, Proposals, Menu, Chats, Safety, Report, 
     val pendingPush by pushes.pending.collectAsStateWithLifecycle()
     var help by rememberSaveable { mutableStateOf(HelpGuideKind.Terms) }
     val openNotificationSettings = rememberOpenNotificationSettings()
-    // 키링 정보를 홈/마이 어느 쪽에서 열었는지 보존해 같은 메뉴로 돌아간다.
-    var keyringFromMenu by rememberSaveable(session.userId) { mutableStateOf(false) }
     var resetDeviceId by rememberSaveable(session.userId) { mutableStateOf<Long?>(null) }
     // 초기화하려다 키링 연결 화면으로 왔으면, 연결되는 대로 초기화 화면으로 돌려보낸다
     var connectForReset by rememberSaveable(session.userId) { mutableStateOf(false) }
@@ -75,7 +73,6 @@ internal enum class ServicePage { Home, Proposals, Menu, Chats, Safety, Report, 
     WithdrawalKeyringNavigation(session.userId, withdrawal) {
         // 탈퇴 제한 안내의 버튼도 메뉴와 같은 키링 관리 화면으로 이동한다. 다른 계정의 늦은 이동은 소비하지 않는다.
         opened = true
-        keyringFromMenu = true
         go(ServicePage.Keyrings)
     }
     // 알림은 이 화면에서만 소비한다. 입력/저장 중 화면을 빼앗지 않고 홈·마이 복귀 후 이동한다.
@@ -102,8 +99,9 @@ internal enum class ServicePage { Home, Proposals, Menu, Chats, Safety, Report, 
 
     // 가입 상태를 READY로 바꾸거나 홈·제안·채팅을 열지 않는다. 소유 해제에 필요한 화면만 예외다.
     if (!opened || (!access.allowed(session) && !canManageOwnedKeyring(session, page))) {
-        // 가입 중 화면에는 회원탈퇴를 두지 않는다(가입을 마친 뒤 내 정보에서 탈퇴한다)
-        OnboardingRoute(session, managedKeyringConnection = true)
+        // 가입 중 화면에는 회원탈퇴를 두지 않는다(가입을 마친 뒤 내 정보에서 탈퇴한다).
+        // 단, 가입을 마친 뒤 키링을 모두 초기화해 키링 화면에 갇힌 계정은 탈퇴 조건(키링 없음)을 갖췄으니 여기서 연다
+        OnboardingRoute(session, managedKeyringConnection = true, onWithdraw = { withdrawal.open(session.userId) })
         return
     }
     if (state.session != session) return
@@ -124,7 +122,8 @@ internal enum class ServicePage { Home, Proposals, Menu, Chats, Safety, Report, 
                 ServicePage.Home -> {
                     // 카드가 접혀 있어도 기기 연결이 끊기거나 복구되면 바로 표시한다.
                     val connection = observeOwnedKeyringConnection(session, state.home.keyrings, keyringBleModel())
-                    HomeScreen(state.home, model::setMatching, onAction = { action -> when (action) {
+                    val unread by inbox.items.collectAsStateWithLifecycle(emptyList())
+                    HomeScreen(state.home, model::setMatching, unreadNotifications = unread.any { !it.read }, onAction = { action -> when (action) {
                         HomeAction.Refresh -> {
                             connection.refresh?.invoke()
                             model.refreshHome()
@@ -132,7 +131,8 @@ internal enum class ServicePage { Home, Proposals, Menu, Chats, Safety, Report, 
                         HomeAction.Proposals -> proposals()
                         HomeAction.Profile -> go(ServicePage.Menu)
                         HomeAction.Chats -> chats()
-                        HomeAction.Keyring -> { keyringFromMenu = false; go(ServicePage.Keyrings) }
+                        HomeAction.Notifications -> go(ServicePage.Notifications)
+                        HomeAction.RegisterKeyring -> go(ServicePage.KeyringRegistration)
                     } }, onSaveKeyringAlias = model::saveKeyringAlias, keyringStatus = { connection.liveStatus },
                         connectedKeyringId = connection.deviceId, checkingKeyringStatus = connection.liveStatus?.loading == true,
                         keyringPublicName = { id, name ->
@@ -152,7 +152,7 @@ internal enum class ServicePage { Home, Proposals, Menu, Chats, Safety, Report, 
                         }
                     }, onConsent = { consentFromChat = true; go(ServicePage.AiConsent) },
                     // 실제 초안을 전달해야 추천 선택 시 기존 입력의 교체 확인을 받을 수 있다.
-                    support = { id, readable, editable, draft, insert, block, latest -> ConnectedChatExtras(id, readable, editable, insert, draft = draft, onBlock = block, latestMessage = latest) })
+                    support = { id, readable, editable, draft, insert, block, latest, used -> ConnectedChatExtras(id, readable, editable, insert, draft = draft, onBlock = block, latestMessage = latest, used = used) })
                 ServicePage.Safety -> roomId?.let { id -> ConnectedSafetyRoute(session, id, safetyOperation,
                     onBack = { chats(id) }, onClosed = { chats() }) }
                 ServicePage.Report -> roomId?.let { id -> ConnectedReportRoute(session, id, onBack = { chats(id) },
@@ -161,10 +161,18 @@ internal enum class ServicePage { Home, Proposals, Menu, Chats, Safety, Report, 
                     if(consentFromChat) chats() else go(ServicePage.Menu)
                 })
                 ServicePage.Profile -> ProfileManagementRoute(session, { go(ServicePage.Menu) })
+                // 알림을 누르면 알림이 왔을 때와 같은 곳으로 간다(상세 화면이 최신 권한을 다시 확인한다)
+                ServicePage.Notifications -> NotificationsRoute(session, { go(ServicePage.Home) }, onOpen = { target ->
+                    when (target) {
+                        is PushTarget.Chat -> chats(target.roomId)
+                        is PushTarget.Proposal -> proposals()
+                        PushTarget.Home -> go(ServicePage.Home)
+                    }
+                })
                 ServicePage.Survey -> SurveyRoute(session, { go(ServicePage.Menu) })
                 ServicePage.Settings -> ConnectedSettingsRoute(session, { go(ServicePage.Menu) })
                 // 소유 정보 확인만 수행하므로 메뉴를 열었다고 등록/동기화를 요청하지 않는다.
-                ServicePage.Keyrings -> ConnectedOwnedKeyringsRoute(session, { go(if (keyringFromMenu) ServicePage.Menu else ServicePage.Home) },
+                ServicePage.Keyrings -> ConnectedOwnedKeyringsRoute(session, { go(ServicePage.Menu) },
                     onReset = { id -> resetDeviceId = id; connectForReset = false; go(ServicePage.KeyringReset) },
                     onConnectForRecords = { connectForReset = false; go(ServicePage.BleProbe) }, ble = keyringBleModel(),
                     onRegister = if (session.isReady) ({ go(ServicePage.KeyringRegistration) }) else null,
@@ -204,7 +212,7 @@ internal enum class ServicePage { Home, Proposals, Menu, Chats, Safety, Report, 
                     AccountMenuAction.Matching -> go(ServicePage.Settings)
                     // 한 번 거절된 알림은 앱이 다시 켤 수 없어 휴대폰 설정의 이 앱 알림 화면으로 바로 보낸다
                     AccountMenuAction.Permissions -> openNotificationSettings()
-                    AccountMenuAction.Keyring -> { keyringFromMenu = true; go(ServicePage.Keyrings) }
+                    AccountMenuAction.Keyring -> go(ServicePage.Keyrings)
                     AccountMenuAction.Logout -> logoutPrompt = true
                     // 확인 화면으로만 진입한다. 메뉴 터치가 준비/탈퇴 POST를 실행하지 않는다.
                     AccountMenuAction.Withdrawal -> withdrawal.open(session.userId)
@@ -229,7 +237,8 @@ internal enum class ServicePage { Home, Proposals, Menu, Chats, Safety, Report, 
 }
 
 /** 편집·전송·신고 확인 화면에서는 알림 이동을 보류한다. */
-internal fun canOpenServicePush(page: ServicePage) = page in setOf(ServicePage.Home, ServicePage.Menu, ServicePage.Preparing)
+// 알림 모음은 입력 중인 내용이 없는 읽기 화면이라 바로 이동해도 된다
+internal fun canOpenServicePush(page: ServicePage) = page in setOf(ServicePage.Home, ServicePage.Menu, ServicePage.Preparing, ServicePage.Notifications)
 
 /** 약관 동의 이후의 가입 중 계정도 등록된 실물 키링을 해제할 수 있어야 한다. 서버 소유 검증은 각 API가 담당한다. */
 internal fun canManageOwnedKeyring(session: Session.SignedIn, page: ServicePage): Boolean =
