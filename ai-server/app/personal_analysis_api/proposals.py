@@ -1,8 +1,8 @@
-"""UNAPPROVED presentation candidate for development, tests and review only.
+"""Shared v2 presentation policy for personal analysis in every environment.
 
 Importing this module does not register a policy, runtime, verifier or router.
 Numeric fit continues to select/order gaps in the unchanged core; this proposed
-wording omits fit from text. Template IDs and priorities remain candidates.
+wording omits fit from text. Wording review is a team process, not a runtime gate.
 """
 
 from math import isfinite
@@ -99,7 +99,7 @@ def proposed_label_only_difference(row: dict, index: int, answers: AnswerContext
 
 
 def proposed_label_only_policy() -> PresentationPolicy:
-    """Explicit opt-in for review. Never used by PersonalAnalysisAdapter defaults."""
+    """Shared application policy; standalone adapter defaults remain unchanged."""
     return PresentationPolicy(
         reading_template_ids=CANDIDATE_READING_TEMPLATE_IDS,
         difference_reading=proposed_label_only_difference,

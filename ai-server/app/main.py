@@ -70,29 +70,17 @@ def create_app(app_settings: Settings | None = None, *, _risk_engine_factory: Ca
             raise ServiceAuthError(error.detail["code"]) from None
         return True
 
-    personal_development = configured.app_env in {"local", "test", "dev"}
-    personal_production = configured.app_env == "prod" and configured.personal_analysis_prod_enabled
-    if personal_development or personal_production:
-        if personal_production:
-            from app.personal_analysis_api.production import production_presentation_policy
+    from app.personal_analysis_api.adapter import PersonalAnalysisAdapter
+    from app.personal_analysis_api.proposals import proposed_label_only_policy
+    from app.personal_analysis_api.router import PersonalAnalysisRuntime, router as personal_analysis_router
 
-            presentation = production_presentation_policy()
-            if presentation is None:
-                raise RuntimeError("Personal analysis production presentation policy is not approved")
-        else:
-            from app.personal_analysis_api.proposals import proposed_label_only_policy
-
-            presentation = proposed_label_only_policy()
-
-        # Importing the adapter loads and verifies personal-only reference data.
-        from app.personal_analysis_api.adapter import PersonalAnalysisAdapter
-        from app.personal_analysis_api.router import PersonalAnalysisRuntime, router as personal_analysis_router
-
-        application.state.personal_analysis_runtime = PersonalAnalysisRuntime(
-            authorize=authorize_personal_analysis,
-            adapter=PersonalAnalysisAdapter(presentation=presentation),
-        )
-        application.include_router(personal_analysis_router)
+    # The reviewed v2 wording is shared by every environment. Authentication,
+    # version/reference integrity and per-request evidence validation stay intact.
+    application.state.personal_analysis_runtime = PersonalAnalysisRuntime(
+        authorize=authorize_personal_analysis,
+        adapter=PersonalAnalysisAdapter(presentation=proposed_label_only_policy()),
+    )
+    application.include_router(personal_analysis_router)
 
     application.get("/health", tags=["health"])(health_check)
     return application

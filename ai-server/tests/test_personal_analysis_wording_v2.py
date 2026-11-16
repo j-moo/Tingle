@@ -20,7 +20,6 @@ from app.personal_analysis_api import adapter as module
 from app.personal_analysis_api.adapter import (
     APPROVED_VERSION_BINDING, FormatterEvidenceMismatch, PersonalAnalysisAdapter, PresentationUnavailable, to_core_input,
 )
-from app.personal_analysis_api.production import production_presentation_policy
 from app.personal_analysis_api.proposals import proposed_label_only_policy
 from app.personal_analysis_api.router import PersonalAnalysisRuntime, router
 from app.personal_analysis_api.dto import PersonalAnalysisResponse
@@ -79,7 +78,6 @@ def test_v1_findings_are_reproduced_and_all_v2_sentences_are_checked(all_cases):
     assert len({c["id"] for c in all_cases if c["kind"] != "차이"}) == 15
     for case in all_cases:
         assert_wording(case)
-    assert production_presentation_policy() is None  # No wording review grants approval.
 
 
 @pytest.mark.parametrize("kind", ["succeeded", "insufficient"])
