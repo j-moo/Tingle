@@ -134,7 +134,7 @@ internal enum class ServicePage { Home, Proposals, Menu, Chats, Safety, Report, 
                             state.home.keyrings.singleOrNull { it.deviceId == id }?.let { device ->
                                 KeyringPublicNameControls(session.userId, device, name)
                             }
-                        }, error = state.error)
+                        }, error = state.error, busy = state.busy)
                 }
                 ServicePage.Proposals -> ConnectedProposalRoute(session, { go(ServicePage.Home) }, { go(ServicePage.Menu) },
                     { chats() }, { chats(it) }, pushes = pushes)

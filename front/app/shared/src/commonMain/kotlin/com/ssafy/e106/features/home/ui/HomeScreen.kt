@@ -1,6 +1,8 @@
 package com.ssafy.e106.features.home.ui
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.shrinkVertically
@@ -24,10 +26,10 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.semantics.*
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 import com.ssafy.e106.core.network.AppError
@@ -56,7 +58,9 @@ fun HomeScreen(state: HomeState, onMatchingChange: (Boolean) -> Unit, onAction: 
     connectedKeyringId: Long? = null,
     keyringPublicName: (@Composable (Long, String) -> Unit)? = null, error: AppError? = null,
     /** 안 읽은 알림이 있으면 종 모양에 점 */
-    unreadNotifications: Boolean = false) {
+    unreadNotifications: Boolean = false,
+    /** 조회 중(조용한 갱신 포함). 이 동안 원을 누르면 예전 설정 버전으로 저장하게 되므로 막는다 */
+    busy: Boolean = false) {
     // 위쪽 로딩은 사용자가 당겼을 때만 돈다. 키링 배터리 확인 · 조용한 갱신으로는 돌지 않는다
     val refreshing = state.refreshing
     val refreshLabel = stringResource(Res.string.home_refresh)
@@ -88,7 +92,7 @@ fun HomeScreen(state: HomeState, onMatchingChange: (Boolean) -> Unit, onAction: 
                             }
                             HomeLoadState.Failed -> StateView(error.stateKind(), error.stateTitle(), onRetry = refresh)
                             HomeLoadState.Ready -> {
-                                MatchingPower(state, onMatchingChange, onOpenMatchingSettings)
+                                MatchingPower(state, busy, onMatchingChange, onOpenMatchingSettings)
                                 KeyringSummary(state, connectedKeyringId, keyringStatus, onSaveKeyringAlias, keyringPublicName)
                                 // 등록된 키링이 없으면(모두 초기화) 새 매칭을 켤 수 없다. 여기서 바로 키링을 등록하러 간다
                                 if (state.keyring == HomeKeyringState.Missing) AppButton(stringResource(Res.string.home_keyring_connect),
@@ -114,44 +118,54 @@ fun HomeScreen(state: HomeState, onMatchingChange: (Boolean) -> Unit, onAction: 
 private val PowerFill = Color(0xB3FFB3CC)    // 켜짐 원: 연분홍 70%
 private val PowerShine = Brush.verticalGradient(listOf(Color(0xB3FFFFFF), Color(0x00FFFFFF), Color(0x26FF7FAB)))   // 유리 반사광: 위는 희게, 아래는 분홍이 고인다
 private val PowerGlow = Color(0x99FF9CC0)    // 원 둘레로 번지는 빛
-private val PowerRing = Brush.verticalGradient(listOf(Color(0xF2FFFFFF), Color(0xB3FFC2D8)))   // 밝게 빛나는 테
+private val PowerRingTop = Color(0xF2FFFFFF)   // 밝게 빛나는 테(위 → 아래 그러데이션)
+private val PowerRingBottom = Color(0xB3FFC2D8)
 private val PowerInk = Color(0xFFB0235A)     // 연분홍 위 ON 글자(대비 4.5:1 이상)
 private val PowerGlowRoom = 40.dp            // 원(180dp) 둘레 빛이 원 바깥으로 번지는 거리
 
-/** 가운데 큰 원: 켜짐 = 연분홍 반투명 유리 원 · 빛나는 밝은 테, 꺼짐 = 회색. 누르면 바꾼다(호출부가 설정 화면을 주면 그리로 연다) */
+/**
+ * 가운데 큰 원: 켜짐 = 연분홍 반투명 유리 원 · 빛나는 밝은 테, 꺼짐 = 회색. 누르면 바꾼다(호출부가 설정 화면을 주면 그리로 연다).
+ * 원 아래 묶음(제목 · 문구 한 줄)은 높이가 늘 같아서 눌러도 원이 위아래로 움직이지 않는다
+ */
 @Composable
-private fun MatchingPower(state: HomeState, onMatchingChange: (Boolean) -> Unit, onOpenSettings: (() -> Unit)?) {
+private fun MatchingPower(state: HomeState, busy: Boolean, onMatchingChange: (Boolean) -> Unit, onOpenSettings: (() -> Unit)?) {
     // 등록된 키링이 없으면 저장된 설정과 상관없이 새 매칭이 돌지 않는다: 원은 눌리지 않는 흐린 OFF 로 두고 키링 연결을 안내한다
     val missing = state.keyring == HomeKeyringState.Missing
     val on = if (missing) false else state.matchingEnabled
     val label = stringResource(when (on) { true -> Res.string.home_matching_on; false -> Res.string.home_matching_off; null -> Res.string.home_matching_title })
-    val enabled = on != null && !state.savingMatching && !missing
+    val enabled = on != null && !state.savingMatching && !missing && !busy
+    // 켜고 끌 때 색만 약 200ms 동안 바뀐다
+    val fade = tween<Color>(200)
+    val glow by animateColorAsState(if (on == true) PowerGlow else PowerGlow.copy(alpha = 0f), fade)
+    val ringTop by animateColorAsState(if (on == true) PowerRingTop else AppColors.SurfaceMuted, fade)
+    val ringBottom by animateColorAsState(if (on == true) PowerRingBottom else AppColors.SurfaceMuted, fade)
+    val fill by animateColorAsState(if (on == true) PowerFill else AppColors.BorderSubtle, fade)
+    val ink by animateColorAsState(if (on == true) PowerInk else AppColors.TextSecondary, fade)
     Box(Modifier.size(180.dp).alpha(if (missing) 0.55f else 1f)
         // 켜짐: 원 둘레로 분홍 빛이 번진다
-        .then(if (on == true) Modifier.drawBehind {
+        .drawBehind {
             val reach = size.minDimension * 0.72f
-            drawCircle(Brush.radialGradient(listOf(PowerGlow, PowerGlow.copy(alpha = 0f)), radius = reach), reach)
-        } else Modifier)
-        .border(14.dp, if (on == true) PowerRing else SolidColor(AppColors.SurfaceMuted), CircleShape)
-        .padding(14.dp).frost(CircleShape).background(if (on == true) PowerFill else AppColors.BorderSubtle)
+            drawCircle(Brush.radialGradient(listOf(glow, glow.copy(alpha = 0f)), radius = reach), reach)
+        }
+        .border(14.dp, Brush.verticalGradient(listOf(ringTop, ringBottom)), CircleShape)
+        .padding(14.dp).frost(CircleShape).background(fill)
         .then(if (on == true) Modifier.background(PowerShine).border(1.5.dp, Color.White.copy(alpha = 0.85f), CircleShape) else Modifier)
         .clickable(enabled, role = Role.Switch, onClickLabel = label) { if (onOpenSettings != null) onOpenSettings() else onMatchingChange(on != true) }
         .semantics { stateDescription = label; if (on != null) toggleableState = androidx.compose.ui.state.ToggleableState(on) },
         contentAlignment = Alignment.Center) {
         Text(stringResource(when (on) { true -> Res.string.home_power_on; false -> Res.string.home_power_off; null -> Res.string.home_unknown }),
             style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.ExtraBold,
-            color = if (on == true) PowerInk else AppColors.TextSecondary)
+            color = ink)
     }
     Text(stringResource(when { missing -> Res.string.home_keyring_connect_title; on == true -> Res.string.home_power_on_title
         on == false -> Res.string.home_power_off_title; else -> Res.string.home_matching_unknown }),
         style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center,
+        maxLines = 1, overflow = TextOverflow.Ellipsis,
         modifier = Modifier.semantics { heading(); liveRegion = LiveRegionMode.Polite })
-    if (on == false && !missing) Text(stringResource(Res.string.home_power_off_body),
-        style = MaterialTheme.typography.bodyMedium, color = AppColors.TextSecondary, textAlign = TextAlign.Center)
-    if (state.savingMatching) Text(stringResource(Res.string.home_matching_saving), textAlign = TextAlign.Center,
-        modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite })
-    else if (state.matchingSaveFailed) Text(stringResource(Res.string.home_matching_failed), color = AppColors.Error, textAlign = TextAlign.Center,
-        modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite })
+    // 실패 문구 자리: 비어 있어도 늘 한 줄 높이를 차지한다
+    Text(if (state.matchingSaveFailed) stringResource(Res.string.home_matching_failed) else "", color = AppColors.Error,
+        textAlign = TextAlign.Center, maxLines = 1, minLines = 1, overflow = TextOverflow.Ellipsis,
+        modifier = Modifier.fillMaxWidth().semantics { liveRegion = LiveRegionMode.Polite })
 }
 
 /**

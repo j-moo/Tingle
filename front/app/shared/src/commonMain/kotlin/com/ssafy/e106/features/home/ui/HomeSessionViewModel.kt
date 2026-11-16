@@ -139,7 +139,7 @@ class HomeSessionViewModel(private val profiles: ProfileRepository, private val 
      * 홈 큰 원: 새 매칭 켜기 · 끄기를 바로 저장한다. 사진 조건은 받은 값 그대로 두고 켜짐만 바꾼다.
      * - 서버 저장이 확정되거나(응답) 응답을 잃은 뒤 다시 받아 보니 설정이 바뀌어 있으면, 화면을 떠났어도 같은 계정인 한 키링 동기화에 알린다.
      *   안 알리면 이미 연결 · 동기화를 마친 키링이 예전 설정으로 계속 동작한다.
-     * - 다른 곳에서 먼저 바꿨으면(412 등) 덮어쓰지 않고 실패로 알린 뒤 서버의 최신 값을 보여 준다.
+     * - 원은 누르는 즉시 바뀐 값으로 보여 준다. 실패하면 서버의 최신 값(412 = 다른 곳에서 먼저 바꿈 포함)을, 그것도 못 받으면 누르기 전 값을 보여 준다.
      * - 화면 반영은 같은 계정이면 화면을 떠났어도 한다(stamp 와 상관없이). 안 그러면 탭을 옮겼다 온 뒤 저장 중 표시가 남아 원이 안 눌린다.
      *   저장 중에 홈을 다시 열면 [home] 이 저장이 끝날 때까지 기다렸다 조회한다(이전 값 고정 방지).
      */
@@ -151,7 +151,7 @@ class HomeSessionViewModel(private val profiles: ProfileRepository, private val 
         if (mutable.value.busy || mutable.value.home.savingMatching || values.enabled == enabled) return
         val target = values.copy(enabled = enabled)
         fun sameAccount() = (sessions.state.value as? Session.SignedIn)?.userId == user.userId
-        mutable.update { it.copy(home = it.home.copy(savingMatching = true, matchingSaveFailed = false)) }
+        mutable.update { it.copy(home = it.home.copy(savingMatching = true, matchingSaveFailed = false, matchingEnabled = enabled)) }
         saving = viewModelScope.launch {
             val result = settings.save(user.userId, SettingsKind.MATCHING, target, etag)
             val saved = (result as? ApiResult.Ok)?.value?.takeIf { it.values == target && validSettingsEtag(it.etag) }
@@ -164,7 +164,7 @@ class HomeSessionViewModel(private val profiles: ProfileRepository, private val 
             val shown = now ?: latest
             if (shown != null) matching = shown
             mutable.update { it.copy(home = it.home.copy(savingMatching = false, matchingSaveFailed = now == null,
-                matchingEnabled = (shown?.values as? ConflictValues.Matching)?.enabled ?: it.home.matchingEnabled)) }
+                matchingEnabled = (shown?.values as? ConflictValues.Matching)?.enabled ?: values.enabled)) }
         }
     }
     fun account() = read { user, stamp ->

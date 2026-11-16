@@ -27,11 +27,12 @@ class HomeSessionKeepTest {
         var getGate: CompletableDeferred<Unit>? = null
         var saveGate: CompletableDeferred<Unit>? = null
         var getFails: Exception? = null
+        var getOffline = false
         var saveFails = false
         override suspend fun get(userId: Long, kind: SettingsKind): ApiResult<SettingsDocument> {
             getGate?.await()
             getFails?.let { throw it }
-            return ApiResult.Ok(current)
+            return if (getOffline) ApiResult.Fail(AppError.Offline) else ApiResult.Ok(current)
         }
         override suspend fun save(userId: Long, kind: SettingsKind, values: ConflictValues, etag: String): ApiResult<SettingsDocument> {
             saves += values
@@ -141,6 +142,33 @@ class HomeSessionKeepTest {
             vm.setMatching(false); runCurrent()
             assertEquals(2, settings.saves.size)
             assertEquals(false, vm.state.value.home.matchingEnabled)
+        }
+    }
+
+    // 원은 누르는 즉시 바뀐다. 실패하면 서버 최신 값을, 그것도 못 받으면 누르기 전 값을 보여 준다
+    @Test fun optimisticToggleRevertsToLatestOrPrevious() = runTest {
+        val settings = FakeSettings()
+        withModel(settings) { vm ->
+            vm.home(); runCurrent()
+            settings.saveGate = CompletableDeferred(); settings.saveFails = true
+            vm.setMatching(false); runCurrent()
+            assertEquals(false, vm.state.value.home.matchingEnabled)
+            assertTrue(vm.state.value.home.savingMatching)
+
+            // 다른 곳에서 먼저 바뀜: 서버 최신 값(꺼짐, 사진 조건 바뀜)
+            settings.current = SettingsDocument(ConflictValues.Matching(false, true), "\"v3\"")
+            settings.saveGate!!.complete(Unit); runCurrent()
+            assertTrue(vm.state.value.home.matchingSaveFailed)
+            assertEquals(false, vm.state.value.home.matchingEnabled)
+
+            // 최신 값도 못 받음: 누르기 전 값(꺼짐)으로 돌아간다
+            settings.saveGate = CompletableDeferred(); settings.getOffline = true
+            vm.setMatching(true); runCurrent()
+            assertEquals(true, vm.state.value.home.matchingEnabled)
+            settings.saveGate!!.complete(Unit); runCurrent()
+            assertTrue(vm.state.value.home.matchingSaveFailed)
+            assertEquals(false, vm.state.value.home.matchingEnabled)
+            assertFalse(vm.state.value.home.savingMatching)
         }
     }
 }
