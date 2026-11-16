@@ -3,6 +3,8 @@ package com.ssafy.e106.features.keyring.ui
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.ssafy.e106.core.auth.*
+import com.ssafy.e106.core.ble.BleException
+import com.ssafy.e106.core.ble.BleFailure
 import com.ssafy.e106.features.keyring.data.*
 import com.ssafy.e106.core.network.*
 import kotlinx.coroutines.*
@@ -79,19 +81,47 @@ class KeyringResetViewModel(private val recovery: KeyringResetRecovery, private 
         // 연결 이벤트가 다시 오지 않는 동안 활성화된 시작 버튼이 아무 동작도 하지 않게 된다.
         if (pending == null) { load(id, connected, connectedSerial); return }
         connected = device != null
-        execute(KeyringResetStage.Recovering) { owner, stamp ->
+        // 결과를 기다리는 중에 다시 조회할 때는 "결과를 확인하고 있어요"를 그대로 둔다(진행 · 실패 문구로 깜빡이지 않게)
+        val stage = if (state.value.stage == KeyringResetStage.Waiting) KeyringResetStage.Waiting else KeyringResetStage.Recovering
+        execute(stage) { owner, stamp ->
             val result = recovery.resume(owner, id, device); ensure(owner, stamp)
             pending = result.ticket
             showTicket(owner, stamp, result.ticket)
         }
     }
+    /**
+     * 결과 대기를 멈추고 실패로 보여 준다(재연결 시간 초과 · 블루투스 꺼짐 · 권한 없음처럼 기다려도 낫지 않는 경우).
+     * 실행 기록은 그대로라 "다시 시도"나 다시 열기로 같은 실행을 이어 간다.
+     */
+    fun stopWaiting(message: String?) {
+        if (state.value.stage != KeyringResetStage.Waiting) return
+        // 진행 중인 결과 조회도 멈춘다. 늦게 끝난 응답이 실패 표시를 덮지 않게 세대를 올린다(증명 · 실행 기록은 저장소에 남는다)
+        // 취소한 작업이 증명을 이미 저장했을 수 있어 메모리 기록은 버린다. 다음 시도는 저장소에서 다시 판정한다(증명 있으면 서버만 마저)
+        generation++; work?.cancel(); work = null; pending = null
+        mutable.update { it.copy(stage = KeyringResetStage.Unknown, resumeSerial = null, errorMessage = message) }
+    }
+    /** 실패로 멈춘 실행을 "다시 시도"하면 같은 키링을 다시 찾아 결과부터 읽는다(화면이 재연결을 맡는다). */
+    fun waitForDevice() {
+        val ticket = pending ?: return
+        if (work?.isActive == true || ticket.run == null || ticket.ack != null) return
+        mutable.update { it.copy(stage = KeyringResetStage.Waiting, errorMessage = null, resumeSerial = ticket.serial,
+            waitTick = it.waitTick + 1) }
+    }
     private suspend fun showTicket(owner: Long, stamp: Long, ticket: ResetTicket) {
         val completed = ticket.run?.state == "COMPLETED"
         // 소유 해제 직후의 정리는 recovery에서 한 번만 한다. 과거 완료 화면 재조회가 새 등록을 지우면 안 된다.
         ensure(owner, stamp)
-        mutable.value = KeyringResetState(stage = if (completed) KeyringResetStage.Complete else if (ticket.ack != null)
-            KeyringResetStage.Partial else KeyringResetStage.Unknown, deviceLabel = "#${ticket.deviceId}",
-            connected = connected, deviceResetConfirmed = completed || ticket.ack != null, ownershipReleased = completed)
+        // 실행은 있는데 키링 증명이 아직 없으면(연결 끊김 · 키링이 아직 지우는 중) 실패가 아니라 결과 대기다
+        val waiting = !completed && ticket.ack == null && ticket.run != null
+        val tick = state.value.waitTick
+        mutable.value = KeyringResetState(stage = when {
+                completed -> KeyringResetStage.Complete
+                ticket.ack != null -> KeyringResetStage.Partial
+                waiting -> KeyringResetStage.Waiting
+                else -> KeyringResetStage.Unknown
+            }, deviceLabel = "#${ticket.deviceId}",
+            connected = connected, deviceResetConfirmed = completed || ticket.ack != null, ownershipReleased = completed,
+            resumeSerial = ticket.serial.takeIf { waiting }, waitTick = if (waiting) tick + 1 else tick)
     }
     private fun execute(stage: KeyringResetStage, action: suspend (Long, Long) -> Unit) {
         val owner = (sessions.state.value as? Session.SignedIn)?.userId ?: return
@@ -107,9 +137,18 @@ class KeyringResetViewModel(private val recovery: KeyringResetRecovery, private 
                 catch (cancelled: CancellationException) { throw cancelled }
                 catch (_: Exception) { ensure(owner, stamp) }
                 // 저장 실패/시간 초과는 결과 불명이다. 실패를 초기화 취소로 표현하지 않는다.
-                mutable.update { it.copy(stage = if (pending?.ack != null) KeyringResetStage.Partial else KeyringResetStage.Unknown,
-                    deviceResetConfirmed = pending?.ack != null,
-                    errorMessage = (failure as? ResetApiException)?.error?.message) }
+                // 실행을 만든 뒤 블루투스가 끊긴 것(키링이 지우면서 재시작 · 페어링 정리)은 실패가 아니라 재연결 대기다
+                val current = pending
+                val waiting = current?.ack == null && current?.run != null &&
+                    (failure as? BleException)?.reason in RECONNECTABLE
+                mutable.update { it.copy(stage = when {
+                        current?.ack != null -> KeyringResetStage.Partial
+                        waiting -> KeyringResetStage.Waiting
+                        else -> KeyringResetStage.Unknown
+                    },
+                    deviceResetConfirmed = current?.ack != null,
+                    resumeSerial = current?.serial?.takeIf { waiting }, waitTick = if (waiting) it.waitTick + 1 else it.waitTick,
+                    errorMessage = if (waiting) null else (failure as? ResetApiException)?.error?.message) }
             }
         }
     }
@@ -120,3 +159,7 @@ class KeyringResetViewModel(private val recovery: KeyringResetRecovery, private 
     fun pause() { generation++; work?.cancel(); work = null; pending = null; connectedSerial = null; mutable.value = KeyringResetState() }
     override fun onCleared() { pause() }
 }
+
+/** 다시 연결하면 나을 수 있는 블루투스 실패. 그 밖의 실패(프레임 오류 · 보안 연결 필요 등)는 기다리지 않고 실패로 보여 준다 */
+private val RECONNECTABLE = setOf(BleFailure.Disconnected, BleFailure.Timeout, BleFailure.ConnectFailed,
+    BleFailure.WriteFailed, BleFailure.NotFound, BleFailure.ServiceMissing, BleFailure.SubscribeFailed)

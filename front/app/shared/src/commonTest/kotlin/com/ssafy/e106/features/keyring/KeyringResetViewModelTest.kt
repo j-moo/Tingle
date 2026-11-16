@@ -2,7 +2,9 @@ package com.ssafy.e106.features.keyring
 
 import androidx.lifecycle.ViewModelStore
 import com.ssafy.e106.core.auth.*
+import com.ssafy.e106.core.ble.*
 import com.ssafy.e106.core.network.*
+import com.ssafy.e106.features.keyring.data.*
 import com.ssafy.e106.features.keyring.ui.*
 import kotlinx.coroutines.*
 import kotlinx.coroutines.test.*
@@ -92,6 +94,99 @@ class KeyringResetViewModelTest {
         restored.recover(null); runCurrent()
         assertEquals(KeyringResetStage.Complete, restored.state.value.displayStage)
         assertEquals(listOf(resetProof, resetProof), f.server.acknowledgements)
+    }
+    /** 키링이 지우면서 블루투스가 끊기면 실패가 아니라 결과 대기다. 같은 키링에 다시 붙으면 증명부터 읽어 완료한다. */
+    @Test fun disconnectDuringResetWaitsForTheSameBoardAndReadsTheProofFirst() = runTest(dispatcher) {
+        val f = ResetFixture(); f.server.run = resetRun.copy(discardUnsentConfirmed = true)
+        f.server.ackAction = { ApiResult.Ok(resetDone().copy(discardUnsentConfirmed = true)) }
+        f.board.sendAction = { throw BleException(BleFailure.Disconnected) }
+        val m = model(f); m.load(resetRun.deviceId, true, resetSerial); runCurrent()
+        m.accepted(true); m.recordChoice(ResetRecordChoice.Delete); m.recordDeletionAccepted(true)
+        m.start(f.board); runCurrent()
+        assertEquals(KeyringResetStage.Waiting, m.state.value.displayStage)
+        assertEquals(resetSerial, m.state.value.resumeSerial); assertNull(m.state.value.errorMessage)
+        assertFalse(m.state.value.busy)   // 기다리는 동안 뒤로 갈 수 있다
+        // 다시 연결: 명령을 다시 보내지 않고 결과(증명)부터 읽어 서버 확인까지 끝낸다
+        val sends = f.board.sends
+        m.recover(f.board); runCurrent()
+        assertEquals(KeyringResetStage.Complete, m.state.value.displayStage)
+        assertEquals(sends, f.board.sends); assertEquals(1, f.board.queries); assertEquals(listOf(resetProof), f.server.acknowledgements)
+    }
+    /** 키링이 아직 지우는 중(PENDING)이면 결과 대기를 유지하고, 다시 조회할 때마다 대기 표시를 새로 한다. */
+    @Test fun devicePendingKeepsWaitingAndAppRestartResumesTheSameRun() = runTest(dispatcher) {
+        val f = ResetFixture(); f.seed(); f.server.ackAction = { ApiResult.Ok(resetDone()) }
+        f.board.resultAction = { null }
+        val m = model(f); m.load(resetRun.deviceId, false); runCurrent()
+        assertEquals(KeyringResetStage.Waiting, m.state.value.displayStage)   // 앱을 다시 열어도 같은 실행을 기다린다
+        val tick = m.state.value.waitTick
+        m.recover(f.board); runCurrent()
+        assertEquals(KeyringResetStage.Waiting, m.state.value.displayStage); assertTrue(m.state.value.waitTick > tick)
+        f.board.resultAction = { resetProof }
+        m.recover(f.board); runCurrent()
+        assertEquals(KeyringResetStage.Complete, m.state.value.displayStage)
+    }
+    /** 블루투스 끊김이 아닌 실제 실패(키링이 명령을 거절 · 서버 오류)는 실패로 보이고 "다시 시도"로 같은 키링을 다시 찾는다. */
+    @Test fun realFailureShowsFailureAndRetryWaitsForTheSameBoard() = runTest(dispatcher) {
+        val f = ResetFixture(); f.seed()
+        f.board.resultAction = { throw IllegalStateException("proof mismatch") }
+        val m = model(f); m.load(resetRun.deviceId, true, resetSerial); runCurrent()
+        m.recover(f.board); runCurrent()
+        assertEquals(KeyringResetStage.Unknown, m.state.value.displayStage); assertNull(m.state.value.resumeSerial)
+        m.waitForDevice()
+        assertEquals(KeyringResetStage.Waiting, m.state.value.displayStage); assertEquals(resetSerial, m.state.value.resumeSerial)
+    }
+    /** 기다려도 낫지 않는 실패는 결과 대기로 가리지 않는다: 키링 거절 · 재연결로 낫지 않는 블루투스 오류 · 실행 전 끊김. */
+    @Test fun nonTransientFailuresAreNotHiddenAsWaiting() = runTest(dispatcher) {
+        for (error in listOf<Exception>(BleCommandException("RESET_REJECTED"), BleException(BleFailure.InvalidFrame))) {
+            val f = ResetFixture(); f.seed(); f.board.resultAction = { throw error }
+            val m = model(f); m.load(resetRun.deviceId, true, resetSerial); runCurrent()
+            m.recover(f.board); runCurrent()
+            assertEquals(KeyringResetStage.Unknown, m.state.value.displayStage, error.toString())
+            models.clear()
+        }
+        // 실행이 생기기 전(POST 응답 유실)에 끊기면 기다릴 실행이 없다
+        val f = ResetFixture(); f.seed(run = null)
+        f.server.startAction = { throw BleException(BleFailure.Disconnected) }
+        val m = model(f); m.load(resetRun.deviceId, true, resetSerial); runCurrent()
+        assertNotEquals(KeyringResetStage.Waiting, m.state.value.displayStage)
+        m.recover(f.board); runCurrent()
+        assertEquals(KeyringResetStage.Unknown, m.state.value.displayStage)
+    }
+    /** 정해진 시간 · 블루투스 꺼짐으로 대기를 멈추면 원인과 "다시 시도"가 보이고, 다시 시도하면 같은 실행을 다시 기다린다. */
+    @Test fun stoppingTheWaitShowsTheCauseAndRetryWaitsAgain() = runTest(dispatcher) {
+        val f = ResetFixture(); f.seed(); f.board.resultAction = { null }
+        val m = model(f); m.load(resetRun.deviceId, false); runCurrent()
+        assertEquals(KeyringResetStage.Waiting, m.state.value.displayStage)
+        m.stopWaiting("블루투스를 켜 주세요")
+        assertEquals(KeyringResetStage.Unknown, m.state.value.displayStage); assertEquals("블루투스를 켜 주세요", m.state.value.errorMessage)
+        // 화면의 "다시 시도": 메모리 기록은 버렸으므로 저장소에서 다시 판정해 같은 실행을 다시 기다린다
+        m.waitForDevice(); m.recover(null); runCurrent()
+        assertEquals(KeyringResetStage.Waiting, m.state.value.displayStage); assertNull(m.state.value.errorMessage)
+    }
+    /** 결과 조회 중에 대기를 멈추면 늦게 온 키링 응답이 실패 표시를 덮지 않는다(증명은 저장소에 남아 다음에 이어 간다). */
+    @Test fun stoppingTheWaitIgnoresALateDeviceAnswer() = runTest(dispatcher) {
+        val f = ResetFixture(); f.seed(); val answer = CompletableDeferred<Unit>()
+        f.board.resultAction = { withContext(NonCancellable) { answer.await(); null } }
+        val m = model(f); m.load(resetRun.deviceId, true, resetSerial); runCurrent()
+        m.recover(f.board); runCurrent()
+        assertEquals(KeyringResetStage.Waiting, m.state.value.displayStage)
+        m.stopWaiting("시간 초과"); answer.complete(Unit); runCurrent()
+        assertEquals(KeyringResetStage.Unknown, m.state.value.displayStage); assertEquals("시간 초과", m.state.value.errorMessage)
+    }
+    /** 서버 확인을 기다리는 중에 대기를 멈춰도, 저장된 키링 증명으로 다시 시도는 서버만 마저 한다(키링을 다시 찾지 않는다). */
+    @Test fun stoppingTheWaitDuringAckRetriesOnlyTheServer() = runTest(dispatcher) {
+        val f = ResetFixture(); f.seed(); val server = CompletableDeferred<Unit>()
+        f.server.ackAction = { withContext(NonCancellable) { server.await() }; ApiResult.Ok(resetDone()) }
+        val m = model(f); m.load(resetRun.deviceId, true, resetSerial); runCurrent()
+        m.recover(f.board); runCurrent()
+        m.stopWaiting(null); server.complete(Unit); runCurrent()
+        assertEquals(KeyringResetStage.Unknown, m.state.value.displayStage)
+        m.waitForDevice(); assertNotEquals(KeyringResetStage.Waiting, m.state.value.displayStage)
+        val queries = f.board.queries
+        m.recover(null); runCurrent()   // 화면의 "다시 시도": 저장소에서 다시 판정
+        assertEquals(KeyringResetStage.Partial, m.state.value.displayStage); assertEquals(queries, f.board.queries)
+        m.recover(null); runCurrent()
+        assertEquals(KeyringResetStage.Complete, m.state.value.displayStage)
     }
     @Test fun leavingOrSwitchingAccountDiscardsLateUiButKeepsExecution() = runTest(dispatcher) {
         val f = ResetFixture(); f.seed(); val waiting = CompletableDeferred<Unit>()

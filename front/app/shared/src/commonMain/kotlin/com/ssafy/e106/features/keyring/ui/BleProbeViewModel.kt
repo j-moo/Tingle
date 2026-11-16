@@ -38,6 +38,8 @@ class BleProbeViewModel(
     private var watcher: Job? = null
     private var connection: BleConnection? = null
     private var foreground = false
+    // 플랫폼이 기억한 초기화 대상 키링의 일련번호. 다른 키링을 찾을 때는 그 대상만 확인하지 않는다
+    private var resetTargetSerial: String? = null
     private var reconnect: Job? = null
     private var ownedStatusRequest: Job? = null
 
@@ -129,6 +131,33 @@ class BleProbeViewModel(
         val serial = target.deviceSerial?.takeIf { it.isNotBlank() } ?: return
         val owner = (sessions.state.value as? Session.SignedIn)?.userId ?: return
         if (state.value.connected && state.value.info?.serial == serial) return
+        connectSerial(serial, target.deviceId, recover = true, resetOnly = false) { info ->
+            verifyOwnership(info, owner, registrationMode = false, expectedDeviceId = target.deviceId)
+        }
+    }
+
+    /**
+     * 초기화 도중 끊긴 키링에 같은 화면에서 다시 붙는다. 일련번호가 같은 실물만 연결한다.
+     * 초기화를 마친 보드는 UNOWNED 이고 서버 소유 목록에서도 빠질 수 있어 소유 목록은 대조하지 않는다.
+     * 연결 뒤 결과 조회는 같은 실행의 기기 서명 증명으로 다시 검증한다(KeyringResetProtocol).
+     */
+    fun reconnectForReset(serial: String) {
+        if ((sessions.state.value as? Session.SignedIn) == null) return
+        if (state.value.connected && state.value.info?.serial == serial) return
+        if (state.value.busy || state.value.scanning) return
+        // 자동 재연결은 하지 않는다. 초기화 화면이 대기 중인 동안 다시 부른다
+        connectSerial(serial, expectedDeviceId = null, recover = false, resetOnly = true) { info ->
+            if (info.ownerState !in setOf("BOUND", "UNOWNED")) throw BleException(BleFailure.NotOwned)
+        }
+    }
+
+    /**
+     * 근처 후보를 신호 순으로 확인해 일련번호가 같은 실물에만 연결한다.
+     * [resetOnly]: 초기화 재연결. 일련번호를 확인한 초기화 대상을 기억하고 그 일련번호가 같으면 그 기기만 확인하고, 보이면 바로 탐색을 끝낸다.
+     * 근처 다른 키링에 차례로 붙었다 끊지 않는다. 초기화 대상을 모를 때(앱 재시작 · 다른 일련번호)만 전체 후보를 확인한다.
+     */
+    private fun connectSerial(serial: String, expectedDeviceId: Long?, recover: Boolean, resetOnly: Boolean,
+        verify: suspend (BleDeviceInfo) -> Unit) {
         val previous = work
         val previousReconnect = reconnect
         leave()
@@ -136,6 +165,8 @@ class BleProbeViewModel(
         mutable.value = BleProbeState(scanning = true)
         work = viewModelScope.launch {
             var matched: Pair<BleConnection, BleDeviceInfo>? = null
+            // 초기화 대상을 기억하면(일련번호를 확인한 기기) 그 기기만 확인한다. 모르면(앱 재시작) 전체를 확인한다
+            val onlyTarget = resetOnly && resetTargetSerial == serial && ble.hasResetTarget()
             try {
                 previous?.join()
                 previousReconnect?.join()
@@ -143,7 +174,12 @@ class BleProbeViewModel(
                 var scanFailure: BleException? = null
                 // 플랫폼이 스캔을 정리한 뒤에만 후보를 확인한다. 목록에는 계정에서 고른 기기만 표시한다.
                 try {
-                    withTimeoutOrNull(15_000) { ble.scan().collect { nearby = it } }
+                    withTimeoutOrNull(15_000) {
+                        // 초기화 대상이 보이면 15초를 다 기다리지 않는다
+                        if (onlyTarget) ble.scan().onEach { nearby = it }.firstOrNull { found -> found.any { ble.isResetTarget(it.id) } }
+                        else ble.scan().collect { nearby = it }
+                    }
+                    if (onlyTarget) nearby = nearby.filter { ble.isResetTarget(it.id) }
                 } catch (failure: BleException) {
                     if (failure.reason != BleFailure.ScanFailed) throw failure
                     // 스캔 자체가 실패해도 OS가 기억하는 등록 키링에는 연결할 수 있다.
@@ -158,20 +194,23 @@ class BleProbeViewModel(
                 }
                 if (matched == null) {
                     // 새 검색 결과가 없는 Fold6에서도 서버 목록에서 선택한 실물만 연결한다.
+                    // 초기화 재연결은 페어링된 다른 키링은 확인하지 않는다(대상을 기억하면 그 기기만)
                     withTimeoutOrNull(16_000) {
-                        for (id in ble.bondedKeyringCandidates()) {
+                        for (id in ble.bondedKeyringCandidates().filter { !onlyTarget || ble.isResetTarget(it) }) {
                             withTimeoutOrNull(8_000) { matched = probeOwnedCandidate(id, serial) }
                             if (matched != null) break
                         }
                     }
                 }
                 val (channel, info) = matched ?: throw (scanFailure ?: BleException(BleFailure.NotFound))
-                verifyOwnership(info, owner, registrationMode = false, expectedDeviceId = target.deviceId)
+                verify(info)
                 if (stamp != generation) return@launch
                 if (channel.state.value == BleLinkState.Closed) throw BleException(BleFailure.Disconnected)
                 connection = channel
+                // 일련번호를 확인한 초기화 대상을 기억한다(다음 재연결은 이 기기만 확인)
+                if (resetOnly) { ble.pinResetTarget(); resetTargetSerial = serial }
                 mutable.value = BleProbeState(connected = true, info = info, connectionGeneration = stamp)
-                watch(channel, stamp, serial, registrationMode = false, expectedDeviceId = target.deviceId)
+                watch(channel, stamp, serial, registrationMode = false, expectedDeviceId = expectedDeviceId, recover = recover)
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (failure: Exception) {
@@ -627,6 +666,8 @@ class BleProbeViewModel(
             // 초기화/증명 재조회도 같은 연결 락·계정 경계를 사용한다. 다른 등록/설정 전송과 겹치지 않는다.
             val info = readInfo(channel)
             check(stamp == generation && channel === connection && info.serial == serial && info.supportsReset)
+            // 초기화 통신 중인 이 키링을 기억한다. 키링이 지우면서 끊기면 이 기기에만 다시 붙는다
+            ble.pinResetTarget(); resetTargetSerial = serial
             mutable.update { it.copy(info = info) }
             val result = action(channel, info)
             check(stamp == generation && channel === connection)

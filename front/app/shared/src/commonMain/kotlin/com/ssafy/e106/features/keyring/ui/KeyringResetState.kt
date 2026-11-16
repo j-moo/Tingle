@@ -1,7 +1,7 @@
 package com.ssafy.e106.features.keyring.ui
 
 // 화면 상태는 BE/BLE 코드와 분리한다. 실제 실행의 증명·소유 해제 결과를 ViewModel에서 매핑한다.
-enum class KeyringResetStage { Loading, Ready, Confirm, Disconnected, Preparing, Resetting, Unlinking, Partial, Recovering, Unknown, Failed, Complete, Unavailable }
+enum class KeyringResetStage { Loading, Ready, Confirm, Disconnected, Preparing, Resetting, Unlinking, Partial, Recovering, Waiting, Unknown, Failed, Complete, Unavailable }
 enum class KeyringResetAction { Back, Cancel, StartReset, UploadRecords, CheckConnection, CheckResult, Retry, Refresh, Close }
 enum class ResetRecordChoice { UploadFirst, Delete }
 
@@ -22,6 +22,10 @@ data class KeyringResetState(
     val recordQueryAvailable: Boolean = false,
     val recordUploadAvailable: Boolean = false,
     val errorMessage: String? = null,
+    // Waiting: 기기 결과를 기다리는 실행의 키링 일련번호. 같은 실물에만 다시 연결해 결과를 읽는다
+    val resumeSerial: String? = null,
+    // Waiting 이 다시 설정될 때마다 올린다(같은 연결에서 키링이 아직 PENDING 이면 잠시 뒤 다시 조회하게)
+    val waitTick: Int = 0,
 ) {
     val displayStage: KeyringResetStage get() = when {
         stage == KeyringResetStage.Complete && !(deviceResetConfirmed && ownershipReleased) -> KeyringResetStage.Unknown
