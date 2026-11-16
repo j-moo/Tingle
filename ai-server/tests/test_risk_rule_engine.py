@@ -435,10 +435,8 @@ def test_credential_followup_uses_only_a_prior_same_speaker_request(release, pri
         [finding(sequence=2, category="OTHER", notice="PERSONAL_INFO")] if kind == "RISK" else [])
 
 
-@pytest.mark.parametrize("invalid", [None, 0])
-def test_no_default_or_noncallable_token_counter(invalid):
-    with pytest.raises(TypeError):
-        LocalRuleRiskEngine()
+@pytest.mark.parametrize("invalid", [0, False, "not-a-counter"])
+def test_explicit_noncallable_token_counter_is_rejected(invalid):
     with pytest.raises(TypeError):
         LocalRuleRiskEngine(count_input_tokens=invalid)
 

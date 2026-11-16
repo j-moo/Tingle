@@ -1,6 +1,7 @@
 """Versioned full-context serialization and strictly local tokenization.
 
-The optional package is loaded only for explicit development activation.
+The optional package is loaded only for explicitly tokenized releases.
+Plain local rules do not require this package.
 No vocabulary download, model lookup, text-length estimate or fallback counter.
 """
 

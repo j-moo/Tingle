@@ -1,5 +1,5 @@
-# Optional only for RISK_LOCAL_RULES_ENABLED in local/test/dev.
-# Load a supplied local tokenizer.json; no model/provider/download at runtime.
+# Optional tokenized local/GMS releases only; plain local rules need no tokenizer.
+# Load supplied local bytes; runtime never downloads a model.
 tokenizers==0.22.2
 
 # Required for streamed ASGI contract tests.

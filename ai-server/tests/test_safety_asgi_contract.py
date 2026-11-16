@@ -15,7 +15,7 @@ from pydantic import ValidationError
 from app.risk_detection import local_engine
 from app.risk_detection.http_api import Finding, Message, Payload
 from app.risk_detection.local_engine import LocalRuleRiskEngine
-from app.risk_detection.releases import DevelopmentReleaseCatalog, DevelopmentReleaseError
+from app.risk_detection.releases import TokenizedLocalRuleReleaseCatalog, DevelopmentReleaseError
 from app.risk_detection.tokenization import LocalFileTokenizer, serialize_context
 from safety48_runtime_support import message, request_for, synthetic_release
 from safety_asgi_contract_support import (
@@ -28,19 +28,20 @@ from test_risk_detection_http import VERSION_FIELDS, finding, verdict
     ("local", None), ("test", None), ("dev", None), ("prod", None),
     ("test", False), ("prod", True),
 ])
-def test_default_off_and_prod_never_register_test_or_rule_engine(main_factory, monkeypatch, environment, enabled):
+def test_missing_release_never_registers_an_engine(main_factory, monkeypatch, environment, enabled):
     def forbidden(*args):
         pytest.fail("Disabled runtime reached the engine")
     monkeypatch.setattr(LocalRuleRiskEngine, "analyze", forbidden)
     monkeypatch.setattr(LocalRuleRiskEngine, "count_tokens", forbidden)
-    host = main_factory(environment=environment, enabled=enabled)
+    host = main_factory(environment=environment, enabled=enabled, configured=False)
     expect(host.post(raw=b"invalid-body-not-read"), 422, "POLICY_UNRESOLVED")
     expect(host.post(raw=b"invalid-body-not-read", credential=None), 401, "AUTH_REQUIRED")
 
 
-@pytest.mark.parametrize("environment", ["local", "test", "dev"])
-def test_explicit_synthetic_development_settings_are_required(main_factory, environment):
-    host = main_factory(environment=environment)
+@pytest.mark.parametrize("environment", ["local", "test", "dev", "prod"])
+@pytest.mark.parametrize("enabled", [None, False, True])
+def test_synthetic_release_works_in_every_environment_without_switch(main_factory, environment, enabled):
+    host = main_factory(environment=environment, enabled=enabled)
     expect(host.post())
 
 
@@ -256,7 +257,7 @@ def test_main_startup_verifies_artifact_and_tokenizer(main_factory, tmp_path, ch
 @pytest.mark.parametrize("total,status", [(3000, 200), (3001, 400)])
 def test_actual_registered_tokenizer_exact_limit(main_factory, tmp_path, total, status):
     release = synthetic_release(tmp_path)
-    catalog = DevelopmentReleaseCatalog(str(release.descriptor), descriptor_sha256=release.test_descriptor_pin)
+    catalog = TokenizedLocalRuleReleaseCatalog(str(release.descriptor), descriptor_sha256=release.test_descriptor_pin)
     overhead = catalog.tokenizer.count(serialize_context([Message(**message("!"))])) - 1
     messages = [message("!" * (total - overhead))]
     assert catalog.tokenizer.count(serialize_context([Message(**m) for m in messages])) == total
