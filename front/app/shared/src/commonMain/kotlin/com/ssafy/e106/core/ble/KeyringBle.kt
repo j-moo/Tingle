@@ -25,6 +25,11 @@ interface KeyringBle {
     /** 현재 탐색 후보가 이 프로세스에서 마지막으로 연결한 기기인지 플랫폼 안에서만 대조한다.
      * 탐색 ID는 매번 바뀌므로 화면이 예전 ID를 비교하면 안 된다. 주소를 노출/저장하지 않으며 소유 인증을 대신하지 않는다. */
     fun isPreviousDevice(candidateId: String): Boolean = false
+    /** 지금 연결된 기기(일련번호를 확인한 초기화 대상)를 기억한다. 다른 연결 · 확인으로 바뀌지 않는다. 계정이 바뀌면 지운다 */
+    fun pinResetTarget() {}
+    /** 현재 탐색 후보가 기억한 초기화 대상인지 플랫폼 안에서만 대조한다 */
+    fun isResetTarget(candidateId: String): Boolean = false
+    fun hasResetTarget(): Boolean = false
     /** 계정이 바뀌면 마지막 연결 기기 기억을 지운다. 다음 계정에게 이전 계정의 키링을 "최근 연결"로 알려 주지 않는다 */
     fun forgetPreviousDevice() {}
 }

@@ -37,7 +37,15 @@ class AndroidKeyringBle(context: Context) : KeyringBle {
     // 재탐색 ID는 폐기한다. 자동 연결 설정은 검증 후 사용자가 고른 페어링 주소만 Android 내부에서 보관한다.
     private var previousDevice: BluetoothDevice? = null
 
-    override fun forgetPreviousDevice() { previousDevice = null }
+    // 초기화 대상 키링(일련번호 확인 뒤 기억). 확인하려고 잠깐 연 다른 키링 · 자동 연결로 바뀌는 previousDevice 와 따로 둔다
+    private var resetTarget: BluetoothDevice? = null
+
+    override fun forgetPreviousDevice() { previousDevice = null; resetTarget = null }
+    // 연결은 한 번에 하나라 연결이 살아 있으면 previousDevice 가 지금 연결된 기기다.
+    // 연결이 이미 끊겼으면 이전 대상도 지운다(다른 키링이 대상으로 남아 다음 재연결이 그 키링만 확인하지 않게)
+    override fun pinResetTarget() { resetTarget = previousDevice?.takeIf { active?.state?.value == BleLinkState.Ready } }
+    override fun isResetTarget(candidateId: String): Boolean = candidates[candidateId]?.let { it == resetTarget } == true
+    override fun hasResetTarget(): Boolean = resetTarget != null
     override fun isPreviousDevice(candidateId: String): Boolean =
         candidates[candidateId]?.let { it == previousDevice } == true
 
