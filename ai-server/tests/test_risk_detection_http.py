@@ -10,7 +10,7 @@ from fastapi.testclient import TestClient
 import pytest
 
 from app.middleware.request_id import RequestIdMiddleware, install_error_handlers
-from app.risk_detection.http_api import ReleaseCatalog, create_router
+from app.risk_detection.http_api import Manifest, ReleaseCatalog, create_router
 
 
 ROUTE = "/internal/ai/risk-detections"
@@ -114,6 +114,24 @@ def test_transport_preserves_each_verdict_without_echoing_dialogue_or_context_id
 def test_unregistered_engine_is_rejected_before_request_validation(release):
     response = client_for(release, None).post(ROUTE, content=b"{invalid-private-body")
     assert_error(response, 422, "POLICY_UNRESOLVED")
+
+
+def test_excessively_nested_descriptor_is_a_policy_rejection_without_engine_calls(release):
+    release[0].write_bytes(b'[' * 20000 + b'0' + b']' * 20000)
+    engine = SyntheticEngine()
+    response = client_for(release, engine).post(ROUTE, json=payload(release))
+    assert_error(response, 422, "POLICY_UNRESOLVED")
+    assert engine.counted == engine.analyzed == []
+
+
+@pytest.mark.parametrize("error_type", [RecursionError, RuntimeError])
+def test_catalog_does_not_reclassify_internal_validation_errors_as_invalid_json(release, monkeypatch, error_type):
+    manifest = Manifest.model_validate(release[2])
+    def broken(*args, **kwargs):
+        raise error_type("synthetic-internal-validation-failure")
+    monkeypatch.setattr(Manifest, "model_validate", broken)
+    with pytest.raises(error_type, match="synthetic-internal-validation-failure"):
+        ReleaseCatalog(str(release[0])).supports(manifest)
 
 
 def test_authentication_runs_before_model_availability_or_body_validation(release):
