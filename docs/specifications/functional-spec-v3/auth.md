@@ -57,7 +57,7 @@
 | 시점과 조건 | 현재 가입 단계와 가입 이력 |
 | --- | --- |
 | `REQUIRED`, 필수 약관 동의 후 키링 미등록 | `KEYRING_REQUIRED`. 이후 키링 등록과 최신 설정 ACK를 포함한 기존 순서 적용 |
-| 과거 키링 없이 가입한 계정(개발 DB) | `signupCompleted=true`와 기존 완료 시각을 유지한다. 단계는 `KEYRING_REQUIRED`로 다시 계산해 `onboardingCompleted=false`가 될 수 있다. 홈·유효 제안·채팅 등 기존 기능은 AUTH-02와 각 기능의 권한 규칙 적용 |
+| 과거 키링 없이 가입한 계정 | `signupCompleted=true`와 기존 완료 시각을 유지한다. 단계는 `KEYRING_REQUIRED`로 다시 계산해 `onboardingCompleted=false`가 될 수 있다. 홈·유효 제안·채팅 등 기존 기능은 AUTH-02와 각 기능의 권한 규칙 적용 |
 
 가입 완료 이력, 등록 키링 소유 상태, 신규 만남 제출 권한을 따로 판정한다. 새 기기 작업과 만남 접수는 요청마다
 기존 인증·서명·소유권·설정 버전 등 해당 기능의 현재 조건을 확인한다. `READY`는 키링 등록 증명,

@@ -91,7 +91,7 @@ uid 1000이 호스트 소유자와 같다고 가정하지 않는다. 세대 파�
 JSON의 추가 nullable 필드는 기존 상태를 읽을 수 있으며, 구형 실행 프로그램은 새 필드를 무시하더라도
 이 재시도 개선을 제공하지 않으므로 복원 작업 중 구형 버전으로 되돌리지 않는다.
 
-BE 의 마운트 · 환경변수는 `infra/docker-compose.yml` 의 `back-env`(운영)와 `back-dev`(개발)에 있다(S15P31E106-250 · 407).
+BE 의 마운트 · 환경변수는 `infra/docker-compose.yml` 의 `back-blue`·`back-green`(`&back-env`, 운영)과 `back-dev`(개발)에 있다(S15P31E106-250 · 407).
 운영 · 개발 모두 늘 켜져 있고 끄는 설정은 없다. 갱신 cron 은 `backup-evidence-refresh.sh` 주석,
 복원은 `infra/restore-db.sh` 를 쓴다.
 배포 전에 메타데이터 폴더 · 세대 파일 · 그룹 권한을 준비한다. 백업 자동 삭제 활성화는 없다.
