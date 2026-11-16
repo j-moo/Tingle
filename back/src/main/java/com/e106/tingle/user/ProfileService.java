@@ -15,6 +15,7 @@ import com.e106.tingle.agreement.UserConsentRepository;
 import com.e106.tingle.global.error.BusinessException;
 import com.e106.tingle.global.error.ErrorCode;
 import com.e106.tingle.settings.snapshot.SettingsChangeCoordinator;
+import com.e106.tingle.user.dto.ContactEmailResponse;
 import com.e106.tingle.user.dto.NicknameAvailabilityResponse;
 import com.e106.tingle.user.dto.ProfileResponse;
 
@@ -42,6 +43,12 @@ public class ProfileService {
 	public ProfileResponse get(long userId) {
 		return profileRepository.findById(userId).map(ProfileResponse::from)
 			.orElseGet(() -> ProfileResponse.empty(userId));
+	}
+
+	@Transactional(readOnly = true)
+	public ContactEmailResponse contactEmail(long userId) {
+		return new ContactEmailResponse(userRepository.findById(userId)
+			.orElseThrow(() -> new BusinessException(ErrorCode.AUTH_REQUIRED)).getEmail());
 	}
 
 	/**
