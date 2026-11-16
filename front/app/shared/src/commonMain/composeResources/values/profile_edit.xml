@@ -25,5 +25,4 @@
     <string name="profile_sheet_saves_now">완료하면 바로 저장돼요.</string>
     <string name="profile_sheet_done">완료</string>
     <string name="profile_sheet_withdraw">동의 철회</string>
-    <string name="profile_consent_check_failed">동의 상태를 확인하지 못했어요.</string>
 </resources>

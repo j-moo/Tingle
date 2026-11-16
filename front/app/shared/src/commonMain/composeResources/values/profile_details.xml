@@ -40,9 +40,5 @@
     <string name="religion_sheet_withdraw">• 나중에 내 정보에서 동의를 철회할 수 있고, 철회하면 저장된 종교가 삭제돼요.</string>
     <string name="religion_sheet_agree">동의하고 입력하기</string>
     <string name="religion_sheet_decline">동의하지 않기</string>
-    <string name="intro_sheet_title">소개 정보 동의</string>
-    <string name="intro_sheet_use">• 쓴 소개를 저장하고, 매칭 제안을 받은 상대에게 보여 줘요.</string>
-    <string name="intro_sheet_free">• 동의하지 않아도 가입과 매칭에는 불이익이 없어요. 상대에게는 소개 없이 보여요.</string>
-    <string name="intro_sheet_withdraw">• 나중에 내 정보에서 동의를 철회할 수 있고, 철회하면 저장된 소개가 삭제돼요.</string>
 </resources>
 

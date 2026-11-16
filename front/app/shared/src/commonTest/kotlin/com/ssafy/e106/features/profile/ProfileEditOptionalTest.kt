@@ -29,22 +29,39 @@ class ProfileEditOptionalTest {
     @Test fun confirmedConsentOpensPickerOnlyAfterRefresh() = runTest(dispatcher) {
         val s = server(); val m = optional(s); runCurrent()
         assertFalse(m.state.value.agreed(religion)); assertTrue(m.state.value.canDecide(religion, true))
-        m.decide(religion, true); val pending = religion
-        assertFalse(m.state.value.consentCheckFailed(pending))   // 동의 시트가 떠 있는 동안
-        m.confirmDecision()
-        assertFalse(m.state.value.readyToEdit(pending)); assertFalse(m.state.value.consentCheckFailed(pending))
+        m.decide(religion, true)
+        assertEquals(ConsentWait.Wait, m.state.value.settle(religion))   // 동의 시트가 떠 있는 동안
+        m.confirmDecision(); assertEquals(ConsentWait.Wait, m.state.value.settle(religion))
         runCurrent()
         assertEquals(listOf(religion to OptionalConsentRequest(true, "v2")), s.changes)
-        assertTrue(m.state.value.readyToEdit(pending)); assertFalse(m.state.value.consentCheckFailed(pending))
+        assertEquals(ConsentWait.Open, m.state.value.settle(religion))
     }
 
-    // 동의 뒤 다시 조회가 실패하면 시트 대신 한 줄 오류 · "다시 확인"
-    @Test fun failedRecheckAfterConsentShowsErrorInsteadOfPicker() = runTest(dispatcher) {
+    // 동의 요청 결과를 모르면(오프라인) 같은 동의를 다시 요청할 수 있고, 성공하면 그때 선택 시트를 연다
+    @Test fun lostConsentWaitsForRetryThenOpensPicker() = runTest(dispatcher) {
+        val s = server(); val m = optional(s); runCurrent()
+        s.change = { _, _ -> ApiResult.Fail(AppError.Offline) }
+        m.decide(religion, true); m.confirmDecision(); runCurrent()
+        assertTrue(m.state.value.canRetryConsent); assertEquals(ConsentWait.Wait, m.state.value.settle(religion))
+        s.change = null; m.retryUnresolvedConsent(); runCurrent()
+        assertEquals(ConsentWait.Open, m.state.value.settle(religion))
+    }
+
+    // 동의가 거절되면(4xx) 대기를 풀어 "다시 확인" 안내가 남지 않는다
+    @Test fun rejectedConsentDropsPending() = runTest(dispatcher) {
+        val s = server(); val m = optional(s); runCurrent()
+        s.change = { _, _ -> ApiResult.Fail(AppError.Server(409, "AGREEMENT_VERSION_OUTDATED", "outdated")) }
+        m.decide(religion, true); m.confirmDecision(); runCurrent()
+        assertFalse(m.state.value.recoveryRequired); assertEquals(ConsentWait.Drop, m.state.value.settle(religion))
+    }
+
+    // 동의 뒤 다시 조회가 실패하면 기다리고(칩 아래 "다시 확인"), 다시 확인되면 연다
+    @Test fun failedRecheckAfterConsentWaitsForRecheck() = runTest(dispatcher) {
         val s = server(); val m = optional(s); runCurrent()
         m.decide(religion, true); s.consentReadFailure = AppError.Offline; m.confirmDecision(); runCurrent()
-        assertFalse(m.state.value.readyToEdit(religion)); assertTrue(m.state.value.consentCheckFailed(religion))
+        assertEquals(ConsentWait.Wait, m.state.value.settle(religion))
         s.consentReadFailure = null; m.load(); runCurrent()
-        assertTrue(m.state.value.readyToEdit(religion))
+        assertEquals(ConsentWait.Open, m.state.value.settle(religion))
     }
 
     // 시트를 취소하면 discardDraft: 고치다 만 소개가 나중에 종교를 저장할 때 같이 저장되지 않는다
@@ -70,7 +87,7 @@ class ProfileEditOptionalTest {
     // 소개 시트 "완료"는 200자나 줄바꿈 3개를 넘으면 꺼진다
     @Test fun introSheetDoneDisabledOverLimits() = runTest(dispatcher) {
         val m = optional(server()); runCurrent()
-        fun done() = m.state.value.editable && m.state.value.details.canContinue
+        fun done() = m.state.value.canFinishSheet
         m.introduction("가".repeat(200)); assertTrue(done())
         m.introduction("가".repeat(201)); assertFalse(done())
         m.introduction("a\nb\nc\nd"); assertTrue(done())

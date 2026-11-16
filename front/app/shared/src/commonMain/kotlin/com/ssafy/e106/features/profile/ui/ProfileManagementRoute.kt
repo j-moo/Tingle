@@ -43,7 +43,7 @@ fun ProfileManagementRoute(session: Session.SignedIn, onExit: () -> Unit, model:
     }
     if (state.session != session) return
     // 수정 화면을 떠날 때만 선택 정보 요청을 끊는다(📷 선택 정보 화면은 같은 모델을 이어 쓴다)
-    fun overview() { optionalModel.leave(); page = ProfileDestination.Overview }
+    fun overview() { optionalModel.leave(); page = ProfileDestination.Overview; model.load() }
     fun edit() { page = ProfileDestination.Edit; optionalModel.load() }
     fun returnFromOptional() { edit(); model.load() }
     fun exit() { model.leave(); optionalModel.leave(); onExit() }
