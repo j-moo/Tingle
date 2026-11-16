@@ -12,10 +12,9 @@ import lombok.RequiredArgsConstructor;
 public class NoticeDispatcher {
 	private final NoticeDeliveryStore store;
 	private final PushGateway gateway;
-	private final EndNoticePolicy endNotices;
 
 	public int runDue() {
-		if (!endNotices.enabled() || !gateway.ready()) {
+		if (!gateway.ready()) {
 			return 0;
 		}
 		int processed = 0;

@@ -30,7 +30,6 @@ import com.e106.tingle.chat.dto.MessagePage;
 import com.e106.tingle.chat.dto.MessageView;
 import com.e106.tingle.chat.dto.ReadMessagesResult;
 import com.e106.tingle.chat.notice.ChatNoticeJobs;
-import com.e106.tingle.chat.notice.EndNoticePolicy;
 import com.e106.tingle.global.error.BusinessException;
 import com.e106.tingle.global.error.ErrorCode;
 import com.e106.tingle.proposal.MatchProposal;
@@ -55,7 +54,6 @@ public class ChatService {
 	private final EntityManager entityManager;
 	private final Clock clock;
 	private final ChatNoticeJobs noticeJobs;
-	private final EndNoticePolicy endNotices;
 	private final ChatMessagePushEnqueuer messagePush;
 
 	// 제안 서비스가 쌍·제안 행 잠금을 보유한 트랜잭션에서만 호출한다.
@@ -82,10 +80,8 @@ public class ChatService {
 			ChatRoom room = rooms.saveAndFlush(new ChatRoom(pair.getId(), proposal.getId(), acceptedAt));
 			participants.save(new ChatMember(room.getId(), pair.getUserLow()));
 			participants.save(new ChatMember(room.getId(), pair.getUserHigh()));
-			if (endNotices.enabled()) {
-				noticeJobs.ensure(room, pair.getUserLow(), "END_NOTICE", clock.instant());
-				noticeJobs.ensure(room, pair.getUserHigh(), "END_NOTICE", clock.instant());
-			}
+			noticeJobs.ensure(room, pair.getUserLow(), "END_NOTICE", clock.instant());
+			noticeJobs.ensure(room, pair.getUserHigh(), "END_NOTICE", clock.instant());
 			return room;
 		});
 	}
