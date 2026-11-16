@@ -122,6 +122,7 @@ def verify(image: str, report: Path | None = None):
                 docker("run", "--detach", "--rm", "--network", "none", "--name", container,
                        "--mount", f"type=bind,source={directory},target=/run/personal-test,readonly",
                        "--env", f"APP_ENV={environment}", "--env",
+                       'GMS_API_KEY=synthetic-image-startup-only', '-e',
                        'AI_SERVICE_PUBLIC_KEYS={"synthetic-personal-image":"/run/personal-test/public.pem"}', image)
                 observed = json.loads(docker("exec", "-i", container, "python", "-B", "-", data=PROBE))
                 assert observed["tokenizerInstalled"] is False

@@ -148,6 +148,7 @@ def probe(tmp_path, private, keys, *, environment="test", reload=False):
     }
     env.update({
         "APP_ENV": environment,
+        "GMS_API_KEY": "synthetic-service-auth-startup-only",
         "AI_SERVICE_PUBLIC_KEYS": json.dumps(keys),
         "RISK_RELEASE_DESCRIPTOR_FILE": "",
         "PYTHONPATH": str(ROOT),

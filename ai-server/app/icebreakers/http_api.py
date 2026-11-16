@@ -77,13 +77,11 @@ def _select_questions(topic_key: CommonTopicKey | None) -> IcebreakerResponse:
 
 
 def create_router(
-    authenticate: ServiceAuthenticator, descriptor_file: str = "", *, dev_enabled: bool = False, gms_client=None,
+    authenticate: ServiceAuthenticator, descriptor_file: str = "", *, gms_client=None,
 ) -> APIRouter:
     router = APIRouter()
     releases = None
-    environment = authenticate.settings.environment
-    enabled = environment in {"local", "test"} or (environment == "dev" and dev_enabled)
-    if enabled and descriptor_file:
+    if descriptor_file:
         try:
             releases = ReleaseRegistry([Path(descriptor_file)])
         except (ReleaseError, RecursionError):
@@ -91,7 +89,7 @@ def create_router(
             pass
 
     generator = None
-    if enabled and gms_client is not None:
+    if gms_client is not None:
         from .gms import GmsIcebreakerGenerator
         generator = GmsIcebreakerGenerator(gms_client)
 

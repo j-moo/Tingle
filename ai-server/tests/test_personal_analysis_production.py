@@ -43,7 +43,7 @@ def host(tmp_path, signing_key, monkeypatch):
     def build(*, environment="prod", configured_keys=True):
         configured = Settings(_env_file=None, app_env=environment,
             ai_service_public_keys={KID: str(public)} if configured_keys else {},
-            explanation_release_descriptor_files=[], icebreaker_release_descriptor_file="",
+            icebreaker_release_descriptor_file="",
             risk_local_rules_enabled=False)
         return TestClient(create_app(configured))
 

@@ -78,24 +78,23 @@ def make_headers(signing_key):
 
 @pytest.fixture
 def make_client(monkeypatch, tmp_path, signing_key, release):
-    def client(*, configure_keys=True, configure_release=True, environment="test", enable_dev=False):
+    def client(*, configure_keys=True, configure_release=True, environment="test"):
         public = tmp_path / "synthetic-public.pem"
         public.write_bytes(signing_key.public_key().public_bytes(
             serialization.Encoding.PEM, serialization.PublicFormat.SubjectPublicKeyInfo,
         ))
         # Load the real app registration without replacing the module shared by other tests.
         monkeypatch.delenv("ICEBREAKER_RELEASE_DESCRIPTOR_FILE", raising=False)
-        monkeypatch.delenv("ICEBREAKER_DEV_ENABLED", raising=False)
-        if enable_dev:
-            monkeypatch.setenv("ICEBREAKER_DEV_ENABLED", "true")
         settings = Settings(
             _env_file=None,
             app_env=environment,
             ai_service_public_keys={KID: str(public)} if configure_keys else {},
-            explanation_release_descriptor_files=[],
             risk_release_descriptor_file="",
             **({"icebreaker_release_descriptor_file": str(release[0])} if configure_release else {}),
         )
+        async def unavailable(*args):
+            raise RuntimeError("Synthetic offline provider failure")
+        monkeypatch.setattr("app.match_explanation.gms.GmsClient.request_text", unavailable)
         monkeypatch.setattr("app.config.settings", settings)
         monkeypatch.setattr("app.security.service_auth.time", lambda: NOW)
         return TestClient(runpy.run_path(str(AI_ROOT / "app/main.py"))["app"])
@@ -275,34 +274,33 @@ def test_unexpected_verification_failure_uses_common_error(client, make_headers,
     assert payload["manifest"]["surveyVersion"] not in response.text + caplog.text
 
 
-def test_dev_opt_in_serves_q040_with_registered_release(make_client, make_headers, payload):
+@pytest.mark.parametrize("environment", ["dev", "prod"])
+def test_all_environments_serve_q040_on_provider_failure(make_client, make_headers, payload, environment):
     payload["commonTopicKey"] = "rest"
-    with make_client(environment="dev", enable_dev=True) as client:
-        response = client.post(PATH, json=payload, headers=make_headers(environment="dev"))
+    with make_client(environment=environment) as client:
+        response = client.post(PATH, json=payload, headers=make_headers(environment=environment))
 
     assert response.status_code == 200
     assert response.json()["source"] == "COMMON_TOPIC_TEMPLATE"
     assert response.json()["promptVersion"] == "q040-template-v1"
 
 
-@pytest.mark.parametrize(("environment", "enable_dev", "release_state", "configure_keys"), [
-    ("test", False, "absent", True),
-    ("test", False, "invalid", True),
-    ("test", False, "registered", False),
-    ("dev", False, "registered", True),
-    ("dev", True, "absent", True),
-    ("dev", True, "invalid", True),
-    ("dev", True, "registered", False),
-    ("prod", True, "registered", True),
+@pytest.mark.parametrize(("environment", "release_state", "configure_keys"), [
+    ("test", "absent", True),
+    ("test", "invalid", True),
+    ("test", "registered", False),
+    ("dev", "absent", True),
+    ("dev", "invalid", True),
+    ("dev", "registered", False),
 ])
 def test_icebreakers_is_unavailable_without_allowed_registration(
-    make_client, make_headers, payload, release, environment, enable_dev, release_state, configure_keys,
+    make_client, make_headers, payload, release, environment, release_state, configure_keys,
 ):
     if release_state == "invalid":
         release[0].write_text("invalid descriptor", encoding="utf-8")
     payload["commonTopicKey"] = "rest"
     with make_client(configure_keys=configure_keys, configure_release=release_state != "absent",
-                     environment=environment, enable_dev=enable_dev) as client:
+                     environment=environment) as client:
         response = client.post(PATH, json=payload, headers=make_headers(environment=environment))
         assert_error(response, 503, "SERVICE_UNAVAILABLE")
         assert client.get("/health").json() == {"status": "ok"}

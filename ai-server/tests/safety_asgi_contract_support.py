@@ -153,7 +153,7 @@ def main_factory(tmp_path, monkeypatch, synthetic_private_keys, caplog, capsys, 
         public_file = directory / "synthetic-public-only.pem"
         public_file.write_bytes(synthetic_private_keys[0].public_key().public_bytes(
             serialization.Encoding.PEM, serialization.PublicFormat.SubjectPublicKeyInfo))
-        values = dict(app_env=environment, ai_service_public_keys={KID: str(public_file)} if keys else {},
+        values = dict(gms_api_key="synthetic-safety-startup-only", app_env=environment, ai_service_public_keys={KID: str(public_file)} if keys else {},
                       risk_release_descriptor_file=str(release.descriptor),
                       risk_local_rules_descriptor_sha256=release.test_descriptor_pin if pin is None else pin)
         if enabled is not None:  # None proves the actual Settings default OFF.

@@ -23,7 +23,7 @@ def test_broken_personal_data_fails_startup_in_every_environment(tmp_path, envir
     env = {key: value for key, value in os.environ.items()
            if key.upper() in {"SYSTEMROOT", "WINDIR", "PATH", "TEMP", "TMP"}}
     env.update(APP_ENV=environment, AI_SERVICE_PUBLIC_KEYS="{}", RISK_RELEASE_DESCRIPTOR_FILE="",
-               EXPLANATION_RELEASE_DESCRIPTOR_FILES="[]", PYTHONPATH=str(tmp_path), PYTHONIOENCODING="utf-8")
+               GMS_API_KEY="synthetic-startup-only", PYTHONPATH=str(tmp_path), PYTHONIOENCODING="utf-8")
     completed = subprocess.run([sys.executable, "-B", "-c", "from app.main import app"], cwd=tmp_path, env=env,
                                capture_output=True, encoding="utf-8", timeout=30)
     assert completed.returncode != 0

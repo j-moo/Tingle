@@ -15,7 +15,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--port", type=int, required=True)
     parser.add_argument("--public-key", type=Path, required=True)
-    parser.add_argument("--descriptor", type=Path, required=True)
+    parser.add_argument("--descriptor", type=Path, help="Legacy caller compatibility; unused")
     arguments = parser.parse_args()
     app = FastAPI()
     install_error_handlers(app)
@@ -23,7 +23,7 @@ def main():
     auth = ServiceAuthenticator(ServiceAuthSettings(
         environment="test", public_keys={"synthetic-key": arguments.public_key},
     ))
-    app.include_router(create_runtime_router(auth, [arguments.descriptor]))
+    app.include_router(create_runtime_router(auth))
 
     @app.get("/health")
     def health():

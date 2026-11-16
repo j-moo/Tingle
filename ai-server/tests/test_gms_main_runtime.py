@@ -102,10 +102,15 @@ def configured_main(main_factory, tmp_path):
     for injection in ("absent", "disabled", "enabled-without-runtime")
     if not (injection == "enabled-without-runtime" and rules_enabled is True and environment != "prod")
 ])
-def test_default_off_never_constructs_or_calls_gms(main_factory, monkeypatch, environment, rules_enabled, injection):
-    constructor = Mock(side_effect=AssertionError("OFF constructed GMS"))
+def test_safety_off_never_resolves_or_calls_a_safety_provider(main_factory, monkeypatch, environment, rules_enabled, injection):
+    original_init = GmsClient.__init__
+    shared_clients = []
+    def construct_shared(client, key, **kwargs):
+        assert key == "synthetic-safety-startup-only"
+        shared_clients.append(True)
+        original_init(client, key, **kwargs)
     request = Mock(side_effect=AssertionError("OFF called GMS"))
-    monkeypatch.setattr(GmsClient, "__init__", constructor)
+    monkeypatch.setattr(GmsClient, "__init__", construct_shared)
     monkeypatch.setattr(GmsClient, "request_text", request)
     factory = Mock(side_effect=AssertionError("OFF resolved a provider"))
     configuration = None if injection == "absent" else GmsPrimaryConfiguration(
@@ -120,7 +125,7 @@ def test_default_off_never_constructs_or_calls_gms(main_factory, monkeypatch, en
     else:
         expect(host.post(), 422, "POLICY_UNRESOLVED")
     factory.assert_not_called()
-    constructor.assert_not_called()
+    assert shared_clients  # Only the shared Match/Icebreaker startup path ran.
     request.assert_not_called()
 
 

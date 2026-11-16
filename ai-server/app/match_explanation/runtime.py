@@ -1,12 +1,10 @@
-"""공통 서비스 인증과 고정 등록 파일을 연결하는 설명 실행 접점. GMS는 명시적 개발 주입이다."""
+"""공통 서비스 인증과 설명 provider를 연결하는 실행 접점."""
 
-from collections.abc import Callable, Iterable
-from pathlib import Path
+from collections.abc import Callable
 
 from fastapi import APIRouter, HTTPException, Request
 
 from .http_api import BoundaryError, ContextResolver, create_router
-from .releases import ReleaseRegistry
 
 
 _AUTH_ERRORS = {
@@ -19,7 +17,7 @@ _AUTH_ERRORS = {
 
 def create_runtime_router(
     authenticate: Callable[[Request], object],
-    descriptor_files: Iterable[str | Path] = (), *, gms_client=None,
+    *, gms_client=None,
 ) -> APIRouter:
     """인증·HTTP·재시도를 복제하지 않고 85의 검증 결과와 공개 오류 코드만 전달한다."""
     def authorize(request: Request) -> object:
@@ -32,5 +30,4 @@ def create_runtime_router(
                 raise BoundaryError(error.status_code, code) from None
             raise BoundaryError() from None
 
-    return create_router(ContextResolver(ReleaseRegistry(descriptor_files),
-                                         generator=gms_client, verifier=gms_client), authorize)
+    return create_router(ContextResolver(generator=gms_client, verifier=gms_client), authorize)

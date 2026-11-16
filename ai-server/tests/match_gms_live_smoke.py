@@ -24,7 +24,7 @@ from fastapi.testclient import TestClient
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from app.match_explanation.development import create_app
+from app.development import create_app
 from app.match_explanation import gms as gms_module
 from app.match_explanation.gms import GmsClient
 from app.match_explanation.prompts import GENERATION_PROMPT, PROMPT_VERSION, VERIFICATION_PROMPT
@@ -112,21 +112,16 @@ def main(argv=None) -> int:
         public = folder / "public.pem"
         public.write_bytes(signing_key.public_key().public_bytes(
             serialization.Encoding.PEM, serialization.PublicFormat.SubjectPublicKeyInfo))
-        artifact = folder / "synthetic.bundle"
-        artifact.write_bytes(b'{"synthetic":true}\n')
         versions = ("surveyVersion", "wordingVersion", "scoringVersion", "typeModelVersion",
                     "analysisVersion", "typeReferenceVersion", "matchingVersion", "productPolicyVersion", "engineVersion")
         manifest = {"releaseId": str(uuid4()), **{name: "synthetic-live-smoke-v1" for name in versions},
-                    "contentHash": sha256(artifact.read_bytes()).hexdigest()}
-        descriptor = folder / "descriptor.json"
-        descriptor.write_text(json.dumps({"manifest": manifest, "artifact": artifact.name}), encoding="utf-8")
+                    "contentHash": sha256(b"synthetic-smoke").hexdigest()}
         reference = {"encounter_id": 145, "evaluation_ref": "c" * 64, "version_ref": manifest["releaseId"]}
         environment = {
-            "APP_ENV": "dev", "MATCH_INSIGHT_GMS_DEV_ENABLED": "true",
+            "APP_ENV": "dev",
             "AI_SERVICE_PUBLIC_KEYS": json.dumps({"synthetic-smoke": str(public)}),
-            "EXPLANATION_RELEASE_DESCRIPTOR_FILES": json.dumps([str(descriptor)]),
             "RISK_LOCAL_RULES_ENABLED": "false", "RISK_RELEASE_DESCRIPTOR_FILE": "",
-            "ICEBREAKER_DEV_ENABLED": "false", "ICEBREAKER_RELEASE_DESCRIPTOR_FILE": "",
+            "ICEBREAKER_RELEASE_DESCRIPTOR_FILE": "",
         }
         with (patch.dict(os.environ, environment), patch.object(GmsClient, "request_text", tracked_request),
               patch.object(gms_module, "_response_text", tracked_response_text)):

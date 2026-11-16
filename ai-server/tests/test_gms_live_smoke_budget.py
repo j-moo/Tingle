@@ -18,6 +18,14 @@ def isolated(monkeypatch, tmp_path, no_external_io):
     monkeypatch.chdir(tmp_path)
     monkeypatch.delenv("GMS_API_KEY", raising=False)
 
+    # Keep the smoke's real factory and startup checks, injecting only offline clients.
+    def offline_app():
+        from app.config import Settings
+        from app.main import create_app
+        provider = GmsClient.from_environment()
+        return create_app(Settings(), _match_gms_client=provider, _icebreaker_gms_client=provider)
+    monkeypatch.setattr(smoke, "create_app", offline_app)
+
 
 @pytest.mark.parametrize("args", [[], ["--live", "--case", "e1", "--case", "e2"],
     ["--live", "--input-usd-per-million", "nan", "--output-usd-per-million", "1"],

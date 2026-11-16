@@ -87,7 +87,9 @@ def forbid_gms(monkeypatch, no_external_io):
         attempts.append(True)
         raise AssertionError("Provider construction, secret lookup and calls are forbidden")
 
-    for name in ("__init__", "from_environment", "request_text"):
+    # Shared Match/Icebreaker clients now construct at startup; Safety must
+    # still neither discover credentials nor send provider requests here.
+    for name in ("from_environment", "request_text"):
         monkeypatch.setattr(GmsClient, name, forbidden)
     yield
     assert not attempts
