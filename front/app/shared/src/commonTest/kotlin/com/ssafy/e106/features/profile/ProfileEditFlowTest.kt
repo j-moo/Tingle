@@ -54,7 +54,7 @@ class ProfileEditFlowTest {
     @BeforeTest fun setup() = Dispatchers.setMain(dispatcher)
     @AfterTest fun teardown() { store.clear(); Dispatchers.resetMain() }
     private fun vm(server: EditServer, session: TestSession = TestSession(OnboardingStatus.READY), dev: Boolean = false) =
-        ProfileEditViewModel(server, server, session, DevelopmentProfileAccess(dev)).also { store.put("edit", it); it.load() }
+        ProfileEditViewModel(server, server, session, DevelopmentProfileAccess(dev)).also { store.put("edit", it); it.load(withEmail = true) }
 
     // 프로필 보기 사진: 다시 받을 때 같은 사진이면 그대로, 못 받으면 실패(옛 사진을 남기지 않음), 사진을 지우면 비움
     @Test fun overviewPhotoKeepsSameBytesAndClearsOnFailureOrDeletion() = runTest(dispatcher) {
@@ -72,10 +72,26 @@ class ProfileEditFlowTest {
     @Test fun contactEmailShownWhenPresentHiddenWhenMissingOrFailed() = runTest(dispatcher) {
         val server = EditServer(); val m = vm(server); runCurrent()
         assertEquals("me@example.com", m.state.value.contactEmail)
-        server.onEmail = { ApiResult.Ok(ContactEmailResponse(null)) }; m.load(); runCurrent()
+        server.onEmail = { ApiResult.Ok(ContactEmailResponse(null)) }; m.load(withEmail = true); runCurrent()
         assertNull(m.state.value.contactEmail)
-        server.onEmail = { ApiResult.Ok(ContactEmailResponse(" ")) }; m.load(); runCurrent()
+        server.onEmail = { ApiResult.Ok(ContactEmailResponse(" ")) }; m.load(withEmail = true); runCurrent()
         assertNull(m.state.value.contactEmail)
+    }
+    // 새로고침 중 잠깐 실패하면 보이던 카드를 지우지 않는다. 수정 화면 불러오기(withEmail 없음)는 이메일을 받지 않는다
+    @Test fun contactEmailKeptOnTransientFailureAndNotFetchedForEdit() = runTest(dispatcher) {
+        val server = EditServer(); val m = vm(server); runCurrent()
+        server.onEmail = { ApiResult.Fail(AppError.Offline) }; m.load(withEmail = true); runCurrent()
+        assertEquals("me@example.com", m.state.value.contactEmail)
+        var calls = 0; server.onEmail = { calls++; ApiResult.Ok(ContactEmailResponse(null)) }; m.load(); runCurrent()
+        assertEquals(0, calls); assertEquals("me@example.com", m.state.value.contactEmail)
+    }
+    // 이메일 응답이 오지 않아도 프로필을 불러오면 바로 고칠 수 있다(busy 를 붙잡지 않는다)
+    @Test fun hangingContactEmailDoesNotHoldBusy() = runTest(dispatcher) {
+        val server = EditServer(); val never = CompletableDeferred<ApiResult<ContactEmailResponse>>()
+        server.onEmail = { never.await() }
+        val m = vm(server); runCurrent()
+        assertFalse(m.state.value.busy); assertTrue(m.state.value.canEdit); assertNull(m.state.value.contactEmail)
+        never.cancel()
     }
     @Test fun profileStillLoadsWhenContactEmailFails() = runTest(dispatcher) {
         val server = EditServer(); server.onEmail = { ApiResult.Fail(AppError.Offline) }

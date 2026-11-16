@@ -38,12 +38,12 @@ fun ProfileManagementRoute(session: Session.SignedIn, onExit: () -> Unit, model:
         if (state.session == session && model.takeSaveCompletion()) { optionalModel.leave(); page = ProfileDestination.Overview }
     }
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
-        if (page != ProfileDestination.Optional) model.load()
+        if (page != ProfileDestination.Optional) model.load(withEmail = page == ProfileDestination.Overview)
         if (page == ProfileDestination.Edit) optionalModel.load()
     }
     if (state.session != session) return
     // 수정 화면을 떠날 때만 선택 정보 요청을 끊는다(📷 선택 정보 화면은 같은 모델을 이어 쓴다)
-    fun overview() { optionalModel.leave(); page = ProfileDestination.Overview; model.load() }
+    fun overview() { optionalModel.leave(); page = ProfileDestination.Overview; model.load(withEmail = true) }
     fun edit() { page = ProfileDestination.Edit; optionalModel.load() }
     fun returnFromOptional() { edit(); model.load() }
     fun exit() { model.leave(); optionalModel.leave(); onExit() }
@@ -69,7 +69,7 @@ fun ProfileManagementRoute(session: Session.SignedIn, onExit: () -> Unit, model:
             onBack = ::back, onDiscard = { model.discard(::overview) },
             onOptional = { if (state.canEdit) page = ProfileDestination.Optional })
         ProfileDestination.Overview -> ProfileOverviewScreen(state, devNotice = !session.isReady,
-            onEdit = ::edit, onReload = model::load, onBack = ::back)
+            onEdit = ::edit, onReload = { model.load(withEmail = true) }, onBack = ::back)
     }
     // 오프라인에서도 사용자를 가두지 않는다. 나가더라도 서버 반영 여부는 미확인으로 남긴다.
     if (unknownExitPrompt) ProfileUnknownExitDialog(
