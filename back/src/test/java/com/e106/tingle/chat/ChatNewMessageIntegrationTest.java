@@ -93,6 +93,47 @@ class ChatNewMessageIntegrationTest extends IntegrationTestSupport {
 	}
 
 	@Test
+	void listCountsOnlyUnreadPartnerMessages() throws Exception {
+		MessageView older = send(firstId, "older");
+		MessageView newer = send(firstId, "newer");
+		send(secondId, "my own message is not unread to me");
+		assertUnread(second, 2);
+		assertUnread(first, 1);
+		// 뒤 메시지만 읽으면 읽음 순번이 앞으로 가지 않아도 앞의 안 읽은 메시지는 그대로 센다
+		chats.read(room.getPublicId(), secondId, List.of(newer.messageId()));
+		assertUnread(second, 1);
+		chats.read(room.getPublicId(), secondId, List.of(older.messageId()));
+		// 다 읽으면 0을 그대로 싣고 새 메시지 표시도 꺼진다
+		assertUnread(second, 0);
+		assertState(second, false);
+		// 읽음 순번이 앞으로 간 뒤 도착한 메시지도 센다
+		send(firstId, "after the read cursor moved");
+		assertUnread(second, 1);
+		// 방 상세 응답에는 싣지 않는다(목록 전용)
+		perform(get(path()), second, null).andExpect(status().isOk())
+			.andExpect(jsonPath("$.unreadCount").doesNotExist());
+	}
+
+	@Test
+	void listStopsCountingUnreadAtTheLimit() throws Exception {
+		long sender = jdbc.queryForObject("select id from chat_participant where chat_id=? and user_id=?",
+			Long.class, room.getId(), firstId);
+		jdbc.update("insert into chat_message(chat_id,sender_participant_id,client_message_id,request_key,"
+			+ "request_hash,seq,body,created_at,push_state) select ?,?,gen_random_uuid(),gen_random_uuid(),"
+			+ "decode(repeat('a',64),'hex'),n,'synthetic unread',now(),'{}'::jsonb from generate_series(1,?) n",
+			room.getId(), sender, ChatMessageRepository.UNREAD_COUNT_LIMIT + 1);
+		jdbc.update("update chat set last_message_seq=? where id=?", ChatMessageRepository.UNREAD_COUNT_LIMIT + 1,
+			room.getId());
+		assertUnread(second, ChatMessageRepository.UNREAD_COUNT_LIMIT);
+	}
+
+	private void assertUnread(JsonNode tokens, int expected) throws Exception {
+		perform(get("/api/chat-rooms"), tokens, null).andExpect(status().isOk())
+			.andExpect(jsonPath("$.items[0].unreadCount").value(expected))
+			.andExpect(jsonPath("$.items[0].hasNewMessage").value(expected > 0));
+	}
+
+	@Test
 	void listRoomHistoryAndReloginDoNotAcknowledgeMessages() throws Exception {
 		send(firstId, "persisted while disconnected");
 		assertState(second, true);
