@@ -96,7 +96,7 @@ fun ReportScreen(state: ReportState, onReason: (ReportReason) -> Unit, onDetail:
 /** 증거 메시지 선택 · 신고 내용 확인. 메시지 목록이 길어 전체 화면으로 둔다. */
 @Composable
 private fun EvidencePage(state: ReportState, onEvidence: (Long, Boolean) -> Unit, onAction: (ReportAction) -> Unit) {
-    Surface(Modifier.fillMaxSize(), color = AppColors.Background) {
+    Surface(Modifier.fillMaxSize(), color = AppColors.Screen) {
         BoxWithConstraints(Modifier.fillMaxSize().safeDrawingPadding().imePadding()) {
             // 가로 화면처럼 짧은 창에서는 고정 제목/버튼이 본문 높이를 모두 차지하므로 목록 안으로 옮긴다.
             val compactHeight = maxHeight < 320.dp

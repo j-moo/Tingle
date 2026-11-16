@@ -51,7 +51,7 @@ import org.koin.compose.viewmodel.koinViewModel
         onVersion = { state.session?.let {
             if (model.beginChange()) { changeKind = SurveyChangeKind.MIGRATION; changeId = it.sessionId }
         } },
-        onPreviousSession = model::openPrevious, onServerDraft = model::openServerDraft)
+        onPreviousSession = model::openPrevious, onServerDraft = model::openServerDraft, onEdit = model::edit, onFinishEdit = model::finishEdit)
 }
 
 @Composable fun SurveyConnectedScreen(
@@ -61,7 +61,7 @@ import org.koin.compose.viewmodel.koinViewModel
     onSubmit: () -> Unit = {}, onRequestAnalysis: () -> Unit = {},
     onRefreshAnalysis: () -> Unit = {}, onRefreshStage: () -> Unit = {},
     onRetest: () -> Unit = {}, onVersion: () -> Unit = {}, onPreviousSession: () -> Unit = {},
-    onServerDraft: () -> Unit = {},
+    onServerDraft: () -> Unit = {}, onEdit: () -> Unit = {}, onFinishEdit: () -> Unit = {},
 ) {
     if (state.pendingChange && !state.busy) {
         // 전환 결과 미확인: 새로 보내기 전에 결과부터 확인한다. 설명은 같은 대상으로 다시 요청한다는 안내라 줄이지 않는다. 나가기는 왼쪽 위 <
@@ -76,6 +76,7 @@ import org.koin.compose.viewmodel.koinViewModel
     if (state.page == SurveyPage.Question && !state.recoveryRequired && state.error == null) {
         state.questionScreen?.let { SurveyQuestionScreen(it, onAnswer, onPrevious, onNext,
             busy = state.busy || state.changingSession || state.exitRequested, pendingCount = state.pending.size,
+            onFinish = onFinishEdit.takeIf { state.editing },
             notice = when {
                 state.exitRequested -> stringResource(Res.string.survey_api_leaving)
                 state.returnedToMissing -> stringResource(Res.string.survey_api_returned_missing)
@@ -89,5 +90,5 @@ import org.koin.compose.viewmodel.koinViewModel
         return
     }
     SurveyStepScreen(state, onReload, onStart, onBack, onSubmit, onRequestAnalysis, onRefreshAnalysis, onRefreshStage,
-        onRetest, onVersion, onPreviousSession, onServerDraft)
+        onRetest, onVersion, onPreviousSession, onServerDraft, onEdit)
 }

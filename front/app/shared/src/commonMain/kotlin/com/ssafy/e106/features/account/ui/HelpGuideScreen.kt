@@ -28,7 +28,7 @@ fun HelpGuideScreen(state: HelpGuideState, onAction: (HelpGuideAction) -> Unit, 
         return
     }
     val openLabel = stringResource(if (state.isInquiry) Res.string.help_open_channel else Res.string.help_open_document)
-    Surface(modifier.fillMaxSize(), color = AppColors.Background) {
+    Surface(modifier.fillMaxSize(), color = AppColors.Screen) {
         Column(Modifier.fillMaxSize().safeDrawingPadding()) {
             AppTopBar(title, onBack = { onAction(HelpGuideAction.Back) })
             // 다시 받는 동안은 주소 자리가 뼈대로 바뀌어 알리므로 고리는 따로 돌리지 않는다
@@ -88,7 +88,7 @@ fun HelpGuideScreen(state: HelpGuideState, onAction: (HelpGuideAction) -> Unit, 
 /** 약관 · 개인정보 · 문의 · 정정 요청을 한 화면에 줄로 모은다. 줄을 누르면 해당 안내 화면으로 간다(주소 확인 · 열기는 그 화면이 한다). */
 @Composable
 fun HelpHubScreen(onOpen: (HelpGuideKind) -> Unit, onBack: () -> Unit, modifier: Modifier = Modifier) {
-    Surface(modifier.fillMaxSize(), color = AppColors.Background) {
+    Surface(modifier.fillMaxSize(), color = AppColors.Screen) {
         Column(Modifier.fillMaxSize().safeDrawingPadding()) {
             AppTopBar(stringResource(Res.string.account_section_help), onBack = onBack)
             Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.TopCenter) {

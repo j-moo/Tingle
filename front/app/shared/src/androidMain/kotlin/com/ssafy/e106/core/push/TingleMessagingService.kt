@@ -1,6 +1,7 @@
 package com.ssafy.e106.core.push
 
 import android.app.Activity
+import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
@@ -15,6 +16,7 @@ import com.ssafy.e106.core.storage.TokenStore
 import com.ssafy.e106.resources.Res
 import com.ssafy.e106.resources.push_channel_name
 import com.ssafy.e106.resources.push_chat_message
+import com.ssafy.e106.resources.push_message_count
 import com.ssafy.e106.resources.push_chat_ending
 import com.ssafy.e106.resources.push_matched
 import com.ssafy.e106.resources.push_other
@@ -65,6 +67,8 @@ class TingleMessagingService : FirebaseMessagingService() {
             // 홈 종 모양 알림 모음에 남긴다(시스템 알림이 꺼져 있어도). FCM이 앱을 막 깨운 경우 로그인 복원을 잠깐 기다린다
             // ponytail: 5초 안에 복원되지 않으면 모음에는 빠진다(시스템 알림은 그대로 뜬다)
             val restored = withTimeoutOrNull(5_000) { sessions.state.first { it !is com.ssafy.e106.core.auth.Session.Restoring } }
+            // 복원을 기다리는 사이 그 방에 들어갔으면 알림 · 모음 모두 남기지 않는다
+            if (msg.seenIn(events.viewingRoom)) return@runBlocking null
             if ((restored as? com.ssafy.e106.core.auth.Session.SignedIn)?.userId == userId) runCatching {
                 inbox.add(userId, InboxItem(id = message.messageId ?: "${msg.kind}-${System.currentTimeMillis()}",
                     title = msg.title, body = msg.body ?: text, atMillis = System.currentTimeMillis(),
@@ -77,9 +81,13 @@ class TingleMessagingService : FirebaseMessagingService() {
         // NotificationChannel 은 API 26+ 라 Compat 으로(minSdk 24)
         manager.createNotificationChannel(NotificationChannelCompat.Builder(CHANNEL, NotificationManagerCompat.IMPORTANCE_HIGH)
             .setName(runBlocking { getString(Res.string.push_channel_name) }).build())
-        val key = if (msg.target is PushTarget.Proposal) "proposal-${msg.target.proposalId}"
-            else message.data["chatRoomId"] ?: message.data["noticeId"] ?: ""
-        val id = key.hashCode()   // 같은 방 알림은 덮어쓴다
+        // 방에 들어갈 때 지우는 쪽(AndroidPushDevice.clearChat)과 같은 키가 되도록 해석한 방 번호를 쓴다
+        val key = when (val target = msg.target) {
+            is PushTarget.Proposal -> "proposal-${target.proposalId}"
+            is PushTarget.Chat -> target.roomId.toString()
+            else -> message.data["noticeId"] ?: ""
+        }
+        val id = chatNotificationId(key)   // 같은 방 알림은 하나로 합친다
         // data 로 알림마다 다른 Intent 를 만든다. requestCode(해시)만으로 구분하면 해시가 겹친 다른 알림의 extras 를 덮어쓴다
         val tap = PendingIntent.getActivity(this, id, PushTapActivity.intent(this, msg.target, userId).setData(Uri.fromParts("tingle-push", "${msg.kind}/$key", null)),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
@@ -87,19 +95,32 @@ class TingleMessagingService : FirebaseMessagingService() {
         // 잠금화면에는 앱 이름 + 기본 문구만(보낸 사람 · 내용 숨김)
         val public = NotificationCompat.Builder(this, CHANNEL).setSmallIcon(android.R.drawable.stat_notify_chat)
             .setContentTitle(appName).setContentText(text).build()
-        // 서버가 제목 · 본문을 주면 그대로(채팅: 보낸 사람 닉네임 · 마지막 메시지). 같은 방 알림은 덮어써 마지막 메시지만 남는다
+        // 서버가 제목 · 본문을 주면 그대로(채팅: 보낸 사람 닉네임 · 메시지)
         val body = msg.body ?: text
+        // 같은 방의 메시지 알림이 아직 떠 있으면 그 내용에 이어 붙이고 개수를 센다. 알림을 누르거나 지우면 다시 1부터
+        val shown = if (msg.kind != PushKind.CHAT_MESSAGE) null else runCatching {
+            getSystemService(NotificationManager::class.java).activeNotifications
+                .firstOrNull { it.tag == msg.kind.name && it.id == id }?.notification?.extras
+        }.getOrNull()
+        val (count, lines) = mergedLines(shown?.getInt(COUNT) ?: 0, shown?.getStringArray(LINES).orEmpty().toList(), body, MAX_LINES)
+        val style = if (count == 1) NotificationCompat.BigTextStyle().bigText(body)
+            else NotificationCompat.InboxStyle().also { box -> lines.forEach(box::addLine) }
+                .setSummaryText(runBlocking { getString(Res.string.push_message_count, count) })
         val notification = NotificationCompat.Builder(this, CHANNEL)
             .setSmallIcon(android.R.drawable.stat_notify_chat)   // 앱 알림 아이콘이 생기면 바꾼다(디자인)
             .setContentTitle(msg.title ?: appName)
             .setContentText(body)
-            .setStyle(NotificationCompat.BigTextStyle().bigText(body))
+            .setStyle(style)
+            .setNumber(count)
+            .addExtras(Bundle().apply { putInt(COUNT, count); putStringArray(LINES, lines.toTypedArray()) })
             .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
             .setPublicVersion(public)
             .setAutoCancel(true)
             .setOnlyAlertOnce(msg.kind == PushKind.NEW_PROPOSAL)
             .setContentIntent(tap)
             .build()
+        // 로그인 복원을 기다리는 사이 그 방에 들어갔으면 띄우지 않는다(들어갈 때 이미 지웠다)
+        if (msg.seenIn(events.viewingRoom)) return
         try {
             manager.notify(msg.kind.name, id, notification)
         } catch (_: SecurityException) {
@@ -109,8 +130,14 @@ class TingleMessagingService : FirebaseMessagingService() {
 
     private companion object {
         const val CHANNEL = "chat"
+        const val COUNT = "tingle.count"
+        const val LINES = "tingle.lines"
+        const val MAX_LINES = 6   // 펼친 알림에 보이는 최근 메시지 수. 개수는 전부 센다
     }
 }
+
+/** 알림 id. 같은 방(또는 같은 제안 · 안내)은 같은 id 라 하나로 합쳐지고, 방에 들어가면 이 id 로 지운다 */
+internal fun chatNotificationId(key: String) = key.hashCode()
 
 /** 알림 탭만 받는 화면(exported=false — 다른 앱이 띄우거나 extras 를 위조할 수 없다). 대상을 [DefaultPushEvents] 에 담고 앱을 앞으로 가져온 뒤 닫힌다 */
 class PushTapActivity : Activity() {

@@ -48,7 +48,7 @@ fun ChatAiConversationScreen(
 @Composable
 private fun IcebreakerPanel(state: IcebreakerUi, enabled: Boolean, onPick: (String) -> Unit) {
     if (state.status == IcebreakerStatus.Disabled) return
-    Surface(color = AppColors.SurfaceMuted, shape = AppShapes.Control) {
+    Surface(Modifier.frost(AppShapes.Control), color = AppColors.SurfaceMuted, shape = AppShapes.Control, border = GlassBorder) {
         Column(Modifier.fillMaxWidth().padding(AppSpacing.Medium), verticalArrangement = Arrangement.spacedBy(AppSpacing.Small)) {
             Text(stringResource(Res.string.chat_ai_questions_title), style = MaterialTheme.typography.titleMedium)
             when {
@@ -70,7 +70,7 @@ private fun IcebreakerPanel(state: IcebreakerUi, enabled: Boolean, onPick: (Stri
 @Composable
 private fun PersonalNotice(notice: RiskNoticeUi, onAction: (String, ChatAiAction) -> Unit) {
     val key = notice.noticeKey ?: return
-    Surface(color = AppColors.SurfaceMuted, shape = AppShapes.Control) {
+    Surface(Modifier.frost(AppShapes.Control), color = AppColors.SurfaceMuted, shape = AppShapes.Control, border = GlassBorder) {
         Column(Modifier.fillMaxWidth().padding(AppSpacing.Medium), verticalArrangement = Arrangement.spacedBy(AppSpacing.Small)) {
             Text(stringResource(if (notice.audience == RiskAudience.Recipient) Res.string.chat_ai_protect else Res.string.chat_ai_respect),
                 style = MaterialTheme.typography.titleMedium)

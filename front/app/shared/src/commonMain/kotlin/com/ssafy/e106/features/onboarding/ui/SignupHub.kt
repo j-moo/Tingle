@@ -19,6 +19,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.ssafy.e106.core.auth.OnboardingStatus
 import com.ssafy.e106.core.ui.components.AppButton
+import com.ssafy.e106.core.ui.components.AppButtonVariant
 import com.ssafy.e106.core.ui.components.NoticeBar
 import com.ssafy.e106.core.ui.components.SkeletonBone
 import com.ssafy.e106.core.ui.components.SkeletonGroup
@@ -52,7 +53,7 @@ private val Rows = listOf(
     HubRow(Res.string.onboarding_hub_sync, Res.string.onboarding_hub_sync_desc,
         listOf(Res.string.onboarding_hub_fact_keyring, Res.string.onboarding_hub_fact_1min), Res.string.onboarding_hub_sync_start),
 )
-private val DoneBackground = Color(0xFFF7FAF6)
+private val DoneBackground = Color(0x66F7FAF6)
 private val OpenBorder = Color(0xFFC9C9C9)   // 펼친 단계 테두리: 검정 대신 연한 회색(시안)
 
 /**
@@ -67,7 +68,11 @@ internal fun SignupHub(current: Int, previous: Int, onSettled: (Int) -> Unit, on
     /** 있으면 지금 단계의 줄 안에 시작 버튼 대신 이 내용을 펼쳐 넣는다(새 화면으로 들어가지 않고 그 자리에서 입력) */
     inline: (@Composable ColumnScope.() -> Unit)? = null,
     /** 있으면 다음 단계의 줄도 미리 펼쳐 두고 막힌 버튼 대신 이 내용을 넣는다(희망 나이 단계의 키링 동기화) */
-    nextInline: (@Composable ColumnScope.() -> Unit)? = null) {
+    nextInline: (@Composable ColumnScope.() -> Unit)? = null,
+    /** 완료한 줄(1 = 프로필, 2 = 성향테스트, 3 = 희망 나이)을 펼쳤을 때의 "수정하기". null 을 돌려주면 그 줄은 고칠 수 없다 */
+    onEdit: (Int) -> (() -> Unit)? = { null },
+    /** 완료한 줄 안에 "수정하기" 버튼 대신 직접 넣을 내용(희망 나이는 새 화면 없이 그 자리에서 고친다) */
+    editInline: (Int) -> (@Composable ColumnScope.() -> Unit)? = { null }) {
     var shown by remember(current) { mutableStateOf(hubFirstShown(previous, current)) }
     LaunchedEffect(current) {
         if (shown != current) { delay(900); shown = current }
@@ -93,10 +98,15 @@ internal fun SignupHub(current: Int, previous: Int, onSettled: (Int) -> Unit, on
             Rows.forEachIndexed { i, row ->
                 val waiting = i > current && shown == current
                 val openNext = nextInline != null && waiting && i == current + 1
+                // 완료한 줄: 눌러 펼치면 무엇을 했는지와 "수정하기"가 나온다(키링 등록 줄은 설명이 없어 펼치지 않는다)
+                val finished = i in 1 until current && shown == current
+                val fix = if (finished) editInline(i) else null
+                val edit = if (finished && fix == null) onEdit(i) else null
                 Step(row, done = i < shown, open = i == shown, onStart = onStart?.takeIf { i == current && !busy },
-                    peeked = openNext || (waiting && i == peek), blocked = blocked.takeIf { waiting && !openNext },
-                    inline = if (openNext) nextInline else inline.takeIf { i == current && shown == current },
-                    onToggle = if (waiting && !openNext) ({ peek = if (peek == i) -1 else i }) else null)
+                    peeked = openNext || ((waiting || finished) && i == peek), blocked = blocked.takeIf { waiting && !openNext },
+                    inline = if (openNext) nextInline else fix ?: inline.takeIf { i == current && shown == current },
+                    onToggle = if ((waiting && !openNext) || (finished && (fix != null || edit != null))) ({ peek = if (peek == i) -1 else i }) else null,
+                    onEdit = edit?.takeIf { !busy })
             }
         }
         TextButton(onClick = onLogout, enabled = !busy, modifier = Modifier.fillMaxWidth()) {
@@ -118,11 +128,11 @@ internal fun HubSkeleton() {
 
 @Composable
 private fun Step(row: HubRow, done: Boolean, open: Boolean, onStart: (() -> Unit)?, peeked: Boolean = false, blocked: String? = null,
-    onToggle: (() -> Unit)? = null, inline: (@Composable ColumnScope.() -> Unit)? = null) {
+    onToggle: (() -> Unit)? = null, inline: (@Composable ColumnScope.() -> Unit)? = null, onEdit: (() -> Unit)? = null) {
     val expanded = open || peeked
     val ink = when { done -> AppColors.OnSelection; open -> AppColors.TextPrimary; else -> AppColors.TextSecondary }   // 대기 줄도 읽을 수 있는 대비(4.5:1 이상)
-    Surface(shape = RoundedCornerShape(14.dp), color = if (done) DoneBackground else AppColors.Background,
-        border = if (expanded) BorderStroke(1.5.dp, OpenBorder) else null, shadowElevation = if (open) 2.dp else 0.dp) {
+    Surface(Modifier.frost(RoundedCornerShape(14.dp)), shape = RoundedCornerShape(14.dp), color = if (done) DoneBackground else AppColors.Background,
+        border = if (expanded) BorderStroke(1.5.dp, OpenBorder) else GlassBorder) {
         Column {
             Row(Modifier.fillMaxWidth()
                 .then(if (onToggle != null) Modifier.heightIn(min = AppSpacing.ControlMinHeight).clickable(role = Role.Button, onClick = onToggle) else Modifier)
@@ -146,6 +156,8 @@ private fun Step(row: HubRow, done: Boolean, open: Boolean, onStart: (() -> Unit
                     // 차례가 아닌 단계는 시작 버튼 자리에 막힌 버튼으로 지금 할 단계를 알려 준다
                     if (peeked && blocked != null) AppButton(blocked, Modifier.fillMaxWidth(), enabled = false, onClick = {})
                     else if (inline != null) inline()
+                    else if (done) AppButton(stringResource(Res.string.onboarding_hub_edit), Modifier.fillMaxWidth(), variant = AppButtonVariant.Secondary,
+                        enabled = onEdit != null, onClick = { onEdit?.invoke() })
                     else row.start?.let { AppButton(stringResource(it), Modifier.fillMaxWidth(), enabled = onStart != null, onClick = { onStart?.invoke() }) }
                 }
             }

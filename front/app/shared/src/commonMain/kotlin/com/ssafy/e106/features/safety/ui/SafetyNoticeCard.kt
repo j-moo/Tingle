@@ -18,7 +18,7 @@ import org.jetbrains.compose.resources.stringResource
 fun SafetyNoticeCard(notice: SafetyNoticeItem, onBlock: () -> Unit, onClose: () -> Unit) {
     val recipient = notice.audience == "RECIPIENT"
     val sender = notice.audience == "SENDER"
-    Surface(color = AppColors.SurfaceMuted, shape = AppShapes.Control) {
+    Surface(Modifier.frost(AppShapes.Control), color = AppColors.SurfaceMuted, shape = AppShapes.Control, border = GlassBorder) {
         Column(Modifier.fillMaxWidth().padding(AppSpacing.Medium), verticalArrangement = Arrangement.spacedBy(AppSpacing.Small)) {
             Text(stringResource(when {
                 recipient -> Res.string.safety_notice_protect

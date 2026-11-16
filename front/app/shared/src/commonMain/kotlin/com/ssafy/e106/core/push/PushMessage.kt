@@ -8,6 +8,13 @@ import kotlin.time.Instant
 internal class PushBinding(val userId: Long, val id: String)
 
 /** 기기 쪽 푸시 정보. Android 는 FCM(AndroidPushDevice), iOS 는 S15P31E106-197 */
+/**
+ * 같은 방 알림에 새 메시지를 이어 붙인다: (지금까지 온 개수, 펼친 알림에 보일 최근 줄들).
+ * 개수는 전부 세고 줄은 최근 [max] 개만 남긴다. 떠 있는 알림이 없으면 (1, [body]).
+ */
+internal fun mergedLines(shownCount: Int, shown: List<String>, body: String, max: Int): Pair<Int, List<String>> =
+    (shownCount.coerceAtLeast(0) + 1) to (shown + body).takeLast(max)
+
 internal interface PushDevice {
     /** 서버 RegisterPushRequest.platform 값: ANDROID · IOS */
     val platform: String
@@ -20,6 +27,9 @@ internal interface PushDevice {
 
     /** 토큰이 바뀌었을 때(onNewToken) */
     val tokenRefreshed: Flow<Unit>
+
+    /** 그 방을 화면에 띄웠다. 떠 있던 그 방의 메시지 알림(닉네임 · 본문 여러 줄)을 지운다. 알림이 없는 플랫폼은 아무 일도 하지 않는다 */
+    fun clearChat(roomId: Long) {}
 
     /** 마지막으로 성공한 등록. 앱이 꺼져 있을 때 받은 알림을 거르는 데 쓴다(디스크) */
     suspend fun binding(): PushBinding?

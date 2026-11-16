@@ -152,7 +152,7 @@ fun ProfileFlowScreen(
 /** 만 19세 미만: 서버가 이미 탈퇴 처리했다. 안내 문구는 줄이지 않고 그대로 보여 준다 */
 @Composable
 private fun UnderAgeScreen(state: ProfileFlowState, onReturnToLogin: () -> Unit) {
-    Surface(Modifier.fillMaxSize(), color = AppColors.Background) {
+    Surface(Modifier.fillMaxSize(), color = AppColors.Screen) {
         Column(Modifier.fillMaxSize().safeDrawingPadding(), horizontalAlignment = Alignment.CenterHorizontally) {
             Column(Modifier.weight(1f).widthIn(max = 640.dp).fillMaxWidth().verticalScroll(rememberScrollState()).padding(screenPaddingValues()),
                 verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {

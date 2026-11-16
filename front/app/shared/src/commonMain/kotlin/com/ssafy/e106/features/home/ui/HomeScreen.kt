@@ -20,8 +20,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.semantics.*
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -59,7 +62,7 @@ fun HomeScreen(state: HomeState, onMatchingChange: (Boolean) -> Unit, onAction: 
     val refresh = {
         if (state.load != HomeLoadState.Loading && !refreshing && !state.savingMatching) onAction(HomeAction.Refresh)
     }
-    Surface(modifier.fillMaxSize(), color = AppColors.Background) {
+    Surface(modifier.fillMaxSize(), color = AppColors.Screen) {
         Column(Modifier.fillMaxSize().safeDrawingPadding()) {
             // 오른쪽 위 종 모양 = 받은 알림 모음(키링 관리는 마이 → 내 키링)
             AppTopBar(stringResource(Res.string.home_brand), trailing = {
@@ -71,7 +74,8 @@ fun HomeScreen(state: HomeState, onMatchingChange: (Boolean) -> Unit, onAction: 
                 .semantics { customActions = listOf(CustomAccessibilityAction(refreshLabel) { refresh(); true }) },
                 contentAlignment = Alignment.TopCenter) {
                 BoxWithConstraints(Modifier.widthIn(max = 640.dp).fillMaxSize().padding(horizontal = screenGutter())) {
-                    Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).heightIn(min = maxHeight),
+                    // 위 40dp: 켜진 원의 빛이 바깥으로 번질 자리. 내용이 길어 원이 스크롤 맨 위에 닿아도 잘리지 않고, 켜고 꺼도 자리가 그대로다
+                    Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(top = PowerGlowRoom).heightIn(min = maxHeight - PowerGlowRoom),
                         verticalArrangement = Arrangement.spacedBy(AppSpacing.Large, Alignment.CenterVertically),
                         horizontalAlignment = Alignment.CenterHorizontally) {
                         when (state.load) {
@@ -106,7 +110,14 @@ fun HomeScreen(state: HomeState, onMatchingChange: (Boolean) -> Unit, onAction: 
     }
 }
 
-/** 가운데 큰 원: 켜짐 = 초록 원 · 연초록 테, 꺼짐 = 회색. 누르면 바꾼다(호출부가 설정 화면을 주면 그리로 연다) */
+private val PowerFill = Color(0xB3FFB3CC)    // 켜짐 원: 연분홍 70%
+private val PowerShine = Brush.verticalGradient(listOf(Color(0xB3FFFFFF), Color(0x00FFFFFF), Color(0x26FF7FAB)))   // 유리 반사광: 위는 희게, 아래는 분홍이 고인다
+private val PowerGlow = Color(0x99FF9CC0)    // 원 둘레로 번지는 빛
+private val PowerRing = Brush.verticalGradient(listOf(Color(0xF2FFFFFF), Color(0xB3FFC2D8)))   // 밝게 빛나는 테
+private val PowerInk = Color(0xFFB0235A)     // 연분홍 위 ON 글자(대비 4.5:1 이상)
+private val PowerGlowRoom = 40.dp            // 원(180dp) 둘레 빛이 원 바깥으로 번지는 거리
+
+/** 가운데 큰 원: 켜짐 = 연분홍 반투명 유리 원 · 빛나는 밝은 테, 꺼짐 = 회색. 누르면 바꾼다(호출부가 설정 화면을 주면 그리로 연다) */
 @Composable
 private fun MatchingPower(state: HomeState, onMatchingChange: (Boolean) -> Unit, onOpenSettings: (() -> Unit)?) {
     // 등록된 키링이 없으면 저장된 설정과 상관없이 새 매칭이 돌지 않는다: 원은 눌리지 않는 흐린 OFF 로 두고 키링 연결을 안내한다
@@ -114,14 +125,21 @@ private fun MatchingPower(state: HomeState, onMatchingChange: (Boolean) -> Unit,
     val on = if (missing) false else state.matchingEnabled
     val label = stringResource(when (on) { true -> Res.string.home_matching_on; false -> Res.string.home_matching_off; null -> Res.string.home_matching_title })
     val enabled = on != null && !state.savingMatching && !missing
-    Box(Modifier.size(180.dp).alpha(if (missing) 0.55f else 1f).border(14.dp, if (on == true) AppColors.SelectionContainer else AppColors.SurfaceMuted, CircleShape)
-        .padding(14.dp).clip(CircleShape).background(if (on == true) AppColors.SelectionBorder else AppColors.BorderSubtle)
+    Box(Modifier.size(180.dp).alpha(if (missing) 0.55f else 1f)
+        // 켜짐: 원 둘레로 분홍 빛이 번진다
+        .then(if (on == true) Modifier.drawBehind {
+            val reach = size.minDimension * 0.72f
+            drawCircle(Brush.radialGradient(listOf(PowerGlow, PowerGlow.copy(alpha = 0f)), radius = reach), reach)
+        } else Modifier)
+        .border(14.dp, if (on == true) PowerRing else SolidColor(AppColors.SurfaceMuted), CircleShape)
+        .padding(14.dp).frost(CircleShape).background(if (on == true) PowerFill else AppColors.BorderSubtle)
+        .then(if (on == true) Modifier.background(PowerShine).border(1.5.dp, Color.White.copy(alpha = 0.85f), CircleShape) else Modifier)
         .clickable(enabled, role = Role.Switch, onClickLabel = label) { if (onOpenSettings != null) onOpenSettings() else onMatchingChange(on != true) }
         .semantics { stateDescription = label; if (on != null) toggleableState = androidx.compose.ui.state.ToggleableState(on) },
         contentAlignment = Alignment.Center) {
         Text(stringResource(when (on) { true -> Res.string.home_power_on; false -> Res.string.home_power_off; null -> Res.string.home_unknown }),
             style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.ExtraBold,
-            color = if (on == true) AppColors.OnPrimary else AppColors.TextSecondary)
+            color = if (on == true) PowerInk else AppColors.TextSecondary)
     }
     Text(stringResource(when { missing -> Res.string.home_keyring_connect_title; on == true -> Res.string.home_power_on_title
         on == false -> Res.string.home_power_off_title; else -> Res.string.home_matching_unknown }),
@@ -156,7 +174,7 @@ private fun KeyringSummary(state: HomeState, connectedKeyringId: Long?, keyringS
     val connectedLabel = stringResource(Res.string.home_keyring_connected)
     val disconnectedLabel = stringResource(Res.string.home_keyring_disconnected)
     Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp))
-        .then(if (todo == null) Modifier.border(1.5.dp, AppColors.BorderSubtle, RoundedCornerShape(16.dp)) else Modifier.background(WarnBackground))) {
+        .then(if (todo == null) Modifier.glass(RoundedCornerShape(16.dp)) else Modifier.background(WarnBackground))) {
         Column(Modifier.fillMaxWidth().clickable(role = Role.Button) { open = !open }.padding(AppSpacing.Medium)
             .semantics(mergeDescendants = true) { stateDescription = if (open) expanded else collapsed },
             verticalArrangement = Arrangement.spacedBy(AppSpacing.ExtraSmall)) {

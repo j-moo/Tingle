@@ -5,7 +5,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.ui.Modifier
-import androidx.compose.foundation.background
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -148,7 +147,7 @@ internal fun OptionalProfileStatus(state: OptionalProfileState, onReload: () -> 
     val reload = unavailable || state.recoveryRequired || state.error != null || state.photoFailed
     if (!unavailable && !state.recoveryRequired && notice == null && state.error == null && !reload && !state.canRetryConsent) return
     // 안내 · 오류 · 버튼을 한 상자에 모은다(흩어져 있으면 무엇이 무엇의 버튼인지 알 수 없다)
-    Column(Modifier.fillMaxWidth().background(AppColors.SurfaceMuted, AppShapes.Card).padding(AppSpacing.Large),
+    Column(Modifier.fillMaxWidth().glass(AppShapes.Card, AppColors.SurfaceMuted).padding(AppSpacing.Large),
         verticalArrangement = Arrangement.spacedBy(AppSpacing.Small)) {
         if (unavailable) StatusText(Res.string.optional_unavailable)
         if (state.recoveryRequired) StatusText(Res.string.optional_unknown)

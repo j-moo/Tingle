@@ -20,7 +20,7 @@ import org.jetbrains.compose.resources.stringResource
 @Composable
 fun ChatPartnerScreen(state: ChatPartnerState, onAction: (ChatPartnerAction) -> Unit, modifier: Modifier = Modifier) {
     val exit = if (state.load in listOf(ChatPartnerLoad.Closed, ChatPartnerLoad.Unavailable)) ChatPartnerAction.ChatList else ChatPartnerAction.Back
-    Surface(modifier.fillMaxSize(), color = AppColors.Background) {
+    Surface(modifier.fillMaxSize(), color = AppColors.Screen) {
         Column(Modifier.fillMaxSize().safeDrawingPadding()) {
             AppTopBar(stringResource(Res.string.chat_partner_title), onBack = { onAction(exit) })
             val p = state.profile
@@ -96,7 +96,7 @@ fun ChatPartnerScreen(state: ChatPartnerState, onAction: (ChatPartnerAction) -> 
         SkeletonGroup(label = stringResource(Res.string.chat_partner_photo_loading)) { SkeletonBone(Modifier.aspectRatio(1f), shape = AppShapes.Card) }
         return
     }
-    Surface(Modifier.fillMaxWidth(), shape = AppShapes.Card, color = AppColors.SurfaceMuted) {
+    Surface(Modifier.fillMaxWidth().frost(), shape = AppShapes.Card, color = AppColors.SurfaceMuted, border = GlassBorder) {
         if (state.visiblePhoto == ChatPartnerPhoto.Ready && state.image != null) {
             Image(state.image.bitmap, stringResource(Res.string.chat_partner_photo), Modifier.fillMaxWidth().aspectRatio(1f), contentScale = ContentScale.Crop)
         } else Column(Modifier.fillMaxWidth().padding(AppSpacing.ExtraLarge), horizontalAlignment = Alignment.CenterHorizontally,
@@ -111,7 +111,7 @@ fun ChatPartnerScreen(state: ChatPartnerState, onAction: (ChatPartnerAction) -> 
 }
 
 @Composable private fun PartnerSection(title: String, content: @Composable ColumnScope.() -> Unit) {
-    Surface(Modifier.fillMaxWidth(), shape = AppShapes.Card, color = AppColors.SurfaceMuted) {
+    Surface(Modifier.fillMaxWidth().frost(), shape = AppShapes.Card, color = AppColors.SurfaceMuted, border = GlassBorder) {
         Column(Modifier.padding(AppSpacing.Large), verticalArrangement = Arrangement.spacedBy(AppSpacing.Medium)) {
             Text(title, style = MaterialTheme.typography.titleMedium)
             content()

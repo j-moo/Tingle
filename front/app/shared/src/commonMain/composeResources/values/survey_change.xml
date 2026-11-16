@@ -1,5 +1,6 @@
 <resources>
     <string name="survey_change_retest">재검사하기</string>
+    <string name="survey_change_edit">답 수정하기</string>
     <string name="survey_change_version">최신 설문 확인</string>
     <string name="survey_change_previous">직전 회차 확인</string>
     <string name="survey_change_begin">재검사 시작하거나 이어하기</string>

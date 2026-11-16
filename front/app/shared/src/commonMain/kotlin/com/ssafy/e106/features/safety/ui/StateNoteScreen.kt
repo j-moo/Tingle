@@ -24,7 +24,7 @@ import com.ssafy.e106.core.ui.theme.screenPaddingValues
 @Composable
 internal fun StateNoteScreen(kind: StateKind, title: String, note: String, modifier: Modifier = Modifier, barTitle: String? = null,
     onBack: (() -> Unit)? = null, primary: StateAction? = null, secondary: StateAction? = null) {
-    Surface(modifier.fillMaxSize(), color = AppColors.Background) {
+    Surface(modifier.fillMaxSize(), color = AppColors.Screen) {
         Column(Modifier.fillMaxSize().safeDrawingPadding(), horizontalAlignment = Alignment.CenterHorizontally) {
             if (barTitle != null) AppTopBar(barTitle, onBack = onBack)
             Column(Modifier.weight(1f).widthIn(max = 640.dp).fillMaxWidth().verticalScroll(rememberScrollState()).padding(screenPaddingValues()),
@@ -46,7 +46,7 @@ internal fun StateNoteScreen(kind: StateKind, title: String, note: String, modif
 /** 이전 요청을 확인하는 동안: 위쪽 줄 + 뼈대. 시트가 뜨기 전이라 빈 화면 대신 둔다. 화면 리더에는 [label] 한 문장만 읽힌다 */
 @Composable
 internal fun StateLoadingScreen(barTitle: String, label: String, onBack: () -> Unit) {
-    Surface(Modifier.fillMaxSize(), color = AppColors.Background) {
+    Surface(Modifier.fillMaxSize(), color = AppColors.Screen) {
         Column(Modifier.fillMaxSize().safeDrawingPadding()) {
             AppTopBar(barTitle, onBack = onBack)
             SkeletonGroup(Modifier.padding(screenPaddingValues()), label = label) {

@@ -106,7 +106,7 @@ internal data class OwnedKeyringConnection(
     var pulled by remember { mutableStateOf(false) }
     LaunchedEffect(state.loading) { if (!state.loading) pulled = false }
     val items = state.items
-    Surface(Modifier.fillMaxSize(), color = AppColors.Background) {
+    Surface(Modifier.fillMaxSize(), color = AppColors.Screen) {
         Column(Modifier.fillMaxSize().safeDrawingPadding(), horizontalAlignment = Alignment.CenterHorizontally) {
             BackArrowBar(onBack)
             PullDownRefreshBox(pulled && state.loading, { pulled = true; onRefresh() }, Modifier.weight(1f).widthIn(max = 640.dp).fillMaxWidth()) {

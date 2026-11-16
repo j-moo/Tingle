@@ -1,5 +1,7 @@
 package com.ssafy.e106.features.chat.ui
 
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -13,7 +15,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.semantics.*
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.ssafy.e106.core.network.AppError
@@ -40,7 +46,7 @@ fun ChatListScreen(state: ChatListState, onOpenChat: (Long) -> Unit,
         if (atEnd && state.load == ChatListLoad.Ready && state.page == ChatListPage.More && !state.refreshing)
             onAction(ChatListAction.LoadMore)
     }
-    Surface(modifier.fillMaxSize(), color = AppColors.Background) {
+    Surface(modifier.fillMaxSize(), color = AppColors.Screen) {
         Column(Modifier.fillMaxSize().safeDrawingPadding()) {
             AppTopBar(stringResource(Res.string.chat_list_title))
             val refresh = { if (state.load != ChatListLoad.Loading && !state.refreshing) onAction(ChatListAction.Refresh) }
@@ -59,8 +65,9 @@ fun ChatListScreen(state: ChatListState, onOpenChat: (Long) -> Unit,
                     item(key = "intro") {
                         Text(stringResource(Res.string.chat_list_heading), style = MaterialTheme.typography.headlineMedium,
                             modifier = Modifier.semantics { heading() })
-                        // 7일 뒤 종료 · 다시 볼 수 없음 안내는 어떤 상태에서도 지우지 않는다
-                        Text(stringResource(Res.string.chat_list_intro), Modifier.padding(top = AppSpacing.Medium),
+                        // 7일 뒤 종료 · 다시 볼 수 없음 안내는 어떤 상태에서도 지우지 않는다. 연한 회색 안내 박스에 담는다
+                        Text(stringResource(Res.string.chat_list_intro), Modifier.padding(top = AppSpacing.Medium).fillMaxWidth()
+                            .glass(RoundedCornerShape(14.dp), AppColors.SurfaceMuted).padding(14.dp),
                             style = MaterialTheme.typography.bodyMedium, color = AppColors.TextSecondary)
                     }
                     when (state.load) {
@@ -106,6 +113,8 @@ fun ChatListScreen(state: ChatListState, onOpenChat: (Long) -> Unit,
     }
 }
 
+private val UnreadGreen = Color(0xFF1B7F3A)   // 읽지 않은 메시지 배지 · 점. 흰 글자와 대비 약 5:1
+
 /**
  * 채팅 앱처럼 한 줄: 왼쪽 동그란 첫 글자 · 가운데 이름과 마지막 메시지 한 줄 · 오른쪽 시각과 새 메시지 점.
  * 줄 전체를 누르면 대화. 이용 여부를 아직 모르는 방은 흐리게, 누를 수 없게.
@@ -126,9 +135,10 @@ private fun ChatCard(room: ChatListItem, onOpenChat: (Long) -> Unit) {
         .then(if (allowed) Modifier.clickable(role = Role.Button) { onOpenChat(room.chatRoomId) } else Modifier.alpha(0.5f))
         .padding(vertical = AppSpacing.Small),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(AppSpacing.Medium)) {
-        // 목록엔 사진이 없어 첫 글자(장식이라 읽지 않음)
+        // 상대 프로필 사진. 없거나 받는 중이면 첫 글자(장식이라 읽지 않음)
         Box(Modifier.size(48.dp).clip(CircleShape).background(AppColors.SurfaceMuted), contentAlignment = Alignment.Center) {
-            Text(if (allowed) room.nickname.initial() else "",
+            if (allowed && room.photo != null) Image(room.photo, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+            else Text(if (allowed) room.nickname.initial() else "",
                 style = MaterialTheme.typography.titleMedium, color = AppColors.TextSecondary, modifier = Modifier.clearAndSetSemantics {})
         }
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(AppSpacing.ExtraSmall)) {
@@ -140,8 +150,14 @@ private fun ChatCard(room: ChatListItem, onOpenChat: (Long) -> Unit) {
             room.lastMessageTimeLabel?.takeIf { room.lastMessageKind == LastMessageKind.Text }?.let { listTimeLabel(it) }?.let {
                 Text(it, style = MaterialTheme.typography.bodySmall, color = AppColors.TextSecondary, maxLines = 1)
             }
-            // 새 메시지가 있으면 초록 점(화면 리더엔 "새 메시지"). 모르면 표시하지 않는다
-            if (room.hasNewMessages == true) Box(Modifier.size(10.dp).clip(CircleShape).background(AppColors.SelectionBorder)
+            // 읽지 않은 메시지 수를 초록 배지로(99 까지, 넘으면 99+). 수를 주지 않는 옛 서버는 초록 점만
+            val badge = unreadBadge(room.unreadCount, room.hasNewMessages)
+            if (!badge.isNullOrEmpty()) Text(badge,
+                style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, color = Color.White, maxLines = 1,
+                modifier = Modifier.defaultMinSize(minWidth = 22.dp).background(UnreadGreen, CircleShape)
+                    .padding(horizontal = 6.dp, vertical = 2.dp).semantics { contentDescription = "$newLabel $badge" },
+                textAlign = TextAlign.Center)
+            else if (badge != null) Box(Modifier.size(10.dp).clip(CircleShape).background(UnreadGreen)
                 .semantics { contentDescription = newLabel })
         }
     }

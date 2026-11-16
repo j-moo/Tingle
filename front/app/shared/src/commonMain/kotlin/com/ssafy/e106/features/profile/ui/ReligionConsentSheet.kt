@@ -1,6 +1,6 @@
 package com.ssafy.e106.features.profile.ui
 
-import androidx.compose.foundation.background
+import com.ssafy.e106.core.ui.theme.glass
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -28,7 +28,7 @@ import org.jetbrains.compose.resources.stringResource
  */
 @Composable
 internal fun ReligionConsentAsk(enabled: Boolean, onRequest: () -> Unit) {
-    Column(Modifier.fillMaxWidth().background(AppColors.SurfaceMuted, AppShapes.Card).padding(AppSpacing.Large),
+    Column(Modifier.fillMaxWidth().glass(AppShapes.Card, AppColors.SurfaceMuted).padding(AppSpacing.Large),
         verticalArrangement = Arrangement.spacedBy(AppSpacing.Small)) {
         Text(stringResource(Res.string.religion_ask_title), style = MaterialTheme.typography.labelLarge, color = AppColors.TextPrimary)
         Text(stringResource(Res.string.religion_ask_help), style = MaterialTheme.typography.bodyMedium, color = AppColors.TextSecondary)

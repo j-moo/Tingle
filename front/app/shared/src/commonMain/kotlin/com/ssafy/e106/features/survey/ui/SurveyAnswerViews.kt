@@ -1,5 +1,6 @@
 package com.ssafy.e106.features.survey.ui
 
+import com.ssafy.e106.core.ui.theme.frost
 import com.ssafy.e106.core.ui.theme.AppSizes
 import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.Canvas
@@ -212,11 +213,13 @@ private fun SpecialButton(label: String, selected: Boolean, enabled: Boolean, on
 
 private fun stopAlign(i: Int) = when (i) { 0 -> Alignment.CenterStart; 1 -> Alignment.Center; else -> Alignment.CenterEnd }
 
-private fun Modifier.clipTile(on: Boolean) = this
+@Composable
+private fun Modifier.clipTile(on: Boolean) = frost(RoundedCornerShape(14.dp))
     .background(if (on) AppColors.SelectionContainer else AppColors.Background, RoundedCornerShape(14.dp))
     .border(1.5.dp, if (on) AppColors.SelectionBorder else AppColors.BorderSubtle, RoundedCornerShape(14.dp))
 
-private fun Modifier.clipChip(on: Boolean, enabled: Boolean) = this
+@Composable
+private fun Modifier.clipChip(on: Boolean, enabled: Boolean) = frost(RoundedCornerShape(50))
     .background(if (on) AppColors.SelectionContainer else AppColors.Background, RoundedCornerShape(50))
     .border(1.5.dp, when { on -> AppColors.SelectionBorder; enabled -> AppColors.BorderSubtle; else -> AppColors.ActionDisabled }, RoundedCornerShape(50))
 

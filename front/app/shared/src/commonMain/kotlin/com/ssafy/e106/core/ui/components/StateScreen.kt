@@ -108,7 +108,7 @@ fun TextAction(text: String, onClick: () -> Unit, modifier: Modifier = Modifier,
 fun StateScreen(kind: StateKind, title: String, modifier: Modifier = Modifier, barTitle: String? = null, onBack: (() -> Unit)? = null,
     refreshing: Boolean = false, onRefresh: (() -> Unit)? = null, primary: StateAction? = null, secondary: StateAction? = null,
     note: String? = null) {
-    Surface(modifier.fillMaxSize(), color = AppColors.Background) {
+    Surface(modifier.fillMaxSize(), color = AppColors.Screen) {
         Column(Modifier.fillMaxSize().safeDrawingPadding(), horizontalAlignment = Alignment.CenterHorizontally) {
             if (barTitle != null) AppTopBar(barTitle, onBack = onBack)
             val center: @Composable BoxScope.() -> Unit = {

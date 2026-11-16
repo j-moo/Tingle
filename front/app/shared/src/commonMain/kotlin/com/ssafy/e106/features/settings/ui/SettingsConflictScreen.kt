@@ -29,7 +29,7 @@ fun <T : ConflictValues> SettingsConflictScreen(state: SettingsConflictState<T>,
         ConflictStage.SaveFailed -> Res.string.conflict_save_failed
         ConflictStage.OutcomeUnknown -> Res.string.conflict_unknown
     }
-    Surface(color = AppColors.Background) {
+    Surface(color = AppColors.Screen) {
         Column(Modifier.fillMaxSize().safeDrawingPadding(), horizontalAlignment = Alignment.CenterHorizontally) {
             AppTopBar(stringResource(if (state.intended is ConflictValues.Age) Res.string.age_preference_title else Res.string.settings_matching_title))
             Column(Modifier.widthIn(max = 640.dp).fillMaxWidth().weight(1f)

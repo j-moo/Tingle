@@ -1,5 +1,6 @@
 package com.ssafy.e106.features.profile.ui
 
+import com.ssafy.e106.core.ui.theme.glass
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -41,7 +42,7 @@ internal fun ProfileBasicsConfirmSheet(birthDate: String, gender: String, onConf
             Text(stringResource(Res.string.profile_confirm_basics_title), style = MaterialTheme.typography.titleLarge,
                 color = AppColors.TextPrimary, modifier = Modifier.semantics { heading() })
             // 확인할 두 값: 이름은 작게, 값은 크게
-            Column(Modifier.fillMaxWidth().background(AppColors.SurfaceMuted, AppShapes.Card).padding(AppSpacing.Large),
+            Column(Modifier.fillMaxWidth().glass(AppShapes.Card, AppColors.SurfaceMuted).padding(AppSpacing.Large),
                 verticalArrangement = Arrangement.spacedBy(AppSpacing.Medium)) {
                 ConfirmValue(stringResource(Res.string.profile_confirm_basics_birth), birthDate)
                 ConfirmValue(stringResource(Res.string.profile_confirm_basics_gender), gender)

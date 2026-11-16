@@ -102,7 +102,7 @@ private fun ProfileOverviewScreen(state: ProfileManagementState, devNotice: Bool
         return
     }
     val (refreshing, refresh) = pullRefresh(state.busy, onReload)
-    Surface(Modifier.fillMaxSize(), color = AppColors.Background) {
+    Surface(Modifier.fillMaxSize(), color = AppColors.Screen) {
         Column(Modifier.fillMaxSize().safeDrawingPadding()) {
             AppTopBar(title, onBack = onBack.takeIf { !state.busy })
             PullDownRefreshBox(refreshing, refresh, Modifier.weight(1f).fillMaxWidth()) {
@@ -213,8 +213,7 @@ private val ProfileManagementState.unknown get() = recoveryRequired || problem =
 @Composable private fun SummaryField(title: StringResource, value: String?) {
     Column(verticalArrangement = Arrangement.spacedBy(AppSpacing.Small)) {
         Text(stringResource(title), style = MaterialTheme.typography.titleMedium)
-        Text(value ?: stringResource(Res.string.profile_manage_none), Modifier.fillMaxWidth().clip(AppShapes.Control)
-            .background(AppColors.SurfaceMuted).padding(AppSpacing.Medium),
+        Text(value ?: stringResource(Res.string.profile_manage_none), Modifier.fillMaxWidth().glass(AppShapes.Control, AppColors.SurfaceMuted).padding(AppSpacing.Medium),
             style = MaterialTheme.typography.bodyLarge, color = if (value == null) AppColors.TextSecondary else AppColors.TextPrimary)
     }
 }

@@ -20,9 +20,14 @@ import kotlin.coroutines.resume
  */
 internal class AndroidPushDevice(private val prefs: SharedPreferences,
     /** 로그아웃 · 계정 전환. 알림에 닉네임 · 메시지가 들어가므로 남은 알림을 지운다 */
-    private val onAccountChanged: () -> Unit = {}) : PushDevice {
+    private val onAccountChanged: () -> Unit = {},
+    private val onRoomShown: (Long) -> Unit = {}) : PushDevice {
     constructor(context: Context) : this(context.applicationContext.getSharedPreferences("tingle.push", Context.MODE_PRIVATE),
-        { NotificationManagerCompat.from(context.applicationContext).cancelAll() })
+        { NotificationManagerCompat.from(context.applicationContext).cancelAll() },
+        // TingleMessagingService 가 메시지 알림을 띄울 때 쓰는 tag · id 와 같아야 한다
+        { room -> NotificationManagerCompat.from(context.applicationContext).cancel(PushKind.CHAT_MESSAGE.name, chatNotificationId(room.toString())) })
+
+    override fun clearChat(roomId: Long) = onRoomShown(roomId)
 
     override val platform = "ANDROID"
 

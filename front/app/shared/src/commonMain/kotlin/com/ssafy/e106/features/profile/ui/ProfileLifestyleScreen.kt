@@ -45,7 +45,7 @@ fun ProfileLifestyleScreen(
     onContinue: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    Surface(modifier.fillMaxSize(), color = AppColors.Background) {
+    Surface(modifier.fillMaxSize(), color = AppColors.Screen) {
         Column(Modifier.fillMaxSize().safeDrawingPadding()) {
             AppTopBar(stringResource(Res.string.profile_lifestyle_title))
             Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.TopCenter) {
