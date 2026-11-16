@@ -12,6 +12,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
+import com.e106.tingle.chat.ChatRoom;
+import com.e106.tingle.chat.ChatService;
+import com.e106.tingle.global.i18n.Messages;
 import com.e106.tingle.push.PushDeliveryLookup;
 import com.e106.tingle.push.PushDeliveryTarget;
 import com.e106.tingle.push.PushGateway;
@@ -22,7 +25,8 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
 /**
- * 새 제안이 커밋되면 두 사람에게 NEW_PROPOSAL 푸시를 한 번 보낸다(data 전용, 문구는 앱이 정한다).
+ * 새 제안이 커밋되면 두 사람에게 NEW_PROPOSAL 푸시를 한 번 보낸다(data 전용). 앱은 title · body가 있으면 그 문구를 쓴다.
+ * 제안 화면을 열기 전이라 상대 닉네임은 넣지 않는다.
  * 제안 목록이 원본이라 푸시가 빠져도 제안은 그대로 보인다.
  */
 // ponytail: 커밋 뒤 1회 전송, 재시도 큐 없음. FCM 일시 오류로 빠지는 알림이 문제가 되면 채팅 푸시처럼 작업 테이블로 옮긴다
@@ -36,6 +40,7 @@ public class ProposalPushNotifier {
 
 	private final PushDeliveryLookup deliveries;
 	private final PushGateway gateway;
+	private final ChatService chats;
 	private final ExecutorService worker = Executors.newVirtualThreadPerTaskExecutor();
 
 	/** 현재 트랜잭션이 커밋된 뒤에만 보낸다. 롤백되면 보내지 않는다. */
@@ -54,6 +59,69 @@ public class ProposalPushNotifier {
 				}
 			}
 		});
+	}
+
+	/**
+	 * 서로 수락해 채팅방이 생겼을 때 먼저 수락하고 기다리던 사람에게 CHAT_ROOM_CREATED 를 커밋 뒤 한 번 보낸다.
+	 * 롤백되면 보내지 않는다. 같은 매칭은 noticeId 로 기기에서 하나로 합쳐진다.
+	 * 받는 사람이 그 방에서 지금 대화할 수 없으면(AI 위험 감지 동의 철회 등) 보내지 않는다. 메시지 알림 · 종료 안내와 같은 확인이다.
+	 */
+	public void afterCommitMatched(long matchingId, long recipientUserId, long roomId, Instant roomExpiresAt,
+		String partnerNickname) {
+		TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+			@Override
+			public void afterCommit() {
+				try {
+					worker.execute(() ->
+						sendMatched(matchingId, recipientUserId, roomId, roomExpiresAt, partnerNickname));
+				} catch (RejectedExecutionException exception) {
+					log.warn("event=match_push_skipped reason=shutdown");
+				}
+			}
+		});
+	}
+
+	void sendMatched(long matchingId, long userId, long roomId, Instant deadline, String partnerNickname) {
+		try {
+			if (!gateway.ready()) {
+				return;
+			}
+			// "대화를 시작할 수 있어요"는 들어가서 실제로 대화할 수 있는 사람에게만 보낸다
+			ChatRoom room = chats.linkedForMatching(matchingId).orElse(null);
+			if (room == null || !chats.available(room, userId)) {
+				return;
+			}
+			String noticeId = "match-" + matchingId;
+			String body = partnerNickname == null || partnerNickname.isBlank()
+				? Messages.get("push.matched.body.noName")
+				: Messages.get("push.matched.body", partnerNickname);
+			var candidates = deliveries.candidates(userId, PushNotificationKind.CHAT_ROOM_CREATED);
+			for (PushDeliveryLookup.Candidate candidate : candidates) {
+				try {
+					PushDeliveryTarget target = deliveries.resolve(candidate).orElse(null);
+					if (target == null) {
+						continue;
+					}
+					PushGateway.Result result = gateway.send(target.token(), noticeId, Map.of(
+						"type", PushNotificationKind.CHAT_ROOM_CREATED.name(),
+						"title", Messages.get("push.matched.title"),
+						"body", body,
+						"noticeId", noticeId,
+						"chatRoomId", Long.toString(roomId),
+						"recipientUserId", Long.toString(userId),
+						"bindingId", candidate.bindingId().toString(),
+						"installationId", candidate.installationId().toString(),
+						"expiresAt", deadline.toString()), deadline);
+					if (result == PushGateway.Result.INVALID_TOKEN) {
+						deliveries.invalidate(candidate);
+					}
+				} catch (RuntimeException exception) {
+					warn(exception);
+				}
+			}
+		} catch (RuntimeException exception) {
+			warn(exception);
+		}
 	}
 
 	/** 한 사람 몫. 실패해도 다른 사람 몫과 제안에는 영향이 없다. */
@@ -87,6 +155,8 @@ public class ProposalPushNotifier {
 		}
 		PushGateway.Result result = gateway.send(target.token(), noticeId, Map.of(
 			"type", PushNotificationKind.NEW_PROPOSAL.name(),
+			"title", Messages.get("push.proposal.title"),
+			"body", Messages.get("push.proposal.body"),
 			"noticeId", noticeId,
 			"proposalId", Long.toString(proposalId),
 			"recipientUserId", Long.toString(userId),

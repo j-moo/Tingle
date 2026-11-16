@@ -7,6 +7,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -15,6 +16,7 @@ import com.e106.tingle.chat.ChatMemberRepository;
 import com.e106.tingle.chat.ChatRoom;
 import com.e106.tingle.chat.ChatRoomRepository;
 import com.e106.tingle.chat.ChatService;
+import com.e106.tingle.global.i18n.Messages;
 import com.e106.tingle.push.PushDeliveryLookup;
 import com.e106.tingle.push.PushDeliveryTarget;
 import com.e106.tingle.push.PushGateway;
@@ -31,6 +33,7 @@ public class NoticeDeliveryStore {
 	private final ChatService chats;
 	private final PushDeliveryLookup deliveries;
 	private final Clock clock;
+	private final JdbcTemplate jdbc;
 
 	@Transactional
 	public Claim claim() {
@@ -127,10 +130,17 @@ public class NoticeDeliveryStore {
 	}
 
 	private Target target(ChatNoticeJob job, ChatRoom room, PushDeliveryLookup.Candidate candidate) {
+		// 제목은 대화 상대 닉네임(없으면 "대화 종료 안내"). 이 안내는 대화 중인 상대에 대한 것이라 닉네임을 넣어도 된다
+		String partner = jdbc.query("select profile.nickname from chat_participant p "
+			+ "left join profile on profile.user_id=p.user_id "
+			+ "where p.chat_id=? and p.user_id is not null and p.user_id<>?",
+			rs -> rs.next() ? rs.getString(1) : null, room.getId(), job.userId());
 		Map<String, String> data = Map.of("noticeId", job.getPublicId().toString(),
 			"chatRoomId", room.getPublicId().toString(), "bindingId", candidate.bindingId().toString(),
 			"installationId", candidate.installationId().toString(), "type", "ONE_HOUR_BEFORE_END",
-			"expiresAt", room.getExpiresAt().toString());
+			"expiresAt", room.getExpiresAt().toString(),
+			"title", partner == null || partner.isBlank() ? Messages.get("push.chatEnding.title") : partner,
+			"body", Messages.get("push.chatEnding.body"));
 		return new Target(candidate, job.getPublicId().toString(), data, room.getExpiresAt());
 	}
 

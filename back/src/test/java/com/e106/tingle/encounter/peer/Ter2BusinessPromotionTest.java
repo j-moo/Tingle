@@ -142,7 +142,7 @@ class Ter2BusinessPromotionTest {
 		// 최신 develop의 탈퇴 후 재매칭 제한 검사도 동일한 시험 회원 저장소를 사용한다.
 		// 실제 탈퇴 정책을 우회하는 공급자를 추가하지 않고 기존 합성 fixture의 접근 조건을 공유한다.
 		var members = mock(MemberAccessRepository.class);
-		when(members.canRespondToProposal(anyLong())).thenReturn(true);
+		when(members.canReceiveNewProposal(anyLong())).thenReturn(true);
 		worker = new EncounterEvaluationWorker(jdbc, mapper, clock, receipts,
 			beans.getBeanProvider(EncounterEvaluationGateway.class),
 			beans.getBeanProvider(com.e106.tingle.encounter.EncounterProposalPublisher.class),

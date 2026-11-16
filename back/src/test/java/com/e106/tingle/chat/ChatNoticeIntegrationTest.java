@@ -69,6 +69,9 @@ class ChatNoticeIntegrationTest extends IntegrationTestSupport {
 	private PushInstallationRepository installationRows;
 	@MockitoBean
 	private PushGateway gateway;
+	// 준비 단계에서 서로 수락하면 매칭 성사 알림이 비동기로 같은 gateway를 쓴다. 이 시험은 종료 안내만 본다
+	@MockitoBean
+	private com.e106.tingle.proposal.ProposalPushNotifier proposalPushes;
 	@Autowired
 	private ChatRoomRepository rooms;
 	@Autowired
