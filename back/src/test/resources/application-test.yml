@@ -31,13 +31,6 @@ app:
     token-encryption-key: MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDA=
   chat-message-push:
     poll-ms: 1000
-  # 증거 파일이 없으므로 예약 삭제는 늘 보류된다. 삭제 동작은 각 테스트가 직접 확인한다.
-  backup-evidence:
-    file: ${java.io.tmpdir}/tingle-backup-evidence-test/tingle_dev.json
-    generation-file: ${java.io.tmpdir}/tingle-backup-evidence-test/tingle_dev.restore-generation
-    namespace: tingle_dev
-    scope-id: test-db-dumps
-    approval-id: test-only
   chat-deletion:
     scheduling-enabled: false
   risk:
@@ -61,10 +54,6 @@ app:
 
 # 테스트가 만든 사진 파일은 로컬 실행용 폴더와 섞이지 않게 따로 둔다.
 tingle:
-  chat:
-    deletion:
-      # 초기화하지 않은 임시 폴더다. 저널을 쓰는 테스트는 직접 만든 폴더를 쓴다.
-      journal-directory: ${java.io.tmpdir}/tingle-chat-journal-test
   ai:
     personal-analysis:
       scheduling-enabled: false

@@ -69,7 +69,7 @@ management:
       show-details: never
 
 # 아래 app 설정은 개발·운영이 같은 코드 경로로 돈다(기능을 켜고 끄는 값이 없다).
-# withdrawal · keyring.dev-settings · keyring.peer · push · chat-message-push · backup-evidence 의 환경변수는 필수다
+# withdrawal · keyring.dev-settings · keyring.peer · push · chat-message-push 의 환경변수는 필수다
 # (profile-device-serials 만 빈 값 허용). 비었거나 올바르지 않으면 기동하지 않는다. local·test 는 시험용 값을 따로 준다.
 app:
   withdrawal:
@@ -161,14 +161,6 @@ app:
   # 새 메시지 푸시 작업(종료 안내 정책과 독립). 주기(ms)는 필수다.
   chat-message-push:
     poll-ms: ${CHAT_MESSAGE_PUSH_POLL_MS:}
-  # 채팅 삭제 전 백업 확인(범위·승인 ID 는 공개 식별자, docs/specifications/functional-spec-v3/backup-evidence-v1.md).
-  # 증거 파일이 없거나 오래되면 기동은 하되 삭제를 보류한다.
-  backup-evidence:
-    file: ${APP_BACKUP_EVIDENCE_FILE:}
-    generation-file: ${APP_BACKUP_EVIDENCE_GENERATION_FILE:}
-    namespace: ${APP_BACKUP_EVIDENCE_NAMESPACE:}
-    scope-id: ${APP_BACKUP_EVIDENCE_SCOPE_ID:}
-    approval-id: ${APP_BACKUP_EVIDENCE_APPROVAL_ID:}
   # AI 서버 호출(서비스 토큰). 개발·운영은 네 값 모두 필수다(ServerSettingsCheck). environment 는 AI 의 APP_ENV 와 같아야 한다.
   ai:
     service:
@@ -186,9 +178,9 @@ app:
 tingle:
   chat:
     deletion:
-      # 채팅 삭제 의도 기록(저널) 폴더. 필수이며 DB 복원과 분리된 영구 볼륨이어야 한다.
-      # 처음 한 번 java -jar app.jar chat-restore journal-init --namespace=<tingle|tingle_dev> 로 만든다.
-      journal-directory: ${TINGLE_CHAT_DELETION_JOURNAL_DIRECTORY:}
+      # 채팅 삭제 기록(저널) 폴더. DB 백업에서 복원하면 이 기록으로 지운 채팅을 다시 지운다.
+      # 기본값은 사진 영구 볼륨 안이라 블루·그린이 함께 쓰고 재배포에도 남는다. 첫 삭제 때 자동으로 만든다.
+      journal-directory: ${TINGLE_CHAT_DELETION_JOURNAL_DIRECTORY:${tingle.photo.dir}/.chat-deletion-journal}
   photo:
     # 프로필 사진 파일을 두는 서버 폴더. DB(profile.photo_url)에는 이 폴더 기준 키(profile/{userId}/{uuid}.jpg)만 저장한다.
     # 운영은 blue·green 컨테이너가 함께 쓰는 영구 볼륨을 지정하고 백업한다. 미설정이면 임시 폴더(로컬·테스트용).

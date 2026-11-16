@@ -46,15 +46,18 @@ public class FileDeletionJournal implements DeletionJournal {
 
 	public FileDeletionJournal(@Value("${tingle.chat.deletion.journal-directory:}") String directory,
 		JsonMapper mapper) {
-		// 비어 있으면 채팅 삭제가 영영 재시도만 하므로 기동하지 않는다(개발·운영 같음).
+		// 기본값은 사진 영구 볼륨 안의 폴더다(application.yml). 빈 값으로 덮어쓰면 기동하지 않는다.
 		if (directory == null || directory.isBlank()) {
-			throw new IllegalStateException("TINGLE_CHAT_DELETION_JOURNAL_DIRECTORY 값이 필요합니다");
+			throw new IllegalStateException("tingle.chat.deletion.journal-directory 값이 비어 있습니다");
 		}
 		this.directory = directory;
 		this.mapper = mapper;
 	}
 
-	/** Explicit one-time operator provisioning only; normal application requests never initialize missing state. */
+	/**
+	 * 빈 폴더에 새 저널을 만든다. 파일이 하나라도 있으면 덮어쓰지 않고 거절한다.
+	 * 운영 명령(journal-init)과 첫 삭제 기록(record)이 함께 쓴다.
+	 */
 	public static void initialize(Path directory) {
 		try {
 			Path root = checkedRoot(directory);
@@ -77,6 +80,7 @@ public class FileDeletionJournal implements DeletionJournal {
 	@Override
 	public void record(ChatDeletionState intent) {
 		ChatDeletionState entry = canonical(intent);
+		initializeIfAbsent();
 		locked(snapshot -> {
 			boolean duplicate = false;
 			for (ChatDeletionState previous : snapshot.entries()) {
@@ -127,6 +131,28 @@ public class FileDeletionJournal implements DeletionJournal {
 			}
 			return null;
 		});
+	}
+
+	/**
+	 * 첫 삭제 기록 때 폴더가 없거나 비어 있으면 저널을 만든다(서버에서 따로 할 일이 없다).
+	 * 이미 파일이 있으면 그대로 두며, 일부만 있는 손상 상태는 만들지 않고 삭제를 막는다. 읽기(snapshot)는 만들지 않는다.
+	 */
+	private void initializeIfAbsent() {
+		Path root = checkedRoot(Path.of(directory));
+		synchronized (MONITORS.computeIfAbsent(root, unused -> new Object())) {
+			try {
+				Files.createDirectories(root);
+				try (var children = Files.list(root)) {
+					if (children.findAny().isPresent()) {
+						return;
+					}
+				}
+			} catch (IOException exception) {
+				throw unavailable();
+			}
+			// 다른 프로세스(블루·그린)가 동시에 만들면 한쪽은 실패하고 다음 시도에서 만든 저널을 쓴다.
+			initialize(root);
+		}
 	}
 
 	@Override

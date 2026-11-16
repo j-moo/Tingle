@@ -10,14 +10,11 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.context.annotation.Configuration;
 
-import com.e106.tingle.chat.deletion.evidence.BackupEvidenceConfiguration;
 import com.e106.tingle.chat.delivery.ChatMessagePushDispatcher;
 import com.e106.tingle.chat.delivery.ChatMessagePushScheduler;
 import com.e106.tingle.keyring.peer.PeerPolicyProperties;
 import com.e106.tingle.push.PushConfiguration;
 import com.e106.tingle.withdrawal.WithdrawalReceiptTokens;
-
-import tools.jackson.databind.json.JsonMapper;
 
 /**
  * 스위치 대신 필수가 된 설정값. 비었으면 개발·운영 모두 기동하지 않고 어떤 환경변수가 빠졌는지 알려 준다.
@@ -41,23 +38,6 @@ class RequiredSettingsStartupTest {
 			assertFails(runner.withPropertyValues("app.keyring.peer." + missing[0] + "="), missing[1]);
 		}
 		assertFails(runner.withPropertyValues("app.keyring.peer.lease-seconds=0"), "KEYRING_PEER_LEASE_SECONDS");
-	}
-
-	@Test
-	void missingBackupEvidenceScopePreventsStartup() {
-		ApplicationContextRunner runner = new ApplicationContextRunner()
-			.withUserConfiguration(BackupEvidenceConfiguration.class)
-			.withBean(Clock.class, Clock::systemUTC).withBean(JsonMapper.class, () -> JsonMapper.builder().build())
-			.withPropertyValues("app.backup-evidence.file=missing/evidence.json",
-				"app.backup-evidence.generation-file=missing/generation", "app.backup-evidence.namespace=tingle",
-				"app.backup-evidence.scope-id=scope", "app.backup-evidence.approval-id=approval");
-		// 증거 파일이 없어도 기동한다. 삭제만 보류된다(FileBackupEvidenceTest).
-		runner.run(context -> assertThat(context).hasNotFailed());
-		for (String[] missing : new String[][] {{"file", "APP_BACKUP_EVIDENCE_FILE"},
-			{"generation-file", "APP_BACKUP_EVIDENCE_GENERATION_FILE"}, {"namespace", "APP_BACKUP_EVIDENCE_NAMESPACE"},
-			{"scope-id", "APP_BACKUP_EVIDENCE_SCOPE_ID"}, {"approval-id", "APP_BACKUP_EVIDENCE_APPROVAL_ID"}}) {
-			assertFails(runner.withPropertyValues("app.backup-evidence." + missing[0] + "="), missing[1]);
-		}
 	}
 
 	@Test

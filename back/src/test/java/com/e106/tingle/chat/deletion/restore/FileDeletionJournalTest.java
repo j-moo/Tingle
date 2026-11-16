@@ -36,6 +36,23 @@ class FileDeletionJournalTest {
 	}
 
 	@Test
+	void firstRecordCreatesTheJournalOnlyInAMissingOrEmptyDirectory() throws Exception {
+		// 서버에서 따로 만들지 않아도 첫 삭제 기록이 저널을 만든다.
+		Path missing = directory.resolve("not-yet-created");
+		new FileDeletionJournal(missing.toString(), new JsonMapper()).record(intent(1));
+		assertThat(new FileDeletionJournal(missing.toString(), new JsonMapper()).snapshot().entries()).hasSize(1);
+		// 이미 있는 저널은 덮어쓰지 않고 이어 쓴다.
+		new FileDeletionJournal(missing.toString(), new JsonMapper()).record(intent(2));
+		assertThat(new FileDeletionJournal(missing.toString(), new JsonMapper()).snapshot().entries()).hasSize(2);
+		// 일부만 남은 폴더는 새로 만들지 않고 삭제 기록을 막는다.
+		Path damaged = Files.createDirectories(directory.resolve("damaged"));
+		Files.writeString(damaged.resolve("intents.log"), "");
+		assertThatThrownBy(() -> new FileDeletionJournal(damaged.toString(), new JsonMapper()).record(intent(3)))
+			.isInstanceOf(IllegalStateException.class);
+		assertThat(Files.exists(damaged.resolve("journal.lock"))).isFalse();
+	}
+
+	@Test
 	void intentsSurviveNewInstanceAndRetriesDoNotAppend() throws Exception {
 		FileDeletionJournal.initialize(directory);
 		ChatDeletionState original = intent(1);

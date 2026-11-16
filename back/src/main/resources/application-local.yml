@@ -38,20 +38,7 @@ app:
     token-encryption-key: ${PUSH_TOKEN_ENCRYPTION_KEY:MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDA=}
   chat-message-push:
     poll-ms: ${CHAT_MESSAGE_PUSH_POLL_MS:1000}
-  # 증거 파일이 없으므로 채팅 삭제는 늘 보류된다.
-  backup-evidence:
-    file: ${APP_BACKUP_EVIDENCE_FILE:${java.io.tmpdir}/tingle-backup-evidence/tingle_dev.json}
-    generation-file: ${APP_BACKUP_EVIDENCE_GENERATION_FILE:${java.io.tmpdir}/tingle-backup-evidence/tingle_dev.restore-generation}
-    namespace: ${APP_BACKUP_EVIDENCE_NAMESPACE:tingle_dev}
-    scope-id: ${APP_BACKUP_EVIDENCE_SCOPE_ID:local-db-dumps}
-    approval-id: ${APP_BACKUP_EVIDENCE_APPROVAL_ID:local-only}
   ai:
     service:
       # local 은 AI 서버 없이 뜬다(키가 없으면 AI 요청은 대기). 붙이려면 APP_AI_SERVICE_* 를 넣는다.
       environment: ${APP_AI_SERVICE_ENVIRONMENT:local}
-
-tingle:
-  chat:
-    deletion:
-      # 초기화하지 않은 임시 폴더라 채팅 삭제는 보류된다.
-      journal-directory: ${TINGLE_CHAT_DELETION_JOURNAL_DIRECTORY:${java.io.tmpdir}/tingle-chat-journal}
