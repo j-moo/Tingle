@@ -124,9 +124,19 @@ services:
       KEYRING_PEER_SERVER_PUBLIC_KEY_HEX: "${KEYRING_PEER_SERVER_PUBLIC_KEY_HEX:-}"
       # 키링 판정(KeyringVerdictEvaluator)으로 만남을 제안까지 잇는 평가 워커. 기본 OFF. 승인·게시된 키링 규칙 조합이 있어야 한다.
       APP_ENCOUNTER_EVALUATION_ENABLED: "${PROD_APP_ENCOUNTER_EVALUATION_ENABLED:-false}"
+      # AI 서버 호출(app.ai.service, S15P31E106-234 · 394). 운영·개발이 같은 서명 키를 쓴다(11-16 결정). 환경마다 다른 것은 환경 이름과 주소뿐이다.
+      # 키는 서버에 손으로 둔 파일이다(비밀 키는 secrets, 공개 키는 ai-keys). 키 파일이 없으면 back 이 뜨지 않는다.
+      APP_AI_SERVICE_ENABLED: "true"
+      APP_AI_SERVICE_ENVIRONMENT: prod # ai 의 APP_ENV 와 같아야 인증이 통과한다
+      APP_AI_SERVICE_BASE_URL: http://ai:8000 # nginx 가 받아 운영 색(ai-blue · ai-green)으로 넘긴다
+      APP_AI_SERVICE_KEY_ID: be-dev-1
+      APP_AI_SERVICE_PRIVATE_KEY_FILE: /run/secrets/tingle/ai-service-dev.pem
+      # AI 시작 질문 Release(운영·개발 공용). 켜고 끄는 스위치는 없고, 이 파일이 있으면 back 이 AI 에 시작 질문을 요청한다. ai 쪽 ICEBREAKER_RELEASE_DESCRIPTOR_FILE 과 같은 Release 여야 한다
+      APP_ICEBREAKER_MANIFEST_LOCATION: file:/run/tingle/q040-dev-release-v1/be-descriptor.json
     volumes: &back-volumes
       - /srv/tingle/secrets:/run/secrets/tingle:ro # Jenkins 가 쓰는 비밀 파일 (fcm.json)
       - /data/uploads/prod:/data/photos # 운영 사진. 블루 · 그린이 같은 폴더를 함께 쓴다. 호스트 폴더 소유자는 이미지 실행 사용자(uid 1000)
+      - ${Q040_DEV_RELEASE_DIR:-/srv/tingle/releases/q040-dev-release-v1}:/run/tingle/q040-dev-release-v1:ro # 시작 질문 Release. 이름은 dev 지만 운영도 같은 파일을 쓴다
     depends_on: [db]
     mem_limit: 1536m
     restart: unless-stopped
@@ -149,16 +159,9 @@ services:
       TERMS_CONTENT_URL: https://${DOMAIN:?}/dev/terms/ # 개발은 develop 에 머지된 web-dev 페이지
       PRIVACY_CONTENT_URL: https://${DOMAIN:?}/dev/privacy/
       AI_RISK_CONTENT_URL: https://${DOMAIN:?}/dev/ai-risk/
-      # AI 서버 호출(app.ai.service, S15P31E106-234). 서비스 토큰 서명 키는 서버에 손으로 둔 파일이다(비밀 키는 secrets, 공개 키는 ai-keys).
-      # 키 파일 없이 켜면 back-dev 가 뜨지 않는다. 운영은 키를 따로 만든 뒤 연결한다
-      APP_AI_SERVICE_ENABLED: "true"
+      # AI 서버 호출: 키 설정은 운영과 같고(위 back-env), 환경 이름과 주소만 다르다.
       APP_AI_SERVICE_ENVIRONMENT: dev
       APP_AI_SERVICE_BASE_URL: http://ai-dev:8000
-      APP_AI_SERVICE_KEY_ID: be-dev-1
-      APP_AI_SERVICE_PRIVATE_KEY_FILE: /run/secrets/tingle/ai-service-dev.pem
-      # Q040 개발 릴리스는 외부 승인된 파일을 양쪽 서비스에 동일하게 등록한다.
-      APP_ICEBREAKER_EXTERNAL_ENABLED: "${Q040_DEV_ENABLED:-false}"
-      APP_ICEBREAKER_MANIFEST_LOCATION: file:/run/tingle/q040-dev-release-v1/be-descriptor.json
       # TPS1(196B 프로필) 허용 기기. 11-06 별도 override 파일로만 넣어 Jenkins 재배포 때 풀리던 값을 여기서 전달한다.
       KEYRING_DEV_SETTINGS_PROFILE_DEVICE_SERIALS: "${KEYRING_DEV_SETTINGS_PROFILE_DEVICE_SERIALS:-}"
       # 키링 ON/OFF·DB 행 값은 개발 이름 그대로 덮어쓴다(운영은 위 PROD_ 이름).
@@ -192,35 +195,34 @@ services:
     restart: unless-stopped
 
   # ai: 운영(ai-blue · ai-green 중 한쪽만 켬, back 은 http://ai:8000 → nginx 가 운영 색으로 전달) · 개발(ai-dev, back-dev 가 http://ai-dev:8000 으로 직접 호출).
-  # 외부에 열지 않는다. Dockerfile 기본값이 HOST=0.0.0.0 · PORT=8000 · APP_ENV=prod. GMS 키(GMS_API_KEY)는 Credentials → app.env 로 받고 지금은 ai-dev 에만 넘긴다.
+  # 외부에 열지 않는다. Dockerfile 기본값이 HOST=0.0.0.0 · PORT=8000 · APP_ENV=prod.
+  # 운영과 개발은 같은 명령(Dockerfile 기본 CMD) · 같은 키 · 같은 Release 를 쓴다. 다른 것은 APP_ENV(서비스 토큰의 발급자 · 대상 구분)뿐이다.
   ai-blue:
     build: ../ai-server
+    environment: &ai-env
+      AI_SERVICE_PUBLIC_KEYS: '{"be-dev-1":"/run/ai-keys/be-dev-1.pub.pem"}' # back 서명 키와 짝(운영·개발 공용). 파일이 없으면 기동을 거절한다
+      # GMS(매칭 이유 · 시작 질문 생성): 키는 Jenkins Credentials tingle-app-env(app.env)의 GMS_API_KEY. 운영·개발 공용이고, 비어 있으면 AI 서버가 기동을 거절한다
+      GMS_API_KEY: "${GMS_API_KEY:-}"
+      ICEBREAKER_RELEASE_DESCRIPTOR_FILE: /run/tingle/q040-dev-release-v1/ai-descriptor.json
+    volumes: &ai-volumes
+      - /srv/tingle/ai-keys/dev:/run/ai-keys:ro # 공개 키만 둔다(비밀값 아님). 컨테이너 사용자(uid 10001)가 읽도록 644. 폴더 이름은 dev 지만 운영도 이 파일을 쓴다. 키를 바꿀 때는 파일을 덮어쓰지 말고 새 키 이름을 추가한 뒤 back · ai 를 함께 다시 띄운다
+      - ${Q040_DEV_RELEASE_DIR:-/srv/tingle/releases/q040-dev-release-v1}:/run/tingle/q040-dev-release-v1:ro # 시작 질문 Release. 이름은 dev 지만 운영도 같은 파일을 쓴다
     mem_limit: 512m
     restart: unless-stopped
 
   ai-green:
     build: ../ai-server
+    environment: *ai-env
+    volumes: *ai-volumes
     mem_limit: 512m
     restart: unless-stopped
 
   ai-dev:
     build: ../ai-server
-    # 개발 전용 구성(app.development): 아래 스위치가 켜진 기능만 GMS 로 생성하고, 나머지는 app.main 과 같다. 운영(ai-blue · ai-green)은 기본 CMD 그대로.
-    command: [python, -m, uvicorn, "app.development:create_app", --factory, --host, 0.0.0.0, --port, "8000"]
     environment:
+      <<: *ai-env
       APP_ENV: dev
-      # GMS: 키는 Jenkins Credentials tingle-app-env(app.env)의 GMS_API_KEY. 스위치가 꺼져 있으면 키를 읽지 않고 app.main 과 똑같이 동작한다.
-      # 켜려면 서버 .env 에 ICEBREAKER_GMS_DEV_ENABLED=true 를 넣고 ai-dev 를 다시 띄운다(AI 담당과 Release 확인 후). 켰는데 키가 없으면 기동을 거절한다.
-      GMS_API_KEY: "${GMS_API_KEY:-}"
-      ICEBREAKER_GMS_DEV_ENABLED: "${ICEBREAKER_GMS_DEV_ENABLED:-false}"
-      # Match Insight GMS 는 개발용 Release(descriptor · artifact)를 서버에 둔 뒤 EXPLANATION_RELEASE_DESCRIPTOR_FILES 와 함께 켠다. 파일 없이 경로만 넣으면 기동이 실패한다.
-      MATCH_INSIGHT_GMS_DEV_ENABLED: "false"
-      AI_SERVICE_PUBLIC_KEYS: '{"be-dev-1":"/run/ai-keys/be-dev-1.pub.pem"}' # back-dev 서명 키와 짝. 파일이 없으면 기동을 거절한다
-      ICEBREAKER_DEV_ENABLED: "${Q040_DEV_ENABLED:-false}"
-      ICEBREAKER_RELEASE_DESCRIPTOR_FILE: /run/tingle/q040-dev-release-v1/ai-descriptor.json
-    volumes:
-      - /srv/tingle/ai-keys/dev:/run/ai-keys:ro # 공개 키만 둔다(비밀값 아님). 컨테이너 사용자(uid 10001)가 읽도록 644
-      - ${Q040_DEV_RELEASE_DIR:-/srv/tingle/releases/q040-dev-release-v1}:/run/tingle/q040-dev-release-v1:ro
+    volumes: *ai-volumes
     mem_limit: 512m
     restart: unless-stopped
 
