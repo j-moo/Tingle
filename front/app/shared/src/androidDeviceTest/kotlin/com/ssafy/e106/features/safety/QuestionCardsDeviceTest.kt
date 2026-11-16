@@ -67,8 +67,9 @@ class QuestionCardsDeviceTest {
 
     @Test fun toggleReusesResultAndEmptyDraftIsFilledWithoutSending() {
         launch().use { scenario ->
-            compose.onNodeWithText(first).assertDoesNotExist()
+            // 칸이 생긴 뒤에도 접혀 있어 질문은 보이지 않는다
             waitCards()
+            compose.onNodeWithText(first).assertDoesNotExist()
             // 여닫기 동작만 맞아도 가중치 배치 오류로 입력창 위에 큰 공백이 생길 수 있다.
             val toggleBottom = compose.onNodeWithText("대화 주제 추천").getUnclippedBoundsInRoot().bottom.value
             val inputTop = compose.onNode(hasSetTextAction()).getUnclippedBoundsInRoot().top.value
