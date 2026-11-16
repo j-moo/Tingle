@@ -265,6 +265,56 @@ static void exchange_pair(unsigned rounds)
 		}
 	}
 }
+static void test_quarantine_isolation(FILE *scratch)
+{
+	boot(0, 1, scratch); boot(1, 2, scratch); boot(2, 3, scratch);
+	exchange_pair(120);
+	struct test_board *b = &boards[0];
+	assert(b->engine.records[0].kind == KR_CONFIRMED && b->lengths[300] == KR_EVIDENCE_BYTES);
+	uint8_t evidence_copy[KR_EVIDENCE_BYTES]; memcpy(evidence_copy, b->blobs[300], sizeof(evidence_copy));
+	struct kr_record original = b->saved[0];
+	unsigned writes = b->writes;
+	/* Emulate the restore layer: bad raw row isolated, independent evidence retained. */
+	memset(&b->engine.records[0], 0, sizeof(b->engine.records[0]));
+	b->engine.quarantined_records = 1;
+	assert(kr_product_apply(&b->app, &b->radio, epoch));
+	assert(!b->app.quarantine_unresolved && kr_product_applied(&b->app) && kr_product_ready(&b->app));
+	struct kr_peer_verified affected, other;
+	assert(kr_peer_certificate(boards[1].radio.own.certificate, boards[1].radio.own.public_key, server, (uint64_t)epoch, &affected));
+	assert(kr_peer_certificate(boards[2].radio.own.certificate, boards[2].radio.own.public_key, server, (uint64_t)epoch, &other));
+	assert(!b->radio.allowed(&b->app, &affected, (uint64_t)epoch));
+	assert(b->radio.allowed(&b->app, &other, (uint64_t)epoch));
+	assert(kr_product_record(&b->app, 0, &(struct kr_record){0}) == -EILSEQ);
+	owner(b, NULL);
+	request(b, "{\"type\":\"GET_RECORD\",\"afterSequence\":0}", "RECORD_END");
+	assert(strstr(response, "\"quarantinedRecordCount\":1"));
+	assert(b->writes == writes && !memcmp(b->blobs[300], evidence_copy, sizeof(evidence_copy)));
+	assert(!memcmp(&b->saved[0], &original, sizeof(original)));
+	/* CRC-valid but invalid certificate and another owner generation cannot
+	 * authorize normal matching. Settings application itself stays available. */
+	b->blobs[300][80 + 197] ^= 1;
+	assert(kr_product_apply(&b->app, &b->radio, epoch));
+	assert(b->app.quarantine_unresolved == 1 && kr_product_applied(&b->app) && !kr_product_ready(&b->app));
+	memcpy(b->blobs[300], evidence_copy, sizeof(evidence_copy));
+	++b->core.reset.ownership_epoch;
+	assert(kr_product_apply(&b->app, &b->radio, epoch) && b->app.quarantine_unresolved);
+	--b->core.reset.ownership_epoch;
+	b->lengths[300] = 0;
+	assert(kr_product_apply(&b->app, &b->radio, epoch) && b->app.quarantine_unresolved);
+	assert(!b->radio.allowed(&b->app, &other, (uint64_t)epoch));
+	memcpy(b->blobs[300], evidence_copy, sizeof(evidence_copy)); b->lengths[300] = sizeof(evidence_copy);
+	assert(kr_product_apply(&b->app, &b->radio, epoch) && !b->app.quarantine_unresolved);
+	/* A healthy record behind the isolated slot remains readable. */
+	uint8_t raw[3] = {1, 2, 3};
+	assert(kr_radio_error(&b->engine, 999, raw, sizeof(raw), KR_BAD_DATA, (uint64_t)epoch) == KR_OK);
+	assert(b->engine.records[1].kind == KR_REVIEW && !b->engine.records[0].kind);
+	request(b, "{\"type\":\"GET_RECORD\",\"afterSequence\":0}", "\"type\":\"RECORD\"");
+	request(b, "{\"type\":\"GET_STATUS\"}", "\"storageState\":\"AVAILABLE\"");
+	assert(strstr(response, "\"pendingRecordCount\":0") && strstr(response, "\"reviewRecordCount\":1"));
+	assert(strstr(response, "\"quarantinedRecordCount\":1") && strstr(response, "\"recordsRecoveryRequired\":true"));
+	assert(strstr(response, "\"recordRecoveryBlocksMatching\":false") && strstr(response, "\"applied\":true"));
+	puts("record quarantine: original/evidence retained, reserved slot, signed owner scope, compatible counts, healthy export and independent apply passed");
+}
 static void restart_storage(struct test_board *b, struct kr_peer_material *material)
 {
 	struct kr_io io = b->engine.io; io.record = raw_record; io.suppression = suppression;
@@ -634,11 +684,25 @@ static void test_carrier_feedback(void)
 	assert(kr_feedback_start(&alert, start, both));
 	assert(kr_feedback_step(&alert, start, true).motor);
 	assert(!kr_feedback_start(&alert, start + 50, both));
-	assert(kr_feedback_step(&alert, start + 119, true).motor);
-	assert(!kr_feedback_step(&alert, start + 120, true).motor);
-	assert(kr_feedback_step(&alert, start + 270, true).motor);
-	assert(kr_feedback_step(&alert, start + 389, true).motor);
-	assert(!kr_feedback_step(&alert, start + 390, true).motor);
+	assert(kr_feedback_step(&alert, start + 349, true).motor);
+	assert(!kr_feedback_step(&alert, start + 350, true).motor);
+	assert(kr_feedback_step(&alert, start + 500, true).motor);
+	assert(kr_feedback_step(&alert, start + 849, true).motor);
+	assert(!kr_feedback_step(&alert, start + 850, true).motor);
+	kr_feedback_stop(&alert);
+	assert(kr_feedback_start(&alert, start, both));
+	unsigned pulses = 0, on_ms = 0;
+	bool was_on = false;
+	for (int64_t elapsed = 0; elapsed <= 10000; ++elapsed) {
+		struct kr_feedback_output sample = kr_feedback_step(&alert, start + elapsed, true);
+		if (sample.motor && !was_on) { ++pulses; }
+		on_ms += sample.motor;
+		was_on = sample.motor;
+		assert(sample.rgb == 3);
+		if (elapsed < 10000) { assert(sample.wake_ms > 0 && sample.wake_ms <= 10); }
+	}
+	assert(pulses == 16 && on_ms == 5600 && !alert.options.vibrate);
+	assert(!kr_feedback_step(&alert, start + 10270, true).motor);
 	assert(kr_feedback_step(&alert, start + 29999, true).rgb == 3);
 	assert(!kr_feedback_step(&alert, start + 30000, true).wake_ms);
 
@@ -647,10 +711,13 @@ static void test_carrier_feedback(void)
 	assert(!kr_feedback_step(&alert, start + 10, false).motor);
 	struct kr_feedback_output out = kr_feedback_step(&alert, start + 270, true);
 	assert(!out.motor && out.rgb == 3);
+	assert(!kr_feedback_step(&alert, start + 1000, true).motor);
 	assert(kr_feedback_start(&alert, start, both));
-	assert(!kr_feedback_step(&alert, start + 120, true).motor);
+	assert(!kr_feedback_step(&alert, start + 1249, true).motor);
+	assert(!kr_feedback_start(&alert, start + 1249, both));
+	assert(kr_feedback_step(&alert, start + 1250, true).motor);
 	kr_feedback_stop(&alert);
-	out = kr_feedback_step(&alert, start + 270, true);
+	out = kr_feedback_step(&alert, start + 1270, true);
 	assert(!out.motor && !out.rgb && !out.wake_ms);
 	puts("carrier feedback: Rev G/D3.1 power policy, bilateral switches, pulse/LED timing and power-change cancellation passed");
 }
@@ -1025,6 +1092,6 @@ int main(int argc, char **argv)
 		assert(kr_count(&boards[i].engine, KR_CONFIRMED) <= 1 && !boards[i].engine.storage_error);
 		confirmed += kr_count(&boards[i].engine, KR_CONFIRMED);
 	} assert(confirmed >= 2); test_owner_transition(scratch); test_candidate_and_completion(scratch); test_same_payload_resume(scratch); test_failed_input_change(scratch);
-	test_applied_proof(f, scratch); assert(!fclose(scratch));
+	test_applied_proof(f, scratch); test_quarantine_isolation(scratch); assert(!fclose(scratch));
 	assert(!fclose(f)); puts("product: account dedup + durable suppression, persistent cursor/sequence, signed dynamic duration, legacy migration, battery truth and full flow passed"); return 0;
 }

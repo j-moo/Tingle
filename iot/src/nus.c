@@ -352,8 +352,13 @@ void kr_nus_poll_console(bool blink)
 		}
 		k_mutex_lock(&core_lock, K_FOREVER);
 		struct kr_status status = kr_board_status();
-		printk("HEALTH uptime=%lld batteryMv=%d charging=%d storageError=%u\n",
-			(long long)(now / 1000), status.battery_mv, status.charging, core.storage_error);
+		kr_runtime_owner_lock();
+		bool record_error = application.engine && application.engine->storage_error;
+		unsigned quarantine = application.engine ? kr_quarantine_count(application.engine) : 0;
+		printk("HEALTH uptime=%lld batteryMv=%d charging=%d storageError=%u registrationStorageError=%u recordStorageError=%u quarantinedRecords=%u quarantineUnresolved=%08x\n",
+			(long long)(now / 1000), status.battery_mv, status.charging,
+			core.storage_error || record_error || quarantine, core.storage_error, record_error, quarantine, application.quarantine_unresolved);
+		kr_runtime_owner_unlock();
 		printk("POWER protection=%s charge=%s configuredMa=%d usbSeconds=%u\n",
 			status.battery_power_state, status.charge_monitor_state,
 			status.charge_current_ma, status.charge_elapsed_seconds);

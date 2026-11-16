@@ -1,6 +1,7 @@
 /* Local USB-only inspection. Never mounts NVS, writes flash or prints record data. */
 #include "board.h"
 #include "carrier.h"
+#include "keyring.h"
 #include "registration.h"
 #include "monocypher.h"
 #include "monocypher-ed25519.h"
@@ -38,6 +39,29 @@ static void inspect_area(const struct device *flash, uint32_t start, uint32_t si
 			++records;
 			bool valid = len >= 4 && crc32_ieee(block + off, len - 4) == sys_get_le32(block + off + len - 4);
 			failed += !valid;
+			if (!start && (id == 1 || id == 2 || id == 3 || (id >= 100 && id < 132))) {
+				printk("INSPECT ENGINE pass=%u sector=%u ate=%x id=%u length=%u crc=%s\n",
+					pass, base / 4096, pos, id, len, valid ? "OK" : "BAD");
+				if (id == 1 && len == sizeof(struct kr_config) + 4) {
+					struct kr_config config;
+					memcpy(&config, block + off, sizeof(config));
+					uint8_t hardware[8];
+					bool hardware_ok = hwinfo_get_device_id(hardware, sizeof(hardware)) == sizeof(hardware) &&
+						config.device == (kr_get64(hardware) & INT64_MAX);
+					printk("INSPECT ENGINE config format=%u registered=%u profileBytes=%u hardware=%s\n",
+						config.format, config.registered, config.profile.data_len, hardware_ok ? "OK" : "BAD");
+					crypto_wipe(&config, sizeof(config));
+				}
+				if (id >= 100 && id < 132 && len == sizeof(struct kr_record) + 4) {
+					struct kr_record record;
+					memcpy(&record, block + off, sizeof(record));
+					printk("INSPECT ENGINE record format=%u sequence=%u kind=%u phase=%u reason=%u ownBytes=%u peerBytes=%u\n",
+						record.format, record.sequence, record.kind, record.phase, record.reason,
+						record.own.data_len, record.peer_len);
+					crypto_wipe(&record, sizeof(record));
+				}
+				k_msleep(20);
+			}
 			if (start == 0x40000 || !valid) {
 				printk("INSPECT pass=%u area=%x sector=%u ate=%x id=%u length=%u crc=%s\n",
 					pass, start, base / 4096, pos, id, len, valid ? "OK" : "BAD");

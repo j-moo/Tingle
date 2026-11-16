@@ -1,5 +1,7 @@
 #include "keyring.h"
 #include "phone.h"
+#include "record_restore.h"
+#include <errno.h>
 #ifdef NDEBUG
 #undef NDEBUG
 #endif
@@ -14,6 +16,7 @@ struct disk {
 	unsigned random;
 	unsigned feedback;
 	unsigned calculations;
+	unsigned writes;
 	uint32_t order[32];
 	bool fail;
 	enum kr_decision decision;
@@ -43,6 +46,7 @@ static int record_write(void *ctx, unsigned slot, const struct kr_record *record
 		return -1;
 	}
 	d->records[slot] = *record;
+	++d->writes;
 	return 0;
 }
 
@@ -53,6 +57,7 @@ static int suppression_write(void *ctx, unsigned slot, const struct kr_suppressi
 		return -1;
 	}
 	d->suppressed[slot] = *s;
+	++d->writes;
 	return 0;
 }
 
@@ -486,9 +491,78 @@ static void test_sync_fixture(const char *path)
 	}
 }
 
+static int broken_id;
+static int read_test_record(void *ctx, uint16_t id, void *out, size_t length)
+{
+	struct disk *d = ctx;
+	if (id == 1) { assert(length == sizeof(d->config)); memcpy(out, &d->config, length); }
+	else if (id >= 100 && id < 132) {
+		if (!d->records[id - 100].kind) { return -ENOENT; }
+		memcpy(out, &d->records[id - 100], length);
+	} else if (id >= 200 && id < 264) {
+		if (!d->suppressed[id - 200].peer && id != broken_id) { return -ENOENT; }
+		memcpy(out, &d->suppressed[id - 200], length);
+	} else { return -ENOENT; }
+	/* Real NVS checks CRC AFTER it has already copied the corrupt bytes. */
+	return id == broken_id ? -EIO : (int)length;
+}
+static void test_read_only_quarantine(void)
+{
+	setup(0);
+	for (unsigned i = 0; i < 3; ++i) {
+		size_t n = peer_packet(10 + i, i + 1);
+		assert(kr_receive(&engines[0], packet, n, 10 + i, 1000) == KR_OK);
+	}
+	struct disk original = disks[0];
+	struct kr_io io = engines[0].io;
+	kr_init(&engines[0], 1, io); broken_id = 100;
+	assert(!kr_records_restore(&engines[0], read_test_record, &disks[0]));
+	assert(kr_quarantine_count(&engines[0]) == 1 && !engines[0].records[0].kind);
+	assert(kr_count(&engines[0], KR_MATCH) == 2 && kr_pending(&engines[0]) == 3);
+	assert(!memcmp(&original, &disks[0], sizeof(original)));
+	assert(engines[0].next_sequence == 4 && !engines[0].storage_error);
+	struct kr_profile p = engines[0].config.profile; assert(kr_sync(&engines[0], &p) == KR_OK);
+	size_t n = peer_packet(99, 4); assert(kr_receive(&engines[0], packet, n, 99, 1000) == KR_OK);
+	assert(engines[0].records[3].peer == 99 && !engines[0].records[0].kind);
+	assert(!memcmp(&original.records[0], &disks[0].records[0], sizeof(struct kr_record)));
+	broken_id = 0; disks[0].records[1].phase = 255;
+	kr_init(&engines[0], 1, io);
+	assert(!kr_records_restore(&engines[0], read_test_record, &disks[0]));
+	assert(kr_quarantined(&engines[0], 1));
+	broken_id = 200; assert(kr_records_restore(&engines[0], read_test_record, &disks[0]) == -EILSEQ);
+	broken_id = 1; assert(kr_records_restore(&engines[0], read_test_record, &disks[0]) == -EILSEQ);
+	broken_id = 0; disks[0].config.device = 99;
+	assert(kr_records_restore(&engines[0], read_test_record, &disks[0]) == -EILSEQ);
+}
+static void test_completed_radio_retry_without_writes(void)
+{
+	setup(0); setup(1); exchange(80, false);
+	assert(engines[0].records[0].phase == KR_COMPLETE);
+	uint8_t body[65] = {0}, done[100], reply[KR_WIRE_MAX], id[16];
+	const struct kr_record *r = &engines[1].records[0];
+	kr_put64(body, 2); kr_put64(body + 8, 1); memcpy(body + 16, r->id, 16);
+	kr_put64(body + 32, r->occurred_at); kr_put64(body + 40, r->expires_at);
+	kr_put32(body + 56, 1); kr_put32(body + 60, 1); body[64] = KR_DONE;
+	size_t n = kr_packet(2, body, sizeof(body), done); memcpy(id, r->id, 16);
+	for (unsigned stage = 0; stage < 2; ++stage) {
+		if (stage) { assert(kr_ack(&engines[0], id) == KR_OK); reboot(0); }
+		unsigned writes = disks[0].writes, alerts = disks[0].feedback;
+		for (unsigned i = 0; i < 1000; ++i) {
+			assert(kr_receive(&engines[0], done, n, 2, 1000) == KR_OK);
+			unsigned cursor = 0; int sent = -1; bool found = false;
+			for (unsigned j = 0; j < KR_RECORDS + KR_SUPPRESSIONS + 1; ++j) {
+				size_t size = kr_advertisement(&engines[0], &cursor, reply, &sent);
+				if (size && reply[3] == 2) { assert(reply[70] == KR_FINAL); found = true; kr_sent(&engines[0], sent); break; }
+			}
+			assert(found && disks[0].writes == writes && disks[0].feedback == alerts);
+		}
+	}
+}
 int main(int argc, char **argv)
 {
 	test_codec();
+	test_read_only_quarantine();
+	test_completed_radio_retry_without_writes();
 	test_registration_and_sync();
 	test_shared_event_loss_restart_and_receipt();
 	test_immediate_fifo_and_failure_queues();

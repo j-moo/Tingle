@@ -1,5 +1,131 @@
 # 저장 오류 복구 — 2026-11-13
 
+## 0.9.10 후속: 만남 기록 격리·QSPI 보호·실물 앱 무반응 원인
+
+2026-11-13, 기준 develop `8c9ea9ed4f4c24129890850c931f0ef62d6d9b05` + 미커밋 수정. 아래가 최신이며 뒤의 0.9.9 기록은 이전 보드 시험 이력이다. FE/BE 제품 소스·앱 내구 기록·서버 DB는 변경하지 않았다.
+
+### 결론과 원인 구분
+
+| 현상 | 확인된 직접 원인 | 아직 확정하지 못한 범위 |
+| --- | --- | --- |
+| 이전 보드에서 빨간불·BLE 시작 실패 | 설정 CRC 오류를 전체 부팅 실패로 처리. 0.9.9에서 설정 백업·서명 복구 보강 | 최초 Flash 손상 순간의 전원·버스 파형 없음 |
+| 이번 #8의 설정 적용 실패 | keyring-store ID 100 한 건 CRC 오류 → engine.storage_error → APPLIED 차단 | 해당 만남 원본의 올바른 내용은 복원할 수 없음 |
+| 0.9.10 교체 후 동기화 버튼 무반응 | 앱의 같은 기기 초기화 저널이 PENDING_DEVICE → KeyringForegroundSync가 sync.pause() → useExisting이 active=false에서 즉시 반환 | 서버 reset-run의 실제 현재 상태는 아직 직접 조회하지 않음 |
+| 권한 API HTTP 422 | 실물 앱에서 /keyrings/8/owner-session-grants가 422를 반복 반환 | 응답 본문 미수집. BE의 pending-reset 차단 분기와 일치하지만 다른 POLICY_UNRESOLVED 원인도 있음 |
+| 재부팅 후 저장 버전·해시가 같으면 동기화 생략 | FE가 DEVICE_INFO의 현재 applied/timeReady/recovery를 판단하지 않는 분기 | 이번 무반응은 이 분기보다 먼저 초기화 저널에서 막힘 |
+| 만남 완료 뒤 반복 Flash 쓰기 | 잃어버린 FINAL 응답 재전송마다 COMPLETE→FINAL→COMPLETE를 영속 저장 | 이 쓰기 증가 자체가 CRC 오류의 유일한 원인이라는 증거는 아님 |
+
+**서로 다른 장애다.** 앱의 초기화 대기 기록이 Flash CRC를 만들었다는 증거는 없다. 펌웨어만 바꾸면 앱의 초기화 대기 상태도 없어지는 구조가 아니다.
+
+### Flash 손상 방지 근거와 변경
+
+Nordic의 [nRF52840 anomaly 244](https://docs.nordicsemi.com/r/bundle/errata_nrf52840_rev3/page/err/nrf52840/rev3/latest/anomaly_840_244.html)는 HFINT/HFXO 전환 중 QSPI 전송 손상을 설명한다. 사용 중인 Zephyr 4.2.0 nRF52 QSPI 경로는 BLE가 사용하는 HFXO의 공유 참조를 보유하지 않았다. 이 조건은 소스에서 확인했으나, 과거 손상이 이 현상 때문이었다고 실측 확정하지는 않았다.
+
+- 모든 제품 NVS read/write/erase와 USB 파티션 해시 읽기에 공유 HFXO 참조를 확보한다. 클록 시작 완료 후 QSPI를 접근하고 종료 후 참조를 반환한다. BLE 소유 클록 레지스터를 직접 켜고 끄지 않는다.
+- 접근은 mutex로 직렬화한다. 클록 확보가 실패하거나 시간 초과면 Flash 작업을 실행하지 않는다.
+- 기존 256바이트 페이지 쓰기·즉시 재읽기 검증을 유지한다. erase도 전체 0xFF 재읽기로 확인한다. 오류를 무시하거나 무제한 재시도로 마모를 늘리지 않는다.
+- 동일 레코드는 재저장하지 않는다. 완료 후 DONE/COMMIT에 대한 무선 재응답은 RAM 플래그로 처리한다. 최초 확정 기록·반복 억제는 기존 영속 저장을 유지한다.
+- 테스트에서 완료 원본 및 서버 접수 후 억제 기록 각각에 1,000회 재전송을 가해 **추가 저장·중복 알림 없이 응답**하는 것을 확인했다.
+
+### 이미 손상된 만남 원본의 보존
+
+[Zephyr NVS](https://docs.zephyrproject.org/latest/services/storage/nvs/nvs.html)는 전체 읽기 후 CRC를 검사한다. 실패한 읽기도 목적지에 잘못된 바이트를 남길 수 있으므로, 격리 슬롯의 RAM은 비우고 원본은 NVS에 그대로 둔다.
+
+- 개별 ID 100~131의 CRC/길이/스키마 실패는 슬롯별 격리한다. 이후 정상 슬롯도 계속 읽는다. 원본·독립 증명 ID 300~331은 자동 삭제/덮어쓰기하지 않는다.
+- 격리 슬롯은 빈 슬롯으로 재사용하지 않는다. 미전송 원본 수와 공간 제약에 포함한다. 오래된 phase로 되돌려 재매칭·재알림하지 않는다.
+- 독립 증명이 CRC와 서버/기기 서명, 기기 식별, 현재 소유 generation/epoch, sequence를 통과하면 해당 상대 기기·계정의 반복 억제에만 사용한다. 정상 만남 증명으로 수리하거나 서버로 허위 제출하지 않는다.
+- 상대를 안전하게 확인할 수 없다면 새 매칭은 보류한다. 정상 설정 저장·적용과 정상 기록 조회는 별개로 유지한다. 소유 키·초기화 상태·sequence·cursor·반복 억제 자체의 손상은 전체 안전 차단을 유지한다.
+- 손상 기록 한 건은 여전히 손상된 원본이다. 그 원본의 성공 복원·서버 접수까지 완료했다고 표시하지 않는다. 정책에 맞는 서명된 정리/복구 계약은 후속 협의 대상이다.
+
+### FE 계약 추가와 호환성
+
+NUS JSON·UUID·기기 키·서명 원문·파티션·영속 구조체는 유지한다. 신규 필드는 추가형이다.
+
+```json
+{
+  "type": "STATUS",
+  "storageState": "AVAILABLE",
+  "pendingRecordCount": 1,
+  "reviewRecordCount": 0,
+  "applied": true,
+  "timeReady": true,
+  "matchingReady": true,
+  "quarantinedRecordCount": 1,
+  "recordsRecoveryRequired": true,
+  "recordRecoveryBlocksMatching": false
+}
+```
+
+위는 상태 예시이며 실물 앱 종단 통과 결과가 아니다. 실제 값은 현재 설정과 소유 인증 상태에 따라 달라진다.
+
+- DEVICE_INFO에도 위 격리 관련 3개 필드를 추가하고, 격리 기록이 있으면 storageHealthy=false다. 설정의 settingsRecoveryRequired와 만남 기록의 recordsRecoveryRequired를 구분한다.
+- 인증된 STATUS의 `storageState`는 기존 기준에 따라 `AVAILABLE` 또는 `FULL`을 반환한다. `pendingRecordCount`와 `reviewRecordCount`는 읽을 수 있는 기록의 집계다. 격리 기록은 `quarantinedRecordCount`로 별도 전달한다.
+- 정상 기록 조회 후 RECORD_END는 유지하고 quarantinedRecordCount/recordsRecoveryRequired를 함께 반환한다. **읽을 수 있는 목록의 끝**이며 모든 원본의 삭제/접수 완료 증명이 아니다. 기존 앱이 오류 하나 때문에 수집한 정상 헤더까지 버리지 않도록 새로운 ERROR로 바꾸지 않았다.
+- 최신 FE는 자동 기록 순회와 접수증 없는 기록 건너뛰기를 이미 구현했다. 예전의 “수동 1건만 전송” 지적을 다시 적용하지 않는다.
+- 기존 앱은 같은 `storageState` 값으로 정상 기록 수를 표시할 수 있다. 격리 원본이 남아 있는지 안내하려면 FE에서 `recordsRecoveryRequired`와 `quarantinedRecordCount`를 표시한다.
+- 동일 version/hash라도 TSV3 applied!=true, timeReady!=true, settingsRecoveryRequired=true이면 새 challenge와 서버 서명으로 재적용한다. matchingReady=false는 OFF 설정에서도 정상일 수 있어 재적용 조건과 혼동하지 않는다.
+- GET_SETTINGS_APPLIED_PROOF 실패 후 원인을 구분한다. 재부팅/미적용이면 새 challenge 동기화, 저장 장애면 진단 안내, 응답 유실이면 기존 증명/ACK 멱등 재시도를 유지한다.
+
+### 실물 휴대폰에서 찾은 별도 차단 — FE·BE 우선 전달
+
+시험 기기 #8 `XIAO-5be68c1703284704`. 휴대폰 SM-S931N, 개발 앱 `com.ssafy.tingle.dev` 설치 갱신 2026-11-13 14:07:40 KST. APK 정확한 빌드 commit은 확인하지 못했다.
+
+개인키·토큰을 읽지 않고 앱의 해당 키링 복구 상태 필드만 확인했다.
+
+- 설정 저널: v15, TSV3, ownershipEpoch=0, complete=true, bleAttempted=true.
+- 초기화 저널: resetRunId=`f28315bb-6c99-4862-8a4c-57fcb409627e`, state=PENDING_DEVICE, commandAttempted=true, fromOwnershipEpoch=0.
+- 시작: 2026-11-13 14:59:19 KST. 명령 만료: 15:00:19 KST.
+- **명령 만료가 초기화 작업 취소를 뜻하지 않는다.** 현재 FE는 COMPLETED가 아닌 저널이 하나라도 있으면 자동 동기화를 중지한다. BE KeyringResetGuard도 completed_at IS NULL인 실행을 막으며 만료 시각으로 해제하지 않는다.
+- 실물 앱 HTTP 로그: 15:46:47, 15:46:52, 15:46:58 KST에 owner-session-grants가 422. 수집 구간에 sync-runs 발급 요청은 없다.
+- 현재 화면은 최신 설정 확인·동기화 버튼이 활성화돼 있으나 진행/차단 이유가 없다. useExisting은 active=false이면 상태 표시 없이 반환한다. 이것이 현재 무반응의 코드 경로다.
+- 저장 오류 진단과 달리, 위 문제는 FE의 복구 UX와 BE 초기화 실행 수명 관리가 함께 관련된다.
+
+**FE에서 할 일**
+1. KeyringForegroundSync의 차단 이유를 화면에 전달한다. 초기화 진행 중, 저널 읽기 오류, 앱 비활성, 권한 미준비를 구분한다.
+2. 초기화 대기 중 동기화 버튼을 무반응 상태로 두지 않는다. 실행 조회/안내를 제공한다. 단, 조회 버튼이 RESET_DEVICE를 자동 재전송하면 안 된다.
+3. 서버 GET reset-runs로 상태만 재조회하고, 확인된 완료·향후 합의할 취소 결과로 저널을 갱신한다. 파일 삭제·앱 데이터 삭제로 안전장치를 우회하지 않는다.
+4. 다중 키링 요구에 맞춰 다른 기기의 초기화가 무관한 모든 기기의 동기화까지 차단하는 현재 계정 단위 any 조건도 점검한다. 진행 중 초기화 대상만 막는 계약으로 BE와 맞춘다.
+5. 앞 절의 상태 파싱과 재부팅 후 재적용 생략을 수정한다. 재현 테스트 reviewRebootWithSameStoredHashMustReapplyTsv3는 두 번째 SYNC 전송 기대 2, 실제 1이었다. 현재 develop의 KeyringSyncViewModel은 재현본과 해시가 동일하다.
+
+**BE에서 할 일**
+1. 위 resetRunId를 GET/DB 읽기 전용으로 대조한다. 실행 상태, completed_at, 현재 소유 generation/epoch만 공유하고 개인키/로그인 토큰은 전달하지 않는다.
+2. owner-session-grants 422의 실제 errorCode/서버 차단 분기를 대조한다. pending reset 차단이면 일반 POLICY_UNRESOLVED 대신 초기화 대기임을 식별 가능한 계약으로 제공한다.
+3. 기존 데이터 보존 요구이므로 초기화 실행 완료를 위해 강제로 기기를 지우면 안 된다. 현재 코드는 초기화 취소 API/상태가 없다. 미적용 초기화를 안전하게 취소하는 계약이 필요하다.
+4. 취소는 DB 행 삭제·completed_at 위조로 처리하지 않는다. 이미 기기가 삭제했거나 응답만 유실된 경우를 먼저 구분하고, 아직 실행하지 않은 경우에도 발급된 옛 명령의 재실행을 막는 기기 증명/무효화 절차를 정해야 한다. 취소·완료·미확인을 서로 다른 상태로 두고 멱등 조회를 제공한다.
+5. 서버에서 정상 완료가 확인된다면 기존 완료 결과를 FE에 재조회시켜 복구한다. 미완료이고 사용자가 데이터를 보존하려는 경우에는 계약 없는 임의 완료/소유 해제를 하지 않는다.
+
+이 작업에서는 서버 접근용 기존 PEM 경로가 존재하지 않아 서버 DB/실제 reset GET을 직접 조회하지 못했다. 앱 로그의 HTTP 상태와 로컬 저널은 직접 확인했지만 서버 분기는 아직 추정이다.
+
+### 최상위 유저플로우의 안전한 상태 설계
+
+| 단계 | 다음 단계로 넘어가는 조건 | 오류/유실 때 보존할 것 |
+| --- | --- | --- |
+| 연결·기기 식별 | serial/keyId·보호 연결·현재 owner epoch 확인 | 기존 키·소유 정보. 검색/연결 실패와 저장 손상을 구분 |
+| 초기화 상태 조정 | 현재 대상의 초기화가 없음 또는 서버/기기가 합의한 종료 상태 | 진행 중 reset-run/기기 결과. 무응답으로 막지 않고 사유 표시 |
+| 설정 수신 | fresh deviceNonce에 대한 서버 서명·기기/owner/epoch·버전 검증 | 기존 정상 설정. 부분 프레임은 폐기하고 새 challenge |
+| 설정 저장 | 페이지 검증 + NVS 전체 CRC/내용 재읽기 + 정상 백업 | 검증된 정상본, 손상 원본. 실패 시 STORED 발급 금지 |
+| 설정 적용 | 같은 syncRunId의 현재 적용 확인 | 저장 상태와 RAM 적용 상태를 구분. 재부팅 후 fresh 시간 재적용 |
+| 확장 광고·수신·매칭 | 유효 설정/시간/정책·서명 peer·반복 억제·공간 확인 | 세 큐·미접수 기록. 격리 상대 재매칭 금지, 임의 체류 시간 없음 |
+| 만남 앱 업로드 | 정상 원본·증명만 순회, 서버 접수증 검증 | 서버 접수 전 원본 삭제 금지, 격리는 별도 표시 |
+| 제안·채팅 | BE의 양측 기록 검증·정책·상호 수락 | 키링의 APPLIED/LED와 서버 제안 완료를 혼동하지 않음 |
+| 초기화·양도 | 서명 명령→영속 삭제 완료 증명→서버 소유 해제 | 고정 기기 키 보존, 동일 실행 재조회, 옛 epoch 거절 |
+
+“오류가 전혀 없는 완벽한 상태”는 현재 완료 판정이 아니다. 외부 Flash 물리 결함/전원 차단까지 소프트웨어만으로 없앨 수 없고, FE의 대기 초기화 복구·BE 취소 계약·다중 실물 부하 검증이 남아 있다. 손상 한 건을 정상 성공으로 숨기는 것은 해결로 취급하지 않는다.
+
+### 0.9.10 검사·탑재 증거
+
+- 전체 C/Python/Java/Node 호스트 검사 통과: record-recovery-host-final-20261113.log. 실제 BE의 서명 검증기와 STORED/등록/초기화 상호 검산도 통과.
+- 신규 검사: 손상 읽기가 이미 버퍼를 덮은 경우, 뒤 정상 슬롯 복원, 격리 슬롯 재사용 금지, 원본 무변경, 소유/서명 불일치 차단, 정상 기록 조회, 적용과 매칭 준비 분리, 완료 재전송 2,000회 추가 쓰기 없음.
+- UF2: `iot/build/zephyr.uf2`, `0.9.10-d31`, SHA-256 `e1ddfec5b5b760d2a1ea25d44a667e0a670b96824224f64d48259d38f52144e9`, 838144바이트. sourceDirty=true이며 위 develop commit 자체의 순정 빌드가 아니다.
+- 빌드 FLASH 419028바이트, 정적 RAM 256516/262144바이트. 실제 동시 부하 RAM 여유·BLE 누락 측정 결과가 아니다.
+- 보드 #8에 앱 영역만 전송. DIAG 0.9.10-d31, radio-ready error=0, 기존 serial/keyId/SPKI 동일, 설정 v15 정상. keyring ID100은 격리 1건, 전역 recordStorageError=0, quarantineUnresolved=0.
+- 교체 전후 registration SHA-256 `edda176eae23442d04ae3967dd1a4229a834069e034a60df8728f2b4e91ef03d`, keyring SHA-256 `84abd380f5c23ecdab740b900fceae386d517aee653d56c8f821ddc35b14b4d7`가 동일하다. 원본 삭제/키 재생성 없음.
+- 실물 앱은 BLE 연결·서비스 검색·암호화 성공까지 확인했다. **새 SYNC_SETTINGS→APPLIED→서버 ACK는 초기화 대기 때문에 미완료**다. 이를 성공으로 보고하지 않는다.
+- 별도 BE Gradle 통합 검사 실행은 로컬 JDK 21이 없어 시작 단계에서 실패했다. BE 테스트 실패/서버 고장으로 해석하지 않는다. 개발 DB에 쓰기 작업은 하지 않았다.
+- 원래 손상의 재현 확정, USB/배터리 반복 동기화, 재부팅 재적용, 여러 실물의 광고·스캔·앱 전송 병행, 실제 만남 접수·제안·채팅은 후속 수용 검사다.
+
+## 이전 0.9.9 복구 기록
+
 대상: SIS D3.1 Y3 / 0.9.9-d31. 기준 develop `1b77454d`. 관련 작업은 IOT S15P31E106-322의 후속이며 해당 Story의 완료 상태는 실물 복구 완료 근거가 아니다. FE/BE 소스와 서버 데이터는 이번 변경에서 수정하지 않는다.
 
 2026-11-13 후속 확인: 작업본을 최신 develop `f57c61670c98d84232e5ae3a473f49db3d6854db`까지 fast-forward 했다. 해당 구간에는 IoT/명세 변경 없이 FE 변경만 있었고, 기존 UF2 manifest의 모든 펌웨어 입력 해시와 현재 소스가 같다. 이미 실물에서 확인한 UF2와 그 빌드 기준 commit `1b77454d` 기록은 그대로 유지한다. Git 기준만 바뀌었다고 새 바이너리를 탑재했다고 표시하지 않는다.
