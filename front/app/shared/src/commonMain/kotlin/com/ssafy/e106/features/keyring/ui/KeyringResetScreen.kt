@@ -98,6 +98,8 @@ fun KeyringResetScreen(state: KeyringResetState, onAccepted: (Boolean) -> Unit, 
                             val (title, help) = when (phase) {
                                 KeyringResetStage.Unavailable -> Res.string.reset_unavailable to Res.string.reset_unavailable_help
                                 KeyringResetStage.Partial -> Res.string.reset_partial to Res.string.reset_partial_help
+                                // 서버에 다른 초기화 실행이 있어 앱이 이어 가거나 취소할 수 없다. 다시 시도 없이 닫기만 둔다
+                                KeyringResetStage.Conflict -> Res.string.reset_conflict to Res.string.reset_conflict_help
                                 KeyringResetStage.Unknown -> if (state.runCreated) Res.string.reset_unconfirmed to Res.string.reset_unconfirmed_help
                                     else Res.string.reset_start_unconfirmed to Res.string.reset_start_unconfirmed_help
                                 else -> Res.string.reset_failed to Res.string.reset_failed_help

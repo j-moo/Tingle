@@ -146,16 +146,20 @@ class KeyringResetViewModel(private val recovery: KeyringResetRecovery, private 
                 // 저장된 요청이 없거나(확정 거절로 지운 경우 포함 → 다시 시도는 확인 화면부터), 실행이 생기기 전 서버가
                 // 시작 요청을 4xx로 거절했으면 실패다(남은 요청은 다시 시도에서 같은 키 · 본문으로 다시 보낸다).
                 // 그 밖에는 결과 미확인이다(실패 · 원상복구로 표시하지 않는다)
-                val rejected = ((failure as? ResetApiException)?.error as? AppError.Server)?.status in 400..499
+                val refusal = (failure as? ResetApiException)?.error as? AppError.Server
+                val rejected = refusal?.status in 400..499
+                // 같은 키링 · 소유 세대에 다른 키의 실행이 이미 있다. 새 요청도 같은 409이고 앱은 그 실행을 찾거나 취소할 수 없다
+                val conflict = current?.run == null && refusal?.code == "IDEMPOTENCY_CONFLICT"
                 mutable.update { it.copy(stage = when {
                         current?.ack != null -> KeyringResetStage.Partial
                         waiting -> KeyringResetStage.Waiting
+                        !unreadable && conflict -> KeyringResetStage.Conflict
                         !unreadable && (current == null || (current.run == null && rejected)) -> KeyringResetStage.Failed
                         else -> KeyringResetStage.Unknown
                     }, runCreated = current?.run != null,
                     deviceResetConfirmed = current?.ack != null,
                     resumeSerial = current?.serial?.takeIf { waiting }, waitTick = if (waiting) it.waitTick + 1 else it.waitTick,
-                    errorMessage = if (waiting) null else (failure as? ResetApiException)?.error?.message) }
+                    errorMessage = if (waiting || conflict) null else (failure as? ResetApiException)?.error?.message) }
             }
         }
     }

@@ -200,26 +200,38 @@ class KeyringResetViewModelTest {
         assertNull(m.state.value.deviceLabel)
     }
     /**
-     * 실행이 생기기 전 확정 거절(같은 키로 다시 보내도 같은 409)은 실패로 보이고 저장된 요청을 지운다.
-     * 다시 시도는 확인 화면부터 새 요청으로 시작하고, 남은 기록이 같은 키링의 초기화 · 등록을 막지 않는다.
+     * 같은 키링 · 소유 세대에 다른 실행이 이미 있으면 서버는 키와 무관하게 409를 준다. 로컬 요청은 지우지만
+     * 새로 시작해도 같은 거절이므로 재시작 대신 별도 안내(다시 시도 없음)를 보인다.
      */
-    @Test fun refusedStartBeforeRunDropsRequestAndAllowsFreshReset() = runTest(dispatcher) {
-        val f = ResetFixture(); f.server.run = resetRun.copy(discardUnsentConfirmed = true); f.seed(run = null)
-        val stale = f.store.read(1).single().requestKey
-        f.server.startAction = {
-            if (f.server.starts.last().first == stale) ApiResult.Fail(AppError.Server(409, "IDEMPOTENCY_CONFLICT", ""))
-            else ApiResult.Ok(f.server.run)
-        }
+    @Test fun conflictingRunElsewhereShowsConflictWithoutRetryLoop() = runTest(dispatcher) {
+        val f = ResetFixture(); f.seed(run = null)
+        f.server.startAction = { ApiResult.Fail(AppError.Server(409, "IDEMPOTENCY_CONFLICT", "")) }
         val m = model(f); m.load(resetRun.deviceId, true, resetSerial); runCurrent()
-        assertEquals(KeyringResetStage.Unknown, m.state.value.displayStage); assertFalse(m.state.value.runCreated)
         m.recover(f.board); runCurrent()
-        assertEquals(KeyringResetStage.Failed, m.state.value.displayStage); assertTrue(f.store.read(1).isEmpty())
-        m.recover(f.board); runCurrent()   // 화면의 "다시 시도": 확인 화면부터 다시
-        assertEquals(KeyringResetStage.Confirm, m.state.value.displayStage)
-        m.accepted(true); m.recordChoice(ResetRecordChoice.Delete); m.recordDeletionAccepted(true)
-        m.start(f.board); runCurrent()
-        assertEquals(KeyringResetStage.Complete, m.state.value.displayStage)
-        assertEquals(1, f.server.starts.count { it.first == stale }); assertNotEquals(stale, f.server.starts.last().first)
+        assertEquals(KeyringResetStage.Conflict, m.state.value.displayStage); assertNull(m.state.value.errorMessage)
+        assertTrue(f.store.read(1).isEmpty()); assertFalse(m.state.value.busy)
+    }
+    /** 대상 없음 · 키링 증명 거절 · 형식 오류는 요청을 지우고, 다시 시도는 확인 화면부터 새 요청으로 시작한다. */
+    @Test fun refusedStartBeforeRunDropsRequestAndAllowsFreshReset() = runTest(dispatcher) {
+        for (code in listOf("RESOURCE_NOT_FOUND", "INVALID_DEVICE_PROOF", "INVALID_REQUEST")) {
+            val f = ResetFixture(); f.server.run = resetRun.copy(discardUnsentConfirmed = true); f.seed(run = null)
+            val stale = f.store.read(1).single().requestKey
+            f.server.startAction = {
+                if (f.server.starts.last().first == stale) ApiResult.Fail(AppError.Server(422, code, ""))
+                else ApiResult.Ok(f.server.run)
+            }
+            val m = model(f); m.load(resetRun.deviceId, true, resetSerial); runCurrent()
+            assertEquals(KeyringResetStage.Unknown, m.state.value.displayStage); assertFalse(m.state.value.runCreated)
+            m.recover(f.board); runCurrent()
+            assertEquals(KeyringResetStage.Failed, m.state.value.displayStage, code); assertTrue(f.store.read(1).isEmpty())
+            m.recover(f.board); runCurrent()   // 화면의 "다시 시도": 확인 화면부터 다시
+            assertEquals(KeyringResetStage.Confirm, m.state.value.displayStage)
+            m.accepted(true); m.recordChoice(ResetRecordChoice.Delete); m.recordDeletionAccepted(true)
+            m.start(f.board); runCurrent()
+            assertEquals(KeyringResetStage.Complete, m.state.value.displayStage, code)
+            assertEquals(1, f.server.starts.count { it.first == stale }); assertNotEquals(stale, f.server.starts.last().first)
+            models.clear()
+        }
     }
     /** 시작 POST 뒤 기록을 읽지 못하면 서버가 실행을 만들었을 수 있으므로 실패가 아니라 요청 결과 미확인이다. */
     @Test fun unreadableJournalAfterStartIsUnknownNotFailed() = runTest(dispatcher) {

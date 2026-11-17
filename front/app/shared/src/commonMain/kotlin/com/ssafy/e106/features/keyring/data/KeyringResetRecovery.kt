@@ -157,5 +157,8 @@ class KeyringResetRecovery(private val api: KeyringResetRepository, private val 
     }
 }
 
-/** 실행을 만들지 않은 확정 거절(이미 다른 실행 있음 · 대상 없음 · 키링 증명 거절 · 형식 오류). 같은 요청을 다시 보내도 결과가 같다 */
+/**
+ * 실행을 만들지 않은 확정 거절. 같은 요청을 다시 보내도 결과가 같아 로컬 기록은 지운다.
+ * IDEMPOTENCY_CONFLICT(이미 다른 실행 있음)는 새 요청도 거절되므로 화면이 재시작 대신 별도 안내를 보인다.
+ */
 private val REFUSED_START = setOf("IDEMPOTENCY_CONFLICT", "RESOURCE_NOT_FOUND", "INVALID_DEVICE_PROOF", "INVALID_REQUEST")

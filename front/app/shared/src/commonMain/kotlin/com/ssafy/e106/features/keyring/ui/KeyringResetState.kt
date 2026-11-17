@@ -1,7 +1,7 @@
 package com.ssafy.e106.features.keyring.ui
 
 // 화면 상태는 BE/BLE 코드와 분리한다. 실제 실행의 증명·소유 해제 결과를 ViewModel에서 매핑한다.
-enum class KeyringResetStage { Loading, Ready, Confirm, Disconnected, Preparing, Resetting, Unlinking, Partial, Recovering, Waiting, Unknown, Failed, Complete, Unavailable }
+enum class KeyringResetStage { Loading, Ready, Confirm, Disconnected, Preparing, Resetting, Unlinking, Partial, Recovering, Waiting, Unknown, Failed, Conflict, Complete, Unavailable }
 enum class KeyringResetAction { Back, Cancel, StartReset, UploadRecords, CheckConnection, CheckResult, Retry, Refresh, Close }
 enum class ResetRecordChoice { UploadFirst, Delete }
 
