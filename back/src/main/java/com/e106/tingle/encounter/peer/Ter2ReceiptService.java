@@ -291,14 +291,18 @@ public class Ter2ReceiptService {
 			throw unresolved("sync-run-missing");
 		}
 		RunEvidence run = rows.getFirst();
+		boolean issuedLate = run.createdAt().truncatedTo(java.time.temporal.ChronoUnit.SECONDS).isAfter(metAt);
 		if (run.redactedAt() != null || run.payload() == null || !PeerSettingsCodec.validPayloadFraming(run.payload())
 			|| !hash(run.payload()).equals(run.payloadHash()) || run.ackedAt() == null || run.ackRequestKey() == null
 			|| run.ackProofHash() == null || !run.ackProofHash().matches("[0-9a-f]{64}")
-			|| run.ackedAt().isBefore(run.createdAt()) || run.ackedAt().isAfter(metAt)
+			// 키링은 설정을 먼저 적용하고, 앱이 ACK를 서버에 나중에 전한다. 적용 직후 만나면 ACK 도착이 만남보다
+			// 늦을 수 있다. 기록 안의 nonce가 이 실행을 적용했다는 증거라, 시각은 발급이 만남보다 먼저인지만 본다.
+			// 만남 시각은 초 단위라 발급 시각도 초로 내려 비교한다(같은 초에 만난 기록을 막지 않게).
+			|| run.ackedAt().isBefore(run.createdAt()) || issuedLate
 			|| run.capturedAt() == null || run.capturedAt().isAfter(run.createdAt())
 			|| !Arrays.equals(Arrays.copyOfRange(run.payload(), 200, 461), Arrays.copyOf(credential.raw(), 261))
 			|| !Arrays.equals(decode(run.nonce()), Arrays.copyOfRange(credential.raw(), 61, 93))) {
-			throw unresolved(run.ackedAt() != null && run.ackedAt().isAfter(metAt) ? "sync-run-acked-after-meeting"
+			throw unresolved(issuedLate ? "sync-run-issued-after-meeting"
 				: "sync-run-mismatch");
 		}
 		try {

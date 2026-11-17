@@ -167,6 +167,18 @@ class Ter2BusinessPromotionTest {
 	}
 
 	@Test
+	void ackArrivingAfterTheMeetingStillPromotesAndQualifiesBecauseTheRecordBindsTheAppliedRun() {
+		// 키링이 설정을 적용한 직후(같은 초) 만나, 앱의 ACK가 만남보다 늦게 서버에 도착한 경우.
+		jdbc.update("update keyring_sync_run set created_at=?,acked_at=?", Timestamp.from(metAt.plusMillis(700)),
+			Timestamp.from(metAt.plusSeconds(5)));
+		promotion.promote(1, 100, submission(raw));
+		EncounterEvaluationWorker.Work work = work(matching());
+		assertThat(work.state()).isEqualTo(EncounterEvaluationWorker.State.READY);
+		assertThat(verdict().evaluate(work.input(), work.inputHash()).outcome())
+			.isEqualTo(EncounterEvaluationGateway.Outcome.QUALIFIED);
+	}
+
+	@Test
 	void publishedSurveyOrChangedArtifactCannotStandInForApprovedMatchingRelease() {
 		jdbc.update("update rule_artifact set document='{}'::jsonb where kind='MATCHING'");
 		assertThatThrownBy(() -> promotion.promote(1, 100, submission(raw))).isInstanceOf(BusinessException.class)

@@ -75,7 +75,11 @@ public class StoredEncounterInputLookup {
 		if ((!legacy && !peer) || stored.redactedAt() != null
 			|| !hash(stored.ackProofHash()) || stored.ackRequestKey() == null
 			|| stored.createdAt() == null || stored.ackedAt() == null || stored.capturedAt() == null
-			|| stored.ackedAt().isBefore(stored.createdAt()) || stored.ackedAt().isAfter(metAt)
+			|| stored.ackedAt().isBefore(stored.createdAt())
+			// TER2 기록은 기록 안 nonce가 이 실행을 적용했다는 증거라, 발급이 만남보다 먼저인지만 본다(만남은 초 단위).
+			// 구형(v1) 실행에는 그 증거가 없어 ACK가 만남보다 먼저 도착해야 한다.
+			|| (peer ? stored.createdAt().truncatedTo(java.time.temporal.ChronoUnit.SECONDS).isAfter(metAt)
+				: stored.ackedAt().isAfter(metAt))
 			|| stored.capturedAt().isAfter(stored.createdAt())
 			|| stored.payloadFormat() == null || !stored.payloadFormat().matches("[A-Za-z0-9._-]{1,64}")
 			|| stored.payload() == null || stored.payload().length == 0
