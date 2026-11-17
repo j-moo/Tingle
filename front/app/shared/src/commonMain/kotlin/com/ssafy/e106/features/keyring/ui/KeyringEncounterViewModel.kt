@@ -86,6 +86,12 @@ internal class KeyringEncounterViewModel(
                 val identity = ticket?.identity
                 mutable.value = if (identity?.ownershipEpoch == null) EncounterTransferState.Idle
                 else transfer(current, identity, ble, ::ensureCurrent)
+                // 전송 결과를 먼저 보여 준다. 해제가 끊기거나 실패해도 표시 상태를 바꾸지 않는다.
+                if (identity?.ownershipEpoch != null) try {
+                    releasePending(current, identity, ble, ::ensureCurrent)
+                } catch (_: Exception) {
+                    coroutineContext.ensureActive()
+                }
             } catch (cancelled: CancellationException) {
                 if (coroutineContext[Job] === work) mutable.value = EncounterTransferState.Idle
                 throw cancelled
@@ -117,7 +123,7 @@ internal class KeyringEncounterViewModel(
                 // 이전 소유 세대의 접수증을 새 소유 세대로 보내지 않는다.
                 journal.remove(owner, pending)
             } else {
-                // 종류를 모르는 복구 접수증도 해제 대기에 넣는다. 해제 불가면 서버가 거절한다.
+                // 해제 가능 여부는 서버가 판단한다.
                 release.enqueue(owner, pending)
                 finish(owner, identity, serial, ble, pending, ensureCurrent)
                 stored = EncounterTransferState.Stored
@@ -159,36 +165,28 @@ internal class KeyringEncounterViewModel(
                 continue
             }
             journal.save(owner, proof)
-            // 정상 만남만 이탈 후 재매칭 대상이다. REVIEW 해제(ERROR_REVIEWED)는 별도 검토 흐름이다.
-            if (header.kind == "CONFIRMED") release.enqueue(owner, proof)
+            // 종류와 관계없이 해제 대기에 넣는다. 해제 가능 여부는 서버가 판단한다.
+            release.enqueue(owner, proof)
             ensureCurrent()
             finish(owner, identity, serial, ble, proof, ensureCurrent)
             if (header.kind == "CONFIRMED") stored = EncounterTransferState.ConfirmedStored
             else if (stored == EncounterTransferState.Empty) stored = EncounterTransferState.ReviewStored
         }
-        val outcome = deferred ?: if (stored == EncounterTransferState.Empty && scan.legacyCount > 0) {
+        return deferred ?: if (stored == EncounterTransferState.Empty && scan.legacyCount > 0) {
             EncounterTransferState.LegacyOnly
         } else stored
-        releasePending(current, identity, ble, ensureCurrent)
-        return outcome
     }
 
-    /** 원본 정리 뒤 대기 중인 반복 억제 해제를 시도한다. 실패는 다음 동기화로 미루고 전송 결과에 섞지 않는다. */
+    /** 원본 정리 뒤 대기 중인 반복 억제 해제를 시도한다. 실패는 다음 동기화로 미룬다. */
     private suspend fun releasePending(current: Target, identity: SyncIdentity, ble: BleProbeViewModel,
         ensureCurrent: () -> Unit) {
         // 구형 기기에는 새 명령을 보내지 않는다.
         if (ble.state.value.info?.supportedFunctions?.contains("RELEASE_RECORD") != true) return
-        try {
-            release.releaseDue(current.owner, identity) { command ->
-                ensureCurrent()
-                ble.withOwnerSession(current.serial, identity, KeyringOwnerPermission.Release, authorizer) {
-                    KeyringReleaseProtocol.release(command, it)
-                }
+        release.releaseDue(current.owner, identity) { command ->
+            ensureCurrent()
+            ble.withOwnerSession(current.serial, identity, KeyringOwnerPermission.Release, authorizer) {
+                KeyringReleaseProtocol.release(command, it)
             }
-        } catch (cancelled: CancellationException) {
-            throw cancelled
-        } catch (_: Exception) {
-            // 보호 저장소를 읽지 못해도 기록 전송 결과는 유지한다.
         }
     }
 
