@@ -1159,4 +1159,58 @@ class KeyringSyncTest {
         assertEquals(18L, m.state.value.items.single().confirmedTsv3Version)
         assertEquals(18L, store.read(1).single().identity?.settingsVersion)
     }
+
+    /** 기록 저장소 오류 보드는 적용해도 applied=false로 남는다. 같은 설정을 연결마다 다시 보내지 않는다. */
+    @Test fun storageErrorBoardIsNotResentEveryConnection() = runTest(dispatcher) {
+        val run = tsv3Run()
+        val broken = board(run, false, true, false).let { it.copy(readiness = it.readiness.copy(storageHealthy = false)) }
+        assertFalse(KeyringBoardSync.needsResync(broken, run))
+        assertTrue(KeyringBoardSync.needsResync(broken.copy(storedSettingsVersion = 11), run))
+        assertEquals(KeyringMatchReadiness.StorageError, KeyringBoardSync.readiness(broken.readiness, true, false))
+        val server = tsv3Server(); val store = KeyringSyncStore(SyncPrefs()); store.rememberTarget(1, syncRun.deviceId, "XIAO-test")
+        var sends = 0
+        val m = model(server, store, TestSession(OnboardingStatus.READY))
+        repeat(3) {
+            m.detach()
+            m.attachRequest("XIAO-test", { fullBody }, getApplied = ::appliedProof, getDeviceInfo = { broken }) { sends++; stored(it) }
+            runCurrent()
+        }
+        assertEquals(1, sends); assertEquals(1, server.creates.size)
+        assertEquals(KeyringMatchReadiness.StorageError, m.state.value.items.single().readiness)
+    }
+
+    /** 복구 중 보드가 같은 버전을 거부하면 서버 버전이 바뀌거나 사용자가 재시도하기 전까지 발급·전송을 반복하지 않는다. */
+    @Test fun recoveryRejectionOfSameVersionStopsAutomaticResend() = runTest(dispatcher) {
+        val server = tsv3Server(); val store = KeyringSyncStore(SyncPrefs()); store.rememberTarget(1, syncRun.deviceId, "XIAO-test")
+        var info = board(server.run, true, true, true); var sends = 0; var rejecting = false
+        val m = model(server, store, TestSession(OnboardingStatus.READY))
+        fun connect() {
+            m.detach()
+            m.attachRequest("XIAO-test", { fullBody }, getApplied = ::appliedProof, getDeviceInfo = { info }) {
+                sends++; if (rejecting) throw BleCommandException("SETTINGS_RECOVERY_REQUIRED"); stored(it)
+            }
+            runCurrent()
+        }
+        connect(); assertEquals(1, sends)
+        info = board(server.run, false, false, false).let { it.copy(readiness = it.readiness.copy(settingsRecoveryRequired = true)) }
+        rejecting = true
+        connect()
+        assertEquals(2, sends); assertEquals(2, server.creates.size)
+        assertEquals(SyncPhase.RecoveryVersionRequired, m.state.value.items.single().phase)
+        repeat(2) { connect() }
+        assertEquals(2, sends); assertEquals(2, server.creates.size)
+        assertEquals(SyncPhase.RecoveryVersionRequired, m.state.value.items.single().phase)
+        // 사용자가 다시 시도하면 한 번 더 보낸다.
+        m.retry(syncRun.deviceId); runCurrent()
+        assertEquals(3, sends); assertEquals(SyncPhase.RecoveryVersionRequired, m.state.value.items.single().phase)
+        // 서버가 더 높은 버전을 준비하면 자동으로 새 버전을 보낸다.
+        val nextId = "77777777-7777-4777-8777-777777777777"
+        val next = server.run.copy(syncRunId = nextId, settingsSnapshotId = nextId, settingsVersion = 13, currentSettingsVersion = 13,
+            payloadHash = "e".repeat(64), state = "PENDING")
+        server.getAction = { ApiResult.Fail(AppError.Server(409, "SYNC_VERSION_STALE", "old")) }
+        server.createAction = { server.run = next.copy(deviceNonce = server.bodies.last().deviceNonce); ApiResult.Ok(server.run) }
+        rejecting = false; info = board(next, true, true, true)
+        connect()
+        assertEquals(4, sends); assertEquals(13L, m.state.value.items.single().confirmedTsv3Version)
+    }
 }

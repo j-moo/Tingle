@@ -83,10 +83,10 @@ class BleOwnerFlowStatusTest {
     @Test fun deviceInfoCarriesReadinessAndRecoveryFlags() {
         fun info(extra: String) = BleProbeProtocol.info(Json.parseToJsonElement(
             "{\"deviceSerial\":\"XIAO-test\",\"firmwareVersion\":\"1\"$extra}").jsonObject).readiness
-        val reported = info(",\"applied\":false,\"timeReady\":false,\"matchingReady\":false,\"settingsRecoveryRequired\":true")
-        assertEquals(false, reported.applied); assertEquals(false, reported.timeReady)
+        val reported = info(",\"applied\":false,\"timeReady\":false,\"matchingReady\":false,\"settingsRecoveryRequired\":true,\"storageHealthy\":false")
+        assertEquals(false, reported.applied); assertEquals(false, reported.timeReady); assertEquals(false, reported.storageHealthy)
         assertEquals(false, reported.matchingReady); assertEquals(true, reported.settingsRecoveryRequired)
         val missing = info(",\"applied\":\"true\"")
-        assertNull(missing.applied); assertNull(missing.timeReady); assertNull(missing.matchingReady); assertNull(missing.settingsRecoveryRequired)
+        assertNull(missing.applied); assertNull(missing.timeReady); assertNull(missing.matchingReady); assertNull(missing.settingsRecoveryRequired); assertNull(missing.storageHealthy)
     }
 }
