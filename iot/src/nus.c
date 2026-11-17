@@ -1,6 +1,7 @@
 #include "board.h"
 #include "nus.h"
 #include "product.h"
+#include "diagnostics.h"
 #include "storage.h"
 #include "monocypher.h"
 #include <errno.h>
@@ -478,6 +479,16 @@ void kr_nus_attach_application(struct kr_engine *engine)
 	engine->io.suppression = application_suppression;
 	engine->io.same_peer = application_same_peer; engine->io.candidate_ready = application_candidate;
 	engine->io.error_key = application_error_key;
+}
+
+bool kr_nus_diag_snapshot(bool records, uint64_t filter, struct kr_diag_snapshot *out)
+{
+	k_mutex_lock(&core_lock, K_FOREVER);
+	kr_runtime_owner_lock();
+	kr_product_diag_capture(&application, records, filter, out);
+	kr_runtime_owner_unlock();
+	k_mutex_unlock(&core_lock);
+	return out->available;
 }
 
 size_t kr_nus_copy_public_name(char name[KR_PUBLIC_NAME_MAX + 1])

@@ -18,7 +18,10 @@ import java.util.zip.CRC32;
 import com.e106.tingle.global.error.BusinessException;
 import com.e106.tingle.global.error.ErrorCode;
 
+import lombok.extern.slf4j.Slf4j;
+
 /** Local cryptographic decoder. Historical ownership, approved release and bilateral intake are separate checks. */
+@Slf4j
 public final class Ter2ProofVerifier {
 
 	/**
@@ -57,7 +60,7 @@ public final class Ter2ProofVerifier {
 			&& expectedHash.equals(hex(hash(raw))));
 		require(serverKey != null && serverKey.length == 32 && keys != null);
 		if (!magic(raw, 0, "TER2")) {
-			throw unresolved();
+			throw unresolved("envelope-magic");
 		}
 		int wireLength = u16(raw, 4);
 		require(u16(raw, 6) == EVIDENCE_BYTES && wireLength >= 282 && wireLength <= MAX_WIRE_BYTES
@@ -68,7 +71,7 @@ public final class Ter2ProofVerifier {
 		Kind kind = switch (wire[1]) {
 			case 2 -> Kind.CONFIRMED;
 			case 3 -> Kind.REVIEW;
-			default -> throw unresolved();
+			default -> throw unresolved("record-kind");
 		};
 		require(kind == Kind.REVIEW || wire[3] == 0);
 		require(evidence[794] == 0 || evidence[794] == 1);
@@ -107,12 +110,12 @@ public final class Ter2ProofVerifier {
 		} else if (peerLength != 0) {
 			// Unbound diagnostic bytes may contain another person's profile. Retention/withdrawal is unresolved.
 			if (peer == null) {
-				throw unresolved();
+				throw unresolved("review-peer-unverified");
 			}
 			try {
 				peerProfile = boundPeerProfile(wire, peerPacket, own, peer);
 			} catch (BusinessException exception) {
-				throw unresolved();
+				throw unresolved("review-peer-profile");
 			}
 		}
 		return new VerifiedEncounter(uuid(raw, 8), uuid(wire, 8), u32(wire, 4), kind,
@@ -139,7 +142,7 @@ public final class Ter2ProofVerifier {
 		CredentialKeyResolver keys) {
 		int type = Byte.toUnsignedInt(raw[0]);
 		if (type != 3 && type != 4) {
-			throw unresolved();
+			throw unresolved("credential-type");
 		}
 		long device = positive(raw, 9);
 		long revision = u32(raw, 17);
@@ -154,14 +157,14 @@ public final class Ter2ProofVerifier {
 			&& until > issued && occurred < until && issued <= occurred + 300
 			&& until <= Instant.MAX.getEpochSecond() && nonzero(raw, 93, 16));
 		if (policy != POLICY || rule != RULE) {
-			throw unresolved();
+			throw unresolved("policy-rule-version");
 		}
 		UUID owner = uuid(raw, 29);
 		UntrustedCredential lookup = new UntrustedCredential(device, hex(slice(raw, 1, 8)), owner, epoch,
 			Instant.ofEpochSecond(occurred), sender);
 		byte[] trustedKey = keys.resolve(lookup);
 		if (trustedKey == null) {
-			throw unresolved();
+			throw unresolved("credential-key-unknown");
 		}
 		require(trustedKey.length == 32 && Arrays.equals(trustedKey, slice(raw, 165, 32)));
 		verifySignature(server, message(type == 4 ? "TINGLE-PEER-GRANT-V3\n" : "TINGLE-PEER-GRANT-V2\n",
@@ -270,7 +273,9 @@ public final class Ter2ProofVerifier {
 		return new BusinessException(ErrorCode.INVALID_DEVICE_PROOF);
 	}
 
-	private static BusinessException unresolved() {
+	/** 앱에는 POLICY_UNRESOLVED(보류)만 돌려주므로, 어느 검사에서 보류했는지는 이 로그로만 알 수 있다. */
+	private static BusinessException unresolved(String check) {
+		log.warn("만남 기록 보류 check={}", check);
 		return new BusinessException(ErrorCode.POLICY_UNRESOLVED);
 	}
 

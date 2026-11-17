@@ -41,9 +41,11 @@ import com.e106.tingle.keyring.proof.PeerCommandTranscripts.Binding;
 import com.e106.tingle.keyring.proof.PeerSettingsCodec;
 import com.e106.tingle.settings.snapshot.SettingsSnapshotJson;
 
+import lombok.extern.slf4j.Slf4j;
 import tools.jackson.databind.json.JsonMapper;
 
 /** Durable cryptographic intake only. STORED/VERIFIED_BOTH are not matching approval or a created proposal. */
+@Slf4j
 @Service
 public class Ter2ReceiptService {
 
@@ -83,8 +85,18 @@ public class Ter2ReceiptService {
 		}
 		byte[] raw = decode(submission.evidence().payload());
 		String digest = hash(raw);
-		UUID receiptId = transaction.execute(status -> store(userId, deviceId, submission, raw, digest));
-		return transaction.execute(status -> sign(userId, deviceId, receiptId));
+		try {
+			UUID receiptId = transaction.execute(status -> store(userId, deviceId, submission, raw, digest));
+			return transaction.execute(status -> sign(userId, deviceId, receiptId));
+		} catch (BusinessException exception) {
+			if (exception.getErrorCode() == ErrorCode.POLICY_UNRESOLVED && raw.length > 27) {
+				// 앞의 "만남 기록 보류 check=" 로그와 같은 요청이다. 누구 기록인지와 키링이 적은 종류(2 확정, 3 검토)·검토 사유를
+				// 함께 남긴다. 서명 확인 전 바이트라 진단용으로만 쓴다.
+				log.warn("만남 기록 보류 userId={} deviceId={} kind={} reviewReason={}", userId, deviceId,
+					Byte.toUnsignedInt(raw[25]), Byte.toUnsignedInt(raw[27]));
+			}
+			throw exception;
+		}
 	}
 
 	/** Revalidates the signed wire and its labels for the bilateral business-intake adapter. */
@@ -132,6 +144,10 @@ public class Ter2ReceiptService {
 		Scope own = scope(proof.own(), proof.occurredAt());
 		Scope peer = proof.peer() == null ? null : scope(proof.peer(), proof.occurredAt());
 		String state = proof.kind() == Kind.REVIEW ? "REVIEW_QUARANTINED" : "WAITING_COUNTERPART";
+		if (proof.kind() == Kind.REVIEW) {
+			// 키링이 매칭 실패로 분류한 이유(펌웨어 kr_reason 번호). 왜 검토 기록이 생기는지 서버에서 보려고 남긴다.
+			log.info("만남 검토 기록 접수 deviceId={} reviewReason={}", deviceId, proof.reviewReason());
+		}
 		UUID receipt = UUID.randomUUID();
 		Instant received = clock.instant().truncatedTo(ChronoUnit.SECONDS);
 		jdbc.update("insert into keyring_peer_encounter(receipt_id,owner_user_id,peer_user_id,device_id,"
@@ -142,8 +158,11 @@ public class Ter2ReceiptService {
 			proof.eventId(), proof.submissionId(), Timestamp.from(received), Timestamp.from(proof.occurredAt()),
 			Timestamp.from(proof.expiresAt()), state, raw, digest, proof.peer() == null ? null : proof.peer().raw());
 		if (proof.kind() == Kind.CONFIRMED) {
+			// 상대가 같은 만남을 검토(REVIEW)로 올렸으면 상대 원본으로 보지 않는다. 보면 이 확정 기록이 충돌로 실패해
+			// 이쪽 키링에 미전송이 쌓인다. 검토 행과 짝을 맞추지 않고 이 기록은 상대 확정 기록을 기다린다.
 			List<Stored> opposite = jdbc.query("select * from keyring_peer_encounter where event_id=? "
-				+ "and owner_user_id=? and peer_user_id=? and retired=false and receipt_id<>? for update",
+				+ "and owner_user_id=? and peer_user_id=? and retired=false and receipt_id<>? "
+				+ "and encounter_status<>'REVIEW_QUARANTINED' for update",
 				(row, index) -> read(row), proof.eventId(), peer.ownerUserId(), userId, receipt);
 			if (opposite.size() > 1) {
 				throw conflict();
@@ -199,7 +218,7 @@ public class Ter2ReceiptService {
 				throw invalid();
 			}
 			Scope scope = ownership.findAt(id.deviceId(), id.ownerGeneration(), id.ownershipEpoch(), id.occurredAt())
-				.orElseThrow(Ter2ReceiptService::unresolved);
+				.orElseThrow(() -> unresolved("ownership-scope"));
 			if (!scope.serial().equals("XIAO-" + id.hardwareRefHex())
 				|| (id.sender() && scope.ownerUserId() != userId)) {
 				throw invalid();
@@ -207,7 +226,7 @@ public class Ter2ReceiptService {
 			byte[] publicKey = decode(scope.publicKey());
 			if (publicKey.length != 44 || !Arrays.equals(Arrays.copyOf(publicKey, 12),
 				HexFormat.of().parseHex("302a300506032b6570032100"))) {
-				throw unresolved();
+				throw unresolved("scope-public-key");
 			}
 			if (!scope.keyId().equals("ed25519-" + HexFormat.of().formatHex(publicKey, 12, 20))) {
 				throw invalid();
@@ -218,7 +237,7 @@ public class Ter2ReceiptService {
 			if (current.size() != 1 || current.getFirst().publicKey() == null
 				|| !Arrays.equals(publicKey, decode(current.getFirst().publicKey()))) {
 				// No historical revocation record exists for a replaced registry key: do not guess.
-				throw unresolved();
+				throw unresolved("registry-key-replaced");
 			}
 			Instant revokedAt = current.getFirst().revokedAt();
 			if (revokedAt != null && !id.occurredAt().isBefore(revokedAt)) {
@@ -229,11 +248,8 @@ public class Ter2ReceiptService {
 		if (result.occurredAt().isAfter(clock.instant())) {
 			throw invalid();
 		}
-		// 검토(REVIEW) 기록은 판정 도구(keyring_peer_review_resolution 을 쓰는 곳)가 생길 때까지 모든 환경에서 받지 않는다.
-		// 받으면 REVIEW_QUARANTINED 행이 풀 길 없이 쌓인다. 도구가 생기면 이 거절을 지운다(끄고 켜는 설정은 두지 않는다).
-		if (result.kind() == Kind.REVIEW) {
-			throw unresolved();
-		}
+		// 검토(REVIEW) 기록도 받아 원본을 REVIEW_QUARANTINED 로 보관한다. 거절하면 키링이 같은 기록을 끝없이 다시 보내고
+		// 미전송으로 남는다. 다시 판정하는 도구는 아직 없으며, 원본(raw_payload)이 남아 있어 나중에 판정할 수 있다.
 		Scope ownScope = signedScope(result.own(), result.occurredAt());
 		if (result.peer() != null) {
 			Scope peerScope = signedScope(result.peer(), result.occurredAt());
@@ -272,25 +288,30 @@ public class Ter2ReceiptService {
 			credential.ownerGeneration(), credential.ownershipEpoch(), credential.settingsVersion(),
 			PeerSettingsCodec.FORMAT, scope.keyId());
 		if (rows.size() != 1) {
-			throw unresolved();
+			throw unresolved("sync-run-missing");
 		}
 		RunEvidence run = rows.getFirst();
+		boolean issuedLate = run.createdAt().truncatedTo(java.time.temporal.ChronoUnit.SECONDS).isAfter(metAt);
 		if (run.redactedAt() != null || run.payload() == null || !PeerSettingsCodec.validPayloadFraming(run.payload())
 			|| !hash(run.payload()).equals(run.payloadHash()) || run.ackedAt() == null || run.ackRequestKey() == null
 			|| run.ackProofHash() == null || !run.ackProofHash().matches("[0-9a-f]{64}")
-			|| run.ackedAt().isBefore(run.createdAt()) || run.ackedAt().isAfter(metAt)
+			// 키링은 설정을 먼저 적용하고, 앱이 ACK를 서버에 나중에 전한다. 적용 직후 만나면 ACK 도착이 만남보다
+			// 늦을 수 있다. 기록 안의 nonce가 이 실행을 적용했다는 증거라, 시각은 발급이 만남보다 먼저인지만 본다.
+			// 만남 시각은 초 단위라 발급 시각도 초로 내려 비교한다(같은 초에 만난 기록을 막지 않게).
+			|| run.ackedAt().isBefore(run.createdAt()) || issuedLate
 			|| run.capturedAt() == null || run.capturedAt().isAfter(run.createdAt())
 			|| !Arrays.equals(Arrays.copyOfRange(run.payload(), 200, 461), Arrays.copyOf(credential.raw(), 261))
 			|| !Arrays.equals(decode(run.nonce()), Arrays.copyOfRange(credential.raw(), 61, 93))) {
-			throw unresolved();
+			throw unresolved(issuedLate ? "sync-run-issued-after-meeting"
+				: "sync-run-mismatch");
 		}
 		try {
 			String canonical = snapshots.canonicalize(run.inputJson());
 			if (!canonical.equals(run.inputJson()) || !snapshots.hash(canonical).equals(run.inputHash())) {
-				throw unresolved();
+				throw unresolved("settings-snapshot-hash");
 			}
 		} catch (IllegalArgumentException exception) {
-			throw unresolved();
+			throw unresolved("settings-snapshot-hash");
 		}
 		return run.payload();
 	}
@@ -327,7 +348,7 @@ public class Ter2ReceiptService {
 		List<Long> devices = jdbc.query("select id from keyring where id in (?,?) order by id for update",
 			(row, index) -> row.getLong(1), proof.own().deviceId(), peerDevice);
 		if (devices.size() != (proof.own().deviceId() == peerDevice ? 1 : 2)) {
-			throw unresolved();
+			throw unresolved("device-missing");
 		}
 	}
 
@@ -341,7 +362,7 @@ public class Ter2ReceiptService {
 
 	private Scope scope(Credential credential, Instant metAt) {
 		return ownership.findAt(credential.deviceId(), credential.ownerGeneration(), credential.ownershipEpoch(), metAt)
-			.orElseThrow(Ter2ReceiptService::unresolved);
+			.orElseThrow(() -> unresolved("ownership-scope"));
 	}
 
 	private Scope signedScope(Credential credential, Instant metAt) {
@@ -383,7 +404,7 @@ public class Ter2ReceiptService {
 
 	private static void usable(Stored stored) {
 		if (stored.retired() || stored.rawPayload() == null || stored.envelopeHash() == null) {
-			throw unresolved();
+			throw unresolved("stored-retired");
 		}
 	}
 
@@ -392,7 +413,7 @@ public class Ter2ReceiptService {
 		if (issuer == null || expectedServerPublicKeyHex == null
 			|| !expectedServerPublicKeyHex.matches("[0-9a-f]{64}")
 			|| !expectedServerPublicKeyHex.equals(issuer.publicKeyRawHex())) {
-			throw unresolved();
+			throw unresolved("server-key");
 		}
 		return issuer;
 	}
@@ -433,7 +454,9 @@ public class Ter2ReceiptService {
 		}
 	}
 
-	private static BusinessException unresolved() {
+	/** 앱에는 POLICY_UNRESOLVED(보류)만 돌려주므로, 어느 검사에서 보류했는지는 이 로그로만 알 수 있다. */
+	private static BusinessException unresolved(String check) {
+		log.warn("만남 기록 보류 check={}", check);
 		return new BusinessException(ErrorCode.POLICY_UNRESOLVED);
 	}
 
