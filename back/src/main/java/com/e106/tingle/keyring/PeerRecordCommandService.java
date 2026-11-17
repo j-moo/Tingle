@@ -152,14 +152,24 @@ public class PeerRecordCommandService {
 			}
 			return;
 		}
-		if (!"VERIFIED_BOTH".equals(stored.encounterStatus()) || stored.peerUserId() == null) {
+		boolean review = "REVIEW_QUARANTINED".equals(stored.encounterStatus());
+		if (!(review || "VERIFIED_BOTH".equals(stored.encounterStatus())) || stored.peerUserId() == null) {
 			throw error(ErrorCode.POLICY_UNRESOLVED);
 		}
 		long low = Math.min(stored.ownerUserId(), stored.peerUserId());
 		long high = Math.max(stored.ownerUserId(), stored.peerUserId());
 		jdbc.queryForList("select id from matching where user_low_id=? and user_high_id=? order by id for update",
 			Long.class, low, high);
-		Boolean permitted = jdbc.queryForObject("select exists(select 1 from matching m where m.user_low_id=? "
+		// 검토 기록은 매칭 행을 만들지 않는다. 키링이 상대를 반복 만남 방지 목록에서 영영 못 빼지 않도록,
+		// 두 사람 사이에 제안·채팅·응답·차단이 하나도 없을 때만 이탈 후 해제를 허가한다. 이탈 확인은 키링이 한다.
+		Boolean permitted = review ? jdbc.queryForObject("select not exists(select 1 from matching m "
+			+ "where m.user_low_id=? and m.user_high_id=? and (m.status<>'NOT_MATCHED' or m.proposed_at is not null "
+			+ "or exists(select 1 from chat c where c.matching_id=m.id) "
+			+ "or exists(select 1 from matching_participant p where p.matching_id=m.id "
+			+ "and (p.response is not null or p.responded_at is not null or p.blocked_at is not null)))) "
+			+ "and not exists(select 1 from user_block b where (b.owner_id=? and b.target_id=?) "
+			+ "or (b.owner_id=? and b.target_id=?))", Boolean.class, low, high, low, high, high, low)
+			: jdbc.queryForObject("select exists(select 1 from matching m where m.user_low_id=? "
 			+ "and m.user_high_id=? and m.met_at=? and m.status='NOT_MATCHED' and m.proposed_at is null "
 			+ "and not exists(select 1 from chat c where c.matching_id=m.id) "
 			+ "and not exists(select 1 from matching_participant p where p.matching_id=m.id "

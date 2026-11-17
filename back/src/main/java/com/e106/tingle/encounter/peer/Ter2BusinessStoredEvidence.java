@@ -40,7 +40,7 @@ public final class Ter2BusinessStoredEvidence {
 			and d.raw_payload is not null and d.envelope_hash=? and h.valid_from<=?
 			and (h.valid_until is null or h.valid_until>?) and r.state='ACKED'
 			and r.payload_format='tingle-keyring-settings-v3' and r.protocol_version='tingle-device-proof-v2'
-			and r.created_at<=? and r.acked_at>=r.created_at and r.acked_at<=?
+			and date_trunc('second',r.created_at)<=? and r.acked_at>=r.created_at
 			and r.ack_proof_hash is not null and r.ack_request_key is not null
 			and s.redacted_at is null and s.input_hash=? and s.captured_at<=r.created_at
 			and exists(select 1 from keyring_peer_encounter other where other.event_id=d.event_id
@@ -51,7 +51,7 @@ public final class Ter2BusinessStoredEvidence {
 				row.getBytes("payload"), row.getString("payload_hash")), input.settingsSnapshotId(),
 			input.settingsVersion(), input.userId(), input.deviceId(), input.ownerGeneration(), input.submissionId(),
 			input.eventId(), Timestamp.from(metAt), input.proofHash(), Timestamp.from(metAt), Timestamp.from(metAt),
-			Timestamp.from(metAt), Timestamp.from(metAt), input.inputHash());
+			Timestamp.from(metAt), input.inputHash());
 		if (rows.size() != 1) {
 			return false;
 		}

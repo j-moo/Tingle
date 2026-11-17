@@ -143,6 +143,22 @@ class PeerRecordCommandIntegrationTest extends IntegrationTestSupport {
 	}
 
 	@Test
+	void reviewWithAVerifiedPeerCanBeReleasedAfterDepartureUnlessTheyAlreadyHaveARelation() throws Exception {
+		Fixture fixture = fixture("REVIEW_QUARANTINED");
+		JsonNode release = command(fixture, UUID.randomUUID(), "RELEASE_AFTER_DEPARTURE", 200);
+		assertThat(release.path("result").asString()).isEqualTo("RELEASE_AFTER_DEPARTURE");
+		verify(fixture, release);
+		long relation = relation(fixture);
+		command(fixture, UUID.randomUUID(), "RELEASE_AFTER_DEPARTURE", 200);
+		jdbc.update("update matching set proposed_at=? where id=?", Timestamp.from(now), relation);
+		command(fixture, UUID.randomUUID(), "RELEASE_AFTER_DEPARTURE", 422);
+		jdbc.update("update matching set proposed_at=null where id=?", relation);
+		jdbc.update("insert into user_block(id,owner_id,target_id,matching_id,created_at) values (?,?,?,?,?)",
+			UUID.randomUUID(), fixture.peer(), fixture.user(), relation, Timestamp.from(now));
+		command(fixture, UUID.randomUUID(), "RELEASE_AFTER_DEPARTURE", 422);
+	}
+
+	@Test
 	void errorReleaseRequiresAnActualReviewResolutionAndErrorFingerprint() throws Exception {
 		Fixture fixture = fixture("REVIEW_QUARANTINED");
 		byte[] reviewed = fixture.source().rawPayload();

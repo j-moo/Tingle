@@ -202,6 +202,12 @@ class Ter2ReceiptServiceTest {
 		jdbc.update("update settings_snapshot set redacted_at=? where user_id=2", Timestamp.from(metAt.plusSeconds(1)));
 		assertThatThrownBy(() -> service.accept(1, 100, valid)).isInstanceOf(BusinessException.class);
 		jdbc.update("update settings_snapshot set redacted_at=null where user_id=2");
+		jdbc.update("update keyring_sync_run set created_at=?,acked_at=? where keyring_id=101",
+			Timestamp.from(metAt.plusSeconds(1)), Timestamp.from(metAt.plusSeconds(2)));
+		assertThatThrownBy(() -> service.accept(1, 100, valid)).isInstanceOf(BusinessException.class);
+		// 키링이 설정을 적용한 직후 만나 ACK가 만남보다 늦게 도착해도 접수한다.
+		jdbc.update("update keyring_sync_run set created_at=?,acked_at=? where keyring_id=101",
+			Timestamp.from(metAt.plusMillis(700)), Timestamp.from(metAt.plusSeconds(5)));
 		var accepted = service.accept(1, 100, valid);
 		jdbc.update("update keyring_peer_encounter set retired=true,raw_payload=null,envelope_hash=null,"
 			+ "receipt_json=null,peer_credential=null where receipt_id=?", accepted.receiptId());
