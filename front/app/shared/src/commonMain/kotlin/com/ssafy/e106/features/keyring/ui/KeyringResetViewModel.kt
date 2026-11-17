@@ -121,7 +121,7 @@ class KeyringResetViewModel(private val recovery: KeyringResetRecovery, private 
                 else -> KeyringResetStage.Unknown
             }, deviceLabel = "#${ticket.deviceId}",
             connected = connected, deviceResetConfirmed = completed || ticket.ack != null, ownershipReleased = completed,
-            resumeSerial = ticket.serial.takeIf { waiting }, waitTick = if (waiting) tick + 1 else tick)
+            resumeSerial = ticket.serial.takeIf { waiting }, waitTick = if (waiting) tick + 1 else tick, runCreated = ticket.run != null)
     }
     private fun execute(stage: KeyringResetStage, action: suspend (Long, Long) -> Unit) {
         val owner = (sessions.state.value as? Session.SignedIn)?.userId ?: return
@@ -141,13 +141,15 @@ class KeyringResetViewModel(private val recovery: KeyringResetRecovery, private 
                 val current = pending
                 val waiting = current?.ack == null && current?.run != null &&
                     (failure as? BleException)?.reason in RECONNECTABLE
-                // 저장된 실행이 없으면 아무것도 시작하지 않은 실패다. 실행이 있으면 결과 미확인이다(실패 · 원상복구로 표시하지 않는다)
+                // 저장된 요청이 없거나, 실행이 생기기 전 서버가 시작 요청을 명시적으로 거절(4xx)했으면 실패다.
+                // 그 밖에는 결과 미확인이다(실패 · 원상복구로 표시하지 않는다). 다시 시도는 저장된 같은 키 · 본문으로 다시 보낸다
+                val rejected = ((failure as? ResetApiException)?.error as? AppError.Server)?.status in 400..499
                 mutable.update { it.copy(stage = when {
                         current?.ack != null -> KeyringResetStage.Partial
                         waiting -> KeyringResetStage.Waiting
-                        current == null -> KeyringResetStage.Failed
+                        current == null || (current.run == null && rejected) -> KeyringResetStage.Failed
                         else -> KeyringResetStage.Unknown
-                    },
+                    }, runCreated = current?.run != null,
                     deviceResetConfirmed = current?.ack != null,
                     resumeSerial = current?.serial?.takeIf { waiting }, waitTick = if (waiting) it.waitTick + 1 else it.waitTick,
                     errorMessage = if (waiting) null else (failure as? ResetApiException)?.error?.message) }

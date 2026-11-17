@@ -26,13 +26,16 @@ data class KeyringResetState(
     val resumeSerial: String? = null,
     // Waiting 이 다시 설정될 때마다 올린다(같은 연결에서 키링이 아직 PENDING 이면 잠시 뒤 다시 조회하게)
     val waitTick: Int = 0,
+    // 서버가 초기화 실행을 만들었다(실행 ID 있음). Unknown 안내를 실행 결과 미확인 / 시작 요청 미확인으로 나눈다
+    val runCreated: Boolean = false,
 ) {
     val displayStage: KeyringResetStage get() = when {
         stage == KeyringResetStage.Complete && !(deviceResetConfirmed && ownershipReleased) -> KeyringResetStage.Unknown
         stage == KeyringResetStage.Partial && !deviceResetConfirmed -> KeyringResetStage.Unknown
-        stage in listOf(KeyringResetStage.Ready, KeyringResetStage.Confirm, KeyringResetStage.Failed) &&
+        // 실패(Failed)는 연결 · 소유 확인과 무관하게 실패와 "다시 시도"로 보인다(다시 시도가 저장된 요청부터 다시 판정한다)
+        stage in listOf(KeyringResetStage.Ready, KeyringResetStage.Confirm) &&
             (!ownershipConfirmed || deviceLabel.isNullOrBlank()) -> KeyringResetStage.Unavailable
-        stage in listOf(KeyringResetStage.Ready, KeyringResetStage.Confirm, KeyringResetStage.Failed) && !connected -> KeyringResetStage.Disconnected
+        stage in listOf(KeyringResetStage.Ready, KeyringResetStage.Confirm) && !connected -> KeyringResetStage.Disconnected
         else -> stage
     }
     val busy: Boolean get() = displayStage in listOf(KeyringResetStage.Loading, KeyringResetStage.Preparing,

@@ -59,8 +59,8 @@ class KeyringResetViewModelTest {
                 f.server.ownershipFailure = AppError.Offline
                 m.start(f.board); runCurrent()
             }
-            // 실행 기록이 없으면 결과 미확인이 아니라 시작하지 못한 것이다
-            assertTrue(m.state.value.displayStage in setOf(KeyringResetStage.Unavailable, KeyringResetStage.Failed))
+            // 첫 조회 실패 · 시작 직전 재조회 실패 모두 저장된 요청이 없어 결과 미확인이 아니라 실패다
+            assertEquals(KeyringResetStage.Failed, m.state.value.displayStage, "failBeforeConfirm=$failBeforeConfirm")
             assertTrue(f.server.starts.isEmpty()); assertTrue(f.store.read(1).isEmpty())
             f.server.ownershipFailure = null
             m.recover(f.board); runCurrent(); m.accepted(true)
@@ -197,5 +197,18 @@ class KeyringResetViewModelTest {
         assertTrue(f.server.acknowledgements.isEmpty()); assertEquals(1, f.store.read(1).size)
         f.session.state.value = Session.SignedIn(2, OnboardingStatus.READY, false); runCurrent()
         assertNull(m.state.value.deviceLabel)
+    }
+    /** 실행이 생기기 전 서버가 시작 요청을 거절(4xx)하면 실패로 보이고, 다시 시도는 저장된 같은 키 · 본문으로 다시 보낸다. */
+    @Test fun rejectedStartBeforeRunIsFailedAndRetryReplaysSameRequest() = runTest(dispatcher) {
+        val f = ResetFixture(); f.seed(run = null)
+        val m = model(f); m.load(resetRun.deviceId, true, resetSerial); runCurrent()
+        assertEquals(KeyringResetStage.Unknown, m.state.value.displayStage); assertFalse(m.state.value.runCreated)
+        f.server.startAction = { ApiResult.Fail(AppError.Server(409, "IDEMPOTENCY_CONFLICT", "")) }
+        m.recover(f.board); runCurrent()
+        assertEquals(KeyringResetStage.Failed, m.state.value.displayStage)
+        f.server.startAction = { ApiResult.Ok(f.server.run) }
+        m.recover(f.board); runCurrent()
+        assertEquals(KeyringResetStage.Complete, m.state.value.displayStage)
+        assertEquals(1, f.server.starts.map { it.first }.distinct().size); assertEquals(2, f.server.starts.size)
     }
 }

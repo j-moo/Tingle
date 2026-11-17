@@ -88,7 +88,7 @@ fun KeyringResetScreen(state: KeyringResetState, onAccepted: (Boolean) -> Unit, 
                         }
                         // 완료: 상태 화면(제목 한 줄) + 아래 "확인"
                         phase == KeyringResetStage.Complete -> StateView(StateKind.Done, stringResource(Res.string.reset_done))
-                        phase == KeyringResetStage.Disconnected && state.stage != KeyringResetStage.Failed -> {
+                        phase == KeyringResetStage.Disconnected -> {
                             KeyringPebble(Modifier.size(96.dp).alpha(0.45f))
                             ResetHeadline(stringResource(Res.string.reset_disconnected), stringResource(Res.string.reset_disconnected_help))
                         }
@@ -98,7 +98,8 @@ fun KeyringResetScreen(state: KeyringResetState, onAccepted: (Boolean) -> Unit, 
                             val (title, help) = when (phase) {
                                 KeyringResetStage.Unavailable -> Res.string.reset_unavailable to Res.string.reset_unavailable_help
                                 KeyringResetStage.Partial -> Res.string.reset_partial to Res.string.reset_partial_help
-                                KeyringResetStage.Unknown -> Res.string.reset_unconfirmed to Res.string.reset_unconfirmed_help
+                                KeyringResetStage.Unknown -> if (state.runCreated) Res.string.reset_unconfirmed to Res.string.reset_unconfirmed_help
+                                    else Res.string.reset_start_unconfirmed to Res.string.reset_start_unconfirmed_help
                                 else -> Res.string.reset_failed to Res.string.reset_failed_help
                             }
                             StateView(StateKind.Unknown, stringResource(title))
@@ -113,7 +114,7 @@ fun KeyringResetScreen(state: KeyringResetState, onAccepted: (Boolean) -> Unit, 
                     KeyringResetStage.Ready, KeyringResetStage.Confirm -> if (state.pendingRecordCount != null && state.pendingRecordCount > 0 &&
                         state.recordChoice == ResetRecordChoice.UploadFirst) KeyringResetAction.UploadRecords else KeyringResetAction.StartReset
                     KeyringResetStage.Disconnected -> KeyringResetAction.CheckConnection
-                    // 결과 확인 화면은 없다. 앱이 자동으로 마저 하고, 그래도 안 되면 "다시 시도"로 같은 확인을 다시 한다
+                    // 결과 확인 화면은 없다. 앱이 자동으로 마저 하고, 그래도 안 되면 "다시 확인"으로 같은 실행을 다시 확인한다
                     KeyringResetStage.Partial, KeyringResetStage.Unknown -> KeyringResetAction.CheckResult
                     KeyringResetStage.Failed -> KeyringResetAction.Retry
                     KeyringResetStage.Unavailable -> KeyringResetAction.Refresh
@@ -124,7 +125,7 @@ fun KeyringResetScreen(state: KeyringResetState, onAccepted: (Boolean) -> Unit, 
                     KeyringResetAction.UploadRecords -> if (state.recordUploadAvailable) Res.string.reset_records_upload
                         else Res.string.reset_records_preparing
                     KeyringResetAction.CheckConnection -> Res.string.reset_connect
-                    // 다시 하는 동작의 이름은 모두 "다시 시도", 완료는 "확인"
+                    // 같은 실행의 결과 확인은 "다시 확인", 실패 · 조회 실패의 재시도는 "다시 시도", 완료는 "확인"
                     KeyringResetAction.CheckResult -> Res.string.reset_check_again
                     KeyringResetAction.Retry, KeyringResetAction.Refresh -> Res.string.reset_retry
                     else -> Res.string.reset_close

@@ -25,7 +25,7 @@ import org.koin.compose.viewmodel.koinViewModel
     LaunchedEffect(link.connected, link.info?.serial) { model.connectionChanged(link.connected && link.info != null, link.info?.serial) }
     // 키링이 연결돼 있지 않으면 따로 안내하지 않고 키링 연결 화면으로 보낸다(연결되면 호스트가 다시 이 화면으로 돌려보낸다)
     // 시작 전(확인 화면)만 바로 보낸다. 진행하다 실패하고 끊긴 경우는 실패를 먼저 보여준다(버튼으로 연결)
-    val needConnection = state.displayStage == KeyringResetStage.Disconnected && state.stage != KeyringResetStage.Failed
+    val needConnection = state.displayStage == KeyringResetStage.Disconnected
     LaunchedEffect(needConnection) { if (needConnection) onConnect() }
     val connection = link.connected to link.info?.serial
     // 결과 대기: 같은 일련번호의 키링에 다시 연결되면 결과(완료 증명)를 읽고, 아니면 그 키링을 다시 찾는다.
