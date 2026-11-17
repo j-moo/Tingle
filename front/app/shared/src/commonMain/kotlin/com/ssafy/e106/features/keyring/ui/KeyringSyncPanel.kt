@@ -355,10 +355,11 @@ import org.koin.compose.viewmodel.koinViewModel
             SyncPhase.ApplyFailed -> Res.string.sync_apply_failed
             SyncPhase.ApplyFirmwareRequired -> Res.string.sync_apply_firmware
             SyncPhase.ApplyConfirmed -> Res.string.sync_apply_confirmed
+            SyncPhase.RecoveryVersionRequired -> Res.string.sync_recovery_version
         }), style = MaterialTheme.typography.bodyLarge, textAlign = TextAlign.Center)
         val settled = item.phase in setOf(SyncPhase.Confirmed, SyncPhase.ApplyConfirmed)
-        // 사용자가 고른 설정과 지금 연결한 키링에 남은 설정이 다르면 따로 알린다
-        if (!settled && item.boardVersion != null && item.chosenVersion != null && item.boardVersion != item.chosenVersion)
+        // 사용자가 고른 설정과 지금 연결한 키링에 남은 설정이 다르면 보내는 동안에만 따로 알린다
+        if (item.phase in setOf(SyncPhase.Issuing, SyncPhase.Sending) && item.boardVersion != null && item.chosenVersion != null && item.boardVersion != item.chosenVersion)
             Text(stringResource(Res.string.sync_board_behind), color = AppColors.TextSecondary, textAlign = TextAlign.Center)
         // 매칭 준비는 이 연결에서 키링이 직접 보고한 값만 쓴다. 모르면 준비로 보이지 않는다
         val readiness = item.readiness.takeIf { settled }
@@ -368,6 +369,7 @@ import org.koin.compose.viewmodel.koinViewModel
             KeyringMatchReadiness.MatchingOff -> Res.string.sync_ready_off
             KeyringMatchReadiness.SignupPending -> Res.string.sync_ready_signup
             KeyringMatchReadiness.Restricted -> Res.string.sync_ready_restricted
+            KeyringMatchReadiness.StorageError -> Res.string.sync_ready_storage
             KeyringMatchReadiness.Unknown -> Res.string.sync_ready_unknown
         }), color = AppColors.TextSecondary, textAlign = TextAlign.Center)
         else if (item.phase == SyncPhase.Confirmed && item.confirmedTsv3Version == null && (item.applied == false || item.timeReady == false))
@@ -377,7 +379,7 @@ import org.koin.compose.viewmodel.koinViewModel
         if (item.phase in setOf(SyncPhase.ApplyRetry, SyncPhase.ApplyFailed, SyncPhase.ApplyConfirmed))
             AppButton(stringResource(Res.string.sync_apply_retry_button), full, enabled = !state.busy, onClick = { retry(item.deviceId) })
         if (item.phase == SyncPhase.Stale) AppButton(stringResource(Res.string.sync_live_latest), full, enabled = !state.busy, onClick = { latest(item.deviceId) })
-        else if (item.phase in setOf(SyncPhase.Failed, SyncPhase.PolicyWaiting, SyncPhase.WaitingConnection))
+        else if (item.phase in setOf(SyncPhase.Failed, SyncPhase.PolicyWaiting, SyncPhase.WaitingConnection, SyncPhase.RecoveryVersionRequired))
             AppButton(stringResource(Res.string.sync_live_retry), full, enabled = !state.busy, onClick = { retry(item.deviceId) })
     }
 }

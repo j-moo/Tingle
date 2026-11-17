@@ -19,6 +19,8 @@ import kotlin.time.Duration.Companion.seconds
 enum class SyncPhase {
     WaitingStage, Issuing, WaitingConnection, Sending, Stored, Confirming, Confirmed, PolicyWaiting, Stale, Failed,
     ApplyChecking, ApplyWaitingConnection, ApplyConfirming, ApplyRetry, ApplyFailed, ApplyFirmwareRequired, ApplyConfirmed,
+    // 설정 복구 중인 보드는 저장된 버전 이하를 거부한다. 서버의 더 높은 버전이 필요하다.
+    RecoveryVersionRequired,
 }
 data class KeyringSyncProgress(val deviceId: Long, val phase: SyncPhase, val error: AppError? = null,
     val applied: Boolean? = null, val timeReady: Boolean? = null, val serial: String? = null,
@@ -71,6 +73,8 @@ class KeyringSyncViewModel(private val api: KeyringSyncRepository, private val s
     private val boards = mutableMapOf<Long, BleDeviceInfo>()
     private val readiness = mutableMapOf<Long, KeyringMatchReadiness>()
     private val chosen = mutableMapOf<Long, Long>()
+    // 보드가 SETTINGS_RECOVERY_REQUIRED로 거부한 버전·해시. 사용자 재시도나 서버 버전 변경 전에는 자동 재전송하지 않는다.
+    private val recoveryBlocked = mutableMapOf<Long, Pair<Long, String>>()
     private var observedRevision = 0L
     // 인터넷 사용 가능 신호는 전송 성공 보장이 아니다. 복원 전환마다 한 번만 Offline 실패를 깨운다.
     private var networkAvailable: Boolean? = null
@@ -107,7 +111,7 @@ class KeyringSyncViewModel(private val api: KeyringSyncRepository, private val s
             if (owner != mutable.value.owner) {
                 cancelWork(); boardSerial = null; transmit = null; challenge = null; readApplied = null; readDeviceInfo = null
                 mutable.value = KeyringSyncState(owner)
-                delivered.clear(); nonceBindings.clear(); serials.clear(); boards.clear(); readiness.clear(); chosen.clear()
+                delivered.clear(); nonceBindings.clear(); serials.clear(); boards.clear(); readiness.clear(); chosen.clear(); recoveryBlocked.clear()
             }
             if (revision != observedRevision) { observedRevision = revision; attempted.clear() }
             if (session != observed) {
@@ -176,8 +180,8 @@ class KeyringSyncViewModel(private val api: KeyringSyncRepository, private val s
         manualChecks.clear()
         mutable.update { it.copy(busy = false) }
     }
-    fun retry(deviceId: Long) { attempted.remove(deviceId); drive() }
-    fun retryRecovery() { attempted.clear(); drive() }
+    fun retry(deviceId: Long) { attempted.remove(deviceId); recoveryBlocked.remove(deviceId); drive() }
+    fun retryRecovery() { attempted.clear(); recoveryBlocked.clear(); drive() }
 
     /** 이전 APK에서 등록한 기기는 serial이 서버 목록에 없다. 사용자가 연결 기기와 번호를 명시적으로 선택한다.
      * 이 대응은 전송 경로일 뿐 소유 인증이 아니다. 서버의 소유 검사와 보드 keyId/저장 서명이 최종 검증한다. */
@@ -194,7 +198,7 @@ class KeyringSyncViewModel(private val api: KeyringSyncRepository, private val s
                 check(items.any { it.deviceId == deviceId && it.deviceSerial == serial })
                 store.selectTarget(owner, deviceId, serial); ensure(owner, stamp)
                 if (checkLatest) manualChecks.add(deviceId)
-                attempted.remove(deviceId)
+                attempted.remove(deviceId); recoveryBlocked.remove(deviceId)
                 ok = true
             } catch (c: CancellationException) { throw c }
             catch (_: Exception) { if (stamp == generation) mutable.update { it.copy(recoveryFailed = true) } }
@@ -216,7 +220,7 @@ class KeyringSyncViewModel(private val api: KeyringSyncRepository, private val s
             try {
                 val previous = store.read(owner).first { it.deviceId == deviceId }; ensure(owner, stamp)
                 store.save(owner, SyncTicket(deviceId, previous.serial, Uuid.random().toString())); ensure(owner, stamp)
-                attempted.remove(deviceId)
+                attempted.remove(deviceId); recoveryBlocked.remove(deviceId)
                 ok = true
             } catch (c: CancellationException) { throw c }
             catch (_: Exception) { if (stamp == generation) mutable.update { it.copy(recoveryFailed = true) } }
@@ -255,6 +259,7 @@ class KeyringSyncViewModel(private val api: KeyringSyncRepository, private val s
                         val applying = phase in setOf(SyncPhase.ApplyChecking, SyncPhase.ApplyConfirming, SyncPhase.ApplyConfirmed)
                         log("stopped device=${ticket.deviceId} step=${phase?.let(::stepName)} code=${code ?: failure::class.simpleName}")
                         show(ticket.deviceId, when {
+                            code == "SETTINGS_RECOVERY_REQUIRED" -> SyncPhase.RecoveryVersionRequired
                             applying && code in setOf("SETTINGS_APPLIED_UNSUPPORTED", "UNKNOWN_COMMAND", "UNSUPPORTED_COMMAND", "UNSUPPORTED_TYPE") ->
                                 SyncPhase.ApplyFirmwareRequired
                             applying && code == "SETTINGS_APPLY_FAILED" -> SyncPhase.ApplyFailed
@@ -301,6 +306,19 @@ class KeyringSyncViewModel(private val api: KeyringSyncRepository, private val s
         // 서버의 가입·설정 상태가 바뀌었더라도 최초 키로 결과를 확인해야 한다.
         if (ticket.complete && ticket.appliedProof != null && ticket.needsAppliedConfirmation()) {
             finishApplied(owner, stamp, ticket, ::renewOrShowStale)
+            return
+        }
+        // 복구 중 보드가 거부한 같은 버전은 새 challenge·발급·BLE 없이 서버 버전이 바뀌었는지만 확인한다.
+        val blockedIdentity = ticket.identity
+        if (blockedIdentity != null && ticket.ack == null && !ticket.complete &&
+            recoveryBlocked[id] == blockedIdentity.settingsVersion to blockedIdentity.payloadHash) {
+            val current = api.get(id, blockedIdentity.syncRunId); ensure(owner, stamp)
+            if (current.isStaleRejection() || (current as? ApiResult.Ok)?.value?.stale == true) {
+                recoveryBlocked.remove(id); renewOrShowStale()
+            } else {
+                log("recovery-blocked device=$id version=${blockedIdentity.settingsVersion}")
+                show(id, SyncPhase.RecoveryVersionRequired)
+            }
             return
         }
         // 저장 증명이 있으면 BLE를 다시 건드리지 않고 GET/동일 ACK로 복구한다.
@@ -402,7 +420,11 @@ class KeyringSyncViewModel(private val api: KeyringSyncRepository, private val s
             store.save(owner, ticket); ensure(owner, stamp)
             show(id, SyncPhase.Sending)
             log("ble-send device=$id version=${run.settingsVersion}")
-            result = send(run); ensure(owner, stamp)
+            result = try { send(run) } catch (failure: BleCommandException) {
+                if (failure.code == "SETTINGS_RECOVERY_REQUIRED") recoveryBlocked[id] = run.settingsVersion to run.payloadHash
+                throw failure
+            }
+            ensure(owner, stamp)
             // 보드 상태가 바뀌었으므로 이전 관측값을 버린다. 적용 확인 뒤 다시 읽는다.
             boards.remove(id); readiness.remove(id)
             check(result.ack.settingsVersion == run.settingsVersion && result.ack.payloadHash == run.payloadHash &&
