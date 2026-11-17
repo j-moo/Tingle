@@ -44,6 +44,7 @@ import com.ssafy.e106.core.ble.rememberBlePermission
 import com.ssafy.e106.core.ui.theme.AppColors
 import com.ssafy.e106.core.ui.theme.AppSpacing
 import com.ssafy.e106.core.ui.theme.screenGutter
+import com.ssafy.e106.features.keyring.data.KeyringMatchReadiness
 import com.ssafy.e106.features.keyring.data.OwnedKeyring
 import com.ssafy.e106.features.profile.ui.ProfileBackHandler
 import com.ssafy.e106.resources.*
@@ -355,7 +356,21 @@ import org.koin.compose.viewmodel.koinViewModel
             SyncPhase.ApplyFirmwareRequired -> Res.string.sync_apply_firmware
             SyncPhase.ApplyConfirmed -> Res.string.sync_apply_confirmed
         }), style = MaterialTheme.typography.bodyLarge, textAlign = TextAlign.Center)
-        if (item.phase == SyncPhase.Confirmed && item.confirmedTsv3Version == null && (item.applied == false || item.timeReady == false))
+        val settled = item.phase in setOf(SyncPhase.Confirmed, SyncPhase.ApplyConfirmed)
+        // 사용자가 고른 설정과 지금 연결한 키링에 남은 설정이 다르면 따로 알린다
+        if (!settled && item.boardVersion != null && item.chosenVersion != null && item.boardVersion != item.chosenVersion)
+            Text(stringResource(Res.string.sync_board_behind), color = AppColors.TextSecondary, textAlign = TextAlign.Center)
+        // 매칭 준비는 이 연결에서 키링이 직접 보고한 값만 쓴다. 모르면 준비로 보이지 않는다
+        val readiness = item.readiness.takeIf { settled }
+        if (readiness != null) Text(stringResource(when (readiness) {
+            KeyringMatchReadiness.Ready -> Res.string.sync_ready_match
+            KeyringMatchReadiness.NotApplied -> Res.string.sync_live_not_applied
+            KeyringMatchReadiness.MatchingOff -> Res.string.sync_ready_off
+            KeyringMatchReadiness.SignupPending -> Res.string.sync_ready_signup
+            KeyringMatchReadiness.Restricted -> Res.string.sync_ready_restricted
+            KeyringMatchReadiness.Unknown -> Res.string.sync_ready_unknown
+        }), color = AppColors.TextSecondary, textAlign = TextAlign.Center)
+        else if (item.phase == SyncPhase.Confirmed && item.confirmedTsv3Version == null && (item.applied == false || item.timeReady == false))
             Text(stringResource(Res.string.sync_live_not_applied), color = AppColors.TextSecondary, textAlign = TextAlign.Center)
         if (item.phase == SyncPhase.Failed) item.error?.let { Text(it.message, color = MaterialTheme.colorScheme.error, textAlign = TextAlign.Center) }
         if (item.phase == SyncPhase.ApplyRetry) item.error?.let { Text(it.message, color = MaterialTheme.colorScheme.error, textAlign = TextAlign.Center) }

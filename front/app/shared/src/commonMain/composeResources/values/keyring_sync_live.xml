@@ -34,4 +34,11 @@
     <string name="sync_pick_empty">내 키링 목록에 없어요</string>
     <string name="sync_pick_empty_help">다른 계정의 키링이라면 그 계정에서 초기화한 뒤 다시 등록해 주세요.</string>
     <string name="sync_pick_confirm">선택한 키링으로 맞추기</string>
+    <!-- 사용자가 고른 설정과 키링이 실제로 적용한 상태를 구분한다 -->
+    <string name="sync_board_behind">선택한 설정이 아직 키링에 적용되지 않았어요. 연결되어 있으면 이어서 보내요.</string>
+    <string name="sync_ready_match">키링이 매칭할 준비가 됐어요.</string>
+    <string name="sync_ready_off">매칭이 꺼져 있어요. 키링은 설정을 적용했지만 매칭은 하지 않아요.</string>
+    <string name="sync_ready_signup">가입을 마치면 키링이 매칭을 시작해요.</string>
+    <string name="sync_ready_restricted">키링이 지금은 매칭을 시작할 수 없어요. 잠시 후 다시 확인해 주세요.</string>
+    <string name="sync_ready_unknown">키링의 매칭 준비 상태를 확인하지 못했어요.</string>
 </resources>

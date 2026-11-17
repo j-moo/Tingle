@@ -40,10 +40,42 @@ data class BleOwnerFlowStatus(
     val batteryPercentSource: String? = null,
     val batteryPresence: String? = null,
     val powerSource: String? = null,
+    // 생략은 기존 동작(복구 불필요)이다. true일 때만 같은 버전이라도 새 서명 동기화가 필요하다.
+    val settingsRecoveryRequired: Boolean? = null,
 ) {
     // 모순된 보고를 준비 완료로 합성하지 않고 사용자가 다시 조회할 수 있게 알린다.
     val readinessConflict: Boolean get() = matchingReady == true &&
         (applied == false || timeReady == false || records?.unresolvedAccountLockCount?.let { it > 0 } == true)
+}
+
+/** 사용자에게 보이는 매칭 준비 상태. 현재 연결에서 읽지 못했거나 값이 없으면 Unknown이며 준비로 보지 않는다. */
+enum class KeyringMatchReadiness { Ready, NotApplied, MatchingOff, SignupPending, Restricted, Unknown }
+
+/** 재연결 때 현재 보드에서 새로 읽은 DEVICE_INFO로 재전송 여부와 준비 상태를 정한다. */
+internal object KeyringBoardSync {
+    /** 저장 버전·해시·소유 순번이 같아도 재부팅 뒤 미적용·시간 미확보·설정 복구면 새 challenge로 다시 보낸다.
+     * matchingReady=false는 매칭 OFF·가입 전에도 정상이므로 재전송 조건이 아니다. */
+    fun needsResync(info: BleDeviceInfo, run: KeyringSyncRun): Boolean {
+        val board = info.readiness
+        if ((run.ownershipEpoch != null && info.ownershipEpoch != run.ownershipEpoch) ||
+            info.ownerFlow.keyId?.let { it != run.keyId } == true ||
+            info.storedSettingsVersion != run.settingsVersion || info.storedPayloadHash != run.payloadHash ||
+            board.settingsRecoveryRequired == true) return true
+        // 이전 ON/OFF·196B 형식은 두 플래그를 적용 판단에 쓰지 않는다(시험 빌드는 항상 false). TSV3만 대조한다.
+        return run.payloadFormat == BleOwnerFlowInfo.FULL_SETTINGS_FORMAT && (board.applied != true || board.timeReady != true)
+    }
+
+    /** matchingReady=false는 사용자의 OFF 선택, 가입 미완료, 그 밖의 보드 제한을 구분한다. 서버 설정을 모르면 Unknown이다. */
+    fun readiness(board: BleOwnerFlowStatus?, matchingEnabled: Boolean?, signupPending: Boolean): KeyringMatchReadiness = when {
+        board == null || board.applied == null || board.timeReady == null || board.matchingReady == null ||
+            board.readinessConflict -> KeyringMatchReadiness.Unknown
+        board.applied == false || board.timeReady == false || board.settingsRecoveryRequired == true -> KeyringMatchReadiness.NotApplied
+        board.matchingReady == true -> KeyringMatchReadiness.Ready
+        matchingEnabled == false -> KeyringMatchReadiness.MatchingOff
+        signupPending -> KeyringMatchReadiness.SignupPending
+        matchingEnabled == true -> KeyringMatchReadiness.Restricted
+        else -> KeyringMatchReadiness.Unknown
+    }
 }
 
 /** 신형 응답의 확정 기록과 검토용 기록 모두 전송 대상이다. 후보나 일부 집계만으로 총량을 추정하지 않는다. */
@@ -86,6 +118,6 @@ internal object BleOwnerFlowProtocol {
             flag(value, "applied"), flag(value, "timeReady"), flag(value, "matchingReady"), number(value, "storedSettingsVersion"),
             choice(value, "batteryPercentSource", setOf("VOLTAGE_ESTIMATE", "FUEL_GAUGE", "UNKNOWN")),
             choice(value, "batteryPresence", setOf("PRESENT", "ABSENT", "UNCONFIRMED")),
-            choice(value, "powerSource", setOf("USB", "USB_ABSENT", "UNKNOWN")))
+            choice(value, "powerSource", setOf("USB", "USB_ABSENT", "UNKNOWN")), flag(value, "settingsRecoveryRequired"))
     }
 }

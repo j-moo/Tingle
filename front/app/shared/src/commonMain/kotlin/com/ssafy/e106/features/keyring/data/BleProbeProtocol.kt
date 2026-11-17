@@ -54,7 +54,8 @@ internal object BleProbeProtocol {
             epoch, owner, versions, value.string("resetContractVersion"), functions, profileInfo(value), BleOwnerFlowProtocol.info(value),
             number(value, "storedSettingsVersion")?.takeIf { it > 0 },
             value.string("storedPayloadHash")?.takeIf { it.matches(Regex("[0-9a-f]{64}")) },
-            number(value, "maxPublicNameBytes")?.takeIf { it in 1..KeyringPublicNameProtocol.MaxBytes.toLong() }?.toInt())
+            number(value, "maxPublicNameBytes")?.takeIf { it in 1..KeyringPublicNameProtocol.MaxBytes.toLong() }?.toInt(),
+            BleOwnerFlowProtocol.status(value))
     }
 
     /** 구형 필드 생략은 미확인이다. 문자열 true/숫자 문자열/잘못된 배열을 지원 성공으로 보정하지 않는다. */
@@ -106,7 +107,9 @@ data class BleDeviceInfo(val serial: String, val firmware: String, val supportsS
     val profileStorage: BleProfileStorageInfo = BleProfileStorageInfo(),
     val ownerFlow: BleOwnerFlowInfo = BleOwnerFlowInfo(),
     val storedSettingsVersion: Long? = null, val storedPayloadHash: String? = null,
-    val maxPublicNameBytes: Int? = null) {
+    val maxPublicNameBytes: Int? = null,
+    // DEVICE_INFO의 applied/timeReady/matchingReady/settingsRecoveryRequired. 생략·타입 오류는 null(미확인)이다.
+    val readiness: BleOwnerFlowStatus = BleOwnerFlowStatus()) {
     // 이름 공개는 별도 기능이다. 저장·해제·조회 명령과 최대 길이를 모두 확인한다.
     internal val supportsPublicName get() = maxPublicNameBytes != null &&
         supportedFunctions.containsAll(KeyringPublicNameCommand.entries.map { it.wireName })
