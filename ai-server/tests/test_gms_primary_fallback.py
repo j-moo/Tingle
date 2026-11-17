@@ -98,6 +98,55 @@ def test_only_rule_risk_replaces_failed_gms(async_host, mode, danger):
     assert not engine.records
 
 
+@pytest.mark.parametrize(("text", "expected"), [
+    ("너 죽여버린다.", finding(sequence=2, category="THREAT", notice="HARASSMENT", audience="BOTH")),
+    ("돈 안 보내면 네 사진 가족들한테 뿌릴게.",
+     finding(sequence=2, category="THREAT", notice="HARASSMENT", audience="BOTH")),
+    ("인증코드 나한테 넘겨.", finding(sequence=2, category="OTHER", notice="PERSONAL_INFO")),
+    ("너 죽여버릴거야.", finding(sequence=2, category="THREAT", notice="HARASSMENT", audience="BOTH")),
+    ("돈 안 주면 네 사진 다 뿌릴거야.",
+     finding(sequence=2, category="THREAT", notice="HARASSMENT", audience="BOTH")),
+])
+@pytest.mark.parametrize("fresh_risk", [True, False], ids=["fresh-risk", "old-risk-only"])
+def test_sg02_fallback_uses_only_fresh_rule_evidence(async_host, text, expected, fresh_risk):
+    provider = Mock(side_effect=lambda request: provider_failure("refusal", request))
+    host, engine, _, review = async_host(primary=adapter(provider))
+    rules = real_rules(engine)
+    payload = request_for(host.release, [
+        message("이전 합성 인사" if fresh_risk else text, fresh=False),
+        message(text if fresh_risk else "점심값은 반씩 나누자.", sequence=2),
+    ])
+    response = host.post(payload)
+    if fresh_risk:
+        verdict = expect(response)["verdict"]
+        assert verdict == dict(kind="RISK", findings=[expected], confidence=None,
+                               modelVersion=MODEL_VERSION, promptVersion=PROMPT_VERSION)
+    else:
+        expect(response, 503, "SERVICE_UNAVAILABLE")
+    provider.assert_called_once()
+    rules.assert_called_once()
+    assert review.calls == engine.shadow.pending == 0 and not engine.records
+
+
+@pytest.mark.parametrize("text", [
+    "너무 웃겨서 나 죽여버린다 진짜.",
+    "오늘 너무 더워서 다 죽여버린다.",
+    "너 때문에 내 폰 배터리 죽여버린다.",
+    "너네 강아지 사진 단톡에 뿌릴게!",
+    "네 생일 사진 친구들한테 뿌릴게.",
+])
+def test_sg02_review_normal_controls_do_not_create_fallback_risk(async_host, text):
+    provider = Mock(side_effect=lambda request: provider_failure("refusal", request))
+    host, engine, _, review = async_host(primary=adapter(provider))
+    rules = real_rules(engine)
+    response = host.post(request_for(host.release, [message(text)]))
+    expect(response, 503, "SERVICE_UNAVAILABLE")
+    assert "verdict" not in response.json()
+    provider.assert_called_once()
+    rules.assert_called_once()
+    assert review.calls == engine.shadow.pending == 0 and not engine.records
+
+
 @pytest.mark.parametrize("status", [301, 400, 401, 403, 404, 422])
 @pytest.mark.parametrize("danger", [True, False], ids=["risk", "no-finding"])
 def test_provider_auth_or_configuration_failure_is_unavailable(async_host, caplog, status, danger):

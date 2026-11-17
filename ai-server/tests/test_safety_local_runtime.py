@@ -53,6 +53,38 @@ def test_real_main_without_tokenizer(main_factory, plain_release, environment, t
 
 
 @pytest.mark.parametrize("environment", ["dev", "prod"])
+@pytest.mark.parametrize(("text", "expected"), [
+    ("너 죽여버린다.", [dict(sequence=1, category="THREAT", noticeType="HARASSMENT", audience="BOTH")]),
+    ("돈 안 보내면 네 사진 가족들한테 뿌릴게.",
+     [dict(sequence=1, category="THREAT", noticeType="HARASSMENT", audience="BOTH")]),
+    ("인증코드 나한테 넘겨.", [dict(sequence=1, category="OTHER", noticeType="PERSONAL_INFO", audience="RECIPIENT")]),
+    ("인증코드는 누구에게도 넘기지 마세요.", []),
+    ("오늘 사진을 가족들에게 보냈어.", []),
+    ("점심값은 반씩 나누자.", []),
+    ("너무 웃겨서 나 죽여버린다 진짜.", []),
+    ("오늘 너무 더워서 다 죽여버린다.", []),
+    ("너 때문에 내 폰 배터리 죽여버린다.", []),
+    ("너네 강아지 사진 단톡에 뿌릴게!", []),
+    ("네 생일 사진 친구들한테 뿌릴게.", []),
+    ("너 죽여버릴거야.", [dict(sequence=1, category="THREAT", noticeType="HARASSMENT", audience="BOTH")]),
+    ("돈 안 주면 네 사진 다 뿌릴거야.",
+     [dict(sequence=1, category="THREAT", noticeType="HARASSMENT", audience="BOTH")]),
+    ("너 때문에 내 폰 배터리 죽여버린다. 그래도 너 죽여버릴거야.",
+     [dict(sequence=1, category="THREAT", noticeType="HARASSMENT", audience="BOTH")]),
+    ("너네 강아지 사진 단톡에 뿌릴게! 너 죽여버린다.",
+     [dict(sequence=1, category="THREAT", noticeType="HARASSMENT", audience="BOTH")]),
+    ("네 생일 사진 친구들한테 뿌릴게. 너 죽여버릴거야.",
+     [dict(sequence=1, category="THREAT", noticeType="HARASSMENT", audience="BOTH")]),
+])
+def test_sg02_real_main_direct_risks_and_controls_without_tokenizer(
+        main_factory, plain_release, environment, text, expected):
+    host = main_factory(environment=environment, release=plain_release)
+    verdict = expect(host.post(request_for(plain_release, [message(text)])))["verdict"]
+    assert verdict["kind"] == ("RISK" if expected else "NORMAL")
+    assert verdict["findings"] == expected
+
+
+@pytest.mark.parametrize("environment", ["dev", "prod"])
 def test_same_release_produces_same_verdict_and_keeps_authentication(main_factory, plain_release, environment):
     host = main_factory(environment=environment, release=plain_release)
     payload = request_for(plain_release, [message("원금 보장하니 인증금을 송금해.")])
@@ -133,6 +165,20 @@ def test_new_descriptor_hash_cannot_approve_old_runtime_source(main_factory, pla
     artifact = json.loads(plain_release.artifact.read_bytes())
     # Actual runtime.py SHA-256 before this change and before any test rewrite.
     artifact["sources"]["runtime.py"] = "485f25f0d1b7aee55b7a98ae9cf9c213306478cedb576638c623632295009a7c"
+    plain_release.rewrite_artifact(artifact)
+    with pytest.raises(DevelopmentReleaseError):
+        main_factory(environment=environment, release=plain_release, pin=plain_release.test_descriptor_pin)
+
+
+@pytest.mark.parametrize("environment", ["dev", "prod"])
+@pytest.mark.parametrize("previous", [
+    "fd440ab3a7144ef715d4f73db7d240c474d5056cb6dc465765634ac48392aa73",  # develop before SG02
+    "40ea590152748557433642c715733e314f01fde69eff1a6cb4381d7b541aa7ed",  # MR 405 before review
+])
+def test_sg02_matching_descriptor_pin_cannot_approve_pre_fix_rules(main_factory, plain_release, environment, previous):
+    artifact = json.loads(plain_release.artifact.read_bytes())
+    assert artifact["sources"]["rule_engine.py"] != previous
+    artifact["sources"]["rule_engine.py"] = previous
     plain_release.rewrite_artifact(artifact)
     with pytest.raises(DevelopmentReleaseError):
         main_factory(environment=environment, release=plain_release, pin=plain_release.test_descriptor_pin)
