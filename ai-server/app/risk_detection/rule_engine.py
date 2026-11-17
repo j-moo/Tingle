@@ -98,7 +98,9 @@ _THREAT_STATEMENT_DENIAL = (
     r"\s*(?:하지(?:는|도)?\s*(?:않|마|말)|(?:안|못)\s*(?:하|해)|한\s*적(?:이|은|도)?\s*없)"
 )
 _THREAT = (
-    re.compile(r"(?:너|널|네|당신).{0,28}(?:죽이겠|때리겠|패겠|해치겠|죽여버리겠|"
+    # A causal subject ("너 때문에") is not the object of the following threat.
+    re.compile(r"(?<!\w)(?:너(?!무)|널|네|당신)(?!\s*때문에).{0,28}"
+               r"(?:죽이겠|때리겠|패겠|해치겠|죽여\s*버(?:리겠|린(?=다)|릴\s*거야)|"
                rf"(?:죽일|때릴|해칠)\s*거야)(?!{_THREAT_STATEMENT_DENIAL})"),
     re.compile(r"(?:찾아가|집\s*앞|기다렸다가).{0,28}(?:때리겠|때릴\s*거야|패겠|해치겠)"
                rf"(?!{_THREAT_STATEMENT_DENIAL})"),
@@ -107,6 +109,9 @@ _THREAT = (
                r"(?:퍼뜨리|유포하|공개하|공개할|뿌리겠|"
                r"(?:단톡방|단체\s*채팅방).{0,8}올려\s*버린(?=다))"
                rf"(?!{_NEGATED_ACTION}|(?:겠)?{_THREAT_STATEMENT_DENIAL})"),
+    # Casual photo sharing alone does not establish this new coercion signal.
+    re.compile(r"돈\s*안\s*(?:보내|주)면[\s,，]*(?:네|너의|당신의)[^.!?。！？]{0,18}(?:사진|영상)"
+               r"[^.!?。！？]{0,32}뿌릴(?:게|\s*거야)(?=\s*(?:[,.!?，。！？\"'”’]|$))"),
     re.compile(r"거절하면.{0,18}때리러.{0,8}간"),
 )
 _PHOTO_PROHIBITION = (
@@ -126,7 +131,7 @@ _HARASSMENT = (
                r"야한\s*이야기|모욕|욕|조롱)"),
 )
 _CREDENTIAL = re.compile(
-    r"비밀\s*번호|인증\s*번호|로그인.{0,12}(?:문자|SMS)로\s*온\s*(?:여섯|6)\s*자리\s*(?:숫자|코드)"
+    r"비밀\s*번호|인증\s*(?:번호|코드)|로그인.{0,12}(?:문자|SMS)로\s*온\s*(?:여섯|6)\s*자리\s*(?:숫자|코드)"
 )
 _CREDENTIAL_SHARING_ACTION = r"(?:보내|알려|넘겨)"
 _CREDENTIAL_ACTION = re.compile(rf"{_CREDENTIAL_SHARING_ACTION}|입력(?:\s*하)?|줘|달라")

@@ -45,6 +45,123 @@ def message(text, sequence=1, speaker="A", fresh=True, url_masked=False):
     return dict(sequence=sequence, speaker=speaker, text=text, fresh=fresh, urlMasked=url_masked)
 
 
+SG02_ORIGINALS = [
+    pytest.param("너 죽여버린다.", finding(category="THREAT", notice="HARASSMENT", audience="BOTH"),
+                 id="sg02-original-kill"),
+    pytest.param("돈 안 보내면 네 사진 가족들한테 뿌릴게.",
+                 finding(category="THREAT", notice="HARASSMENT", audience="BOTH"), id="sg02-original-photo"),
+    pytest.param("인증코드 나한테 넘겨.", finding(category="OTHER", notice="PERSONAL_INFO"),
+                 id="sg02-original-credential"),
+]
+
+
+@pytest.mark.parametrize(("text", "expected"), SG02_ORIGINALS + [
+    pytest.param("너 죽여 버린다.", finding(category="THREAT", notice="HARASSMENT", audience="BOTH"),
+                 id="sg02-spaced-kill"),
+    pytest.param("너 죽여\n버린다.", finding(category="THREAT", notice="HARASSMENT", audience="BOTH"),
+                 id="sg02-wrapped-kill"),
+    pytest.param("너\n죽여버린다.", finding(category="THREAT", notice="HARASSMENT", audience="BOTH"),
+                 id="sg02-wrapped-target"),
+    pytest.param("너 죽여버리겠어.", finding(category="THREAT", notice="HARASSMENT", audience="BOTH"),
+                 id="sg02-existing-kill-intent"),
+    pytest.param("너 죽여버릴거야.", finding(category="THREAT", notice="HARASSMENT", audience="BOTH"),
+                 id="sg02-review-kill-future"),
+    pytest.param("너를 죽여 버릴 거야.", finding(category="THREAT", notice="HARASSMENT", audience="BOTH"),
+                 id="sg02-review-spaced-kill-future"),
+    pytest.param("돈 안 주면 네 사진 다 뿌릴거야.",
+                 finding(category="THREAT", notice="HARASSMENT", audience="BOTH"), id="sg02-review-photo-future"),
+    pytest.param("돈 안 주면 네 사진 다 뿌릴 거야.",
+                 finding(category="THREAT", notice="HARASSMENT", audience="BOTH"), id="sg02-review-spaced-photo-future"),
+    pytest.param("돈 안 주면, 네 사진 다 뿌릴거야.",
+                 finding(category="THREAT", notice="HARASSMENT", audience="BOTH"), id="sg02-review-conditional-comma"),
+    pytest.param("돈 안 보내면 네 사진을 가족들한테 뿌릴게.",
+                 finding(category="THREAT", notice="HARASSMENT", audience="BOTH"), id="sg02-photo-object-particle"),
+    pytest.param("돈 안 보내면\n네 사진 가족들한테 뿌릴게.",
+                 finding(category="THREAT", notice="HARASSMENT", audience="BOTH"), id="sg02-wrapped-photo-threat"),
+    pytest.param("돈 안 보내면 네 사진 가족들한테 뿌리겠어.",
+                 finding(category="THREAT", notice="HARASSMENT", audience="BOTH"), id="sg02-existing-photo-intent"),
+    pytest.param("인증 코드 나한테 넘겨.", finding(category="OTHER", notice="PERSONAL_INFO"),
+                 id="sg02-spaced-credential"),
+    pytest.param("인증코드를\n나한테 넘겨.", finding(category="OTHER", notice="PERSONAL_INFO"),
+                 id="sg02-wrapped-credential"),
+    pytest.param("인증코드 나한테 보내.", finding(category="OTHER", notice="PERSONAL_INFO"),
+                 id="sg02-existing-sharing-verb"),
+    pytest.param("인증번호 나한테 넘겨.", finding(category="OTHER", notice="PERSONAL_INFO"),
+                 id="sg02-existing-credential"),
+])
+def test_sg02_direct_expressions_without_tokenizer(release, text, expected):
+    verdict = LocalRuleRiskEngine().analyze([message(text)], payload(release)["manifest"])
+    assert verdict["kind"] == "RISK"
+    assert verdict["findings"] == [expected]
+
+
+@pytest.mark.parametrize("text", [
+    "인증코드는 누구에게도 넘기지 마세요.",
+    "인증코드를 다른 사람에게 넘겨 주지 마세요.",
+    "인증코드를 넘겨 주면 안 돼.",
+    "인증코드 입력하면 로그인돼.",
+    "인증코드가 도착했어.",
+    "코드 나한테 넘겨.",
+    "오늘 사진을 가족들에게 보냈어.",
+    "사진은 가족들한테 뿌릴게.",
+    "돈 안 보내면 주문은 취소돼.",
+    "점심값은 반씩 나누자.",
+    "너무 웃겨서 나 죽여버린다 진짜.",
+    "오늘 너무 더워서 다 죽여버린다.",
+    "너 때문에 내 폰 배터리 죽여버린다.",
+    "너네 강아지 사진 단톡에 뿌릴게!",
+    "네 생일 사진 친구들한테 뿌릴게.",
+    "너무 화나서 죽이겠다 진짜.",
+    "돈 안 주면 주문은 취소돼. 네 생일 사진 친구들한테 뿌릴게.",
+    "너 죽여버리지 마.",
+    "너 죽여버린다는 말은 한 적 없어.",
+    "네 사진 가족들한테 뿌리지 마세요.",
+    "네 사진 가족들한테 뿌릴게라는 말은 한 적 없어.",
+    "친구가 ‘너 죽여버린다.’라고 말했어.",
+    "친구가 ‘돈 안 보내면 네 사진 가족들한테 뿌릴게.’라고 말했어.",
+    "친구가 ‘인증코드 나한테 넘겨.’라고 말했어.",
+])
+def test_sg02_normal_prevention_and_existing_reporting_policy(release, text):
+    verdict = LocalRuleRiskEngine().analyze([message(text)], payload(release)["manifest"])
+    assert verdict["kind"] == "NORMAL" and verdict["findings"] == []
+
+
+@pytest.mark.parametrize("text", [
+    "인증코드는 누구에게도 넘기지 마세요. 너 죽여버린다.",
+    "비밀번호를 보내지 마세요. 너 죽여 버린다.",
+    "인증코드는 누구에게도 넘기지 마세요, 그래도 너 죽여버린다.",
+    "너 죽여버린다. 인증코드는 누구에게도 넘기지 마세요.",
+])
+def test_sg02_prevention_does_not_hide_a_separate_direct_threat(release, text):
+    verdict = LocalRuleRiskEngine().analyze([message(text)], payload(release)["manifest"])
+    assert verdict["kind"] == "RISK"
+    assert verdict["findings"] == [finding(category="THREAT", notice="HARASSMENT", audience="BOTH")]
+
+
+@pytest.mark.parametrize("text", [
+    "너 때문에 내 폰 배터리 죽여버린다. 그래도 너 죽여버릴거야.",
+    "너 때문에 화났지만 널 죽여버릴거야.",
+    "너네 강아지 사진 단톡에 뿌릴게! 너 죽여버린다.",
+    "네 생일 사진 친구들한테 뿌릴게. 너 죽여버릴거야.",
+    "돈 안 주면 네 생일 사진 다 뿌릴거야.",
+])
+def test_sg02_review_controls_do_not_hide_a_separate_direct_threat(release, text):
+    verdict = LocalRuleRiskEngine().analyze([message(text)], payload(release)["manifest"])
+    assert verdict["kind"] == "RISK"
+    assert verdict["findings"] == [finding(category="THREAT", notice="HARASSMENT", audience="BOTH")]
+
+
+@pytest.mark.parametrize(("text", "expected"), SG02_ORIGINALS)
+def test_sg02_old_risk_alone_is_not_new_evidence(release, text, expected):
+    rules = LocalRuleRiskEngine()
+    manifest = payload(release)["manifest"]
+    old_only = rules.analyze([message(text, fresh=False), message("점심값은 반씩 나누자.", sequence=7)], manifest)
+    assert old_only["kind"] == "NORMAL" and old_only["findings"] == []
+    fresh = rules.analyze([message("이전 합성 인사", fresh=False), message(text, sequence=7, speaker="B")], manifest)
+    assert fresh["kind"] == "RISK"
+    assert fresh["findings"] == [{**expected, "sequence": 7}]
+
+
 @pytest.mark.parametrize("case", CASES, ids=lambda case: f"zip-r2-{case['id']:02}")
 def test_proposed_cases_through_existing_http(release, case, caplog):
     request = payload(release)
