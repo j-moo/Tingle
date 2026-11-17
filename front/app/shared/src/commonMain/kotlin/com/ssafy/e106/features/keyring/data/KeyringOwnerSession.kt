@@ -23,7 +23,7 @@ import kotlin.uuid.ExperimentalUuidApi
 import kotlin.uuid.Uuid
 
 /** 기록과 공개 이름의 각 작업에 필요한 권한만 요청한다. */
-internal enum class KeyringOwnerPermission(val bit: Int) { Read(1), Ack(2), Control(8) }
+internal enum class KeyringOwnerPermission(val bit: Int) { Read(1), Ack(2), Release(4), Control(8) }
 
 @Serializable
 internal data class KeyringOwnerGrantRequest(

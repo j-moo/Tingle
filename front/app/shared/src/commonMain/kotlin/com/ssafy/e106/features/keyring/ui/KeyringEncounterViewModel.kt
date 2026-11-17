@@ -25,6 +25,7 @@ internal class KeyringEncounterViewModel(
     private val authorizer: KeyringOwnerAuthorizer,
     private val api: KeyringEncounterRepository,
     private val journal: KeyringEncounterJournal,
+    private val release: KeyringRecordRelease,
 ) : ViewModel() {
     data class Target(val owner: Long, val serial: String, val generation: Long)
 
@@ -116,6 +117,8 @@ internal class KeyringEncounterViewModel(
                 // 이전 소유 세대의 접수증을 새 소유 세대로 보내지 않는다.
                 journal.remove(owner, pending)
             } else {
+                // 종류를 모르는 복구 접수증도 해제 대기에 넣는다. 해제 불가면 서버가 거절한다.
+                release.enqueue(owner, pending)
                 finish(owner, identity, serial, ble, pending, ensureCurrent)
                 stored = EncounterTransferState.Stored
             }
@@ -156,14 +159,37 @@ internal class KeyringEncounterViewModel(
                 continue
             }
             journal.save(owner, proof)
+            // 정상 만남만 이탈 후 재매칭 대상이다. REVIEW 해제(ERROR_REVIEWED)는 별도 검토 흐름이다.
+            if (header.kind == "CONFIRMED") release.enqueue(owner, proof)
             ensureCurrent()
             finish(owner, identity, serial, ble, proof, ensureCurrent)
             if (header.kind == "CONFIRMED") stored = EncounterTransferState.ConfirmedStored
             else if (stored == EncounterTransferState.Empty) stored = EncounterTransferState.ReviewStored
         }
-        return deferred ?: if (stored == EncounterTransferState.Empty && scan.legacyCount > 0) {
+        val outcome = deferred ?: if (stored == EncounterTransferState.Empty && scan.legacyCount > 0) {
             EncounterTransferState.LegacyOnly
         } else stored
+        releasePending(current, identity, ble, ensureCurrent)
+        return outcome
+    }
+
+    /** 원본 정리 뒤 대기 중인 반복 억제 해제를 시도한다. 실패는 다음 동기화로 미루고 전송 결과에 섞지 않는다. */
+    private suspend fun releasePending(current: Target, identity: SyncIdentity, ble: BleProbeViewModel,
+        ensureCurrent: () -> Unit) {
+        // 구형 기기에는 새 명령을 보내지 않는다.
+        if (ble.state.value.info?.supportedFunctions?.contains("RELEASE_RECORD") != true) return
+        try {
+            release.releaseDue(current.owner, identity) { command ->
+                ensureCurrent()
+                ble.withOwnerSession(current.serial, identity, KeyringOwnerPermission.Release, authorizer) {
+                    KeyringReleaseProtocol.release(command, it)
+                }
+            }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            // 보호 저장소를 읽지 못해도 기록 전송 결과는 유지한다.
+        }
     }
 
     private fun EncounterTransferState?.prefer(other: EncounterTransferState) = when {

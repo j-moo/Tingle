@@ -330,14 +330,16 @@ class BleProbeViewModelTest {
             respond(ApiJson.encodeToString(KeyringEncounterResponse.serializer(), KeyringEncounterResponse(listOf(receipt))),
                 HttpStatusCode.OK, headersOf(HttpHeaders.ContentType, "application/json"))
         })
-        val journal = KeyringEncounterJournal(object : ProtectedRecordStore {
+        val protectedRecords = object : ProtectedRecordStore {
             private val values = mutableMapOf<String, String>()
             override suspend fun read(key: String) = values[key]?.let { ProtectedRead.Found(it) } ?: ProtectedRead.Missing
             override suspend fun write(key: String, value: String) { values[key] = value }
             override suspend fun remove(key: String, expectedValue: String) = values.remove(key) == expectedValue
-        })
+        }
+        val journal = KeyringEncounterJournal(protectedRecords)
         try {
-            val vm = KeyringEncounterViewModel(session, sync, authorizer, KeyringEncounterRepository(client), journal)
+            val vm = KeyringEncounterViewModel(session, sync, authorizer, KeyringEncounterRepository(client), journal,
+                KeyringRecordRelease(HttpKeyringReleaseRepository(client), KeyringReleaseJournal(protectedRecords)))
             store.put("encounters", vm)
             ble.scan(); runCurrent(); ble.connect(port.currentId); runCurrent()
             val target = KeyringEncounterViewModel.Target(1, port.serial, requireNotNull(ble.state.value.connectionGeneration))
