@@ -76,8 +76,7 @@ import tools.jackson.databind.json.JsonMapper;
  */
 @Tag("ai-explanation-http")
 @SpringBootTest(properties = {
-	"app.match-explanations.scheduling-enabled=false",
-	"app.explanations.descriptors.f73ba248-c5f7-531e-938f-f60962bcc57b=match-release-synthetic/ai-descriptor.json"
+	"app.match-explanations.scheduling-enabled=false"
 })
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
@@ -103,8 +102,6 @@ class MatchReleaseAiIntegrationTest extends IntegrationTestSupport {
 	private KeyringVerdictEvaluator evaluator;
 	@Autowired
 	private Ter2BusinessReleaseResolver resolver;
-	@Autowired
-	private ExplanationArtifactCatalog catalog;
 	private JsonNode tokens;
 	private long proposalId;
 	private JsonNode original;
@@ -234,7 +231,8 @@ class MatchReleaseAiIntegrationTest extends IntegrationTestSupport {
 			toJson(work), proposalId, first);
 		history.store(result.historicalEvidence());
 		assertThat(history.find(proposalId)).contains(result.historicalEvidence());
-		assertThat(catalog.supports(jsonMapper.valueToTree(result.historicalEvidence().manifest()))).isTrue();
+		assertThat(ExplanationManifest.validManifest(jsonMapper.valueToTree(result.historicalEvidence().manifest())))
+			.isTrue();
 		original = storedOriginal();
 	}
 

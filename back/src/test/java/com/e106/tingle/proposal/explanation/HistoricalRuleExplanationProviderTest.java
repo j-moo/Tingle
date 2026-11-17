@@ -2,16 +2,9 @@ package com.e106.tingle.proposal.explanation;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import java.io.IOException;
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.HexFormat;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
@@ -24,7 +17,7 @@ import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
 import tools.jackson.databind.node.ObjectNode;
 
-/** 합성 원본 어댑터·classpath reader로 계약 경계를 검증하며 실자료/85 인증/실AI 호출 증거가 아니다. */
+/** 합성 원본 어댑터로 계약 경계를 검증하며 실자료/85 인증/실AI 호출 증거가 아니다. */
 class HistoricalRuleExplanationProviderTest {
 
 	private static final String RELEASE = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
@@ -33,7 +26,7 @@ class HistoricalRuleExplanationProviderTest {
 
 	@Test
 	void verifiedHistoricalSourceProducesExactlyTheFourFieldGatewayInput() {
-		Fixture fixture = fixture("original\r\nbytes\n".getBytes(StandardCharsets.UTF_8));
+		Fixture fixture = fixture();
 		List<RuleExplanationTransport.Request> calls = new ArrayList<>();
 		HistoricalRuleExplanationProvider provider = provider(fixture, fixture.bundle(), request -> {
 			calls.add(request);
@@ -42,7 +35,7 @@ class HistoricalRuleExplanationProviderTest {
 		assertThat(provider.explain(input())).isEqualTo(success());
 		assertThat(calls).hasSize(1);
 		JsonNode wire = mapper.valueToTree(calls.getFirst());
-		assertThat(ExplanationArtifactCatalog.hasFields(wire,
+		assertThat(ExplanationManifest.hasFields(wire,
 			java.util.Set.of("attemptId", "contextId", "manifest", "contextBundle"))).isTrue();
 		assertThat(calls.getFirst().attemptId()).isEqualTo(input().attemptId());
 		assertThat(calls.getFirst().contextId()).isEqualTo(17);
@@ -52,33 +45,33 @@ class HistoricalRuleExplanationProviderTest {
 
 	@Test
 	void absentHistoricalAdapterOrGatewayCannotCreateAnExplanation() {
-		Fixture fixture = fixture(new byte[] {1, 2, 3});
+		Fixture fixture = fixture();
 		RuleExplanationTransport forbidden = request -> {
 			throw new AssertionError("Missing source must not call gateway");
 		};
 		HistoricalRuleExplanationProvider absentSource = new HistoricalRuleExplanationProvider(
-			(HistoricalExplanationSource)null, fixture.catalog(), forbidden, mapper);
+			(HistoricalExplanationSource)null, forbidden, mapper);
 		assertThat(absentSource.explain(input()).status()).isEqualTo("FAILED");
 		HistoricalRuleExplanationProvider absentGateway = new HistoricalRuleExplanationProvider(
-			ignored -> Optional.empty(), fixture.catalog(), null, mapper);
+			ignored -> Optional.empty(), null, mapper);
 		assertThat(absentGateway.explain(input()).status()).isEqualTo("FAILED");
 		HistoricalRuleExplanationProvider noData = new HistoricalRuleExplanationProvider(
-			ignored -> Optional.empty(), fixture.catalog(), forbidden, mapper);
+			ignored -> Optional.empty(), forbidden, mapper);
 		assertThat(noData.explain(input()).status()).isEqualTo("FAILED");
 	}
 
 	@Test
 	void anotherViewerHistoricalSourceIsRejectedBeforeTransport() {
-		Fixture fixture = fixture(new byte[] {1});
+		Fixture fixture = fixture();
 		HistoricalExplanationSource source = ignored -> Optional.of(new HistoricalExplanationSource.Source(
 			8, fixture.manifest(), object(fixture.bundle())));
-		assertThat(new HistoricalRuleExplanationProvider(source, fixture.catalog(), forbidden(), mapper)
+		assertThat(new HistoricalRuleExplanationProvider(source, forbidden(), mapper)
 			.explain(input()).status()).isEqualTo("FAILED");
 	}
 
 	@Test
 	void mismatchedRunFingerprintOrReleaseCannotReachTheGateway() {
-		Fixture fixture = fixture(new byte[] {1});
+		Fixture fixture = fixture();
 		for (String field : List.of("evaluation_ref", "version_ref")) {
 			ObjectNode bundle = fixture.bundle().deepCopy();
 			((ObjectNode)bundle.path("context").path("reference")).put(field, "other");
@@ -91,7 +84,7 @@ class HistoricalRuleExplanationProviderTest {
 
 	@Test
 	void unapprovedTopicsModelTransferOrMismatchedScopeAreRejected() {
-		Fixture fixture = fixture(new byte[] {1});
+		Fixture fixture = fixture();
 		ObjectNode topic = fixture.bundle().deepCopy();
 		((ObjectNode)topic.path("context").path("evidence").get(0).path("evidence")).put("topic", "identity");
 		assertFailed(fixture, topic);
@@ -112,7 +105,7 @@ class HistoricalRuleExplanationProviderTest {
 
 	@Test
 	void duplicateEvidenceOrDisplayKeysAndUnknownScopesAreRejected() {
-		Fixture fixture = fixture(new byte[] {1});
+		Fixture fixture = fixture();
 		ObjectNode evidence = fixture.bundle().deepCopy();
 		((ObjectNode)evidence.path("context")).putArray("evidence")
 			.add(fixture.bundle().path("context").path("evidence").get(0)).add(
@@ -127,7 +120,7 @@ class HistoricalRuleExplanationProviderTest {
 
 	@Test
 	void unknownBundleFieldsOrMissingSourceReferenceFailRatherThanInventingFacts() {
-		Fixture fixture = fixture(new byte[] {1});
+		Fixture fixture = fixture();
 		ObjectNode extra = fixture.bundle().deepCopy();
 		extra.put("currentProfile", "must-not-use");
 		assertFailed(fixture, extra);
@@ -138,7 +131,7 @@ class HistoricalRuleExplanationProviderTest {
 
 	@Test
 	void unavailableGatewayOrInvalidPublicResultNeverBecomesFakeRuleSuccess() {
-		Fixture fixture = fixture(new byte[] {1});
+		Fixture fixture = fixture();
 		assertThat(provider(fixture, fixture.bundle(), ignored -> Optional.empty()).explain(input()).status())
 			.isEqualTo("FAILED");
 		ExplanationStatus internalKeys = new ExplanationStatus("SUCCEEDED", "RULE_FALLBACK", "규칙 설명",
@@ -148,74 +141,24 @@ class HistoricalRuleExplanationProviderTest {
 	}
 
 	@Test
-	void descriptorPinsExactArtifactBytesWithoutNewlineOrJsonNormalization() {
-		Fixture fixture = fixture("{\r\n\"a\":1\r\n}".getBytes(StandardCharsets.UTF_8));
-		assertThat(fixture.catalog().supports(mapper.valueToTree(fixture.manifest()))).isTrue();
-		fixture.resources().put("approved/release.bundle", "{\"a\":1}".getBytes(StandardCharsets.UTF_8));
-		assertThat(fixture.catalog().supports(mapper.valueToTree(fixture.manifest()))).isFalse();
-	}
-
-	@Test
-	void descriptorMutationMissingArtifactAndUnknownReleaseCannotBeRecovered() {
-		Fixture fixture = fixture(new byte[] {1});
-		byte[] descriptor = fixture.resources().get("approved/descriptor.json");
-		fixture.resources().put("approved/descriptor.json", (new String(descriptor, StandardCharsets.UTF_8) + " ")
-			.getBytes(StandardCharsets.UTF_8));
-		assertThat(fixture.catalog().supports(mapper.valueToTree(fixture.manifest()))).isFalse();
-		fixture.resources().put("approved/descriptor.json", descriptor);
-		fixture.resources().remove("approved/release.bundle");
-		assertThat(fixture.catalog().supports(mapper.valueToTree(fixture.manifest()))).isFalse();
-		assertThat(new ExplanationArtifactCatalog(Map.of(), path -> {
-			throw new AssertionError("Unknown release must not read a request-derived path");
-		}).supports(mapper.valueToTree(fixture.manifest()))).isFalse();
-	}
-
-	@Test
-	void requestedManifestChangesAndArtifactPathsOutsideTheRegisteredDirectoryAreRejected() {
-		Fixture fixture = fixture(new byte[] {1});
-		Map<String, Object> changed = new LinkedHashMap<>(fixture.manifest());
-		changed.put("matchingVersion", "different");
-		assertThat(fixture.catalog().supports(mapper.valueToTree(changed))).isFalse();
-		for (String artifact : List.of("../outside", "https://other/file", "/absolute", "dir/file", "dir\\file")) {
-			byte[] descriptor = mapper.writeValueAsBytes(Map.of("manifest", fixture.manifest(), "artifact", artifact));
-			ExplanationArtifactCatalog catalog = new ExplanationArtifactCatalog(
-				Map.of(RELEASE, "approved/descriptor.json"), path -> descriptor);
-			assertThat(catalog.supports(mapper.valueToTree(fixture.manifest()))).isFalse();
+	void malformedManifestIsRejectedBeforeTransportWithoutAnyRegisteredFile() {
+		Fixture fixture = fixture();
+		for (String field : List.of("releaseId", "contentHash", "matchingVersion")) {
+			Map<String, Object> manifest = new HashMap<>(fixture.manifest());
+			manifest.put(field, "releaseId".equals(field) ? "not-a-uuid" : "contentHash".equals(field) ? "short" : " ");
+			assertFailed(manifest, fixture.bundle());
 		}
-	}
-
-	@Test
-	void canonicalUuidAliasesCannotOverrideEitherRegisteredDescriptor() {
-		Fixture fixture = fixture(new byte[] {1});
-		fixture.resources().put("second/descriptor.json", fixture.resources().get("approved/descriptor.json"));
-		fixture.resources().put("second/release.bundle", fixture.resources().get("approved/release.bundle"));
-		for (boolean reversed : List.of(false, true)) {
-			Map<String, String> registrations = new LinkedHashMap<>();
-			registrations.put(reversed ? RELEASE.toUpperCase(Locale.ROOT) : RELEASE, "approved/descriptor.json");
-			registrations.put(reversed ? RELEASE : RELEASE.toUpperCase(Locale.ROOT), "second/descriptor.json");
-			ExplanationArtifactCatalog catalog = new ExplanationArtifactCatalog(registrations,
-				path -> fixture.resources().get(path));
-			assertThat(catalog.supports(mapper.valueToTree(fixture.manifest()))).isFalse();
-		}
-	}
-
-	@Test
-	void descriptorItselfIsRejectedBeforeAnyArtifactHashRead() {
-		Fixture fixture = fixture(new byte[] {1});
-		byte[] self = mapper.writeValueAsBytes(Map.of("manifest", fixture.manifest(), "artifact", "descriptor.json"));
-		List<String> reads = new ArrayList<>();
-		ExplanationArtifactCatalog catalog = new ExplanationArtifactCatalog(Map.of(RELEASE, "approved/descriptor.json"),
-			path -> {
-				reads.add(path);
-				return self;
-			});
-		assertThat(catalog.supports(mapper.valueToTree(fixture.manifest()))).isFalse();
-		assertThat(reads).containsExactly("approved/descriptor.json");
+		Map<String, Object> missing = new HashMap<>(fixture.manifest());
+		missing.remove("engineVersion");
+		assertFailed(missing, fixture.bundle());
+		Map<String, Object> extra = new HashMap<>(fixture.manifest());
+		extra.put("unknown", "value");
+		assertFailed(extra, fixture.bundle());
 	}
 
 	@Test
 	void displayedEvidenceMayGoToTheModelAndGeneratedResultsArePublishedWithTheirVersion() {
-		Fixture fixture = fixture(new byte[] {1});
+		Fixture fixture = fixture();
 		ObjectNode bundle = fixture.bundle().deepCopy();
 		((ObjectNode)bundle.path("scope")).putArray("model_evidence_ids").add("e1");
 		ExplanationStatus generated = new ExplanationStatus("SUCCEEDED", "GENERATED", "두 분 다 자주 연락하는 게 좋대요.",
@@ -230,34 +173,30 @@ class HistoricalRuleExplanationProviderTest {
 	}
 
 	private void assertFailed(Fixture fixture, ObjectNode bundle) {
-		assertThat(provider(fixture, bundle, forbidden()).explain(input()).status()).isEqualTo("FAILED");
+		assertFailed(fixture.manifest(), bundle);
+	}
+
+	private void assertFailed(Map<String, Object> manifest, ObjectNode bundle) {
+		HistoricalExplanationSource source = ignored -> Optional.of(new HistoricalExplanationSource.Source(
+			7, manifest, object(bundle)));
+		assertThat(new HistoricalRuleExplanationProvider(source, forbidden(), mapper).explain(input()).status())
+			.isEqualTo("FAILED");
 	}
 
 	private HistoricalRuleExplanationProvider provider(Fixture fixture, ObjectNode bundle,
 		RuleExplanationTransport transport) {
 		HistoricalExplanationSource source = ignored -> Optional.of(new HistoricalExplanationSource.Source(
 			7, fixture.manifest(), object(bundle)));
-		return new HistoricalRuleExplanationProvider(source, fixture.catalog(), transport, mapper);
+		return new HistoricalRuleExplanationProvider(source, transport, mapper);
 	}
 
-	private Fixture fixture(byte[] artifact) {
+	private Fixture fixture() {
 		Map<String, Object> manifest = new HashMap<>();
-		for (String field : ExplanationArtifactCatalog.MANIFEST_FIELDS) {
+		for (String field : ExplanationManifest.MANIFEST_FIELDS) {
 			manifest.put(field, "synthetic-v1");
 		}
 		manifest.put("releaseId", RELEASE);
-		manifest.put("contentHash", hash(artifact));
-		Map<String, byte[]> resources = new HashMap<>();
-		resources.put("approved/descriptor.json", mapper.writeValueAsBytes(
-			Map.of("manifest", manifest, "artifact", "release.bundle")));
-		resources.put("approved/release.bundle", artifact.clone());
-		ExplanationArtifactCatalog catalog = new ExplanationArtifactCatalog(Map.of(RELEASE, "approved/descriptor.json"),
-			path -> {
-				if (!resources.containsKey(path)) {
-					throw new IOException("Synthetic resource missing");
-				}
-				return resources.get(path);
-			});
+		manifest.put("contentHash", "c".repeat(64));
 		Map<String, Object> reference = Map.of("encounter_id", 17,
 			"evaluation_ref", FINGERPRINT, "version_ref", RELEASE);
 		Map<String, Object> evidence = Map.of("id", "e1", "kind", "ONE_WAY_PREFERENCE_FIT", "topic", "contact",
@@ -268,7 +207,7 @@ class HistoricalRuleExplanationProviderTest {
 					"evidence", evidence))),
 			"scope", Map.of("reference", reference, "viewer", "A", "version", "synthetic-approved-policy",
 				"model_evidence_ids", List.of(), "display_evidence_ids", List.of("e1"))));
-		return new Fixture(catalog, manifest, bundle, resources);
+		return new Fixture(manifest, bundle);
 	}
 
 	@SuppressWarnings("unchecked")
@@ -292,15 +231,6 @@ class HistoricalRuleExplanationProviderTest {
 			List.of(), null);
 	}
 
-	private static String hash(byte[] value) {
-		try {
-			return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(value));
-		} catch (NoSuchAlgorithmException exception) {
-			throw new AssertionError(exception);
-		}
-	}
-
-	private record Fixture(ExplanationArtifactCatalog catalog, Map<String, Object> manifest, ObjectNode bundle,
-		Map<String, byte[]> resources) {
+	private record Fixture(Map<String, Object> manifest, ObjectNode bundle) {
 	}
 }

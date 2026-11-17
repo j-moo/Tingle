@@ -45,7 +45,7 @@ public class HttpRuleExplanationTransport implements RuleExplanationTransport {
 	}
 
 	private static boolean valid(JsonNode response, long contextId) {
-		if (!ExplanationArtifactCatalog.hasFields(response, RESPONSE_FIELDS)) {
+		if (!ExplanationManifest.hasFields(response, RESPONSE_FIELDS)) {
 			return false;
 		}
 		JsonNode id = response.get("encounterId");
