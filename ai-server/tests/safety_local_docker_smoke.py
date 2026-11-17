@@ -85,7 +85,6 @@ def verify(image):
                         "--mount", f"type=bind,source={directory},target=/review,readonly",
                         "--env", "APP_ENV=" + environment,
                         "--env", "GMS_API_KEY=synthetic-safety-docker-startup-only",
-                        "--env", "RISK_LOCAL_RULES_ENABLED=false",
                         "--env", "RISK_RELEASE_DESCRIPTOR_FILE=" + descriptor,
                         "--env", "RISK_LOCAL_RULES_DESCRIPTOR_SHA256=" + pin,
                         "--env", 'AI_SERVICE_PUBLIC_KEYS={"docker-synthetic":"/review/public.pem"}', image)

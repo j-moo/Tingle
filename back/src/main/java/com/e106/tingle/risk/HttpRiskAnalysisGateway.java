@@ -14,7 +14,7 @@ import com.e106.tingle.risk.RiskAnalysisTypes.Message;
 import com.e106.tingle.risk.RiskAnalysisTypes.Request;
 import com.e106.tingle.risk.RiskAnalysisTypes.Verdict;
 
-/** app.risk.external-enabled 를 켰을 때만 등록되는 전송 어댑터. 꺼져 있으면 DisabledRiskAnalysisGateway 가 쓰인다. */
+/** 위험 감지 전송 어댑터(개발·운영 공통). 승인된 Release·회원 동의가 없으면 호출되지 않는다. */
 public final class HttpRiskAnalysisGateway implements RiskAnalysisGateway {
 
 	private final AiInternalClient client;

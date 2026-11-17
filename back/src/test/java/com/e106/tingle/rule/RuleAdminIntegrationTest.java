@@ -322,7 +322,6 @@ class RuleAdminIntegrationTest extends IntegrationTestSupport {
 		switchChannel(author, releaseId, null).andExpect(status().isBadRequest());
 
 		var resolver = new com.e106.tingle.encounter.peer.Ter2BusinessReleaseResolver(jdbc, jsonMapper);
-		org.springframework.test.util.ReflectionTestUtils.setField(resolver, "approved", true);
 		org.springframework.test.util.ReflectionTestUtils.setField(resolver, "configuredRelease", releaseId);
 		org.springframework.test.util.ReflectionTestUtils.setField(resolver, "configuredHash",
 			validation.get("candidateHash").asString());

@@ -158,59 +158,6 @@ class MemberWithdrawalCleanupIntegrationTest {
 	}
 
 	@Test
-	void removesDevelopmentPhoneModeRowsOfTheMemberAndEncountersNamingThem() {
-		new ResourceDatabasePopulator(new ClassPathResource("database/phone-mode-262.sql"))
-			.execute(jdbc.getDataSource());
-		UUID departing = phoneDevice(1);
-		UUID remaining = phoneDevice(2);
-		UUID shared = phoneEncounter("shared");
-		UUID waiting = phoneEncounter("waiting");
-		UUID own = phoneEncounter("own");
-		phoneToken(departing, shared);
-		phoneToken(remaining, shared);
-		phoneToken(remaining, waiting);
-		phoneToken(remaining, own);
-		phoneToken(departing, null);
-		jdbc.update("insert into phone_mode_submission values (?,1,2),(?,2,1),(?,2,1),(?,2,3)",
-			shared, shared, waiting, own);
-		jdbc.update("insert into phone_mode_evaluation values (?,'UNAVAILABLE','SNAPSHOT_UNAVAILABLE',?)",
-			shared, Timestamp.from(NOW));
-		jdbc.update("insert into phone_mode_evaluation_input values (?,1,1,1),(?,2,2,1)", shared, shared);
-		jdbc.update("insert into phone_mode_request values (1,'submit',?,'h',?,?),(2,'submit',?,'h',?,?)",
-			UUID.randomUUID(), shared, Timestamp.from(NOW), UUID.randomUUID(), own, Timestamp.from(NOW));
-
-		remove(1);
-
-		for (String table : List.of("phone_mode_evaluation_input", "phone_mode_evaluation")) {
-			assertThat(jdbc.queryForObject("select count(*) from " + table, Integer.class)).isZero();
-		}
-		assertThat(jdbc.queryForList("select id from phone_mode_encounter", UUID.class)).containsExactly(own);
-		assertThat(jdbc.queryForList("select device_id from phone_mode_token", UUID.class)).containsExactly(remaining);
-		assertThat(jdbc.queryForList("select user_id from phone_mode_device", Long.class)).containsExactly(2L);
-		assertThat(jdbc.queryForList("select user_id from phone_mode_submission", Long.class)).containsExactly(2L);
-		assertThat(jdbc.queryForList("select user_id from phone_mode_request", Long.class)).containsExactly(2L);
-	}
-
-	private UUID phoneDevice(long userId) {
-		UUID id = UUID.randomUUID();
-		jdbc.update("insert into phone_mode_device values (?,?,?,true)", id, userId, UUID.randomUUID());
-		return id;
-	}
-
-	private UUID phoneEncounter(String exchange) {
-		UUID id = UUID.randomUUID();
-		jdbc.update("insert into phone_mode_encounter(id,exchange_hash,met_at,expires_at) values (?,?,?,?)",
-			id, exchange, Timestamp.from(NOW), Timestamp.from(NOW));
-		return id;
-	}
-
-	private void phoneToken(UUID device, UUID encounter) {
-		jdbc.update("insert into phone_mode_token(id,device_id,token_hash,expires_at,encounter_id) "
-			+ "values (?,?,?,?,?)", UUID.randomUUID(), device, UUID.randomUUID().toString(), Timestamp.from(NOW),
-			encounter);
-	}
-
-	@Test
 	void redactionRevokesOldDeletionApprovalAndRequiresAllKnownCopiesForReinspection() {
 		long matching = matching();
 		Instant closed = NOW.minus(40, ChronoUnit.DAYS);

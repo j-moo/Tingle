@@ -1,7 +1,9 @@
 # 202 파일 기반 백업 증거 v1 — 검토 후보
 
 이 문서는 구현 MR의 검토 기준이며 운영 범위 승인·활성화 완료를 뜻하지 않는다.
-기본 OFF. INFRA의 저장소/로그/사진 범위 확인과 BE·INFRA 검토 후 별도 활성화한다.
+2026-11-17(S15P31E106-407): 서버의 채팅 삭제는 이 백업 증거와 묶지 않는다. 서버는 백업 증거 설정을 읽지 않고
+외부 사본이 없다고 보고 DB에서 지운다(삭제 저널은 계속 남겨 DB 복원 뒤 다시 지운다).
+이 문서의 파일 증거는 아래 복원 운영 명령(`chat-restore verify`)에서만 쓴다.
 
 ## 목적과 범위
 
@@ -91,10 +93,8 @@ uid 1000이 호스트 소유자와 같다고 가정하지 않는다. 세대 파�
 JSON의 추가 nullable 필드는 기존 상태를 읽을 수 있으며, 구형 실행 프로그램은 새 필드를 무시하더라도
 이 재시도 개선을 제공하지 않으므로 복원 작업 중 구형 버전으로 되돌리지 않는다.
 
-개발 BE 의 마운트 · 환경변수는 기본 `infra/docker-compose.yml` 의 `back-dev` 에 있다(S15P31E106-250).
-기본 꺼짐이며 서버 `/srv/tingle/.env` 의 `BACKUP_EVIDENCE_ENABLED=true` 로 켠다. 갱신 cron 은 `backup-evidence-refresh.sh` 주석,
-복원은 `infra/restore-db.sh` 를 쓴다.
-켜기 전에 메타데이터 폴더 · 세대 파일 · 그룹 권한을 준비한다. 백업 자동 삭제 활성화는 없다.
+서버 앱은 백업 증거 설정이 필요 없다. 복원 운영 명령을 쓸 때만 아래 환경변수와 메타데이터 폴더·세대 파일을 준비한다.
+갱신 cron 은 `backup-evidence-refresh.sh` 주석, 복원은 `infra/restore-db.sh` 를 쓴다. 백업 자동 삭제 활성화는 없다.
 실제 인프라 권한·주기 실행·복원 시 세대 갱신 및 운영 로그 내용은 아직 별도 검증 대상이다.
 
 ## 복원 세대와 INFRA 적용 기준
@@ -111,13 +111,13 @@ JSON의 추가 nullable 필드는 기존 상태를 읽을 수 있으며, 구형 
 파일 교체는 원자적으로 하고 BE가 새 세대 파일을 읽을 수 있는 권한을 유지한다.
 이 기준에 따른 복원 스크립트와 기존 gate 설정의 배포 연결은 INFRA가 구현한다.
 
-개발 계약의 공개 식별자는 아래와 같이 지정한다. 운영에 재사용하지 않는다.
+환경별 공개 식별자는 아래와 같다. 서로 재사용하지 않는다. compose 에 값으로 적고 cron 에는 `BACKUP_EVIDENCE_SCOPE_ID`로 공급한다.
+복원 운영 명령(`chat-restore verify`)이 쓰며 서버 기동에는 필요 없다.
 
-- `SCOPE_ID=tingle-dev-db-dumps-v1` (`BACKUP_EVIDENCE_SCOPE_ID`로 공급)
-- `APPROVAL_ID=S15P31E106-202-DEV-DB-V1-20261105` (`BACKUP_EVIDENCE_APPROVAL_ID`로 공급)
+- 개발: `SCOPE_ID=tingle-dev-db-dumps-v1`, `APPROVAL_ID=S15P31E106-202-DEV-DB-V1-20261105`
+- 운영: `SCOPE_ID=tingle-prod-db-dumps-v1`, `APPROVAL_ID=S15P31E106-407-PROD-DB-V1-20261117` (S15P31E106-407 에서 지정)
 
-ID 지정은 검토 기록을 연결하는 기준이며 활성화 승인 완료를 뜻하지 않는다.
-BE·INFRA 검토와 아래 로그 범위 확인 후 개발에서 활성화하며 운영은 별도 승인을 받는다.
+ID 지정은 검토 기록을 연결하는 기준이며 운영 적용 검증 완료를 뜻하지 않는다. 아래 로그 범위 확인은 계속 별도 검증 대상이다.
 
 ## 사진·로그 범위 확인
 
@@ -150,6 +150,10 @@ BE 실행 JAR는 첫 인자가 `chat-restore`일 때만 별도의 운영 명령�
 자격 증명은 명령행이나 출력에 넣지 않고 컨테이너의 기존 환경변수로만 전달한다.
 
 공통 환경변수는 `TINGLE_CHAT_DELETION_JOURNAL_DIRECTORY`다. 절대 경로·symlink 없는 경로를 요구한다.
+서버 앱은 이 값이 없으면 사진 영구 볼륨 안 `.chat-deletion-journal`을 쓰고, 첫 삭제 때 폴더가 없거나 비어 있을 때만 저널을 만든다
+(기존 파일은 덮어쓰지 않는다). 서버가 만든 저널에는 `namespace` 파일이 없으므로 복원 명령을 쓰기 전에 운영자가
+그 폴더를 이 환경변수로 지정하고 `namespace` 파일(`tingle` 또는 `tingle_dev` 한 줄)을 한 번 넣는다.
+이 파일은 저널(`journal.lock`·`intents.log`·`head.sha256`)이 생긴 뒤에만 넣는다. 빈 폴더에 먼저 넣으면 서버가 저널을 만들지 않아 삭제가 보류된다.
 `journal-init`은 기존 저널을 덮어쓰거나 누락된 파일을 자동 복구하지 않는다.
 POSIX에서는 journal 디렉터리0700·파일0600으로 초기화한다. namespace 파일로 환경을 고정한다.
 구형 저널에 namespace 표식이 없다면 임의로 초기화·덮어쓰지 않고 별도 조정을 거친다.
@@ -160,7 +164,7 @@ POSIX에서는 journal 디렉터리0700·파일0600으로 초기화한다. names
 - `TINGLE_CHAT_RESTORE_MARKER_FILE`: 저널 디렉터리와 분리한 절대 파일 경로, 부모 폴더 사전 준비.
 - `SPRING_DATASOURCE_URL/USERNAME/PASSWORD`: PostgreSQL 연결. 실제 `current_database()`가 namespace와
   일치하는지 먼저 검사하며 다르면 DB 재삭제·marker 변경을 시작하지 않는다.
-- `APP_BACKUP_EVIDENCE_ENABLED=true` 및 기존 `FILE/GENERATION_FILE/NAMESPACE/SCOPE_ID/APPROVAL_ID`.
+- `APP_BACKUP_EVIDENCE_FILE/GENERATION_FILE/NAMESPACE/SCOPE_ID/APPROVAL_ID`(복원 명령 전용, 서버 기동에는 필요 없음).
   증거 세대 파일도 같은 UUID여야 한다. 연결/소켓/쿼리/트랜잭션에는 별도 고정 시간 제한을 둔다.
   JDBC URL의 사용자·비밀번호·timeout 재정의는 받지 않는다.
 
@@ -177,7 +181,8 @@ stderr/JSON에 자격 증명·경로·저널 내용·예외 원문을 출력하�
 
 ### 권한과 INFRA 연결 기준
 
-개발 호스트의 `/srv/tingle/state/chat-retention/dev/journal`을 `/run/tingle/chat-journal`에 연결한다.
+저널은 따로 마운트하지 않는다. 서버는 환경마다 따로인 사진 볼륨(`/data/uploads/{prod,dev}` → `/data/photos`) 안 `.chat-deletion-journal`을 쓰고,
+매일 백업(`backup-daily.sh`)은 이 폴더만 뺀다. 옛 사본으로 되돌리면 지운 채팅이 되살아나기 때문이다.
 저널은 신뢰된 BE 삭제 프로세스(uid1000)와 운영 복원 도구만 RW로 사용한다. 일반 사용자·다른 서비스의
 쓰기를 허용하지 않는다. 현재 snapshot도 lock을 WRITE로 열기 때문에 journal 전체 RO는 동작하지 않는다.
 여기서 privileged는 허용된 신뢰 작성 프로세스라는 뜻이며 OS root 실행을 필수로 요구하지 않는다.

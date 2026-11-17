@@ -36,9 +36,7 @@ import com.e106.tingle.keyring.proof.PeerCommandTranscripts;
 import tools.jackson.databind.JsonNode;
 
 /** Isolated PostgreSQL and synthetic Ed25519 keys; no live keyring or team signing key. */
-@SpringBootTest(properties = {"app.keyring.peer.enabled=true",
-	"spring.sql.init.schema-locations=classpath:database/schema.sql,"
-		+ "classpath:database/keyring-peer-ownership-270.sql,classpath:database/keyring-peer-commands-270.sql"})
+@SpringBootTest
 @AutoConfigureMockMvc
 @ActiveProfiles({"test", "erd"})
 @Import({TestcontainersConfiguration.class, DevSettingsIntegrationTest.SigningConfiguration.class})

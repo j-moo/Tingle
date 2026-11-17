@@ -29,8 +29,7 @@ import com.e106.tingle.global.error.BusinessException;
 import tools.jackson.databind.JsonNode;
 
 /** Disposable PostgreSQL only. The device protocol is explicitly synthetic, never firmware proof. */
-@SpringBootTest(properties = {"app.keyring-reset.enabled=true",
-	"spring.sql.init.schema-locations=classpath:database/schema.sql,classpath:database/keyring-reset-249.sql"})
+@SpringBootTest
 @AutoConfigureMockMvc
 @ActiveProfiles({"test", "erd"})
 @Import(TestcontainersConfiguration.class)

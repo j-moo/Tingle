@@ -203,7 +203,7 @@ public class AiInternalClient {
 			// 같은 서버 compose 내부망의 AI(외부 비공개)는 http 로 부른다. 환경마다 한 이름만 허용해 개발이 운영 AI를 부르지 않게 한다.
 			boolean internal = uri.getHost() != null
 				&& uri.getHost().equals(INTERNAL_HOSTS.get(properties.environment()));
-			if (!properties.enabled() || uri.getHost() == null || uri.getRawUserInfo() != null
+			if (uri.getHost() == null || uri.getRawUserInfo() != null
 				|| uri.getRawQuery() != null || uri.getRawFragment() != null || uri.getPort() == 0
 				|| uri.getPort() > 65_535 || !(uri.getRawPath().isEmpty() || "/".equals(uri.getRawPath()))
 				|| !("https".equals(uri.getScheme())

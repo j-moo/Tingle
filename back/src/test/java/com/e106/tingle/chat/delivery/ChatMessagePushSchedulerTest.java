@@ -21,7 +21,7 @@ class ChatMessagePushSchedulerTest {
 			release.await(5, TimeUnit.SECONDS);
 			return 1;
 		});
-		ChatMessagePushScheduler scheduler = new ChatMessagePushScheduler(dispatcher);
+		ChatMessagePushScheduler scheduler = new ChatMessagePushScheduler(dispatcher, "1000");
 		try {
 			assertTimeoutPreemptively(Duration.ofSeconds(2), scheduler::dispatch);
 			assertThat(started.await(2, TimeUnit.SECONDS)).isTrue();

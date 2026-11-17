@@ -136,15 +136,13 @@ async def request_on_main(host, *, payload=None, credential="valid"):
         return await client.post(ROUTE, json=payload or request_for(host.release), headers=headers)
 
 
-@pytest.mark.parametrize("environment,enabled", [
-    ("local", None), ("test", None), ("dev", None), ("prod", None), ("prod", True),
-])
-def test_missing_release_health_auth_and_zero_model_construction(fake_main, monkeypatch, environment, enabled):
+@pytest.mark.parametrize("environment", ["local", "test", "dev", "prod"])
+def test_missing_release_health_auth_and_zero_model_construction(fake_main, monkeypatch, environment):
     def forbidden(*args, **kwargs):
         pytest.fail("OFF main reached development release or rule data")
     monkeypatch.setattr(local_engine, "LocalRuleRiskEngine", forbidden)
     monkeypatch.setattr(releases, "LocalRuleReleaseCatalog", forbidden)
-    host, created = fake_main(environment=environment, enabled=enabled, configured=False)
+    host, created = fake_main(environment=environment, configured=False)
     assert host.client.get("/health").status_code == 200
     expect(host.post(raw=b"unread", credential=None), 401, "AUTH_REQUIRED")
     expect(host.post(raw=b"unread"), 422, "POLICY_UNRESOLVED")

@@ -1,6 +1,5 @@
 package com.e106.tingle.risk;
 
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import com.e106.tingle.global.error.BusinessException;
@@ -10,17 +9,14 @@ import com.e106.tingle.global.error.BusinessException;
 public class RiskAnalysisDispatcher {
 
 	private static final int BATCH_SIZE = 20;
-	private final boolean enabled;
 	private final RiskAnalysisGateway gateway;
 	private final RiskManifestCatalog manifests;
 	private final RiskAnalysisStore store;
 	private final RiskAnalysisService service;
 	private long cursor;
 
-	public RiskAnalysisDispatcher(@Value("${app.risk.external-enabled:false}") boolean enabled,
-		RiskAnalysisGateway gateway, RiskManifestCatalog manifests, RiskAnalysisStore store,
-		RiskAnalysisService service) {
-		this.enabled = enabled;
+	public RiskAnalysisDispatcher(RiskAnalysisGateway gateway, RiskManifestCatalog manifests,
+		RiskAnalysisStore store, RiskAnalysisService service) {
 		this.gateway = gateway;
 		this.manifests = manifests;
 		this.store = store;
@@ -28,9 +24,6 @@ public class RiskAnalysisDispatcher {
 	}
 
 	public synchronized int runOnce() {
-		if (!enabled) {
-			return 0;
-		}
 		try {
 			gateway.requireAvailable();
 		} catch (BusinessException exception) {

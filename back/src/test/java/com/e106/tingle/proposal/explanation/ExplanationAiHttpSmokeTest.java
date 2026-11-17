@@ -202,7 +202,7 @@ class ExplanationAiHttpSmokeTest {
 	}
 
 	private AiServiceProperties properties(String environment) {
-		return new AiServiceProperties(true, environment, "synthetic-key", privateKey.toString(), base);
+		return new AiServiceProperties(environment, "synthetic-key", privateKey.toString(), base);
 	}
 
 	private AiServiceTokenProvider issuer(String environment) {

@@ -53,6 +53,7 @@ import com.e106.tingle.encounter.dto.EncounterSyncResponse.Receipt;
 import com.e106.tingle.global.error.BusinessException;
 import com.e106.tingle.global.error.ErrorCode;
 import com.e106.tingle.proposal.evaluation.HistoricalEvaluationEvidence.Snapshot;
+import com.e106.tingle.withdrawal.WithdrawalIdentityService;
 
 import tools.jackson.databind.json.JsonMapper;
 
@@ -80,6 +81,12 @@ class VerifiedEncounterIntakePersistenceTest {
 		@Bean
 		MutableClock clock() {
 			return new MutableClock();
+		}
+
+		// 새 제안 판단의 탈퇴 관계 제한. 이 시험은 탈퇴 기록이 없다.
+		@Bean
+		WithdrawalIdentityService withdrawalIdentities() {
+			return org.mockito.Mockito.mock(WithdrawalIdentityService.class);
 		}
 
 		@Bean

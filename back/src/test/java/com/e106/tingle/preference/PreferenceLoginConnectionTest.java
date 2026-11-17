@@ -74,7 +74,8 @@ class PreferenceLoginConnectionTest {
 
 	@Configuration(proxyBeanMethods = false)
 	@EnableAutoConfiguration
-	@EntityScan(basePackageClasses = {MatchingPreference.class, UserSetting.class, User.class})
+	@EntityScan(basePackageClasses = {MatchingPreference.class, UserSetting.class, User.class,
+		WithdrawalIdentityService.class})
 	@EnableJpaRepositories(basePackages = {"com.e106.tingle.preference", "com.e106.tingle.user"})
 	@Import({AuthService.class, PendingEmails.class, PreferenceProvisioningService.class,
 		PreferenceProvisioningAccess.class,

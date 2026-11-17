@@ -8,20 +8,7 @@ import java.util.UUID;
 
 import org.junit.jupiter.api.Test;
 
-import com.e106.tingle.global.error.BusinessException;
-import com.e106.tingle.global.error.ErrorCode;
-
 class KeyringPayloadTest {
-
-	@Test
-	void productionFallbackFailsClosedWithoutInventingDeviceBytes() {
-		KeyringPayloadProvider provider = new KeyringPayloadConfiguration().unavailableDevicePayload();
-		assertThatThrownBy(() -> provider.prepare(1, 2, UUID.randomUUID()))
-			.isInstanceOfSatisfying(BusinessException.class, exception -> {
-				assertThat(exception.getErrorCode()).isEqualTo(ErrorCode.POLICY_UNRESOLVED);
-				assertThat(exception.getErrorCode().getStatus().value()).isEqualTo(422);
-			});
-	}
 
 	@Test
 	void copiesIncomingAndOutgoingBytesAndNeverPrintsPayloadBody() {

@@ -9,7 +9,6 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 
-import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
@@ -46,19 +45,16 @@ public class KeyringSyncService {
 	private final PreferenceUserSettingRepository settings;
 	private final KeyringRegistrationRepository keyrings;
 	private final KeyringSyncRunRepository runs;
-	private final KeyringPayloadProvider payloads;
 	private final JdbcTemplate jdbc;
 	private final Clock clock;
 	private final com.e106.tingle.keyring.reset.KeyringResetGuard resetGuard;
-	private final ObjectProvider<DevSettingsIssuer> devSettings;
-	private final ObjectProvider<PeerSettingsIssuer> peerSettings;
+	private final DevSettingsIssuer issuer;
+	private final PeerSettingsIssuer peerIssuer;
 	private final KeyringCanonicalSnapshotService profileSnapshots;
 	private final SettingsChangeCoordinator settingsChanges;
+	// TPS1 저장을 확인한 기기 목록(기기 능력). 개발·운영이 같은 값을 쓴다.
 	@Value("${app.keyring.dev-settings.profile-device-serials:}")
 	private Set<String> profileDeviceSerials;
-	// 운영은 서명 키를 켜도 TSV3만 발급한다. 1바이트 ON/OFF·TPS1 형식은 개발 전용이다(11-11 결정 B).
-	@Value("#{environment.matchesProfiles('prod')}")
-	private boolean production;
 	private final SecureRandom random = new SecureRandom();
 	private final StoredAckProofVerifier verifier = new StoredAckProofVerifier();
 	private final KeyringProofVerifier appliedVerifier = new KeyringProofVerifier();
@@ -87,22 +83,14 @@ public class KeyringSyncService {
 		if (payloadFormat != null && !profileRequested && !peerRequested) {
 			throw new BusinessException(ErrorCode.INVALID_REQUEST);
 		}
-		if (production && !peerRequested) {
-			throw new BusinessException(ErrorCode.POLICY_UNRESOLVED);
-		}
 		Keyring device = access(userId, familyId, deviceId, OnboardingStatus.SYNC_PENDING);
 		requireCredential(device);
-		DevSettingsIssuer issuer = devSettings.getIfAvailable();
-		if (profileRequested && (issuer == null || !supportsProfile(device))) {
+		if (profileRequested && !supportsProfile(device)) {
 			throw new BusinessException(ErrorCode.POLICY_UNRESOLVED);
 		}
-		if (issuer != null) {
-			DevSettingsIssuer.requireDeviceNonce(deviceNonce);
-		} else if (deviceNonce != null) {
-			throw new BusinessException(ErrorCode.POLICY_UNRESOLVED);
-		}
+		DevSettingsIssuer.requireDeviceNonce(deviceNonce);
 		if (peerRequested) {
-			return createPeer(userId, familyId, requestKey, deviceNonce, device, issuer);
+			return createPeer(userId, familyId, requestKey, deviceNonce, device);
 		}
 		KeyringSyncRun replay = runs.findRequest(deviceId, device.getOwnerGeneration(), requestKey,
 			"[\"" + requestKey + "\"]").orElse(null);
@@ -113,9 +101,9 @@ public class KeyringSyncService {
 				throw new BusinessException(ErrorCode.IDEMPOTENCY_CONFLICT);
 			}
 			requireCurrentProfileRun(replay, device);
-			return new Created(issuedView(replay, device, requestKey, deviceNonce, issuer), false);
+			return new Created(issuedView(replay, device, requestKey, deviceNonce), false);
 		}
-		KeyringPayload payload = preparePayload(userId, device, issuer, profileRequested);
+		KeyringPayload payload = preparePayload(userId, device, profileRequested);
 		// 공급자가 설정 담당 서비스를 통해 버전을 확정했을 수 있으므로 캐시 대신 DB에서 다시 읽는다.
 		long current = version(userId);
 		if (payload == null || payload.userId() != userId || payload.deviceId() != deviceId
@@ -128,9 +116,9 @@ public class KeyringSyncService {
 		if (existing != null) {
 			if (!payload.format().equals(existing.getPayloadFormat())
 				|| !Arrays.equals(payload.bytes(), existing.getPayload())) {
-				if (issuer == null || (!PROFILE_FORMAT.equals(payload.format())
+				if (!PROFILE_FORMAT.equals(payload.format())
 					&& !PROFILE_FORMAT.equals(existing.getPayloadFormat())
-					&& !PeerSettingsCodec.FORMAT.equals(existing.getPayloadFormat()))) {
+					&& !PeerSettingsCodec.FORMAT.equals(existing.getPayloadFormat())) {
 					throw new BusinessException(ErrorCode.IDEMPOTENCY_CONFLICT);
 				}
 				// 설정 행은 이미 잠겨 있다. 같은 버전의 기존 발급을 바꾸지 않는다.
@@ -138,7 +126,7 @@ public class KeyringSyncService {
 				current = version(userId);
 			} else {
 				existing.addRequestKeyAlias(requestKey);
-				return new Created(issuedView(existing, device, requestKey, deviceNonce, issuer), false);
+				return new Created(issuedView(existing, device, requestKey, deviceNonce), false);
 			}
 		}
 		byte[] nonce = new byte[32];
@@ -150,17 +138,11 @@ public class KeyringSyncService {
 			run.bindOwnershipEpoch(device.getOwnershipEpoch());
 		}
 		runs.saveAndFlush(run);
-		return new Created(issuedView(run, device, requestKey, deviceNonce, issuer), true);
+		return new Created(issuedView(run, device, requestKey, deviceNonce), true);
 	}
 
-	private Created createPeer(long userId, UUID familyId, UUID requestKey, String deviceNonce, Keyring device,
-		DevSettingsIssuer signer) {
-		PeerSettingsIssuer issuer = requirePeerIssuer();
-		if (signer == null) {
-			throw new BusinessException(ErrorCode.POLICY_UNRESOLVED);
-		}
-		DevSettingsIssuer.requireDeviceNonce(deviceNonce);
-		issuer.requireSupported(device);
+	private Created createPeer(long userId, UUID familyId, UUID requestKey, String deviceNonce, Keyring device) {
+		peerIssuer.requireSupported(device);
 		KeyringSyncRun replay = runs.findRequest(device.getId(), device.getOwnerGeneration(), requestKey,
 			"[\"" + requestKey + "\"]").orElse(null);
 		if (replay != null) {
@@ -168,16 +150,16 @@ public class KeyringSyncService {
 				throw new BusinessException(ErrorCode.IDEMPOTENCY_CONFLICT);
 			}
 			requireCurrentProfileRun(replay, device);
-			return new Created(issuedView(replay, device, requestKey, deviceNonce, signer), false);
+			return new Created(issuedView(replay, device, requestKey, deviceNonce), false);
 		}
 		byte[] profile = profileSnapshots.generateStoragePayload(userId);
 		long current = version(userId);
 		KeyringSyncRun existing = runs.findByKeyringIdAndOwnerGenerationAndSettingsVersion(device.getId(),
 			device.getOwnerGeneration(), current).orElse(null);
 		if (existing != null) {
-			if (issuer.reusable(existing, device, profile, clock.instant())) {
+			if (peerIssuer.reusable(existing, device, profile, clock.instant())) {
 				existing.addRequestKeyAlias(requestKey);
-				return new Created(issuedView(existing, device, requestKey, deviceNonce, signer), false);
+				return new Created(issuedView(existing, device, requestKey, deviceNonce), false);
 			}
 			settingsChanges.advanceAndCapture(userId);
 			current = version(userId);
@@ -187,28 +169,16 @@ public class KeyringSyncService {
 		random.nextBytes(randomNonce);
 		String nonce = Base64.getUrlEncoder().withoutPadding().encodeToString(randomNonce);
 		Instant issued = clock.instant();
-		byte[] payload = issuer.issue(device, runId, nonce, current, profile, issued);
+		byte[] payload = peerIssuer.issue(device, runId, nonce, current, profile, issued);
 		requireSession(userId, familyId);
 		KeyringSyncRun run = new KeyringSyncRun(runId, device.getId(), userId, device.getOwnerGeneration(),
 			device.getCredentialKeyId(), current, payload, nonce, requestKey, issued, PeerSettingsCodec.FORMAT);
 		run.bindOwnershipEpoch(device.getOwnershipEpoch());
 		runs.saveAndFlush(run);
-		return new Created(issuedView(run, device, requestKey, deviceNonce, signer), true);
+		return new Created(issuedView(run, device, requestKey, deviceNonce), true);
 	}
 
-	private PeerSettingsIssuer requirePeerIssuer() {
-		PeerSettingsIssuer issuer = peerSettings.getIfAvailable();
-		if (issuer == null) {
-			throw new BusinessException(ErrorCode.POLICY_UNRESOLVED);
-		}
-		return issuer;
-	}
-
-	private KeyringPayload preparePayload(long userId, Keyring device, DevSettingsIssuer issuer,
-		boolean profileRequested) {
-		if (issuer == null) {
-			return payloads.prepare(userId, device.getId(), device.getOwnerGeneration());
-		}
+	private KeyringPayload preparePayload(long userId, Keyring device, boolean profileRequested) {
 		if (!profileRequested) {
 			return issuer.prepare(userId, device.getId(), device.getOwnerGeneration());
 		}
@@ -224,7 +194,7 @@ public class KeyringSyncService {
 	private void requireCurrentProfileRun(KeyringSyncRun run, Keyring device) {
 		if (PeerSettingsCodec.FORMAT.equals(run.getPayloadFormat())) {
 			if (version(run.getOwnerUserId()) != run.getSettingsVersion()
-				|| !requirePeerIssuer().reusable(run, device,
+				|| !peerIssuer.reusable(run, device,
 					profileSnapshots.generateStoragePayload(run.getOwnerUserId()), clock.instant())) {
 				throw new BusinessException(ErrorCode.SYNC_VERSION_STALE);
 			}
@@ -233,7 +203,7 @@ public class KeyringSyncService {
 		if (!PROFILE_FORMAT.equals(run.getPayloadFormat())) {
 			return;
 		}
-		if (devSettings.getIfAvailable() == null || !supportsProfile(device)) {
+		if (!supportsProfile(device)) {
 			throw new BusinessException(ErrorCode.POLICY_UNRESOLVED);
 		}
 		requireCredential(device);
@@ -247,11 +217,7 @@ public class KeyringSyncService {
 		}
 	}
 
-	private SyncRunView issuedView(KeyringSyncRun run, Keyring device, UUID requestKey,
-		String deviceNonce, DevSettingsIssuer issuer) {
-		if (issuer == null) {
-			return view(run, version(device.getOwnerUserId()));
-		}
+	private SyncRunView issuedView(KeyringSyncRun run, Keyring device, UUID requestKey, String deviceNonce) {
 		if (!Objects.equals(run.getCredentialKeyId(), device.getCredentialKeyId())) {
 			throw new BusinessException(ErrorCode.INVALID_DEVICE_PROOF);
 		}

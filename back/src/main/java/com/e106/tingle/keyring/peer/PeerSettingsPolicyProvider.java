@@ -7,8 +7,6 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
@@ -21,31 +19,14 @@ import lombok.RequiredArgsConstructor;
 
 /** Reads actual server relationship restrictions; unknown counterpart references keep completeness false. */
 @Service
-@ConditionalOnProperty(name = "app.keyring.peer.enabled", havingValue = "true")
 @RequiredArgsConstructor
 public class PeerSettingsPolicyProvider {
 
 	private final JdbcTemplate jdbc;
 	private final MemberAccessRepository members;
-	@Value("${app.keyring.peer.policy-approved:false}")
-	private boolean approved;
-	@Value("${app.keyring.peer.policy-version:0}")
-	private long policyVersion;
-	@Value("${app.keyring.peer.rule-version:0}")
-	private long ruleVersion;
-	@Value("${app.keyring.peer.lease-seconds:0}")
-	private long leaseSeconds;
-	@Value("${app.keyring.peer.opportunity-seconds:0}")
-	private long opportunitySeconds;
-	@Value("${app.keyring.peer.presence-gap-seconds:0}")
-	private int presenceGapSeconds;
+	private final PeerPolicyProperties properties;
 
 	public Policy current(long userId, Instant now) {
-		if (!approved || policyVersion != 0x52504331L || ruleVersion != 0x10001101L || leaseSeconds <= 0
-			|| opportunitySeconds <= 0 || opportunitySeconds > 365L * 86400
-			|| presenceGapSeconds < 1 || presenceGapSeconds > 300) {
-			throw new BusinessException(ErrorCode.POLICY_UNRESOLVED);
-		}
 		Boolean enabled = jdbc.queryForObject("select u.status='ACTIVE' and p.matching_enabled "
 			+ "from users u join matching_preference p on p.user_id=u.id where u.id=?", Boolean.class, userId);
 		if (enabled == null) {
@@ -90,8 +71,9 @@ public class PeerSettingsPolicyProvider {
 			complete = false;
 			restrictions = List.of();
 		}
-		return new Policy(policyVersion, ruleVersion, leaseSeconds, opportunitySeconds, presenceGapSeconds,
-			complete, enabled && members.canRespondToProposal(userId), restrictions);
+		return new Policy(properties.policyVersion(), properties.ruleVersion(), properties.leaseSeconds(),
+			properties.opportunitySeconds(), properties.presenceGapSeconds(), complete,
+			enabled && members.canRespondToProposal(userId), restrictions);
 	}
 
 	static byte[] uuid(UUID value) {

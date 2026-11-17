@@ -120,7 +120,7 @@ def main(argv=None) -> int:
         environment = {
             "APP_ENV": "dev",
             "AI_SERVICE_PUBLIC_KEYS": json.dumps({"synthetic-smoke": str(public)}),
-            "RISK_LOCAL_RULES_ENABLED": "false", "RISK_RELEASE_DESCRIPTOR_FILE": "",
+            "RISK_RELEASE_DESCRIPTOR_FILE": "",
             "ICEBREAKER_RELEASE_DESCRIPTOR_FILE": "",
         }
         with (patch.dict(os.environ, environment), patch.object(GmsClient, "request_text", tracked_request),

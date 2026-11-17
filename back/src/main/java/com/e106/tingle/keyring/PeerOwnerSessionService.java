@@ -13,7 +13,6 @@ import java.util.UUID;
 
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -33,7 +32,6 @@ import tools.jackson.databind.json.JsonMapper;
 
 /** A grant is frozen by idempotency key and current login/ownership scope; retries never extend its lifetime. */
 @Service
-@ConditionalOnProperty(name = "app.keyring.peer.enabled", havingValue = "true")
 @RequiredArgsConstructor
 public class PeerOwnerSessionService {
 

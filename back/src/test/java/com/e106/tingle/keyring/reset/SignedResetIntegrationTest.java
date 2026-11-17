@@ -15,27 +15,21 @@ import java.util.UUID;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
-import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 
 import com.e106.tingle.IntegrationTestSupport;
 import com.e106.tingle.TestcontainersConfiguration;
-import com.e106.tingle.keyring.DevSettingsIssuer;
 import com.e106.tingle.keyring.proof.KeyringProofTranscript;
-import com.e106.tingle.keyring.proof.ServerSettingsSigner;
 
 import tools.jackson.databind.JsonNode;
 
 /** Real Ed25519, HTTP authorization and disposable PostgreSQL; no actual device or team signing key. */
-@SpringBootTest(properties = {"app.keyring-reset.enabled=true",
-	"spring.sql.init.schema-locations=classpath:database/schema.sql,classpath:database/keyring-reset-249.sql"})
+@SpringBootTest
 @AutoConfigureMockMvc
 @ActiveProfiles({"test", "erd"})
-@Import({TestcontainersConfiguration.class, SignedResetIntegrationTest.Signing.class})
+@Import(TestcontainersConfiguration.class)
 class SignedResetIntegrationTest extends IntegrationTestSupport {
 	@Test
 	void newChallengeReissuesBeforeExpiryAndLateClearedAckCannotReleaseTheNextOwner() throws Exception {
@@ -215,24 +209,5 @@ class SignedResetIntegrationTest extends IntegrationTestSupport {
 
 	private record Fixture(JsonNode tokens, long user, long id, UUID generation, String serial, String keyId,
 		KeyPair keys) {
-	}
-
-	@TestConfiguration(proxyBeanMethods = false)
-	static class Signing {
-		@Bean
-		ServerSettingsSigner syntheticSigner() throws Exception {
-			KeyPair keys = KeyPairGenerator.getInstance("Ed25519").generateKeyPair();
-			return new ServerSettingsSigner(keys.getPrivate(), keys.getPublic());
-		}
-
-		@Bean
-		ResetDeviceProtocol resetDeviceProtocol(ServerSettingsSigner signer) {
-			return new SignedResetDeviceProtocol(signer);
-		}
-
-		@Bean
-		DevSettingsIssuer devSettingsIssuer(JdbcTemplate jdbc, ServerSettingsSigner signer) {
-			return new DevSettingsIssuer(jdbc, signer);
-		}
 	}
 }

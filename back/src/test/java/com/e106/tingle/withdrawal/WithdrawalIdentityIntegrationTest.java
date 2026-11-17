@@ -40,8 +40,7 @@ import com.e106.tingle.user.UserRepository;
 import tools.jackson.databind.JsonNode;
 
 /** Uses real PostgreSQL and verified-account fixtures; it does not contact a social provider. */
-@SpringBootTest(properties = {"app.withdrawal.enabled=true",
-	"app.withdrawal.identity-secret=identity-test-secret-is-at-least-thirty-two-bytes-long"})
+@SpringBootTest
 @AutoConfigureMockMvc
 @ActiveProfiles({"test", "erd"})
 @Import(TestcontainersConfiguration.class)
@@ -134,19 +133,18 @@ class WithdrawalIdentityIntegrationTest extends IntegrationTestSupport {
 	}
 
 	@Test
-	void malformedConfiguredKeyFailsClosedBeforeCreatingMember() {
-		WithdrawalIdentityService invalid = new WithdrawalIdentityService(jdbc, users, clock, true, "short");
-		String subject = newSocialId();
-		assertThatThrownBy(() -> transactions.execute(status -> invalid.provisionMember(SocialProvider.KAKAO, subject)))
-			.hasMessage("POLICY_UNRESOLVED");
-		assertThat(users.findByProviderAndProviderSubject(SocialProvider.KAKAO, subject)).isEmpty();
+	void missingOrShortConfiguredKeyPreventsStartup() {
+		for (String secret : new String[] {"", "short"}) {
+			assertThatThrownBy(() -> new WithdrawalIdentityService(jdbc, users, clock, secret))
+				.isInstanceOf(IllegalStateException.class).hasMessageContaining("WITHDRAWAL_IDENTITY_SECRET");
+		}
 	}
 
 	@Test
 	void replacingWithAnotherValidLengthKeyDoesNotBypassCommittedCooldown() throws Exception {
 		String subject = newSocialId();
 		withdrawIdentity(userIdOf(login("kakao", subject)), true);
-		WithdrawalIdentityService replaced = new WithdrawalIdentityService(jdbc, users, clock, true,
+		WithdrawalIdentityService replaced = new WithdrawalIdentityService(jdbc, users, clock,
 			"another-valid-length-key-must-not-bypass-existing-records");
 		assertThatThrownBy(() -> transactions.execute(status ->
 			replaced.provisionMember(SocialProvider.KAKAO, subject)))

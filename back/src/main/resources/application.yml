@@ -3,7 +3,7 @@ spring:
   application:
     name: tingle
   profiles:
-    # 프로필을 지정하지 않고 실행하면 local 로 뜬다. 서버(dev·prod)는 인프라 준비 후 프로필을 따로 만든다.
+    # 프로필을 지정하지 않고 실행하면 local 로 뜬다. 서버는 dev·prod 프로필로 뜨며 두 프로필은 같은 기능·같은 필수값을 쓴다.
     default: local
   docker:
     compose:
@@ -30,6 +30,11 @@ spring:
     resources:
       # 앱 전용 JSON API 서버라 정적 파일(HTML·이미지)을 내보내지 않는다. 없는 경로는 JSON 404로 응답한다.
       add-mappings: false
+  # @Scheduled 작업이 15개라 스레드 1개면 새 작업이 1초 주기 채팅 푸시를 늦출 수 있다.
+  task:
+    scheduling:
+      pool:
+        size: 4
   jackson:
     default-property-inclusion: always
     deserialization:
@@ -63,16 +68,14 @@ management:
     health:
       show-details: never
 
+# 아래 app 설정은 개발·운영이 같은 코드 경로로 돈다(기능을 켜고 끄는 값이 없다).
+# withdrawal · keyring.dev-settings · keyring.peer · push · chat-message-push 의 환경변수는 필수다
+# (profile-device-serials 만 빈 값 허용). 비었거나 올바르지 않으면 기동하지 않는다. local·test 는 시험용 값을 따로 준다.
 app:
-  # 신규 가입 키링 요구(서버 전체). false·off·no·0 이면 키링 없이 가입 완료를 허용한다. 그 밖에 불리언이 아닌 값이면 기동 실패.
-  signup:
-    keyring-required: ${TINGLE_SIGNUP_KEYRING_REQUIRED:true}
   withdrawal:
-    enabled: ${WITHDRAWAL_ENABLED:false}
+    # 탈퇴 HMAC 비밀값(32바이트 이상)
     identity-secret: ${WITHDRAWAL_IDENTITY_SECRET:}
     receipt-secret: ${WITHDRAWAL_RECEIPT_SECRET:}
-    scheduling-enabled: ${WITHDRAWAL_RETENTION_ENABLED:true}
-    photo-cleanup-scheduling-enabled: ${WITHDRAWAL_PHOTO_CLEANUP_ENABLED:true}
   # 인증 (팀 공유 인증 API 계약)
   auth:
     jwt-secret: ${JWT_SECRET:}
@@ -95,28 +98,23 @@ app:
   keyring:
     # 구매처를 임의 지정하지 않는다. 미설정이면 API는 purchaseUrl:null을 반환한다.
     purchase-url: ${KEYRING_PURCHASE_URL:}
+    # 키링 설정 서명 키(Ed25519 PEM). 개발·운영이 같은 키를 쓴다(11-11 결정 B).
     dev-settings:
-      enabled: ${KEYRING_DEV_SETTINGS_ENABLED:false}
       private-key-file: ${KEYRING_DEV_SETTINGS_PRIVATE_KEY_FILE:}
       public-key-file: ${KEYRING_DEV_SETTINGS_PUBLIC_KEY_FILE:}
-      # TPS1 저장 지원을 확인한 기기 일련번호만 등록한다. 쉼표로 구분하며 기본값은 비어 있다.
+      # TPS1 저장 지원을 확인한 기기 일련번호만 등록한다(기기 능력 목록). 쉼표로 구분하며 비어 있어도 된다.
       profile-device-serials: ${KEYRING_DEV_SETTINGS_PROFILE_DEVICE_SERIALS:}
+    # TSV3 정책 값. 비었거나 펌웨어 값과 다르면 기동하지 않는다(PeerPolicyProperties).
+    # server-public-key-hex 는 위 서명 키의 공개키(32바이트 hex)와 같아야 한다.
     peer:
-      # New ownership tables, policy approval and compatible device provisioning are required before opt-in.
-      enabled: ${KEYRING_PEER_ENABLED:false}
-      encounters-enabled: ${KEYRING_PEER_ENCOUNTERS_ENABLED:false}
-      review-intake-approved: ${KEYRING_PEER_REVIEW_INTAKE_APPROVED:false}
-      business-intake-enabled: ${KEYRING_PEER_BUSINESS_INTAKE_ENABLED:false}
       # 코드에 포함한 릴리즈(resources/database/keyring-rule-release.sql)의 번호와 해시. 운영·개발이 같은 값을 쓴다.
       business-rule-release-id: 603836ce-358a-4863-abcb-31f2b0468afb
       business-release-hash: 81c466388be59fcdae1fec53609d28922f1bc59e199392cac77cb0ca1fed7540
-      release-policy-approved: ${KEYRING_PEER_RELEASE_POLICY_APPROVED:false}
-      policy-approved: ${KEYRING_PEER_POLICY_APPROVED:false}
-      policy-version: ${KEYRING_PEER_POLICY_VERSION:0}
-      rule-version: ${KEYRING_PEER_RULE_VERSION:0}
-      lease-seconds: ${KEYRING_PEER_LEASE_SECONDS:0}
-      opportunity-seconds: ${KEYRING_PEER_OPPORTUNITY_SECONDS:0}
-      presence-gap-seconds: ${KEYRING_PEER_PRESENCE_GAP_SECONDS:0}
+      policy-version: ${KEYRING_PEER_POLICY_VERSION:}
+      rule-version: ${KEYRING_PEER_RULE_VERSION:}
+      lease-seconds: ${KEYRING_PEER_LEASE_SECONDS:}
+      opportunity-seconds: ${KEYRING_PEER_OPPORTUNITY_SECONDS:}
+      presence-gap-seconds: ${KEYRING_PEER_PRESENCE_GAP_SECONDS:}
       server-public-key-hex: ${KEYRING_PEER_SERVER_PUBLIC_KEY_HEX:}
 
   # 새 설문 회차가 쓰는 설문 버전 (resources/survey/questionnaires/{버전}.json). 바꿔도 이미 시작한 회차는 원래 버전을 쓴다.
@@ -155,26 +153,40 @@ app:
         version: "2026-11-02"
         required: false
 
+  # 서버 푸시(FCM). 서비스 계정 키는 GOOGLE_APPLICATION_CREDENTIALS 파일로 받는다.
   push:
-    enabled: ${PUSH_ENABLED:false}
     project-id: ${FIREBASE_PROJECT_ID:}
-    # JWT와 별도인 Base64 32바이트 키. 누락 시 등록은 503, 본인 설치 해제는 허용한다.
+    # JWT와 별도인 Base64 32바이트 키
     token-encryption-key: ${PUSH_TOKEN_ENCRYPTION_KEY:}
-  # 새 메시지 작업은 종료 안내 정책과 독립이며, 스키마·앱 준비 후 별도로 켠다.
+  # 새 메시지 푸시 작업(종료 안내 정책과 독립). 주기(ms)는 필수다.
   chat-message-push:
-    scheduling-enabled: ${CHAT_MESSAGE_PUSH_SCHEDULING_ENABLED:false}
-    poll-ms: ${CHAT_MESSAGE_PUSH_POLL_MS:1000}
+    poll-ms: ${CHAT_MESSAGE_PUSH_POLL_MS:}
+  # AI 서버 호출(서비스 토큰). 개발·운영은 네 값 모두 필수다(ServerSettingsCheck). environment 는 AI 의 APP_ENV 와 같아야 한다.
+  ai:
+    service:
+      environment: ${APP_AI_SERVICE_ENVIRONMENT:}
+      base-url: ${APP_AI_SERVICE_BASE_URL:}
+      key-id: ${APP_AI_SERVICE_KEY_ID:}
+      private-key-file: ${APP_AI_SERVICE_PRIVATE_KEY_FILE:}
+  # AI 시작 질문 릴리스 파일. 개발·운영은 필수다(ServerSettingsCheck).
+  icebreaker:
+    manifest-location: ${APP_ICEBREAKER_MANIFEST_LOCATION:}
   chat-notices:
     scheduling-enabled: true
     poll-ms: 15000
 
 tingle:
+  chat:
+    deletion:
+      # 채팅 삭제 기록(저널) 폴더. DB 백업에서 복원하면 이 기록으로 지운 채팅을 다시 지운다.
+      # 기본값은 사진 영구 볼륨 안이라 블루·그린이 함께 쓰고 재배포에도 남는다. 첫 삭제 때 자동으로 만든다.
+      journal-directory: ${TINGLE_CHAT_DELETION_JOURNAL_DIRECTORY:${tingle.photo.dir}/.chat-deletion-journal}
   photo:
     # 프로필 사진 파일을 두는 서버 폴더. DB(profile.photo_url)에는 이 폴더 기준 키(profile/{userId}/{uuid}.jpg)만 저장한다.
     # 운영은 blue·green 컨테이너가 함께 쓰는 영구 볼륨을 지정하고 백업한다. 미설정이면 임시 폴더(로컬·테스트용).
     dir: ${PHOTO_STORAGE_DIR:${java.io.tmpdir}/tingle-photos}
   ai:
-    # 개인 성향 분석(AI 서버). 공통 AI 설정(app.ai.service)이 꺼져 있으면 요청은 PENDING 으로 남는다.
+    # 개인 성향 분석(AI 서버). 공통 AI 설정(app.ai.service)의 서명 키가 없으면(local·test) 요청은 PENDING 으로 남는다.
     personal-analysis:
       analysis-version: SIS-A-1.0
       survey-versions:

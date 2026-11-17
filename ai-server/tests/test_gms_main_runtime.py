@@ -95,14 +95,9 @@ def configured_main(main_factory, tmp_path):
     return make
 
 
-@pytest.mark.parametrize("environment,rules_enabled,injection", [
-    (environment, rules_enabled, injection)
-    for environment in ("local", "test", "dev", "prod")
-    for rules_enabled in (None, True)
-    for injection in ("absent", "disabled", "enabled-without-runtime")
-    if not (injection == "enabled-without-runtime" and rules_enabled is True and environment != "prod")
-])
-def test_local_rules_do_not_enable_a_safety_provider(main_factory, monkeypatch, environment, rules_enabled, injection):
+@pytest.mark.parametrize("environment", ["local", "test", "dev", "prod"])
+@pytest.mark.parametrize("injection", ["absent", "disabled"])
+def test_local_rules_do_not_enable_a_safety_provider(main_factory, monkeypatch, environment, injection):
     original_init = GmsClient.__init__
     shared_clients = []
     def construct_shared(client, key, **kwargs):
@@ -114,23 +109,21 @@ def test_local_rules_do_not_enable_a_safety_provider(main_factory, monkeypatch, 
     monkeypatch.setattr(GmsClient, "request_text", request)
     factory = Mock(side_effect=AssertionError("OFF resolved a provider"))
     configuration = None if injection == "absent" else GmsPrimaryConfiguration(
-        enabled=injection == "enabled-without-runtime", approval_file="must-not-read",
+        enabled=False, approval_file="must-not-read",
         approval_sha256="must-not-read", client_factory=factory)
     monkeypatch.setenv("RISK_GMS_PRIMARY_ENABLED", "true")  # No Settings field consumes this.
-    host = main_factory(environment=environment, enabled=rules_enabled, gms_primary=configuration)
+    host = main_factory(environment=environment, gms_primary=configuration)
     assert host.client.get("/health").status_code == 200
-    if injection == "absent" or rules_enabled is True and environment != "prod":
-        assert type(host.client.app.state.risk_runtime.resources.engine) is LocalRuleRiskEngine
-        assert expect(host.post(request_for(host.release, [message(DANGER)])))["verdict"]["kind"] == "RISK"
-    else:
-        expect(host.post(), 422, "POLICY_UNRESOLVED")
+    # 환경과 무관하게 같은 로컬 규칙 엔진이 뜬다(운영·개발 동일).
+    assert type(host.client.app.state.risk_runtime.resources.engine) is LocalRuleRiskEngine
+    assert expect(host.post(request_for(host.release, [message(DANGER)])))["verdict"]["kind"] == "RISK"
     factory.assert_not_called()
     assert shared_clients  # Only the shared Match/Icebreaker startup path ran.
     request.assert_not_called()
 
 
 @pytest.mark.parametrize("kind", ["NORMAL", "RISK", "INSUFFICIENT"])
-@pytest.mark.parametrize("environment", ["local", "test", "dev"])
+@pytest.mark.parametrize("environment", ["local", "test", "dev", "prod"])
 def test_real_adapter_on_main_preserves_wire_contract_without_shadow(configured_main, kind, environment):
     def handler(request):
         assert str(request.url) == ENDPOINT and request.method == "POST"
@@ -422,3 +415,17 @@ def test_actual_asgi_disconnect_cancels_provider_and_sends_no_response(configure
         assert factory.transports[0].closed
         provider.assert_called_once()
     host.client.portal.call(scenario)
+
+
+@pytest.mark.parametrize("environment", ["dev", "prod"])
+def test_injected_gms_without_release_fails_startup_in_every_environment(main_factory, environment):
+    # 주입된 GMS는 환경과 무관하게 같은 경로를 탄다. Release가 없으면 조용히 꺼지지 않고 기동을 거절한다.
+    factory = Mock(side_effect=AssertionError("constructed a client without a release"))
+    configuration = GmsPrimaryConfiguration(
+        enabled=True, approval_file="must-not-read", approval_sha256="must-not-read", client_factory=factory)
+    host = main_factory(environment=environment, gms_primary=configuration, configured=False, start=False)
+    with pytest.raises(DevelopmentReleaseError):
+        with host.client:
+            pass
+    assert host.client.app.state.risk_runtime.resources is None
+    factory.assert_not_called()

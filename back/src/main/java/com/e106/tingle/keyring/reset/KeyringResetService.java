@@ -11,7 +11,6 @@ import java.util.HexFormat;
 import java.util.UUID;
 
 import org.springframework.beans.factory.ObjectProvider;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -29,7 +28,6 @@ import com.e106.tingle.user.UserStatus;
 import lombok.RequiredArgsConstructor;
 
 @Service
-@ConditionalOnProperty(name = "app.keyring-reset.enabled", havingValue = "true")
 @RequiredArgsConstructor
 public class KeyringResetService {
 	private final UserRepository users;

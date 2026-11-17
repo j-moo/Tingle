@@ -67,7 +67,7 @@ struct kr_platform {
 	/* Must complete a durable atomic write AND full readback before returning 0. */
 	int (*save)(void *ctx, const struct kr_settings *next);
 	/* Verifies authenticated server/owner binding and supported payload schema.
-	 * Default board adapter returns POLICY_UNRESOLVED until the contract exists.
+	 * Board adapter verifies the server signature with the pinned key; host tests inject their own.
 	 * SHA256 alone is NOT sender authentication. Called even for retry ACKs. */
 	const char *(*authorize)(void *ctx, const struct kr_settings *next,
 		const struct kr_settings_auth *auth, struct kr_peer_plan *plan);

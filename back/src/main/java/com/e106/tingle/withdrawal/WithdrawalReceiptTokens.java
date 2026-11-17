@@ -20,14 +20,11 @@ public class WithdrawalReceiptTokens {
 	private final byte[] secret;
 
 	public WithdrawalReceiptTokens(
-		@Value("${app.withdrawal.receipt-secret:${WITHDRAWAL_RECEIPT_SECRET:}}") String secret) {
-		this.secret = secret.getBytes(StandardCharsets.UTF_8);
+		@Value("${app.withdrawal.receipt-secret:}") String secret) {
+		this.secret = WithdrawalSecrets.require(secret, "WITHDRAWAL_RECEIPT_SECRET");
 	}
 
 	public String issue(UUID operation) {
-		if (secret.length < 32) {
-			throw new BusinessException(ErrorCode.SERVICE_UNAVAILABLE);
-		}
 		try {
 			Mac mac = Mac.getInstance("HmacSHA256");
 			mac.init(new SecretKeySpec(secret, "HmacSHA256"));

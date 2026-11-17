@@ -45,7 +45,6 @@ class KeyringRuleReleaseSeedTest {
 		assertThat(jdbc.queryForObject("select count(*) from rule_release", Integer.class)).isEqualTo(1);
 		assertThat(jdbc.queryForObject("select count(*) from rule_artifact", Integer.class)).isEqualTo(2);
 		Ter2BusinessReleaseResolver resolver = new Ter2BusinessReleaseResolver(jdbc, jsonMapper);
-		ReflectionTestUtils.setField(resolver, "approved", true);
 		ReflectionTestUtils.setField(resolver, "configuredRelease", releaseId);
 		ReflectionTestUtils.setField(resolver, "configuredHash", releaseHash);
 		assertThat(resolver.resolve("tingle-policy-v2", "r2-c-20261106", Instant.now())).hasToString(releaseId);

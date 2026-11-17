@@ -11,7 +11,6 @@ import java.util.TreeMap;
 import java.util.UUID;
 
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.dao.DataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
@@ -28,14 +27,11 @@ import tools.jackson.databind.node.ObjectNode;
 
 /** Pins an explicitly approved immutable matching/product-policy release, never the current survey channel. */
 @Component
-@ConditionalOnProperty(name = "app.keyring.peer.business-intake-enabled", havingValue = "true")
 @RequiredArgsConstructor
 public class Ter2BusinessReleaseResolver {
 
 	private final JdbcTemplate jdbc;
 	private final JsonMapper mapper;
-	@Value("${app.keyring.peer.policy-approved:false}")
-	private boolean approved;
 	@Value("${app.keyring.peer.business-rule-release-id:}")
 	private String configuredRelease;
 	@Value("${app.keyring.peer.business-release-hash:}")
@@ -47,7 +43,7 @@ public class Ter2BusinessReleaseResolver {
 
 	public UUID resolve(String policy, String rule, Instant occurredAt) {
 		try {
-			if (!approved || !configuredHash.matches("[0-9a-f]{64}")) {
+			if (!configuredHash.matches("[0-9a-f]{64}")) {
 				throw unresolved();
 			}
 			UUID id = UUID.fromString(configuredRelease);

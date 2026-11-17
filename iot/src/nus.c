@@ -469,9 +469,7 @@ static bool application_request(void *ctx, const struct kr_json *json, const cha
 void kr_nus_attach_application(struct kr_engine *engine)
 {
 	uint8_t key[32] = {0};
-#ifdef KR_DEV_SERVER_KEY_HEX
-	(void)hex2bin(KR_DEV_SERVER_KEY_HEX, 64, key, sizeof(key));
-#endif
+	(void)hex2bin(KR_DEV_SERVER_KEY_HEX, 64, key, sizeof(key)); /* CMake가 64자리 hex를 보장한다. */
 	struct kr_product_io io = {.uptime_ms = application_uptime, .random = application_random,
 		.blob = kr_storage_blob, .space = kr_storage_space, .stop_feedback = application_stop,
 		.refresh_phone = application_refresh_phone, .generation = application_generation};

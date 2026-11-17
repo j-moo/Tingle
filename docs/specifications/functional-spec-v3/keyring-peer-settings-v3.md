@@ -49,7 +49,7 @@ run/nonce·버전을 먼저 고정하고 TPS1 hash → grant 서명 → TSV3 →
 
 `VALUE/ANY/UNKNOWN/MISSING`은 공급 계약에 따라 구분한다. 미측정·불명확 입력을 임의 정상값으로 채우지 않는다.
 희망 성별·미측정 척도 등 기존 매핑의 정책 해석과 AI codec/rule 승인은 별도로 확인해야 한다.
-정책 승인 flag만 켠 것을 실제 담당자 합의 증거로 취급하지 않는다.
+정책 값을 넣은 것만으로 실제 담당자 합의 증거로 취급하지 않는다.
 
 응답은 기존 `SyncRunView`를 사용한다. 기기·소유 세대·epoch, syncRunId, 설정 버전/현재 버전, 상태·stale,
 원본 payload의 Base64url·형식·hash, 기기 STORED용 nonce/keyId/proofProtocolVersion와
@@ -144,7 +144,7 @@ event/submission·원래 시각/만남 기한을 확인한다. CONFIRMED와 REVI
 
 REVIEW는 peerCredential 빈 문자열을 허용할 수 있지만 실제 서명된 REVIEW 여부와 원문에 상대 credential이
 없는 상태를 검증해야 한다. 정상 만남에서 빈 credential을 허용하지 않는다. 진단 자료를 받는 정책은
-`review-intake-approved`로 별도 승인하며 기본 OFF다. 빈 문자열 허용만으로 접수나 삭제 허가가 성립하지 않는다.
+서버 설정이 아니라 이 명세의 검증 조건으로 정한다. 빈 문자열 허용만으로 접수나 삭제 허가가 성립하지 않는다.
 REVIEW의 상대 원문이 비어 있지 않으면 인증된 상대 credential에 결속된 PROFILE만 지원한다.
 상대 인증 없이 PROFILE을 포함하거나 귀속·형식이 확인되지 않는 원문은 POLICY_UNRESOLVED로 보류하며,
 저장과 삭제 receipt 발급을 하지 않는다. 미귀속 진단 자료의 보관 정책을 임의로 승인하지 않는다.
@@ -154,7 +154,7 @@ REVIEW의 상대 원문이 비어 있지 않으면 인증된 상대 credential�
 - 원 제출 기기의 당시 소유 구간·epoch·credential을 검증하고 원문을 영속 저장한다.
 - 동결 credential의 키 폐기 시각 이후 증명은 거부한다. 이미 양도된 기기라는 이유로 과거 정상 소유 구간을
   현재 소유 값으로 교체하지 않는다.
-- REVIEW는 정상 만남과 구분해 접수·보관한다. 불완전/옛 LAB 증명을 정상 만남으로 승격하지 않는다.
+- REVIEW는 정상 만남과 구분한다(현재는 접수 거절, 아래 활성화·검증 경계). 불완전/옛 LAB 증명을 정상 만남으로 승격하지 않는다.
 - 같은 submission/원문 재시도와 응답 유실은 기존 receipt를 복구하고, 같은 제출 ID의 다른 원문은 충돌한다.
 - 내구 저장 commit 뒤 해당 원문·기기·소유 세대에 결속된 receipt만 발급한다. boolean
   canDeleteLocalRecord만으로 기기 원본을 삭제하지 않는다.
@@ -199,7 +199,7 @@ DB에 등록된 XIAO 기기·서버 공개키 pin·초기화 guard와 원 접수
 - RESTORE_ACCOUNT_LOCK은 당시 영속 접수한 상대 credential 357B를 그대로 사용한다. 현재 상대 소유자나
   현재 프로필에서 과거 메타데이터를 추정하지 않는다. 허가 발급 시점으로부터300초 범위만 사용하며 동일 키
   재시도/GET은 발급 시각과 grantId·서명을 고정한다. 만료 후에는 새 요청 키가 필요하다.
-- RELEASE_AFTER_DEPARTURE는 명시적인 release 정책 승인을 요구한다. 양쪽 원본의 VERIFIED_BOTH와 해당 만남
+- RELEASE_AFTER_DEPARTURE는 양쪽 원본의 VERIFIED_BOTH와 해당 만남
   시각의 실제 NOT_MATCHED 관계가 있어야 하며 제안·참여자 응답/차단·채팅·현재 사용자 차단이 없어야 한다.
   서버 허가와 별개로 기기는 원본 접수와 해당 상대 소유 세대의 이탈 관측 조건을 확인한다.
 - ERROR_REVIEWED는 REVIEW_QUARANTINED와 실제 별도 검토 승인 행을 요구한다. 일반 상대를 오류 fingerprint로
@@ -215,31 +215,26 @@ FE는 이 null 필드까지 그대로 BLE 명령에 넣지 않고, 해당 proofP
 
 ## 활성화·검증 경계
 
-`app.keyring.peer.enabled`는 기본 OFF다. 전체 설정/소유 제어와 함께 다음 승인·활성화 경계를 따로 관리한다.
+2026-11-17(S15P31E106-407)부터 TSV3 설정·소유 제어·TER2 접수·업무 연결·release 발급은 개발·운영 모두 늘 켜져 있다.
+켜고 끄는 `app.keyring.peer.*` 승인 스위치는 없다. 정책 값(`policy-version`·`rule-version`·`lease-seconds`·
+`opportunity-seconds`·`presence-gap-seconds`·`server-public-key-hex`)은 필수이며 비었거나 펌웨어 값과 다르면 서버가 기동하지 않는다.
 
-| 설정 | 기본값·의미 |
-| --- | --- |
-| encounters-enabled | false. TER2 내구 접수 공급 등록 |
-| review-intake-approved | false. 서명된 REVIEW 접수 정책 승인 |
-| business-intake-enabled | false. 양쪽 원본을 기존 업무 접수/평가로 연결 |
-| release-policy-approved | false. 관계 상태 검사를 통과한 release 발급 승인 |
-| policy-approved | false. TSV3 정책/규칙·기한 공급 승인 |
+- REVIEW(검토) 접수는 모든 환경에서 POLICY_UNRESOLVED로 거절한다. 검토 승인 행을 만드는 판정 도구가 생기면 연다.
+  그전에는 REVIEW_QUARANTINED가 새로 생기지 않는다.
 
-위 설정 이름의 공통 prefix는 `app.keyring.peer`다. 하나를 켰다고 다른 승인이 성립하지 않는다.
-별도 승인 없는 공유 DB 변경·서버 설정/기능 활성화를 수행하지 않는다.
-선택적 peer 테이블은 JPA 자동 생성·앱 시작 시 자동 마이그레이션 대상이 아니며 수동 검토/반영이 필요하다.
-운영 수동 반영본은 `infra/db/prod-changes/2026-11-06-peer-flow-270.sql`이다.
-이는 신규 테이블·인덱스의 재실행을 허용하며 기존 정의를 교정하거나 과거 소유를 추정하지 않는다.
-실행 SQL은 `back/src/main/resources/database/`의 keyring-peer-ownership-270.sql,
-keyring-peer-commands-270.sql, keyring-peer-encounter-270.sql 세 파일이다.
-입력 철회의 원문·credential·hash·receipt 정리는 접수 기능 OFF 여부와 관계없이 수행한다.
-선택 테이블이 아예 없는 기존 배포에서는 테이블 존재를 확인한 뒤 해당 정리를 생략한다.
+peer 테이블은 엔티티가 아니라 JPA가 만들거나 검사하지 않는다. 서버는 기동할 때 표가 있는지 확인하고 없으면 멈춘다.
+개발·운영 DB 반영본은 `infra/db/prod-changes/2026-11-17-env-parity-407.sql`(이전 `2026-11-06-peer-flow-270.sql` 포함)이며
+재실행해도 안전하고 기존 정의를 교정하거나 과거 소유를 추정하지 않는다.
+설계 SQL은 `back/src/main/resources/database/`의 keyring-peer-ownership-270.sql,
+keyring-peer-commands-270.sql, keyring-peer-encounter-270.sql 세 파일이다(local·test는 시작할 때 실행).
+입력 철회의 원문·credential·hash·receipt 정리는 접수 결과와 관계없이 수행한다.
+탈퇴 정리는 방어적으로 테이블 존재를 확인하고 없으면 해당 정리를 생략하지만, 두 환경 모두 배포 전에 이 테이블이 있어야 한다.
 
 TSV3 공급에는 DB에 등록된 XIAO 기기 + 폐기되지 않은 credential, 펌웨어에 고정한 서버 공개키와 일치하는 전용 서명 공급,
 승인한 policy/rule·lease/opportunity/presence 값 및 실제 사용자 입력이 필요하다.
 미승인 정책·미확정 수명을 정상 매칭 설정으로 보정하지 않는다.
 서명 키 loader는 dev/test와 함께 prod에서도 같은 개발 서명 키를 읽는다(11-11 결정 B, 펌웨어 고정 공개키 유지).
-키는 설정한 파일에서만 읽고 임의 키 생성·기본 키는 계속 금지한다. 운영에서도 1바이트 ON/OFF·TPS1 발급은 열지 않는다.
+키는 설정한 파일에서만 읽고 임의 키 생성·기본 키는 계속 금지한다. 운영도 개발과 같이 1바이트 ON/OFF·TPS1을 허용한다(11-17 결정 D3).
 실서비스로 가려면 운영 전용 키를 새로 만들고 그 공개키로 펌웨어를 다시 빌드해야 한다.
 
 정확한 바이너리·서명 원문은 이 기능 명세에 복사하지 않는다. 관련 Jira에서 외부 인계 기준을 연결하고

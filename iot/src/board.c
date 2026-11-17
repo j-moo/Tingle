@@ -89,7 +89,6 @@ void kr_board_start_charge_notice(void)
 	k_mutex_unlock(&power_lock);
 }
 
-#ifdef KR_DEV_SERVER_KEY_HEX
 static uint8_t server_key[32];
 static struct kr_settings_nonce challenge;
 
@@ -116,7 +115,7 @@ static const char *accept_reset(void *ctx, const struct kr_json *json)
 {
 	return kr_reset_begin(ctx, json, k_uptime_get(), KR_DEV_SERVER_KEY_ID, server_key);
 }
-#endif
+
 BUILD_ASSERT(sizeof(struct kr_settings) < 3900, "Atomic NVS record must fit one erase sector");
 
 static int put(uint16_t key, const void *data, size_t length)
@@ -162,12 +161,7 @@ static int write_settings(void *ctx, uint16_t key, const struct kr_settings *val
 static bool recover_settings_owner(void *ctx, const struct kr_core *core, const struct kr_settings *value)
 {
 	(void)ctx;
-#ifdef KR_DEV_SERVER_KEY_HEX
 	return kr_settings_recovery_owner(core, value, server_key);
-#else
-	(void)core; (void)value;
-	return false;
-#endif
 }
 
 static const struct kr_settings_storage settings_io = {
@@ -311,9 +305,7 @@ static const char *erase_owner(void *ctx)
 	if (result < 0 && result != -ENOENT) { return "STORAGE_ERROR"; }
 	if (nvs_read(&fs, KR_SETTINGS_BACKUP_KEY, &byte, sizeof(byte)) != -ENOENT) { return "STORAGE_ERROR"; }
 	memset(&readback, 0, sizeof(readback));
-#ifdef KR_DEV_SERVER_KEY_HEX
 	memset(&challenge, 0, sizeof(challenge));
-#endif
 	return clear_bonds();
 }
 
@@ -336,7 +328,6 @@ static int load_reset(struct kr_core *core)
 static const char *authorize(void *ctx, const struct kr_settings *next,
 	const struct kr_settings_auth *auth, struct kr_peer_plan *plan)
 {
-#ifdef KR_DEV_SERVER_KEY_HEX
 	const struct kr_core *core = ctx;
 	const char *error = kr_verify_dev_settings(&core->identity, next, auth,
 		&challenge, k_uptime_get(), KR_DEV_SERVER_KEY_ID, server_key, &plan->verified_time);
@@ -372,18 +363,6 @@ static const char *authorize(void *ctx, const struct kr_settings *next,
 		plan->length = KR_DEV_DISCOVERY_BYTES;
 	}
 	return NULL;
-#else
-	(void)ctx;
-	(void)next;
-	(void)auth;
-	(void)plan;
-	/* S15P31E106-225 dependency: Notion sync-runs explicitly returns
-	 * POLICY_UNRESOLVED until the official payload provider exists.
-	 * No insecure runtime switch: replace this adapter only after agreement on
-	 * authenticated owner/server envelope, schema and verification vectors.
-	 * https://app.notion.com/p/3ffc91ccb66080d58b62dfbbf647b3b8 */
-	return "POLICY_UNRESOLVED";
-#endif
 }
 
 static int identity(struct kr_identity *id)
@@ -427,7 +406,6 @@ int kr_board_open(struct kr_core *core)
 {
 	core->platform = (struct kr_platform){.ctx = core, .save = save, .authorize = authorize,
 		.begin_reset = begin_reset, .save_reset = save_reset, .erase_owner = erase_owner};
-#ifdef KR_DEV_SERVER_KEY_HEX
 	const char *public_hex = KR_DEV_SERVER_KEY_HEX;
 	if (hex2bin(public_hex, strlen(public_hex), server_key, sizeof(server_key)) != sizeof(server_key)) {
 		return -EINVAL;
@@ -435,7 +413,6 @@ int kr_board_open(struct kr_core *core)
 	core->platform.issue_settings_nonce = issue_settings_nonce;
 	core->platform.issue_reset_challenge = issue_reset_challenge;
 	core->platform.accept_reset = accept_reset;
-#endif
 	if (gpio_is_ready_dt(&led)) { gpio_pin_configure_dt(&led, GPIO_OUTPUT_INACTIVE); }
 	const struct device *flash = FIXED_PARTITION_DEVICE(registration_store);
 	int result = device_is_ready(flash) ? 0 : device_init(flash);

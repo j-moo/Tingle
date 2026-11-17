@@ -114,7 +114,6 @@ class Ter2ReceiptServiceTest {
 			mapper, snapshots, new DataSourceTransactionManager(dataSource));
 		ReflectionTestUtils.setField(service, "expectedServerPublicKeyHex", HexFormat.of().formatHex(server));
 		// Explicit synthetic review policy approval; production's absent/default flag remains false.
-		ReflectionTestUtils.setField(service, "reviewIntakeApproved", true);
 		int evidence = evidence(raw);
 		byte[] own = Arrays.copyOfRange(raw, evidence + 80, evidence + 437);
 		byte[] peer = Arrays.copyOfRange(raw, evidence + 437, evidence + 794);
@@ -211,25 +210,13 @@ class Ter2ReceiptServiceTest {
 	}
 
 	@Test
-	void quarantinesAuthenticatedReviewAndRejectsAnotherOriginalForTheSameEvent() throws Exception {
-		byte[] review = raw.clone();
-		review[25] = 3;
-		review[27] = 2;
-		signSynthetic(review, 1);
-		var accepted = service.accept(1, 100, submission(review));
-		assertThat(accepted.encounterStatus()).isEqualTo("REVIEW_QUARANTINED");
-		assertThat(accepted.proof().receiptStatus()).isEqualTo("STORED");
-		assertThatThrownBy(() -> service.accept(1, 100, submission(raw)))
-			.isInstanceOf(BusinessException.class).extracting("errorCode").isEqualTo(ErrorCode.IDEMPOTENCY_CONFLICT);
-		assertThat(jdbc.queryForObject("select count(*) from keyring_peer_encounter", Long.class)).isEqualTo(1);
-	}
-
-	@Test
-	void reviewWithoutPeerAcceptsEmptyCredentialButConfirmedRecordDoesNot() throws Exception {
+	void reviewWithoutPeerIsRejectedAndConfirmedRecordNeedsACredential() throws Exception {
 		byte[] review = emptyPeerReview(raw);
 		Submission request = submission(review);
 		assertThat(request.peerCredential()).isEmpty();
-		assertThat(service.accept(1, 100, request).encounterStatus()).isEqualTo("REVIEW_QUARANTINED");
+		// REVIEW 접수는 판정 도구가 생길 때까지 모든 환경에서 거절한다.
+		assertThatThrownBy(() -> service.accept(1, 100, request)).isInstanceOf(BusinessException.class)
+			.extracting("errorCode").isEqualTo(ErrorCode.POLICY_UNRESOLVED);
 		Submission normal = submission(raw);
 		Submission missing = new Submission(normal.submissionId(), normal.eventId(), normal.occurredAt(),
 			normal.policyVersion(), normal.matchingRuleVersion(), normal.settingsSnapshotId(), "", normal.evidence());
@@ -322,12 +309,11 @@ class Ter2ReceiptServiceTest {
 	}
 
 	@Test
-	void reviewNeedsExplicitApprovalBeforeStoringOrIssuingDeletionPermission() throws Exception {
+	void reviewIsRejectedUntilReviewToolingExistsAndStoresNothing() throws Exception {
 		byte[] review = raw.clone();
 		review[25] = 3;
 		review[27] = 2;
 		signSynthetic(review, 1);
-		ReflectionTestUtils.setField(service, "reviewIntakeApproved", false);
 		assertThatThrownBy(() -> service.accept(1, 100, submission(review)))
 			.isInstanceOf(BusinessException.class).extracting("errorCode").isEqualTo(ErrorCode.POLICY_UNRESOLVED);
 		assertThat(jdbc.queryForObject("select count(*) from keyring_peer_encounter", Long.class)).isZero();
