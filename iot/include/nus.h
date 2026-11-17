@@ -10,6 +10,8 @@
 struct k_sem;
 struct kr_engine;
 struct kr_record;
+struct kr_diag_snapshot;
+bool kr_nus_diag_snapshot(bool records, uint64_t filter, struct kr_diag_snapshot *);
 int kr_nus_init(struct k_sem *peer_wake);
 bool kr_nus_take_peer_plan(struct kr_peer_plan *out);
 void kr_nus_start_window(void);

@@ -1,4 +1,5 @@
 #include "product.h"
+#include "diagnostics.h"
 #include "matching.h"
 #include "battery.h"
 #include "feedback.h"
@@ -634,6 +635,105 @@ static void test_failed_input_change(FILE *scratch)
 	assert(kr_count(&a->engine, KR_CONFIRMED) == 1 && !a->engine.storage_error);
 	puts("retry-flow: identical failed input stays suppressed; changed signed input retries after ACK/reboot with immutable old proof");
 }
+static void diag_preserved(struct test_board *b, bool records, uint64_t filter, struct kr_diag_snapshot *out)
+{
+	/* Include identity/secret, settings, original records, suppression, blobs,
+	 * nonce counters, callbacks and RAM state, not just the write counter. */
+	static struct test_board before;
+	memcpy(&before, b, sizeof(before));
+	kr_product_diag_capture(&b->app, records, filter, out);
+	char line[KR_DIAG_LINE_BYTES], secret[129]; kr_hex(b->core.identity.secret, 64, secret);
+	unsigned count = 0;
+	while (kr_diag_format(out, count, line)) {
+		assert(strlen(line) < sizeof(line) - 1 && !strncmp(line, "MATCH ", 6));
+		assert(!strstr(line, secret));
+		++count; assert(count <= 6 + KR_RECORDS + KR_SUPPRESSIONS + KR_PEERS);
+	}
+	assert(count == (out->available ? 6 + out->row_count + out->peer_count : 2));
+	assert(!memcmp(&before, b, sizeof(before)));
+}
+static void test_usb_diagnostics(FILE *scratch)
+{
+	uint64_t filter = 123;
+	assert(kr_diag_parse("MATCH STATUS", &filter) == KR_DIAG_STATUS && !filter);
+	assert(kr_diag_parse("MATCH RECORDS", &filter) == KR_DIAG_RECORDS && !filter);
+	assert(kr_diag_parse("MATCH RECORDS XIAO-0200000000000000", &filter) == KR_DIAG_RECORDS && filter == 2);
+	assert(kr_diag_parse("MATCH RECORDS XIAO-0200000000000080", &filter) == KR_DIAG_RECORDS && filter == 2);
+	assert(kr_diag_parse("MATCH RECORDS XIAO-ABCDEF0000000000", &filter) == KR_DIAG_RECORDS && filter == 0xefcdab);
+	const char *invalid[] = {"MATCH RECORDS 13", "MATCH RECORDS XIAO-0000000000000080", "MATCH RECORDS XIAO-020000000000000z",
+		"MATCH RECORDS XIAO-0200000000000000extra", "MATCH RECORDS XIAO-02", "MATCH STATUS extra", "MATCH RESET"};
+	for (unsigned i = 0; i < sizeof(invalid) / sizeof(invalid[0]); ++i) {
+		assert(kr_diag_parse(invalid[i], &filter) == KR_DIAG_INVALID && !filter);
+	}
+	assert(kr_diag_parse("STORAGE CHECK", &filter) == KR_DIAG_NONE);
+	static struct kr_diag_snapshot snapshot;
+	struct kr_product unattached = {0};
+	kr_product_diag_capture(&unattached, true, 2, &snapshot);
+	assert(!snapshot.available && snapshot.filter == 2);
+	boot(0, 1, scratch); boot(1, 2, scratch); exchange_pair(160);
+	struct test_board *b = &boards[0];
+	unsigned slot = 0;
+	while (slot < KR_RECORDS && b->engine.records[slot].kind != KR_CONFIRMED) { ++slot; }
+	assert(slot < KR_RECORDS);
+	diag_preserved(b, false, 0, &snapshot);
+	assert(snapshot.ready && !snapshot.gates && snapshot.confirmed == 1 && !snapshot.row_count);
+	diag_preserved(b, true, 2, &snapshot);
+	assert(snapshot.row_count == 1 && snapshot.rows[0].kind == KR_CONFIRMED && snapshot.peer_count == 1);
+	assert(snapshot.rows[0].effect == KR_DIAG_SAME_SCOPE && snapshot.inputs[slot].eligibility == 1);
+	assert(snapshot.inputs[slot].score_ab >= 5000 && snapshot.inputs[slot].score_ba >= 5000);
+	assert((snapshot.rows[0].flags & KR_DIAG_SCOPE_KNOWN) && snapshot.rows[0].epoch == 1);
+	struct kr_record frozen = b->engine.records[slot];
+	diag_preserved(b, true, 999, &snapshot); assert(!snapshot.row_count && !snapshot.peer_count);
+	/* A successful server ACK removes the raw record but preserves the ledger. */
+	assert(kr_ack(&b->engine, frozen.id) == KR_OK);
+	diag_preserved(b, true, 2, &snapshot);
+	assert(!snapshot.confirmed && snapshot.suppressions == 1 && snapshot.row_count == 1);
+	assert((snapshot.rows[0].flags & KR_DIAG_LEDGER) && snapshot.rows[0].effect == KR_DIAG_SAME_SCOPE);
+	b->ms += 6000;
+	diag_preserved(b, true, 2, &snapshot);
+	assert(snapshot.rows[0].effect == KR_DIAG_UNKNOWN_PEER && !snapshot.peers[0].recent);
+	b->ms -= 6000;
+	b->app.duplicate_suppression[0] = true;
+	diag_preserved(b, true, 2, &snapshot); assert(snapshot.rows[0].effect == KR_DIAG_DUPLICATE_REF);
+	b->app.duplicate_suppression[0] = false;
+	for (unsigned i = 0; i < KR_PEERS; ++i) {
+		if (b->radio.sessions[i].authenticated) { ++b->radio.sessions[i].remote.ownership_epoch; }
+	}
+	diag_preserved(b, true, 2, &snapshot); assert(snapshot.rows[0].effect == KR_DIAG_OWNER_CHANGED);
+	/* A changed failed input is retryable; it is not a successful duplicate. */
+	b->engine.records[slot] = frozen; b->engine.records[slot].kind = KR_REVIEW;
+	b->engine.records[slot].reason = KR_ALGORITHM_REJECT; --b->engine.records[slot].own.revision;
+	diag_preserved(b, true, 2, &snapshot); assert(snapshot.rows[0].effect == KR_DIAG_INPUT_CHANGED);
+	b->engine.records[slot].reason = KR_PEER_SETTINGS_CHANGED;
+	diag_preserved(b, true, 2, &snapshot); assert(snapshot.rows[0].effect == KR_DIAG_RETIRED);
+	/* Reboot-style unready state keeps the stored version; no implicit sync. */
+	b->app.policy_loaded = b->app.clock_ready = b->engine.ready = false;
+	diag_preserved(b, true, 2, &snapshot);
+	assert(snapshot.stored_version == 10 && !snapshot.ready && !snapshot.time_ready);
+	assert((snapshot.gates & (KR_DIAG_NO_POLICY | KR_DIAG_NO_TIME)) == (KR_DIAG_NO_POLICY | KR_DIAG_NO_TIME));
+	boot(0, 1, scratch); b = &boards[0];
+	b->app.policy.enabled = false; b->app.settings[4 + 195] &= ~1u;
+	diag_preserved(b, false, 0, &snapshot);
+	assert(!snapshot.ready && (snapshot.gates & KR_DIAG_DISABLED) && (snapshot.gates & KR_DIAG_OFF));
+	b->core.settings_recovery_required = true; b->engine.storage_error = true;
+	b->engine.quarantined_records = b->app.quarantine_unresolved = 1;
+	diag_preserved(b, true, 0, &snapshot);
+	assert((snapshot.gates & (KR_DIAG_STORAGE | KR_DIAG_RECOVERY | KR_DIAG_QUARANTINE)) ==
+		(KR_DIAG_STORAGE | KR_DIAG_RECOVERY | KR_DIAG_QUARANTINE));
+	assert(snapshot.row_count == 1 && snapshot.rows[0].effect == KR_DIAG_QUARANTINED);
+	/* Bounded full stores, including anonymous radio errors, never lose a row. */
+	for (unsigned i = 0; i < KR_RECORDS; ++i) {
+		b->engine.records[i] = frozen; b->engine.records[i].peer = UINT64_MAX - i;
+		b->engine.records[i].sequence = UINT32_MAX; b->engine.records[i].occurred_at = UINT64_MAX;
+		b->engine.records[i].expires_at = UINT64_MAX;
+	}
+	for (unsigned i = 0; i < KR_SUPPRESSIONS; ++i) {
+		b->engine.suppressed[i] = (struct kr_suppression){.peer = UINT64_MAX - i, .occurred_at = UINT64_MAX,
+			.expires_at = UINT64_MAX, .own_revision = UINT32_MAX, .peer_revision = UINT32_MAX, .phase = KR_COMPLETE};
+	}
+	diag_preserved(b, true, 0, &snapshot); assert(snapshot.row_count == KR_RECORDS + KR_SUPPRESSIONS && !snapshot.can_insert);
+	puts("USB match diagnostics: readonly state/storage, live-vs-stale peer, frozen scores, suppression, filters and bounds passed");
+}
 void test_power_monitor(void);
 static void test_carrier_feedback(void)
 {
@@ -1092,6 +1192,6 @@ int main(int argc, char **argv)
 		assert(kr_count(&boards[i].engine, KR_CONFIRMED) <= 1 && !boards[i].engine.storage_error);
 		confirmed += kr_count(&boards[i].engine, KR_CONFIRMED);
 	} assert(confirmed >= 2); test_owner_transition(scratch); test_candidate_and_completion(scratch); test_same_payload_resume(scratch); test_failed_input_change(scratch);
-	test_applied_proof(f, scratch); test_quarantine_isolation(scratch); assert(!fclose(scratch));
+	test_applied_proof(f, scratch); test_quarantine_isolation(scratch); test_usb_diagnostics(scratch); assert(!fclose(scratch));
 	assert(!fclose(f)); puts("product: account dedup + durable suppression, persistent cursor/sequence, signed dynamic duration, legacy migration, battery truth and full flow passed"); return 0;
 }
