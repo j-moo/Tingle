@@ -78,4 +78,15 @@ class BleOwnerFlowStatusTest {
         assertEquals(listOf("tingle-device-proof-v1"), info.supportedProofProtocolVersions)
         assertNull(info.ownershipEpoch)
     }
+
+    /** DEVICE_INFO의 준비 플래그는 그대로 읽고, 생략·문자열 값은 미확인으로 남긴다. */
+    @Test fun deviceInfoCarriesReadinessAndRecoveryFlags() {
+        fun info(extra: String) = BleProbeProtocol.info(Json.parseToJsonElement(
+            "{\"deviceSerial\":\"XIAO-test\",\"firmwareVersion\":\"1\"$extra}").jsonObject).readiness
+        val reported = info(",\"applied\":false,\"timeReady\":false,\"matchingReady\":false,\"settingsRecoveryRequired\":true")
+        assertEquals(false, reported.applied); assertEquals(false, reported.timeReady)
+        assertEquals(false, reported.matchingReady); assertEquals(true, reported.settingsRecoveryRequired)
+        val missing = info(",\"applied\":\"true\"")
+        assertNull(missing.applied); assertNull(missing.timeReady); assertNull(missing.matchingReady); assertNull(missing.settingsRecoveryRequired)
+    }
 }

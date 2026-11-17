@@ -7,6 +7,8 @@ import com.ssafy.e106.core.storage.*
 import com.ssafy.e106.features.keyring.data.*
 import com.ssafy.e106.features.keyring.ui.*
 import com.ssafy.e106.features.onboarding.TestSession
+import com.ssafy.e106.features.settings.data.*
+import com.ssafy.e106.features.settings.ui.ConflictValues
 import io.ktor.client.engine.mock.*
 import io.ktor.client.request.*
 import io.ktor.http.*
@@ -981,5 +983,180 @@ class KeyringSyncTest {
         m.latest(syncRun.deviceId); runCurrent()
         assertEquals(2, sends); assertEquals(2, server.acks.size)
         assertNotEquals(server.creates.first().second, server.creates.last().second)
+    }
+
+    // ---- 재연결 준비 상태(재부팅·OFF·미확인)와 끊긴 전송 재개 ----
+    private val fullBody = SyncChallengeBody("A".repeat(43), KeyringSyncProtocol.FULL_SETTINGS_FORMAT)
+    private fun board(run: KeyringSyncRun, applied: Boolean?, timeReady: Boolean?, matchingReady: Boolean?) =
+        BleDeviceInfo("XIAO-test", "test", true, ownershipEpoch = run.ownershipEpoch, storedSettingsVersion = run.settingsVersion,
+            storedPayloadHash = run.payloadHash, readiness = BleOwnerFlowStatus(applied = applied, timeReady = timeReady, matchingReady = matchingReady))
+    private class MatchingChoice(var enabled: Boolean) : MatchingSettingsRepository {
+        override suspend fun get(userId: Long, kind: SettingsKind): ApiResult<SettingsDocument> =
+            ApiResult.Ok(SettingsDocument(ConflictValues.Matching(enabled, false), "\"e\""))
+        override suspend fun save(userId: Long, kind: SettingsKind, values: ConflictValues, etag: String): ApiResult<SettingsDocument> =
+            error("No save")
+    }
+    private fun tsv3Server() = SyncServer().apply {
+        run = tsv3Run()
+        createAction = { run = run.copy(state = "PENDING"); ApiResult.Ok(run) }
+    }
+
+    @Test fun boardDecisionUsesFreshReadinessNotOnlyStoredHash() {
+        val run = tsv3Run()
+        assertFalse(KeyringBoardSync.needsResync(board(run, true, true, true), run))
+        // 매칭 OFF·가입 전 matchingReady=false는 재전송 조건이 아니다.
+        assertFalse(KeyringBoardSync.needsResync(board(run, true, true, false), run))
+        // 재부팅: 같은 버전·해시라도 미적용·시간 미확보·미확인·복구 필요면 다시 보낸다.
+        val ready = board(run, true, true, true)
+        for (info in listOf(board(run, false, true, false), board(run, true, false, false), board(run, null, null, null),
+            ready.copy(readiness = ready.readiness.copy(settingsRecoveryRequired = true)),
+            ready.copy(ownershipEpoch = 3), ready.copy(storedPayloadHash = "0".repeat(64))))
+            assertTrue(KeyringBoardSync.needsResync(info, run))
+        // 이전 ON/OFF 형식은 두 플래그를 항상 false로 보고하므로 반복 전송하지 않는다.
+        assertFalse(KeyringBoardSync.needsResync(board(syncRun, false, false, false), syncRun))
+    }
+
+    @Test fun readinessNeverReadyWhenUnknownAndSeparatesOffSignupAndRestricted() {
+        val ready = BleOwnerFlowStatus(applied = true, timeReady = true, matchingReady = true)
+        val waiting = ready.copy(matchingReady = false)
+        assertEquals(KeyringMatchReadiness.Ready, KeyringBoardSync.readiness(ready, null, false))
+        for (unknown in listOf(null, BleOwnerFlowStatus(), ready.copy(applied = null), ready.copy(timeReady = null),
+            ready.copy(matchingReady = null), ready.copy(applied = false)))
+            assertNotEquals(KeyringMatchReadiness.Ready, KeyringBoardSync.readiness(unknown, true, false))
+        assertEquals(KeyringMatchReadiness.Unknown, KeyringBoardSync.readiness(null, true, false))
+        assertEquals(KeyringMatchReadiness.NotApplied, KeyringBoardSync.readiness(waiting.copy(timeReady = false), true, false))
+        assertEquals(KeyringMatchReadiness.MatchingOff, KeyringBoardSync.readiness(waiting, false, true))
+        assertEquals(KeyringMatchReadiness.SignupPending, KeyringBoardSync.readiness(waiting, true, true))
+        assertEquals(KeyringMatchReadiness.Restricted, KeyringBoardSync.readiness(waiting, true, false))
+        assertEquals(KeyringMatchReadiness.Unknown, KeyringBoardSync.readiness(waiting, null, false))
+    }
+
+    /** 재부팅 뒤 같은 버전·해시라도 applied/timeReady=false면 새 challenge로 다시 보내고 매칭 준비까지 확인한다. */
+    @Test fun rebootWithSameHashResyncsWithFreshChallengeAndBecomesReady() = runTest(dispatcher) {
+        val server = tsv3Server(); val store = KeyringSyncStore(SyncPrefs()); store.rememberTarget(1, syncRun.deviceId, "XIAO-test")
+        var info = board(server.run, true, true, true); var sends = 0
+        val m = model(server, store, TestSession(OnboardingStatus.READY))
+        fun connect(nonce: String) = m.attachRequest("XIAO-test", { fullBody.copy(deviceNonce = nonce) }, getApplied = ::appliedProof,
+            getDeviceInfo = { info }) { sends++; info = board(it, true, true, true); stored(it) }
+        connect("A".repeat(43)); runCurrent()
+        assertEquals(1, sends); assertEquals(KeyringMatchReadiness.Ready, m.state.value.items.single().readiness)
+        m.detach(); info = board(server.run, false, false, false)
+        connect("B".repeat(42) + "A"); runCurrent()
+        assertEquals(2, sends); assertEquals(2, server.creates.size); assertEquals(2, server.applications.size)
+        assertNotEquals(server.creates[0].second, server.creates[1].second)
+        assertEquals("B".repeat(42) + "A", server.bodies.last().deviceNonce)
+        val item = m.state.value.items.single()
+        assertEquals(SyncPhase.Confirmed, item.phase); assertEquals(KeyringMatchReadiness.Ready, item.readiness)
+        m.retry(syncRun.deviceId); runCurrent(); assertEquals(2, sends)
+    }
+
+    /** 매칭 OFF는 적용 성공이다. matchingReady=false만으로 재전송하지 않고 OFF로 보여준다. */
+    @Test fun matchingOffDoesNotRetryAndIsShownAsOff() = runTest(dispatcher) {
+        val server = tsv3Server(); val store = KeyringSyncStore(SyncPrefs()); store.rememberTarget(1, syncRun.deviceId, "XIAO-test")
+        val info = board(server.run, true, true, false); var sends = 0
+        val m = KeyringSyncViewModel(server, store, server, TestSession(OnboardingStatus.READY), matching = MatchingChoice(false))
+            .also { models.put("sync", it); it.resume() }
+        repeat(3) {
+            m.detach()
+            m.attachRequest("XIAO-test", { fullBody }, getApplied = ::appliedProof, getDeviceInfo = { info }) { sends++; stored(it) }
+            runCurrent()
+        }
+        assertEquals(1, sends); assertEquals(1, server.creates.size)
+        assertEquals(KeyringMatchReadiness.MatchingOff, m.state.value.items.single().readiness)
+    }
+
+    /** DEVICE_INFO를 읽지 못하면 최신으로 단정하지 않고, 준비 상태도 Ready로 표시하지 않는다. */
+    @Test fun unreadableReadinessIsNeverShownReady() = runTest(dispatcher) {
+        val server = tsv3Server(); val store = KeyringSyncStore(SyncPrefs()); store.rememberTarget(1, syncRun.deviceId, "XIAO-test")
+        val m = model(server, store, TestSession(OnboardingStatus.READY))
+        m.attachRequest("XIAO-test", { fullBody }, getApplied = ::appliedProof,
+            getDeviceInfo = { throw BleCommandException("BUSY") }) { stored(it) }
+        runCurrent()
+        val item = m.state.value.items.single()
+        assertEquals(SyncPhase.Confirmed, item.phase); assertEquals(KeyringMatchReadiness.Unknown, item.readiness)
+    }
+
+    /** OFF→ON 변경 중 전송이 끊기면 재연결에서 새 challenge·새 키로 이어 ON 버전을 적용한다. */
+    @Test fun interruptedOnTransferResumesOnReconnectWithFreshChallenge() = runTest(dispatcher) {
+        val off = tsv3Run().copy(settingsVersion = 16, currentSettingsVersion = 16)
+        val onId = "55555555-5555-4555-8555-555555555555"
+        val on = off.copy(syncRunId = onId, settingsSnapshotId = onId, settingsVersion = 17, currentSettingsVersion = 17,
+            payloadHash = "c".repeat(64))
+        var current = off
+        val server = SyncServer().apply {
+            run = off
+            createAction = { run = current.copy(deviceNonce = bodies.last().deviceNonce); ApiResult.Ok(run) }
+            getAction = {
+                if (run.settingsVersion != current.settingsVersion) ApiResult.Fail(AppError.Server(409, "SYNC_VERSION_STALE", "old"))
+                else ApiResult.Ok(run)
+            }
+        }
+        val store = KeyringSyncStore(SyncPrefs()); store.rememberTarget(1, syncRun.deviceId, "XIAO-test")
+        val changes = KeyringSettingsChanges()
+        val m = KeyringSyncViewModel(server, store, server, TestSession(OnboardingStatus.READY), changes = changes)
+            .also { models.put("sync", it); it.resume() }
+        val sent = mutableListOf<Long>(); var cut = false; var nonce = 0
+        fun connect() = m.attachRequest("XIAO-test", { nonce++; fullBody.copy(deviceNonce = ('A' + nonce).toString().repeat(42) + "A") },
+            getApplied = ::appliedProof) { sent += it.settingsVersion; if (cut) { cut = false; error("Disconnected") }; stored(it) }
+        connect(); runCurrent()
+        assertEquals(16L, m.state.value.items.single().confirmedTsv3Version)
+        current = on; cut = true; changes.saved(1); runCurrent()
+        assertNotEquals(SyncPhase.Confirmed, m.state.value.items.single().phase)
+        m.detach(); runCurrent(); connect(); runCurrent()
+        assertEquals(listOf(16L, 17L, 17L), sent)
+        // 끊긴 전송의 challenge를 재사용하지 않는다.
+        assertEquals(3, server.bodies.map { it.deviceNonce }.distinct().size)
+        assertEquals(3, server.creates.map { it.second }.distinct().size)
+        assertEquals(listOf(16L, 17L), server.acks.map { it.second.settingsVersion })
+        assertEquals(17L, m.state.value.items.single().confirmedTsv3Version)
+        assertEquals(17L, store.read(1).single().takeIf { it.appliedOnboardingChecked }?.identity?.settingsVersion)
+    }
+
+    /** 보드 저장 증명을 받은 뒤 서버 확인 중 BLE가 끊기면 다시 보내지 않고 같은 ACK로 이어간다. */
+    @Test fun disconnectDuringServerAckResumesFromStoredProofWithoutBle() = runTest(dispatcher) {
+        val server = SyncServer(); val store = KeyringSyncStore(SyncPrefs()); store.rememberTarget(1, syncRun.deviceId, "XIAO-test")
+        val hang = CompletableDeferred<Unit>()
+        server.ackAction = {
+            if (server.acks.size == 1) hang.await()
+            server.run = server.run.copy(state = "ACKED"); ApiResult.Ok(server.run)
+        }
+        var sends = 0
+        val m = model(server, store); m.attach("XIAO-test") { sends++; stored(it) }; runCurrent()
+        assertEquals(SyncPhase.Confirming, m.state.value.items.single().phase)
+        m.detach(); runCurrent()
+        assertEquals(1, sends); assertEquals(2, server.acks.size); assertEquals(server.acks[0], server.acks[1])
+        assertEquals(SyncPhase.Confirmed, m.state.value.items.single().phase)
+    }
+
+    /** 이전 버전의 보드 응답은 새 버전을 완료로 만들지 않는다. 서버가 거절하면 최신 버전을 새로 보낸다. */
+    @Test fun olderStoredResponseNeverCompletesNewerVersion() = runTest(dispatcher) {
+        val v17 = tsv3Run().copy(settingsVersion = 17, currentSettingsVersion = 17)
+        val nextId = "66666666-6666-4666-8666-666666666666"
+        val v18 = v17.copy(syncRunId = nextId, settingsSnapshotId = nextId, settingsVersion = 18, currentSettingsVersion = 18,
+            payloadHash = "d".repeat(64))
+        var current = v17
+        val server = SyncServer().apply {
+            run = v17
+            createAction = { run = current.copy(deviceNonce = bodies.last().deviceNonce); ApiResult.Ok(run) }
+            ackAction = {
+                if (acks.last().second.settingsVersion != current.settingsVersion)
+                    ApiResult.Fail(AppError.Server(409, "SYNC_VERSION_STALE", "old"))
+                else { run = run.copy(state = "ACKED"); ApiResult.Ok(run) }
+            }
+        }
+        val store = KeyringSyncStore(SyncPrefs()); store.rememberTarget(1, syncRun.deviceId, "XIAO-test")
+        val m = model(server, store, TestSession(OnboardingStatus.READY))
+        var nonce = 0
+        m.attachRequest("XIAO-test", { nonce++; fullBody.copy(deviceNonce = ('A' + nonce).toString().repeat(42) + "A") },
+            getApplied = ::appliedProof) {
+            // 보드가 v17을 저장하는 사이 사용자가 설정을 다시 바꿨다.
+            if (it.settingsVersion == 17L) current = v18
+            stored(it)
+        }
+        runCurrent()
+        assertEquals(listOf(17L, 18L), server.acks.map { it.second.settingsVersion })
+        assertEquals(listOf(18L), server.applications.map { it.second.settingsVersion })
+        assertEquals(18L, m.state.value.items.single().confirmedTsv3Version)
+        assertEquals(18L, store.read(1).single().identity?.settingsVersion)
     }
 }
