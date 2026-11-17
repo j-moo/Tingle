@@ -56,7 +56,7 @@ class MatchingEvaluationHttpContractTest {
 		server.start();
 		given(tokens.issueMatchingEvaluation()).willReturn("synthetic-matching-token");
 		String address = "http://127.0.0.1:" + server.getAddress().getPort();
-		AiServiceProperties properties = new AiServiceProperties(true, "test", "synthetic", "unused", address);
+		AiServiceProperties properties = new AiServiceProperties("test", "synthetic", "unused", address);
 		transport = new HttpMatchingEvaluationTransport(new AiInternalClient(properties, tokens,
 			MatchingEvaluationFixture.JSON));
 		response.set(MatchingEvaluationFixture.JSON.writeValueAsString(MatchingEvaluationFixture.response()));

@@ -24,24 +24,20 @@ from safety_asgi_contract_support import (
 from test_risk_detection_http import VERSION_FIELDS, finding, verdict
 
 
-@pytest.mark.parametrize("environment,enabled", [
-    ("local", None), ("test", None), ("dev", None), ("prod", None),
-    ("test", False), ("prod", True),
-])
-def test_missing_release_never_registers_an_engine(main_factory, monkeypatch, environment, enabled):
+@pytest.mark.parametrize("environment", ["local", "test", "dev", "prod"])
+def test_missing_release_never_registers_an_engine(main_factory, monkeypatch, environment):
     def forbidden(*args):
         pytest.fail("Disabled runtime reached the engine")
     monkeypatch.setattr(LocalRuleRiskEngine, "analyze", forbidden)
     monkeypatch.setattr(LocalRuleRiskEngine, "count_tokens", forbidden)
-    host = main_factory(environment=environment, enabled=enabled, configured=False)
+    host = main_factory(environment=environment, configured=False)
     expect(host.post(raw=b"invalid-body-not-read"), 422, "POLICY_UNRESOLVED")
     expect(host.post(raw=b"invalid-body-not-read", credential=None), 401, "AUTH_REQUIRED")
 
 
 @pytest.mark.parametrize("environment", ["local", "test", "dev", "prod"])
-@pytest.mark.parametrize("enabled", [None, False, True])
-def test_synthetic_release_works_in_every_environment_without_switch(main_factory, environment, enabled):
-    host = main_factory(environment=environment, enabled=enabled)
+def test_synthetic_release_works_in_every_environment_without_switch(main_factory, environment):
+    host = main_factory(environment=environment)
     expect(host.post())
 
 

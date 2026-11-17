@@ -192,16 +192,9 @@ class RiskInputBuilderTest {
 	}
 
 	@Test
-	void defaultGatewayRefusesEveryOperationAndCatalogHasNoApprovedManifest() {
-		RiskAnalysisGateway disabled = new DisabledRiskAnalysisGateway();
+	void catalogWithoutConfiguredReleaseHasNoApprovedManifest() {
 		assertThat(new RiskManifestCatalog(new RiskReleaseProperties(""),
 			JsonMapper.builder().build()).supports(MANIFEST)).isFalse();
-		for (Runnable action : List.<Runnable>of(disabled::requireAvailable,
-			() -> disabled.countTokens(new Input(List.of(message(1, "synthetic", true)), MANIFEST)),
-			() -> disabled.analyze(new Input(List.of(message(1, "synthetic", true)), MANIFEST)))) {
-			assertThatThrownBy(action::run).isInstanceOfSatisfying(BusinessException.class,
-				exception -> assertThat(exception.getErrorCode()).isEqualTo(ErrorCode.POLICY_UNRESOLVED));
-		}
 	}
 
 	private RiskInputBuilder builder(ToIntFunction<Input> tokens) {

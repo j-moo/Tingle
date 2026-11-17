@@ -33,7 +33,7 @@ def client(release):
     # Domain adapter test. Actual JWT and loopback are covered by the existing
     # real app.main test, updated with the same overflow request in this change.
     app.include_router(create_development_router(
-        lambda _: True, environment="test", enabled=True,
+        lambda _: True,
         descriptor_file=str(release.descriptor), descriptor_sha256=release.test_descriptor_pin,
     ))
     return TestClient(app)

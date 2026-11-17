@@ -13,7 +13,6 @@ import java.security.KeyFactory;
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
 import java.security.Signature;
-import java.security.spec.PKCS8EncodedKeySpec;
 import java.security.spec.X509EncodedKeySpec;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
@@ -27,12 +26,9 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
-import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.core.io.ClassPathResource;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.init.ResourceDatabasePopulator;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
@@ -46,19 +42,16 @@ import com.e106.tingle.global.error.ErrorCode;
 import com.e106.tingle.keyring.peer.PeerSettingsIssuer;
 import com.e106.tingle.keyring.proof.KeyringProofTranscript;
 import com.e106.tingle.keyring.proof.PeerSettingsCodec;
-import com.e106.tingle.keyring.proof.ServerSettingsSigner;
 import com.e106.tingle.settings.snapshot.KeyringCanonicalSnapshotService;
 
 import tools.jackson.databind.JsonNode;
 
 /** Real HTTP/isolated DB with public synthetic keys and a supplied TPS1 snapshot; no external AI/device calls. */
-@SpringBootTest(properties = {"app.keyring.peer.enabled=true", "app.keyring.peer.policy-approved=true",
-	"app.keyring.peer.policy-version=1380991793", "app.keyring.peer.rule-version=268439809",
-	"app.keyring.peer.lease-seconds=60", "app.keyring.peer.opportunity-seconds=604800",
+@SpringBootTest(properties = {"app.keyring.peer.lease-seconds=60", "app.keyring.peer.opportunity-seconds=604800",
 	"app.keyring.peer.presence-gap-seconds=5"})
 @AutoConfigureMockMvc
 @ActiveProfiles({"test", "erd"})
-@Import({TestcontainersConfiguration.class, PeerSettingsIntegrationTest.Signing.class})
+@Import(TestcontainersConfiguration.class)
 class PeerSettingsIntegrationTest extends IntegrationTestSupport {
 
 	private static final String PUBLIC = "03a107bff3ce10be1d70dd18e74bc09967e4d6309ba50d5f1ddc8664125531b8";
@@ -363,19 +356,5 @@ class PeerSettingsIntegrationTest extends IntegrationTestSupport {
 
 	private record Fixture(JsonNode tokens, long userId, long deviceId, String serial, String keyId,
 		UUID generation, KeyPair keys) {
-	}
-
-	@TestConfiguration(proxyBeanMethods = false)
-	static class Signing {
-		@Bean
-		DevSettingsIssuer devSettingsIssuer(JdbcTemplate jdbc) throws Exception {
-			// Public deterministic host-only seed from the firmware vectors; never a team/server secret.
-			var factory = KeyFactory.getInstance("Ed25519");
-			var privateKey = factory.generatePrivate(new PKCS8EncodedKeySpec(HexFormat.of().parseHex(
-				"302e020100300506032b657004220420000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f")));
-			var publicKey = factory.generatePublic(new X509EncodedKeySpec(HexFormat.of().parseHex(
-				"302a300506032b6570032100" + PUBLIC)));
-			return new DevSettingsIssuer(jdbc, new ServerSettingsSigner(privateKey, publicKey));
-		}
 	}
 }

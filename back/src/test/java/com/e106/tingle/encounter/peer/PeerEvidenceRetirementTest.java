@@ -47,7 +47,7 @@ class PeerEvidenceRetirementTest {
 	}
 
 	@Test
-	void disabledIntakeStillRetiresOwnerAndPeerCopiesBeforeEmptySnapshotVersionReturn() {
+	void retiresOwnerAndPeerCopiesBeforeEmptySnapshotVersionReturn() {
 		new ResourceDatabasePopulator(new ClassPathResource("database/keyring-peer-encounter-270.sql"))
 			.execute(dataSource);
 		UUID own = row(1, 2);
@@ -55,7 +55,6 @@ class PeerEvidenceRetirementTest {
 		UUID unrelated = row(2, 3);
 		context().run(context -> {
 			assertThat(context).hasNotFailed().hasSingleBean(PeerEvidenceRetirement.class);
-			assertThat(context.getEnvironment().getProperty("app.keyring.peer.enabled")).isEqualTo("false");
 			var religion = new ReligionEvidenceRetirement(jdbc, JsonMapper.builder().build(),
 				context.getBeanProvider(PeerEvidenceRetirement.class));
 			var transaction = new TransactionTemplate(new DataSourceTransactionManager(dataSource));
@@ -77,7 +76,7 @@ class PeerEvidenceRetirementTest {
 	}
 
 	@Test
-	void defaultOffWithNoOptionalTableStartsAndWithdrawalIsANoop() {
+	void withoutOptionalTableStartsAndWithdrawalIsANoop() {
 		context().run(context -> {
 			assertThat(context).hasNotFailed().hasSingleBean(PeerEvidenceRetirement.class);
 			var transaction = new TransactionTemplate(new DataSourceTransactionManager(dataSource));
@@ -88,8 +87,7 @@ class PeerEvidenceRetirementTest {
 
 	private static ApplicationContextRunner context() {
 		return new ApplicationContextRunner().withUserConfiguration(PeerEvidenceRetirement.class)
-			.withBean(JdbcTemplate.class, () -> jdbc).withPropertyValues("app.keyring.peer.enabled=false",
-				"app.keyring.peer.encounters-enabled=false");
+			.withBean(JdbcTemplate.class, () -> jdbc);
 	}
 
 	private static UUID row(long owner, long peer) {

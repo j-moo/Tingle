@@ -36,13 +36,15 @@ public class AiServiceTokenProvider {
 		this.clock = clock;
 		this.json = json;
 		this.key = load(properties);
-		if (properties.enabled() && key == null) {
-			throw new IllegalStateException("AI service signing configuration is unavailable");
-		}
+	}
+
+	/** 키를 읽었는지. 개발·운영에서 키가 없으면 ServerSettingsCheck 가 기동을 막는다. */
+	public boolean available() {
+		return key != null;
 	}
 
 	public void requireAvailable() {
-		if (!properties.enabled() || key == null) {
+		if (key == null) {
 			throw unavailable();
 		}
 	}
@@ -77,7 +79,7 @@ public class AiServiceTokenProvider {
 	}
 
 	private static RSAPrivateKey load(AiServiceProperties properties) {
-		if (!properties.enabled() || !ENVIRONMENTS.contains(properties.environment())
+		if (!ENVIRONMENTS.contains(properties.environment())
 			|| !properties.keyId().matches("[A-Za-z0-9._-]{1,64}") || properties.privateKeyFile().isBlank()) {
 			return null;
 		}

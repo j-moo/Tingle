@@ -1,4 +1,4 @@
-"""Release-bound local Safety rules in every environment; legacy GMS stays gated."""
+"""Release-bound local Safety rules and injected GMS, identical in every environment."""
 
 import asyncio
 from collections.abc import Callable
@@ -21,12 +21,9 @@ class DevelopmentRuntime:
     A factory must clean up its own partial construction if it raises.
     """
 
-    def __init__(self, *, environment: str, enabled: bool = False,
-                 descriptor_file: str = "", descriptor_sha256: str = "",
+    def __init__(self, *, descriptor_file: str = "", descriptor_sha256: str = "",
                  engine_factory: Callable | None = None,
                  gms_primary: "GmsPrimaryConfiguration | None" = None):
-        # Compatibility arguments control only explicitly injected Safety GMS.
-        self.environment, self.enabled = environment, enabled
         self.descriptor_file, self.descriptor_sha256 = descriptor_file, descriptor_sha256
         self._engine_factory = engine_factory
         self._gms_primary = gms_primary
@@ -68,11 +65,10 @@ class DevelopmentRuntime:
         catalog = ReleaseCatalog(self.descriptor_file)
         try:
             remote = self._gms_primary is not None
-            remote_allowed = self.enabled is True and self.environment in {"local", "test", "dev"}
             # No release keeps only Safety unavailable. Explicit invalid or
-            # partial local configuration fails startup. Legacy GMS stays gated.
-            if ((not remote and (self.descriptor_file or self.descriptor_sha256))
-                    or (remote and remote_allowed)):
+            # partial local configuration fails startup. Injected GMS is the
+            # same in every environment; its configuration carries its own gate.
+            if remote or self.descriptor_file or self.descriptor_sha256:
                 from app.risk_detection.local_engine import LocalRuleRiskEngine
                 from app.risk_detection.releases import (
                     DevelopmentReleaseCatalog, DevelopmentReleaseError, local_release_catalog,
@@ -171,12 +167,11 @@ class DevelopmentRuntime:
                 self._state = "closed"  # Also restore fully disposed state on caller cancellation.
 
 
-def create_development_router(authenticate: Callable, *, environment: str, enabled: bool = False,
-                              descriptor_file: str = "", descriptor_sha256: str = "",
+def create_development_router(authenticate: Callable, *, descriptor_file: str = "", descriptor_sha256: str = "",
                               runtime: DevelopmentRuntime | None = None) -> APIRouter:
     if runtime is not None:
         return create_router(authenticate, runtime=runtime.resolve)
-    # Local rules depend on release integrity, never environment/enabled.
+    # Local rules depend only on release integrity.
     if not descriptor_file and not descriptor_sha256:
         return create_router(authenticate, ReleaseCatalog(descriptor_file))
 

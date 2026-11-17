@@ -343,16 +343,17 @@ class KeyringRegistrationIntegrationTest extends IntegrationTestSupport {
 	private RegistrationDeviceProof signedProof(JsonNode challenge, Device device) throws Exception {
 		Signature signer = Signature.getInstance("Ed25519");
 		signer.initSign(device.keys().getPrivate());
-		signer.update(KeyringProofTranscript.registration(device.keyId(), device.serial(), challengeId(challenge),
+		// 새 등록은 소유 카운터를 함께 서명하는 v2 다(새 기기는 카운터 0, 소유자 없음).
+		signer.update(KeyringProofTranscript.registrationV2(device.keyId(), device.serial(), challengeId(challenge),
 			challenge.path("nonce").asString(), Instant.parse(challenge.path("expiresAt").asString())
-				.getEpochSecond()).bytes());
+				.getEpochSecond(), 0).bytes());
 		String signature = Base64.getUrlEncoder().withoutPadding().encodeToString(signer.sign());
-		return new RegistrationDeviceProof("tingle-device-proof-v1", device.keyId(), signature);
+		return new RegistrationDeviceProof("tingle-device-proof-v2", device.keyId(), signature);
 	}
 
 	private RegisterKeyringRequest dto(JsonNode challenge, Device device) throws Exception {
 		return new RegisterKeyringRequest(challenge.path("challengeId").asString(), device.serial(),
-			signedProof(challenge, device));
+			signedProof(challenge, device), 0L, "UNOWNED");
 	}
 
 	private String request(JsonNode challenge, Device device) throws Exception {

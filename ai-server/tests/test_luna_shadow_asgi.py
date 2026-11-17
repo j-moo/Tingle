@@ -73,7 +73,7 @@ def async_host(main_factory, monkeypatch):
     created = []
 
     def make(*, primary=None, review=None, rule_kind="NORMAL", rule_error=False,
-             limits=None, environment="test", enabled=True, configured=True):
+             limits=None, environment="test", configured=True):
         primary = primary or SyntheticModel()
         review = review or SyntheticModel()
 
@@ -96,7 +96,7 @@ def async_host(main_factory, monkeypatch):
         # catalog/supports, hashes, tokenizer, app or route replacement.
         monkeypatch.setattr(local_engine, "LocalRuleRiskEngine", construct)
         before = len(created)
-        host = main_factory(environment=environment, enabled=enabled, configured=configured)
+        host = main_factory(environment=environment, configured=configured)
         return host, created[-1] if len(created) > before else None, primary, review
 
     try:
@@ -286,9 +286,9 @@ def test_actual_manifest_gate_precedes_async_engine(async_host):
     assert primary.calls == 0
 
 
-@pytest.mark.parametrize("environment,enabled", [("local", None), ("test", None), ("dev", None), ("prod", True)])
-def test_missing_release_never_registers_synthetic_luna(async_host, environment, enabled):
-    host, engine, primary, review = async_host(environment=environment, enabled=enabled, configured=False)
+@pytest.mark.parametrize("environment", ["local", "test", "dev", "prod"])
+def test_missing_release_never_registers_synthetic_luna(async_host, environment):
+    host, engine, primary, review = async_host(environment=environment, configured=False)
     expect(host.post(), 422, "POLICY_UNRESOLVED")
     assert engine is None and primary.calls == review.calls == 0
 

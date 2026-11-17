@@ -1,4 +1,4 @@
-"""Isolated Grafana/Loki integration: python infra/tests/test_async_alerts.py [--soak].
+"""Isolated Grafana/Loki integration: python infra/tests/test_async_alerts.py [--env dev|prod] [--soak].
 
 Only uniquely named local containers are used. Notifications go to an internal capture
 container, never a team channel. --soak retains the real 2/5 minute pending periods.
@@ -23,6 +23,17 @@ ROOT = Path(__file__).resolve().parents[1]
 SPEC = importlib.util.spec_from_file_location("async_rules", ROOT / "monitoring/grafana/alerting/build_async_rules.py")
 MODULE = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(MODULE)
+# One sample Loki stream per environment; prod uses whichever blue/green color is live.
+STREAM = {"dev": "back-dev", "prod": "back-blue"}
+
+
+def shipped_rules(env):
+    return json.loads((ROOT / "monitoring/grafana/alerting" / ("async-jobs-" + env + ".json")).read_text(encoding="utf-8"))
+
+
+def test_shipped_rules_match_generator():
+    for env in MODULE.ENVS:
+        assert shipped_rules(env) == MODULE.build(env), env + " rendered file is stale"
 
 
 def docker(*args):
@@ -55,6 +66,7 @@ def wait_for(action, seconds=90):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--env", choices=sorted(MODULE.ENVS), default="dev")
     parser.add_argument("--soak", action="store_true")
     parser.add_argument("--report", type=Path, help="Optional local internal-receipt evidence file")
     args = parser.parse_args()
@@ -76,8 +88,9 @@ def main():
                 {"uid": "loki-broken", "name": "Broken local test only", "type": "loki", "url": "http://127.0.0.1:1", "access": "proxy"}]}
             (provisioning / "datasources/data.yaml").write_text(json.dumps(datasource), encoding="utf-8")
             rules_path = provisioning / "alerting/rules.json"
-            shipped = json.loads((ROOT / "monitoring/grafana/alerting/async-jobs-dev.json").read_text(encoding="utf-8"))
-            assert shipped == MODULE.build(), "Rendered file is stale"
+            shipped = shipped_rules(args.env)
+            assert shipped == MODULE.build(args.env), "Rendered file is stale"
+            selector = MODULE.ENVS[args.env]["selector"]
             assert set(shipped) == {"apiVersion", "groups"}, "Shipping rules must not replace routes or recipients"
             rules_path.write_text(json.dumps(shipped), encoding="utf-8")
             capture = folder / "capture.py"
@@ -131,7 +144,7 @@ HTTPServer(('0.0.0.0',8090),Handler).serve_forever()
                 lines = [[now, line]]
                 if collection:
                     lines.append([str(int(now) + 1), "event=async_jobs_collect_failed reason=synthetic"])
-                request(lk + "/loki/api/v1/push", {"streams": [{"stream": {"service": "back-dev"}, "values": lines}]})
+                request(lk + "/loki/api/v1/push", {"streams": [{"stream": {"service": STREAM[args.env]}, "values": lines}]})
 
             wait_for(lambda: (push(), True)[1])
             for rule in shipped["groups"][0]["rules"]:
@@ -150,7 +163,7 @@ HTTPServer(('0.0.0.0',8090),Handler).serve_forever()
                 wait_for(positive, seconds=10)
             print("PASS all four real LogQL conditions distinguish positive synthetic data from healthy zero", flush=True)
             gauge_expression = shipped["groups"][0]["rules"][0]["data"][0]["model"]["expr"]
-            absent = request(lk + "/loki/api/v1/query?" + urlencode({"query": gauge_expression.replace('service="back-dev"', 'service="unobserved-test"')}))
+            absent = request(lk + "/loki/api/v1/query?" + urlencode({"query": gauge_expression.replace(selector, '{service="unobserved-test"}')}))
             assert absent["data"]["result"] == []
             try:
                 request(lk + "/loki/api/v1/query?" + urlencode({"query": "this is deliberately invalid LogQL"}))
@@ -166,7 +179,7 @@ HTTPServer(('0.0.0.0',8090),Handler).serve_forever()
                 rule["isPaused"] = False
             no_data = copy.deepcopy(active["groups"][0]["rules"][0])
             no_data.update(uid="isolated-no-data", title="IsolatedNoData", **{"for": "0s"})
-            no_data["data"][0]["model"]["expr"] = no_data["data"][0]["model"]["expr"].replace('service="back-dev"', 'service="unobserved-test"')
+            no_data["data"][0]["model"]["expr"] = no_data["data"][0]["model"]["expr"].replace(selector, '{service="unobserved-test"}')
             broken = copy.deepcopy(no_data)
             broken.update(uid="isolated-datasource-error", title="IsolatedError")
             broken["data"][0]["datasourceUid"] = "loki-broken"

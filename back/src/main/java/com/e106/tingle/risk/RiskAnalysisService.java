@@ -17,7 +17,7 @@ import com.e106.tingle.risk.RiskAnalysisTypes.Verdict;
 
 import lombok.RequiredArgsConstructor;
 
-/** 모델 호출은 DB 트랜잭션 밖에서 실행한다. 운영 기본 분석기는 전송을 항상 거부한다. */
+/** 모델 호출은 DB 트랜잭션 밖에서 실행한다. 승인된 Release 가 없으면 전송하지 않는다. */
 @Service
 @RequiredArgsConstructor
 public class RiskAnalysisService {

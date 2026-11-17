@@ -24,7 +24,7 @@ public class WithdrawalPhotoCleanup {
 	private final boolean schedulingEnabled;
 
 	public WithdrawalPhotoCleanup(JdbcTemplate jdbc, ProfilePhotoService photos, TransactionTemplate transaction,
-		Clock clock, @Value("${app.withdrawal.photo-cleanup-scheduling-enabled:false}") boolean schedulingEnabled) {
+		Clock clock, @Value("${app.withdrawal.photo-cleanup-scheduling-enabled:true}") boolean schedulingEnabled) {
 		this.jdbc = jdbc;
 		this.photos = photos;
 		this.transaction = transaction;
@@ -32,6 +32,7 @@ public class WithdrawalPhotoCleanup {
 		this.schedulingEnabled = schedulingEnabled;
 	}
 
+	// 개발·운영은 늘 돈다. 통합 테스트만 끈다(application-test.yml).
 	@Scheduled(fixedDelayString = "${app.withdrawal.photo-cleanup-poll-ms:60000}")
 	public void poll() {
 		if (schedulingEnabled) {

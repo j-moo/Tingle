@@ -46,7 +46,6 @@ public class MemberWithdrawalService {
 	private final PendingEmails pendingEmails;
 
 	public WithdrawalPrepared prepare(long userId, UUID session, UUID requestKey, boolean lost) {
-		identities.requireEnabled();
 		return transaction.execute(status -> {
 			User user = users.findById(userId).orElseThrow(() -> new BusinessException(ErrorCode.AUTH_REQUIRED));
 			identities.lockIdentity(user);
@@ -124,7 +123,6 @@ public class MemberWithdrawalService {
 
 	private WithdrawalView executeRetried(long userId, UUID session, UUID id, Long operator,
 		UUID operatorSession, Runnable authorizeAndBlock) {
-		identities.requireEnabled();
 		for (int attempt = 0; attempt < 3; attempt++) {
 			try {
 				return transaction.execute(status -> executeOnce(userId, session, id, operator, operatorSession,

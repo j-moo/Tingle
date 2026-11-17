@@ -34,55 +34,37 @@ public class WithdrawalIdentityService {
 	private final JdbcTemplate jdbc;
 	private final UserRepository users;
 	private final Clock clock;
-	private final boolean enabled;
 	private final byte[] secret;
 
 	public WithdrawalIdentityService(JdbcTemplate jdbc, UserRepository users, Clock clock,
-		@Value("${app.withdrawal.enabled:false}") boolean enabled,
-		@Value("${app.withdrawal.identity-secret:${WITHDRAWAL_IDENTITY_SECRET:}}") String secret) {
+		@Value("${app.withdrawal.identity-secret:}") String secret) {
 		this.jdbc = jdbc;
 		this.users = users;
 		this.clock = clock;
-		this.enabled = enabled;
-		this.secret = secret.getBytes(StandardCharsets.UTF_8);
-	}
-
-	public void requireEnabled() {
-		if (!enabled || secret.length < 32) {
-			throw new BusinessException(ErrorCode.POLICY_UNRESOLVED);
-		}
+		this.secret = WithdrawalSecrets.require(secret, "WITHDRAWAL_IDENTITY_SECRET");
 	}
 
 	/** Called before any member locks; login follows the same identity-to-member order. */
 	@Transactional(propagation = Propagation.MANDATORY)
 	public void lockIdentity(User user) {
-		requireEnabled();
 		checkKey(true);
 		lock(user.getProvider(), user.getProviderSubject());
 	}
 
 	@Transactional
 	public User provisionMember(SocialProvider provider, String subject) {
-		if (enabled) {
-			requireEnabled();
+		checkKey(true);
+		lock(provider, subject);
+		Instant now = clock.instant();
+		String hash = digest("cooldown-v1", provider, subject);
+		List<Instant> times = jdbc.query("select rejoin_available_at from withdrawal_cooldown "
+			+ "where provider=? and account_hash=?", (rs, row) -> rs.getTimestamp(1).toInstant(),
+			provider.name(), hash);
+		if (!times.isEmpty() && now.isBefore(times.getFirst())) {
+			throw new RejoinRestrictedException(times.getFirst());
 		}
-		if (secret.length >= 32) {
-			checkKey(true);
-			lock(provider, subject);
-			Instant now = clock.instant();
-			String hash = digest("cooldown-v1", provider, subject);
-			List<Instant> times = jdbc.query("select rejoin_available_at from withdrawal_cooldown "
-				+ "where provider=? and account_hash=?", (rs, row) -> rs.getTimestamp(1).toInstant(),
-				provider.name(), hash);
-			if (!times.isEmpty() && now.isBefore(times.getFirst())) {
-				throw new RejoinRestrictedException(times.getFirst());
-			}
-			jdbc.update("delete from withdrawal_cooldown where provider=? and account_hash=? "
-				+ "and rejoin_available_at<=?", provider.name(), hash, Timestamp.from(now));
-		} else if (hasLiveRecords()) {
-			// A feature toggle/key omission must not erase already committed withdrawal restrictions.
-			throw new BusinessException(ErrorCode.POLICY_UNRESOLVED);
-		}
+		jdbc.update("delete from withdrawal_cooldown where provider=? and account_hash=? "
+			+ "and rejoin_available_at<=?", provider.name(), hash, Timestamp.from(now));
 		users.insertIfAbsent(provider.name(), subject, clock.instant());
 		return users.findByProviderAndProviderSubject(provider, subject).orElseThrow();
 	}
@@ -90,7 +72,6 @@ public class WithdrawalIdentityService {
 	/** Main withdrawal transaction holds all live related member locks before invoking this method. */
 	@Transactional(propagation = Propagation.MANDATORY)
 	public Instant onWithdrawal(User user, Instant completedAt) {
-		requireEnabled();
 		// Never acquire the global key-initialization lock after the caller has locked members.
 		checkKey(false);
 		lock(user.getProvider(), user.getProviderSubject());
@@ -107,12 +88,6 @@ public class WithdrawalIdentityService {
 	}
 
 	public boolean restrictedPair(long first, long second) {
-		if (secret.length < 32) {
-			if (hasLiveRelations()) {
-				throw new BusinessException(ErrorCode.POLICY_UNRESOLVED);
-			}
-			return false;
-		}
 		checkKey(false);
 		List<Account> accounts = jdbc.query("select id,provider::text,provider_user_id from users "
 			+ "where id in (?,?) order by id", (rs, row) -> new Account(rs.getLong(1),

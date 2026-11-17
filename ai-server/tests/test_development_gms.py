@@ -49,7 +49,6 @@ def host(tmp_path, monkeypatch, signing_key, release):
         "APP_ENV": "dev", "GMS_API_KEY": "synthetic-only",
         "AI_SERVICE_PUBLIC_KEYS": json.dumps({KID: str(public)}),
         "ICEBREAKER_RELEASE_DESCRIPTOR_FILE": str(tmp_path / "synthetic-descriptor.json"),
-        "RISK_LOCAL_RULES_ENABLED": "false",
         "RISK_RELEASE_DESCRIPTOR_FILE": "",
         "RISK_LOCAL_RULES_DESCRIPTOR_SHA256": "",
 
@@ -150,9 +149,8 @@ def test_both_real_clients_share_the_existing_safety_lifespan(host, make_headers
 
 
 @pytest.mark.parametrize("environment", ["dev", "prod"])
-@pytest.mark.parametrize("enabled", [False, True])
 def test_local_safety_and_shared_gms_and_personal_v2_share_one_app(
-        host, monkeypatch, make_headers, tmp_path, environment, enabled):
+        host, monkeypatch, make_headers, tmp_path, environment):
     from app.risk_detection.local_engine import LocalRuleRiskEngine
     from safety48_runtime_support import message, request_for, synthetic_release
 
@@ -160,7 +158,6 @@ def test_local_safety_and_shared_gms_and_personal_v2_share_one_app(
     directory.mkdir()
     release = synthetic_release(directory, tokenized=False)
     monkeypatch.setenv("APP_ENV", environment)
-    monkeypatch.setenv("RISK_LOCAL_RULES_ENABLED", str(enabled).lower())
     monkeypatch.setenv("RISK_RELEASE_DESCRIPTOR_FILE", str(release.descriptor))
     monkeypatch.setenv("RISK_LOCAL_RULES_DESCRIPTOR_SHA256", release.test_descriptor_pin)
     headers = make_headers(environment=environment)
@@ -321,7 +318,6 @@ def test_cancelled_lifespan_still_closes_the_common_runtime(host):
 
 
 def test_explicit_invalid_safety_release_still_fails_closed(host, monkeypatch, tmp_path):
-    monkeypatch.setenv("RISK_LOCAL_RULES_ENABLED", "true")
     monkeypatch.setenv("RISK_RELEASE_DESCRIPTOR_FILE", str(tmp_path / "missing-safety.json"))
     app = host.build()
     with pytest.raises(DevelopmentReleaseError):

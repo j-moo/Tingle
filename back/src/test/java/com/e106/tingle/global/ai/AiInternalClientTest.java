@@ -268,14 +268,6 @@ class AiInternalClientTest {
 	}
 
 	@Test
-	void disabledAddressCannotIssueATokenEvenIfTheProviderIsMockedAsAvailable() {
-		AiInternalClient client = new AiInternalClient(new AiServiceProperties(false, null, null, null, base),
-			tokens, json);
-		assertUnavailable(() -> client.post("/internal/ai/risk-detections", Map.of(), Map.class, null));
-		verify(tokens, org.mockito.Mockito.never()).issue();
-	}
-
-	@Test
 	void malformedSuccessfulJsonBecomesAnUnavailableServiceWithoutAnErrorBodyLeak() {
 		server.createContext("/internal/ai/risk-detections", exchange -> {
 			calls.incrementAndGet();
@@ -324,7 +316,7 @@ class AiInternalClientTest {
 	}
 
 	private AiInternalClient client(String environment, String address) {
-		return new AiInternalClient(new AiServiceProperties(true, environment, "synthetic", "", address),
+		return new AiInternalClient(new AiServiceProperties(environment, "synthetic", "", address),
 			tokens, json);
 	}
 

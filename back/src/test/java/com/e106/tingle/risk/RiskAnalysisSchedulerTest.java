@@ -10,23 +10,17 @@ class RiskAnalysisSchedulerTest {
 
 	private final ApplicationContextRunner runner = new ApplicationContextRunner()
 		.withUserConfiguration(RiskAnalysisScheduler.class)
-		.withBean(RiskAnalysisDispatcher.class, () -> mock(RiskAnalysisDispatcher.class));
+		.withBean(RiskAnalysisDispatcher.class, () -> mock(RiskAnalysisDispatcher.class))
+		.withPropertyValues("app.risk.poll-ms=3600000");
 
 	@Test
-	void neitherMissingFlagsNorEitherFlagAloneStartsScheduling() {
-		runner.run(context -> assertThat(context).doesNotHaveBean(RiskAnalysisScheduler.class));
-		runner.withPropertyValues("app.risk.external-enabled=true")
-			.run(context -> assertThat(context).doesNotHaveBean(RiskAnalysisScheduler.class));
-		runner.withPropertyValues("app.risk.scheduling-enabled=true")
-			.run(context -> assertThat(context).doesNotHaveBean(RiskAnalysisScheduler.class));
-		runner.withPropertyValues("app.risk.external-enabled=false", "app.risk.scheduling-enabled=true")
-			.run(context -> assertThat(context).doesNotHaveBean(RiskAnalysisScheduler.class));
+	void schedulerIsCreatedWithoutAnyFlag() {
+		runner.run(context -> assertThat(context).hasNotFailed().hasSingleBean(RiskAnalysisScheduler.class));
 	}
 
 	@Test
-	void bothExplicitFlagsCreateTheScheduler() {
-		runner.withPropertyValues("app.risk.external-enabled=true", "app.risk.scheduling-enabled=true",
-			"app.risk.poll-ms=3600000")
-			.run(context -> assertThat(context).hasNotFailed().hasSingleBean(RiskAnalysisScheduler.class));
+	void onlyTestsCanTurnTheSchedulerOff() {
+		runner.withPropertyValues("app.risk.scheduling-enabled=false")
+			.run(context -> assertThat(context).doesNotHaveBean(RiskAnalysisScheduler.class));
 	}
 }

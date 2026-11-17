@@ -116,7 +116,6 @@ class RestoreOperationsCommandTest {
 		Path generationFile = evidenceDirectory.resolve("generation");
 		Files.writeString(generationFile, generation);
 		environment.put("TINGLE_CHAT_RESTORE_MARKER_FILE", markerDirectory.resolve("serving.marker").toString());
-		environment.put("APP_BACKUP_EVIDENCE_ENABLED", "true");
 		environment.put("APP_BACKUP_EVIDENCE_NAMESPACE", "tingle_dev");
 		environment.put("APP_BACKUP_EVIDENCE_SCOPE_ID", "test-db");
 		environment.put("APP_BACKUP_EVIDENCE_APPROVAL_ID", "test-approval");

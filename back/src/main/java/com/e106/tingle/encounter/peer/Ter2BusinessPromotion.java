@@ -8,7 +8,6 @@ import java.util.List;
 import java.util.UUID;
 
 import org.springframework.beans.factory.ObjectProvider;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -33,8 +32,6 @@ import tools.jackson.databind.json.JsonMapper;
 
 /** Optional business promotion after both independent raw receipts commit. It cannot undo those receipts. */
 @Service
-@ConditionalOnProperty(name = {"app.keyring.peer.enabled", "app.keyring.peer.encounters-enabled",
-	"app.keyring.peer.business-intake-enabled"}, havingValue = "true")
 @RequiredArgsConstructor
 public class Ter2BusinessPromotion {
 

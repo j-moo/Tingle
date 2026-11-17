@@ -33,7 +33,7 @@ def host(tmp_path, signing_key, release, monkeypatch):
     def make(handler, *, enabled=True, environment="test"):
         configured = Settings(_env_file=None, app_env=environment,
             ai_service_public_keys={KID: str(public)},
-            risk_local_rules_enabled=False, icebreaker_release_descriptor_file="")
+            icebreaker_release_descriptor_file="")
         if not enabled:
             # Python-only rule composition for contract tests; the real app always uses GMS.
             application = FastAPI()
