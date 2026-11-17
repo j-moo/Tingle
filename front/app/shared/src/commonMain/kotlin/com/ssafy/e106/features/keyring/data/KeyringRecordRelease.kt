@@ -1,6 +1,7 @@
 package com.ssafy.e106.features.keyring.data
 
 import com.ssafy.e106.core.ble.BleException
+import com.ssafy.e106.core.ble.BleFailure
 import com.ssafy.e106.core.network.ApiJson
 import com.ssafy.e106.core.network.ApiResult
 import com.ssafy.e106.core.network.AppError
@@ -191,12 +192,14 @@ internal class KeyringRecordRelease(
             throw cancelled
         } catch (failure: BleCommandException) {
             when (failure.code) {
-                "DEPARTURE_NOT_CONFIRMED" -> Outcome.DepartureNotConfirmed
+                // 원본 정리·이탈 판정 대기도 정상 대기다.
+                "DEPARTURE_NOT_CONFIRMED", "RELEASE_NOT_READY" -> Outcome.DepartureNotConfirmed
                 "INVALID_RELEASE", "RELEASE_CONFLICT", "INVALID_SERVER_PROOF" -> Outcome.Dropped
                 else -> Outcome.Failed
             }
-        } catch (_: BleException) {
-            Outcome.Interrupted
+        } catch (failure: BleException) {
+            // 연결 자체가 끊긴 경우만 남은 항목을 멈춘다. 그 밖의 BLE 오류는 이 항목만 백오프한다.
+            if (failure.reason in LINK_LOST) Outcome.Interrupted else Outcome.Failed
         } catch (_: Exception) {
             Outcome.Failed
         }
@@ -210,5 +213,7 @@ internal class KeyringRecordRelease(
         const val MAX_AGE_SECONDS = 21 * 24 * 3600L
         // 이탈 미확인 재시도마다 서버 요청·소유자 인증·BLE 교환이 든다.
         const val DEPARTURE_RETRY_SECONDS = 5 * 60L
+        private val LINK_LOST = setOf(BleFailure.Disconnected, BleFailure.Timeout, BleFailure.ConnectFailed,
+            BleFailure.WriteFailed)
     }
 }

@@ -136,6 +136,28 @@ class KeyringRecordReleaseTest {
         assertEquals(before, journal.read(1, 4))
     }
 
+    @Test fun releaseNotReadyWaitsLikeDepartureWithoutCountingFailure() = runTest {
+        val release = release(Server(ApiResult.Ok(command)))
+        release.enqueue(1, proof)
+        assertEquals(mapOf(receipt to Outcome.DepartureNotConfirmed),
+            release.releaseDue(1, identity) { throw BleCommandException("RELEASE_NOT_READY") })
+        val waiting = journal.read(1, 4).single()
+        assertEquals(0, waiting.failures)
+        assertEquals(clock + KeyringRecordRelease.DEPARTURE_RETRY_SECONDS, waiting.notBefore)
+    }
+
+    @Test fun nonLinkBleErrorBacksOffOnlyThatItem() = runTest {
+        val server = Server(ApiResult.Ok(command))
+        val release = release(server)
+        release.enqueue(1, proof)
+        release.enqueue(1, proof.copy(receiptId = otherReceipt))
+        val outcomes = release.releaseDue(1, identity) { throw BleException(BleFailure.InvalidFrame) }
+        // 연결 단절이 아니므로 다음 항목도 시도하고, 각 항목은 백오프한다.
+        assertEquals(mapOf(receipt to Outcome.Failed, otherReceipt to Outcome.Failed), outcomes)
+        assertTrue(journal.read(1, 4).all { it.failures == 1 && it.notBefore == clock + 60 })
+        assertTrue(release.releaseDue(1, identity) { fail() }.isEmpty())
+    }
+
     @Test fun changedOwnerGenerationOrEpochDropsWithoutRequest() = runTest {
         val server = Server(ApiResult.Ok(command))
         val release = release(server)

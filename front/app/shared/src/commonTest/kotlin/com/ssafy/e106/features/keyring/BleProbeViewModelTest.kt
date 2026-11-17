@@ -370,7 +370,7 @@ class BleProbeViewModelTest {
         val refused = releaseAfterTransfer(supported = true, settled = { pending, _ -> pending.singleOrNull()?.failures == 1 }) {
             request -> buildJsonObject {
                 put("protocolVersion", 1); put("type", "ERROR"); put("requestId", request.getValue("requestId"))
-                put("code", "RELEASE_NOT_READY")
+                put("code", "OWNER_SESSION_REQUIRED")
             }
         }
         assertEquals(EncounterTransferState.ConfirmedStored, refused.state)
