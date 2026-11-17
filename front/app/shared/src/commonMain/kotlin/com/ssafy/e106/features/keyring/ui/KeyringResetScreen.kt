@@ -94,10 +94,15 @@ fun KeyringResetScreen(state: KeyringResetState, onAccepted: (Boolean) -> Unit, 
                         }
                         // 확인 불가 · 실패: 상태 화면 모양으로 통일하되, 되돌릴 수 없는 작업이라 다음 행동 안내는 지우지 않는다
                         else -> {
-                            val unavailable = phase == KeyringResetStage.Unavailable
-                            StateView(StateKind.Unknown, stringResource(if (unavailable) Res.string.reset_unavailable else Res.string.reset_failed))
-                            Text(stringResource(if (unavailable) Res.string.reset_unavailable_help else Res.string.reset_failed_help),
-                                color = AppColors.TextSecondary, textAlign = TextAlign.Center)
+                            // 실행을 만든 뒤 결과를 모르는 경우(대기 시간 초과 · 서버 확인 실패)는 실패나 원상복구가 아니다. 같은 실행을 이어서 확인한다
+                            val (title, help) = when (phase) {
+                                KeyringResetStage.Unavailable -> Res.string.reset_unavailable to Res.string.reset_unavailable_help
+                                KeyringResetStage.Partial -> Res.string.reset_partial to Res.string.reset_partial_help
+                                KeyringResetStage.Unknown -> Res.string.reset_unconfirmed to Res.string.reset_unconfirmed_help
+                                else -> Res.string.reset_failed to Res.string.reset_failed_help
+                            }
+                            StateView(StateKind.Unknown, stringResource(title))
+                            Text(stringResource(help), color = AppColors.TextSecondary, textAlign = TextAlign.Center)
                         }
                     }
                     if (!state.busy) state.errorMessage?.let { Text(it, color = AppColors.Error, textAlign = TextAlign.Center) }
@@ -120,7 +125,8 @@ fun KeyringResetScreen(state: KeyringResetState, onAccepted: (Boolean) -> Unit, 
                         else Res.string.reset_records_preparing
                     KeyringResetAction.CheckConnection -> Res.string.reset_connect
                     // 다시 하는 동작의 이름은 모두 "다시 시도", 완료는 "확인"
-                    KeyringResetAction.CheckResult, KeyringResetAction.Retry, KeyringResetAction.Refresh -> Res.string.reset_retry
+                    KeyringResetAction.CheckResult -> Res.string.reset_check_again
+                    KeyringResetAction.Retry, KeyringResetAction.Refresh -> Res.string.reset_retry
                     else -> Res.string.reset_close
                 }
                 // 선업로드 계약·펌웨어가 준비되기 전에는 클릭 콜백도 실행하지 않는다.

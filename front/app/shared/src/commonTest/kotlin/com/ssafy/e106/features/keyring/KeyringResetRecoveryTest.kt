@@ -213,4 +213,26 @@ class KeyringResetRecoveryTest {
         assertEquals(ResetRecoveryPhase.WaitingDevice, f.model().resume(1, resetRun.deviceId).phase)
         assertEquals(0, f.board.sends)
     }
+    /** BLE 단절 + 앱 종료 뒤에도 같은 실행을 이어 간다. 이미 지운 키링을 다시 지우지 않고 완료 증명만 회수한다. */
+    @Test fun killedMidResetContinuesSameRunWithoutSecondWipe() = runTest {
+        val f = ResetFixture(); f.board.sendAction = { throw IllegalStateException("BLE disconnected") }
+        assertFailsWith<IllegalStateException> { f.start() }
+        val runId = f.store.read(1).single().run!!.resetRunId
+        // 앱 재시작: 새 복구 객체가 저장소에서 같은 실행을 읽고, 재전송보다 결과 조회를 먼저 한다
+        val restored = f.model().resume(1, resetRun.deviceId, f.board)
+        assertEquals(ResetRecoveryPhase.Completed, restored.phase); assertEquals(runId, restored.ticket.run!!.resetRunId)
+        assertEquals(1, f.server.starts.size); assertEquals(0, f.server.commands)
+        assertEquals(1, f.board.sends); assertEquals(1, f.board.queries); assertEquals(1, f.server.acknowledgements.size)
+    }
+    /** 서버가 COMPLETED를 주기 전에는 완료가 아니다. 다시 시도는 키링 없이 같은 증명으로 서버 확인만 한다. */
+    @Test fun completionNeedsServerCompletedAndRetryOnlyAcknowledges() = runTest {
+        val f = ResetFixture(); f.server.ackAction = { ApiResult.Ok(f.server.run) }
+        assertEquals(ResetRecoveryPhase.ServerPending, f.start().phase)
+        f.server.ackAction = { ApiResult.Fail(AppError.Server(500, "INTERNAL_SERVER_ERROR", "")) }
+        assertFailsWith<ResetApiException> { f.model().resume(1, resetRun.deviceId) }
+        f.server.ackAction = { ApiResult.Ok(resetDone()) }
+        assertEquals(ResetRecoveryPhase.Completed, f.model().resume(1, resetRun.deviceId).phase)
+        assertEquals(1, f.board.sends); assertEquals(0, f.board.queries); assertEquals(0, f.server.commands)
+        assertEquals(listOf(resetProof, resetProof, resetProof), f.server.acknowledgements)
+    }
 }

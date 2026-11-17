@@ -59,7 +59,8 @@ class KeyringResetViewModelTest {
                 f.server.ownershipFailure = AppError.Offline
                 m.start(f.board); runCurrent()
             }
-            assertEquals(KeyringResetStage.Unknown, m.state.value.displayStage)
+            // 실행 기록이 없으면 결과 미확인이 아니라 시작하지 못한 것이다
+            assertTrue(m.state.value.displayStage in setOf(KeyringResetStage.Unavailable, KeyringResetStage.Failed))
             assertTrue(f.server.starts.isEmpty()); assertTrue(f.store.read(1).isEmpty())
             f.server.ownershipFailure = null
             m.recover(f.board); runCurrent(); m.accepted(true)

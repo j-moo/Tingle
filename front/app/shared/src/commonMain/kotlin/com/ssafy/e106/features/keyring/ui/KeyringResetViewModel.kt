@@ -141,9 +141,11 @@ class KeyringResetViewModel(private val recovery: KeyringResetRecovery, private 
                 val current = pending
                 val waiting = current?.ack == null && current?.run != null &&
                     (failure as? BleException)?.reason in RECONNECTABLE
+                // 저장된 실행이 없으면 아무것도 시작하지 않은 실패다. 실행이 있으면 결과 미확인이다(실패 · 원상복구로 표시하지 않는다)
                 mutable.update { it.copy(stage = when {
                         current?.ack != null -> KeyringResetStage.Partial
                         waiting -> KeyringResetStage.Waiting
+                        current == null -> KeyringResetStage.Failed
                         else -> KeyringResetStage.Unknown
                     },
                     deviceResetConfirmed = current?.ack != null,
