@@ -210,13 +210,12 @@ class Ter2ReceiptServiceTest {
 	}
 
 	@Test
-	void reviewWithoutPeerIsRejectedAndConfirmedRecordNeedsACredential() throws Exception {
+	void reviewWithoutPeerIsQuarantinedAndConfirmedRecordNeedsACredential() throws Exception {
 		byte[] review = emptyPeerReview(raw);
 		Submission request = submission(review);
 		assertThat(request.peerCredential()).isEmpty();
-		// REVIEW 접수는 판정 도구가 생길 때까지 모든 환경에서 거절한다.
-		assertThatThrownBy(() -> service.accept(1, 100, request)).isInstanceOf(BusinessException.class)
-			.extracting("errorCode").isEqualTo(ErrorCode.POLICY_UNRESOLVED);
+		assertThat(service.accept(1, 100, request).encounterStatus()).isEqualTo("REVIEW_QUARANTINED");
+		jdbc.execute("truncate keyring_peer_encounter");
 		Submission normal = submission(raw);
 		Submission missing = new Submission(normal.submissionId(), normal.eventId(), normal.occurredAt(),
 			normal.policyVersion(), normal.matchingRuleVersion(), normal.settingsSnapshotId(), "", normal.evidence());
@@ -309,15 +308,30 @@ class Ter2ReceiptServiceTest {
 	}
 
 	@Test
-	void reviewIsRejectedUntilReviewToolingExistsAndStoresNothing() throws Exception {
+	void reviewIsQuarantinedWithDeletionReceiptAndKeepsTheOriginalForLaterJudgement() throws Exception {
 		byte[] review = raw.clone();
 		review[25] = 3;
 		review[27] = 2;
 		signSynthetic(review, 1);
-		assertThatThrownBy(() -> service.accept(1, 100, submission(review)))
-			.isInstanceOf(BusinessException.class).extracting("errorCode").isEqualTo(ErrorCode.POLICY_UNRESOLVED);
-		assertThat(jdbc.queryForObject("select count(*) from keyring_peer_encounter", Long.class)).isZero();
-		assertThat(service.accept(1, 100, submission(raw)).encounterStatus()).isEqualTo("WAITING_COUNTERPART");
+		var accepted = service.accept(1, 100, submission(review));
+		// 거절하면 키링이 같은 기록을 계속 다시 보낸다. 접수증으로 키링 원본을 정리하고, 서버 원본으로 나중에 다시 판정한다.
+		assertThat(accepted.encounterStatus()).isEqualTo("REVIEW_QUARANTINED");
+		assertThat(accepted.proof().receiptStatus()).isEqualTo("STORED");
+		assertThat(accepted.proof().deletePermission()).isEqualTo("DELETE_ORIGINAL");
+		assertThat(service.lookup(1, 100, accepted.receiptId()).rawPayload()).isEqualTo(review);
+		assertThat(service.accept(1, 100, submission(review))).isEqualTo(accepted);
+	}
+
+	@Test
+	void counterpartConfirmedAfterOwnReviewWaitsInsteadOfConflicting() throws Exception {
+		byte[] review = raw.clone();
+		review[25] = 3;
+		review[27] = 2;
+		signSynthetic(review, 1);
+		assertThat(service.accept(1, 100, submission(review)).encounterStatus()).isEqualTo("REVIEW_QUARANTINED");
+		// 같은 만남을 상대가 확정으로 올려도 검토 행과 짝짓지 않는다. 충돌로 실패하면 상대 키링에 미전송이 쌓인다.
+		assertThat(service.accept(2, 101, submission(counterpart(raw))).encounterStatus())
+			.isEqualTo("WAITING_COUNTERPART");
 	}
 
 	@Test
