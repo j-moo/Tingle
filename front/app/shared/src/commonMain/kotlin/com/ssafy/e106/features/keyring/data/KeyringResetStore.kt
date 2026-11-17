@@ -48,6 +48,12 @@ class KeyringResetStore(private val prefs: AppPrefs) {
         check(done.run?.state == "COMPLETED")
         write(owner, list - done)
     }
+    /** 서버가 실행을 만들지 않고 확정 거절한 시작 요청만 지운다. 실행이 생긴 기록은 지우지 않는다 */
+    suspend fun removeUnstarted(owner: Long, deviceId: Long) = lock.withLock {
+        val list = read(owner); val refused = list.single { it.deviceId == deviceId }
+        check(refused.run == null)
+        write(owner, list - refused)
+    }
     private suspend fun write(owner: Long, tickets: List<ResetTicket>) {
         check(tickets.all(::valid))
         val journal = ResetJournal(tickets)

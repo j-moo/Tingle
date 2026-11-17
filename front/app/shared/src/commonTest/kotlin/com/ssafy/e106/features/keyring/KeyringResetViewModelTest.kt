@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModelStore
 import com.ssafy.e106.core.auth.*
 import com.ssafy.e106.core.ble.*
 import com.ssafy.e106.core.network.*
+import com.ssafy.e106.core.storage.PrefRead
 import com.ssafy.e106.features.keyring.data.*
 import com.ssafy.e106.features.keyring.ui.*
 import kotlinx.coroutines.*
@@ -198,17 +199,35 @@ class KeyringResetViewModelTest {
         f.session.state.value = Session.SignedIn(2, OnboardingStatus.READY, false); runCurrent()
         assertNull(m.state.value.deviceLabel)
     }
-    /** 실행이 생기기 전 서버가 시작 요청을 거절(4xx)하면 실패로 보이고, 다시 시도는 저장된 같은 키 · 본문으로 다시 보낸다. */
-    @Test fun rejectedStartBeforeRunIsFailedAndRetryReplaysSameRequest() = runTest(dispatcher) {
-        val f = ResetFixture(); f.seed(run = null)
+    /**
+     * 실행이 생기기 전 확정 거절(같은 키로 다시 보내도 같은 409)은 실패로 보이고 저장된 요청을 지운다.
+     * 다시 시도는 확인 화면부터 새 요청으로 시작하고, 남은 기록이 같은 키링의 초기화 · 등록을 막지 않는다.
+     */
+    @Test fun refusedStartBeforeRunDropsRequestAndAllowsFreshReset() = runTest(dispatcher) {
+        val f = ResetFixture(); f.server.run = resetRun.copy(discardUnsentConfirmed = true); f.seed(run = null)
+        val stale = f.store.read(1).single().requestKey
+        f.server.startAction = {
+            if (f.server.starts.last().first == stale) ApiResult.Fail(AppError.Server(409, "IDEMPOTENCY_CONFLICT", ""))
+            else ApiResult.Ok(f.server.run)
+        }
         val m = model(f); m.load(resetRun.deviceId, true, resetSerial); runCurrent()
         assertEquals(KeyringResetStage.Unknown, m.state.value.displayStage); assertFalse(m.state.value.runCreated)
-        f.server.startAction = { ApiResult.Fail(AppError.Server(409, "IDEMPOTENCY_CONFLICT", "")) }
         m.recover(f.board); runCurrent()
-        assertEquals(KeyringResetStage.Failed, m.state.value.displayStage)
-        f.server.startAction = { ApiResult.Ok(f.server.run) }
-        m.recover(f.board); runCurrent()
+        assertEquals(KeyringResetStage.Failed, m.state.value.displayStage); assertTrue(f.store.read(1).isEmpty())
+        m.recover(f.board); runCurrent()   // 화면의 "다시 시도": 확인 화면부터 다시
+        assertEquals(KeyringResetStage.Confirm, m.state.value.displayStage)
+        m.accepted(true); m.recordChoice(ResetRecordChoice.Delete); m.recordDeletionAccepted(true)
+        m.start(f.board); runCurrent()
         assertEquals(KeyringResetStage.Complete, m.state.value.displayStage)
-        assertEquals(1, f.server.starts.map { it.first }.distinct().size); assertEquals(2, f.server.starts.size)
+        assertEquals(1, f.server.starts.count { it.first == stale }); assertNotEquals(stale, f.server.starts.last().first)
+    }
+    /** 시작 POST 뒤 기록을 읽지 못하면 서버가 실행을 만들었을 수 있으므로 실패가 아니라 요청 결과 미확인이다. */
+    @Test fun unreadableJournalAfterStartIsUnknownNotFailed() = runTest(dispatcher) {
+        val f = ResetFixture(); f.server.run = resetRun.copy(discardUnsentConfirmed = true)
+        val m = model(f); m.load(resetRun.deviceId, true, resetSerial); runCurrent()
+        m.accepted(true); m.recordChoice(ResetRecordChoice.Delete); m.recordDeletionAccepted(true)
+        f.server.startAction = { f.prefs.fault = PrefRead.Unreadable; ApiResult.Fail(AppError.Offline) }
+        m.start(f.board); runCurrent()
+        assertEquals(KeyringResetStage.Unknown, m.state.value.displayStage); assertFalse(m.state.value.runCreated)
     }
 }

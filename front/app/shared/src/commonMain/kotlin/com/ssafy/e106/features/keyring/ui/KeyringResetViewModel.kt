@@ -133,21 +133,24 @@ class KeyringResetViewModel(private val recovery: KeyringResetRecovery, private 
             catch (failure: Exception) {
                 ensure(owner, stamp)
                 // ACK HTTP 응답이 유실돼도 이미 내구 저장한 기기 증명은 부분 완료 안내에 반영한다.
+                // 기록을 읽지 못하면 서버가 실행을 만들었을 수 있다. 실패가 아니라 결과 미확인으로 보인다
+                var unreadable = false
                 try { pending = journal.read(owner).singleOrNull { it.deviceId == target }; ensure(owner, stamp) }
                 catch (cancelled: CancellationException) { throw cancelled }
-                catch (_: Exception) { ensure(owner, stamp) }
+                catch (_: Exception) { ensure(owner, stamp); unreadable = true }
                 // 저장 실패/시간 초과는 결과 불명이다. 실패를 초기화 취소로 표현하지 않는다.
                 // 실행을 만든 뒤 블루투스가 끊긴 것(키링이 지우면서 재시작 · 페어링 정리)은 실패가 아니라 재연결 대기다
                 val current = pending
                 val waiting = current?.ack == null && current?.run != null &&
                     (failure as? BleException)?.reason in RECONNECTABLE
-                // 저장된 요청이 없거나, 실행이 생기기 전 서버가 시작 요청을 명시적으로 거절(4xx)했으면 실패다.
-                // 그 밖에는 결과 미확인이다(실패 · 원상복구로 표시하지 않는다). 다시 시도는 저장된 같은 키 · 본문으로 다시 보낸다
+                // 저장된 요청이 없거나(확정 거절로 지운 경우 포함 → 다시 시도는 확인 화면부터), 실행이 생기기 전 서버가
+                // 시작 요청을 4xx로 거절했으면 실패다(남은 요청은 다시 시도에서 같은 키 · 본문으로 다시 보낸다).
+                // 그 밖에는 결과 미확인이다(실패 · 원상복구로 표시하지 않는다)
                 val rejected = ((failure as? ResetApiException)?.error as? AppError.Server)?.status in 400..499
                 mutable.update { it.copy(stage = when {
                         current?.ack != null -> KeyringResetStage.Partial
                         waiting -> KeyringResetStage.Waiting
-                        current == null || (current.run == null && rejected) -> KeyringResetStage.Failed
+                        !unreadable && (current == null || (current.run == null && rejected)) -> KeyringResetStage.Failed
                         else -> KeyringResetStage.Unknown
                     }, runCreated = current?.run != null,
                     deviceResetConfirmed = current?.ack != null,

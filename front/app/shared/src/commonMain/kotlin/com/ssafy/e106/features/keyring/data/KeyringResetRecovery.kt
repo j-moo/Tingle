@@ -61,7 +61,7 @@ class KeyringResetRecovery(private val api: KeyringResetRepository, private val 
             ResetStartBody(pendingRecordCount != 0L && discardAccepted, challenge))
         store.insert(owner, ticket); ensure(owner)
         // 최초 POST보다 본문·키를 먼저 저장한다. 응답 유실을 새 초기화 실행으로 대체하지 않는다.
-        val saved = accept(owner, ticket, unwrap(api.start(deviceId, ticket.requestKey, ticket.start), owner))
+        val saved = accept(owner, ticket, startRun(owner, ticket))
         continueRun(owner, saved, device, firstSend = true)
     }
 
@@ -69,11 +69,21 @@ class KeyringResetRecovery(private val api: KeyringResetRepository, private val 
         ensure(owner)
         val ticket = store.read(owner).single { it.deviceId == deviceId }; ensure(owner)
         // 실행 ID가 없으면 반드시 최초 키·본문으로 POST replay한다. 원 계정은 소유 해제 후에도 GET이 가능하다.
-        val run = unwrap(ticket.run?.let { api.get(deviceId, it.resetRunId) }
-            ?: api.start(deviceId, ticket.requestKey, ticket.start), owner)
+        val run = ticket.run?.let { unwrap(api.get(deviceId, it.resetRunId), owner) } ?: startRun(owner, ticket)
         continueRun(owner, accept(owner, ticket, run), device, firstSend = false)
     }
 
+    /**
+     * 최초 시작 POST(또는 같은 키 · 본문의 재전송). 서버가 실행을 만들지 않고 확정 거절하면 같은 요청은 계속 같은 거절이다.
+     * 그 기록이 남으면 새 초기화와 같은 키링 재등록까지 막으므로 지워서 확인 화면부터 새로 시작하게 한다.
+     */
+    private suspend fun startRun(owner: Long, ticket: ResetTicket): KeyringResetRun {
+        val result = api.start(ticket.deviceId, ticket.requestKey, ticket.start); ensure(owner)
+        if (((result as? ApiResult.Fail)?.error as? AppError.Server)?.code in REFUSED_START) {
+            store.removeUnstarted(owner, ticket.deviceId); ensure(owner)
+        }
+        return unwrap(result, owner)
+    }
     private suspend fun accept(owner: Long, ticket: ResetTicket, run: KeyringResetRun): ResetTicket {
         ensure(owner)
         check(KeyringResetProtocol.valid(run) && run.deviceId == ticket.deviceId &&
@@ -146,3 +156,6 @@ class KeyringResetRecovery(private val api: KeyringResetRepository, private val 
         return when (result) { is ApiResult.Ok -> result.value; is ApiResult.Fail -> throw ResetApiException(result.error) }
     }
 }
+
+/** 실행을 만들지 않은 확정 거절(이미 다른 실행 있음 · 대상 없음 · 키링 증명 거절 · 형식 오류). 같은 요청을 다시 보내도 결과가 같다 */
+private val REFUSED_START = setOf("IDEMPOTENCY_CONFLICT", "RESOURCE_NOT_FOUND", "INVALID_DEVICE_PROOF", "INVALID_REQUEST")
