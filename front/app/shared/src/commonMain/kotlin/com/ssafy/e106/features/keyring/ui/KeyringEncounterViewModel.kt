@@ -18,6 +18,13 @@ internal enum class EncounterTransferState {
     Idle, Sending, Empty, LegacyOnly, ConfirmedStored, ReviewStored, Stored, Retryable, PolicyWaiting, NoReceipt, Failed,
 }
 
+/** 서명 접수증이 없는 응답(HTTP 200의 NOT_STORED 포함)의 안내. 어느 경우도 성공이 아니며 키링 원본을 지우지 않는다 */
+internal fun heldReason(result: KeyringEncounterResponse.Receipt) = when {
+    result.retryable -> EncounterTransferState.Retryable
+    result.errorCode == "POLICY_UNRESOLVED" -> EncounterTransferState.PolicyWaiting
+    else -> EncounterTransferState.NoReceipt
+}
+
 /** 전경 호스트·Android 서비스·수동 버튼이 동일 연결과 전송 복구 기록을 사용한다. */
 internal class KeyringEncounterViewModel(
     private val sessions: SessionStore,
@@ -145,11 +152,7 @@ internal class KeyringEncounterViewModel(
             val result = KeyringEncounterProtocol.resultFor(header, response)
             val proof = KeyringEncounterProtocol.proofFor(header, result)
             if (proof == null) {
-                val reason = when {
-                    result.retryable -> EncounterTransferState.Retryable
-                    result.errorCode == "POLICY_UNRESOLVED" -> EncounterTransferState.PolicyWaiting
-                    else -> EncounterTransferState.NoReceipt
-                }
+                val reason = heldReason(result)
                 if (!result.retryable) held[header.envelopeHash] = reason
                 deferred = deferred.prefer(reason)
                 // 접수증 없이 원본을 정리할 수 없다. 다음 순번을 계속 처리한다.

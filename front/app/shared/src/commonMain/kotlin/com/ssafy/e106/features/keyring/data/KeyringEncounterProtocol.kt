@@ -162,6 +162,8 @@ internal object KeyringEncounterProtocol {
     /** 서버가 내구 접수한 같은 원본에만 삭제 허가를 사용한다. HTTP 성공과 boolean은 조건에 사용하지 않는다. */
     fun proofFor(header: KeyringEncounterHeader, result: KeyringEncounterResponse.Receipt): KeyringEncounterProof? {
         require(result.submissionId == header.submissionId && result.eventId == header.eventId)
+        // NOT_STORED 등 미접수 응답은 접수증이 함께 와도 삭제 근거가 아니다. 원본을 남기고 다음 기록을 계속 처리한다
+        if (result.receiptStatus != "STORED") return null
         val proof = result.serverProof ?: return null
         require(result.receiptStatus == "STORED" && result.receiptId == proof.receiptId &&
             proof.deviceId == header.deviceId && proof.ownerGeneration == header.ownerGeneration &&

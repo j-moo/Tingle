@@ -4,6 +4,8 @@ import com.ssafy.e106.core.network.ApiJson
 import com.ssafy.e106.core.storage.ProtectedRead
 import com.ssafy.e106.core.storage.ProtectedRecordStore
 import com.ssafy.e106.features.keyring.data.*
+import com.ssafy.e106.features.keyring.ui.EncounterTransferState
+import com.ssafy.e106.features.keyring.ui.heldReason
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.*
 import okio.ByteString.Companion.toByteString
@@ -214,5 +216,19 @@ class KeyringEncounterProtocolTest {
         }
         restored.remove(1, retry)
         assertNull(restored.read(1, 4))
+    }
+
+    /** HTTP 200이어도 NOT_STORED는 성공이 아니다. 접수증이 함께 와도 삭제 근거로 쓰지 않고 원본을 보존한다. */
+    @Test fun notStoredNeverYieldsDeleteProofOrSuccess() {
+        val notStored = KeyringEncounterResponse.Receipt(header.submissionId, header.eventId, "NOT_STORED",
+            errorCode = "POLICY_UNRESOLVED", retryable = false)
+        assertNull(KeyringEncounterProtocol.proofFor(header, notStored))
+        assertNull(KeyringEncounterProtocol.proofFor(header, notStored.copy(receiptId = proof.receiptId, serverProof = proof)))
+        assertEquals(EncounterTransferState.PolicyWaiting, heldReason(notStored))
+        assertEquals(EncounterTransferState.NoReceipt, heldReason(notStored.copy(errorCode = null)))
+        assertEquals(EncounterTransferState.Retryable, heldReason(notStored.copy(retryable = true)))
+        // 서명 접수증이 있는 STORED만 원본 정리에 쓴다
+        val stored = notStored.copy(receiptStatus = "STORED", receiptId = proof.receiptId, errorCode = null, serverProof = proof)
+        assertEquals(proof, KeyringEncounterProtocol.proofFor(header, stored))
     }
 }
