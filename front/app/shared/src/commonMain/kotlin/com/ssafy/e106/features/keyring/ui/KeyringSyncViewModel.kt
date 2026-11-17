@@ -310,6 +310,9 @@ class KeyringSyncViewModel(private val api: KeyringSyncRepository, private val s
         }
         // 복구 중 보드가 거부한 같은 버전은 새 challenge·발급·BLE 없이 서버 버전이 바뀌었는지만 확인한다.
         val blockedIdentity = ticket.identity
+        // 재부팅 등으로 보드의 복구 표시가 풀렸으면 같은 버전도 다시 받으므로 차단을 해제한다.
+        // 펌웨어는 복구가 필요할 때만 이 필드를 보낸다. 이번 연결에서 읽지 못했으면 차단을 유지한다.
+        if (boards[id]?.let { it.readiness.settingsRecoveryRequired != true } == true) recoveryBlocked.remove(id)
         if (blockedIdentity != null && ticket.ack == null && !ticket.complete &&
             recoveryBlocked[id] == blockedIdentity.settingsVersion to blockedIdentity.payloadHash) {
             val current = api.get(id, blockedIdentity.syncRunId); ensure(owner, stamp)

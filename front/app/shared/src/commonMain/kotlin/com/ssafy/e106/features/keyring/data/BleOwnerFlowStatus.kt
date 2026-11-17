@@ -44,6 +44,8 @@ data class BleOwnerFlowStatus(
     val settingsRecoveryRequired: Boolean? = null,
     // DEVICE_INFO 전용. 기록 저장소 오류에서는 설정을 적용해도 applied=false가 유지된다.
     val storageHealthy: Boolean? = null,
+    // 격리 기록이 남은 보드. storageHealthy=false지만 동기화 뒤에는 설정을 정상 적용한다.
+    val recordsRecoveryRequired: Boolean? = null,
 ) {
     // 모순된 보고를 준비 완료로 합성하지 않고 사용자가 다시 조회할 수 있게 알린다.
     val readinessConflict: Boolean get() = matchingReady == true &&
@@ -63,8 +65,9 @@ internal object KeyringBoardSync {
             info.ownerFlow.keyId?.let { it != run.keyId } == true ||
             info.storedSettingsVersion != run.settingsVersion || info.storedPayloadHash != run.payloadHash ||
             board.settingsRecoveryRequired == true) return true
-        // 저장소 오류 보드는 다시 보내도 applied=false로 남는다. 같은 설정의 재전송을 반복하지 않는다.
-        if (board.storageHealthy == false) return false
+        // 저장소 오류 보드는 다시 보내도 applied=false로 남는다. 이번 부팅에서 이미 서명 시간을 받았으면(재전송 뒤)
+        // 같은 설정을 반복하지 않는다. 격리 기록만 있는 보드는 동기화로 적용되므로 막지 않는다.
+        if (board.storageHealthy == false && board.timeReady == true && board.recordsRecoveryRequired != true) return false
         // 이전 ON/OFF·196B 형식은 두 플래그를 적용 판단에 쓰지 않는다(시험 빌드는 항상 false). TSV3만 대조한다.
         return run.payloadFormat == BleOwnerFlowInfo.FULL_SETTINGS_FORMAT && (board.applied != true || board.timeReady != true)
     }
@@ -73,7 +76,8 @@ internal object KeyringBoardSync {
     fun readiness(board: BleOwnerFlowStatus?, matchingEnabled: Boolean?, signupPending: Boolean): KeyringMatchReadiness = when {
         board == null || board.applied == null || board.timeReady == null || board.matchingReady == null ||
             board.readinessConflict -> KeyringMatchReadiness.Unknown
-        board.storageHealthy == false && board.settingsRecoveryRequired != true -> KeyringMatchReadiness.StorageError
+        board.applied == false && board.storageHealthy == false && board.settingsRecoveryRequired != true ->
+            KeyringMatchReadiness.StorageError
         board.applied == false || board.timeReady == false || board.settingsRecoveryRequired == true -> KeyringMatchReadiness.NotApplied
         board.matchingReady == true -> KeyringMatchReadiness.Ready
         matchingEnabled == false -> KeyringMatchReadiness.MatchingOff
@@ -124,6 +128,6 @@ internal object BleOwnerFlowProtocol {
             choice(value, "batteryPercentSource", setOf("VOLTAGE_ESTIMATE", "FUEL_GAUGE", "UNKNOWN")),
             choice(value, "batteryPresence", setOf("PRESENT", "ABSENT", "UNCONFIRMED")),
             choice(value, "powerSource", setOf("USB", "USB_ABSENT", "UNKNOWN")), flag(value, "settingsRecoveryRequired"),
-            flag(value, "storageHealthy"))
+            flag(value, "storageHealthy"), flag(value, "recordsRecoveryRequired"))
     }
 }

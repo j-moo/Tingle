@@ -1213,4 +1213,57 @@ class KeyringSyncTest {
         connect()
         assertEquals(4, sends); assertEquals(13L, m.state.value.items.single().confirmedTsv3Version)
     }
+
+    private fun storage(info: BleDeviceInfo, quarantined: Boolean?) =
+        info.copy(readiness = info.readiness.copy(storageHealthy = false, recordsRecoveryRequired = quarantined))
+
+    /** 격리 기록 보드는 storageHealthy=false라도 재부팅 뒤 한 번 다시 보내 적용하고, 준비되면 Ready로 보인다. */
+    @Test fun quarantinedBoardResyncsOnceAfterRebootAndCanBeReady() = runTest(dispatcher) {
+        val run = tsv3Run()
+        assertTrue(KeyringBoardSync.needsResync(storage(board(run, false, false, false), true), run))
+        // 기록 저장소 오류만 있는 보드도 재부팅(시간 미확보) 뒤에는 한 번 보낸다.
+        assertTrue(KeyringBoardSync.needsResync(storage(board(run, false, false, false), false), run))
+        assertEquals(KeyringMatchReadiness.Ready,
+            KeyringBoardSync.readiness(storage(board(run, true, true, true), true).readiness, true, false))
+        val server = tsv3Server(); val store = KeyringSyncStore(SyncPrefs()); store.rememberTarget(1, syncRun.deviceId, "XIAO-test")
+        var info = storage(board(run, true, true, true), true); var sends = 0
+        val m = model(server, store, TestSession(OnboardingStatus.READY))
+        fun connect() {
+            m.detach()
+            m.attachRequest("XIAO-test", { fullBody }, getApplied = ::appliedProof, getDeviceInfo = { info }) {
+                sends++; info = storage(board(it, true, true, true), true); stored(it)
+            }
+            runCurrent()
+        }
+        connect(); assertEquals(1, sends)
+        info = storage(board(run, false, false, false), true)
+        connect(); assertEquals(2, sends)
+        assertEquals(KeyringMatchReadiness.Ready, m.state.value.items.single().readiness)
+        connect(); assertEquals(2, sends)
+    }
+
+    /** 보드가 재부팅해 복구 표시가 풀리면 기억한 차단을 해제하고 같은 버전을 다시 보낸다. */
+    @Test fun recoveryBlockClearsWhenBoardNoLongerNeedsRecovery() = runTest(dispatcher) {
+        val server = tsv3Server(); val store = KeyringSyncStore(SyncPrefs()); store.rememberTarget(1, syncRun.deviceId, "XIAO-test")
+        var info = board(server.run, true, true, true); var sends = 0; var rejecting = false
+        val m = model(server, store, TestSession(OnboardingStatus.READY))
+        fun connect() {
+            m.detach()
+            m.attachRequest("XIAO-test", { fullBody }, getApplied = ::appliedProof, getDeviceInfo = { info }) {
+                sends++; if (rejecting) throw BleCommandException("SETTINGS_RECOVERY_REQUIRED")
+                info = board(it, true, true, true); stored(it)
+            }
+            runCurrent()
+        }
+        connect()
+        info = board(server.run, false, false, false).let { it.copy(readiness = it.readiness.copy(settingsRecoveryRequired = true)) }
+        rejecting = true
+        connect(); connect()
+        assertEquals(2, sends); assertEquals(SyncPhase.RecoveryVersionRequired, m.state.value.items.single().phase)
+        info = board(server.run, false, false, false); rejecting = false
+        connect()
+        assertEquals(3, sends)
+        val item = m.state.value.items.single()
+        assertEquals(SyncPhase.Confirmed, item.phase); assertEquals(KeyringMatchReadiness.Ready, item.readiness)
+    }
 }
