@@ -13,8 +13,8 @@
     <string name="reset_unconfirmed_help">초기화가 취소되거나 원래대로 돌아간 건 아니에요. 키링을 휴대폰 가까이에 두고 다시 확인해 주세요.</string>
     <string name="reset_start_unconfirmed">초기화 요청 결과를 아직 확인하지 못했어요</string>
     <string name="reset_start_unconfirmed_help">다시 확인하면 새 초기화를 만들지 않고 같은 요청의 결과를 확인해요.</string>
-    <string name="reset_conflict">다른 곳에서 진행 중인 초기화가 있어요</string>
-    <string name="reset_conflict_help">그 기기에서 초기화를 마치거나 팀에 문의해 주세요.</string>
+    <string name="reset_conflict">이미 시작된 다른 초기화가 있어요</string>
+    <string name="reset_conflict_help">초기화를 시작한 기기에서 마무리하거나 팀에 문의해 주세요.</string>
     <string name="reset_partial">키링 초기화는 확인했어요</string>
     <string name="reset_partial_help">계정 연결 해제를 서버에서 아직 확인하지 못했어요. 다시 확인하면 키링을 다시 지우지 않고 서버 확인만 마저 해요.</string>
     <string name="reset_check_again">다시 확인</string>
