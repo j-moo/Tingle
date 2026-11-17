@@ -15,21 +15,35 @@ import kotlin.uuid.ExperimentalUuidApi
 import kotlin.uuid.Uuid
 
 enum class RegistrationIssue { Storage, ExpiredChallenge, InvalidResponse, Device, NotInOwnedList, ResetPending, DeviceBound, WindowClosed,
-    ProofRejected, ServerFailure, Confirming }
+    ProofRejected, ServerFailure, ServerUnavailable, Confirming }
 
 /** 서버 처리 실패 뒤 같은 요청을 다시 보내기까지 기다리는 시간. 짧은 간격의 반복 등록 요청을 막는다 */
 internal val REGISTRATION_SERVER_COOLDOWN = 30.seconds
 
 /**
- * 등록 HTTP 실패를 안내 종류로 나눈다. null이면 서버 문구를 그대로 보여 준다(세션 만료 등).
- * [proofSent]: 키링 증명을 저장해 서버로 보낸 요청이다. 결과를 모르는 실패는 거절이 아니라 확인 중이다.
+ * 등록 HTTP 실패를 단계별 안내로 나눈다. null이면 서버 문구를 그대로 보여 준다(세션 만료 등).
+ * - 등록이 확인된 뒤(다음 단계 갱신 실패)는 등록 안내를 붙이지 않는다
+ * - 등록 POST가 성공해 영수증이 있으면 이후 목록 조회 실패는 확인 중이다
+ * - 증명을 보냈고 영수증이 없으면 5xx는 서버 처리 실패(대기 후 같은 요청), 연결 실패는 확인 중이다
+ * - 증명을 보내기 전(challenge 발급) 5xx는 대기 없는 서버 오류다
  */
-internal fun registrationIssue(error: AppError, proofSent: Boolean): RegistrationIssue? = when {
-    error is AppError.Server && error.code == "DEVICE_ALREADY_BOUND" -> RegistrationIssue.DeviceBound
-    error is AppError.Server && error.code in setOf("INVALID_DEVICE_PROOF", "INVALID_REQUEST") -> RegistrationIssue.ProofRejected
-    error is AppError.Server && error.status >= 500 -> RegistrationIssue.ServerFailure
-    proofSent && (error is AppError.Offline || error is AppError.Unknown) -> RegistrationIssue.Confirming
-    else -> null
+internal fun registrationIssue(error: AppError, state: LiveRegistrationState): RegistrationIssue? {
+    if (state.confirmed != null) return null
+    val code = (error as? AppError.Server)?.code
+    val serverDown = (error as? AppError.Server)?.status?.let { it >= 500 } == true
+    val unknown = error is AppError.Offline || error is AppError.Unknown
+    return when {
+        code == "DEVICE_ALREADY_BOUND" -> RegistrationIssue.DeviceBound
+        code in setOf("INVALID_DEVICE_PROOF", "INVALID_REQUEST") -> RegistrationIssue.ProofRejected
+        state.pending?.receipt != null -> if (serverDown || unknown) RegistrationIssue.Confirming else null
+        state.pending?.body != null -> when {
+            serverDown -> RegistrationIssue.ServerFailure
+            unknown -> RegistrationIssue.Confirming
+            else -> null
+        }
+        serverDown -> RegistrationIssue.ServerUnavailable
+        else -> null
+    }
 }
 
 /** 기기의 소유 상태는 현재 계정 소유라는 증명이 아니다. 신규 증명 요청만 막고 서버 조회/HTTP 복구는 유지한다. */
@@ -84,7 +98,7 @@ class KeyringRegistrationViewModel(private val api: KeyringRegistrationRepositor
      */
     fun start(serial: String, proof: suspend (KeyringChallenge) -> RegisterKeyringBody) {
         val previous = mutable.value.pending
-        if (!mutable.value.loaded || previous?.body != null || mutable.value.confirmed != null || !KeyringRegistrationProtocol.serial(serial) || coolingDown()) return
+        if (!mutable.value.loaded || previous?.body != null || mutable.value.confirmed != null || !KeyringRegistrationProtocol.serial(serial)) return
         if (previous?.serial == serial) return retry(proof)
         runAction { operation ->
             operation.requireResetFinished(serial)
@@ -229,7 +243,7 @@ class KeyringRegistrationViewModel(private val api: KeyringRegistrationRepositor
                 operation.ensure()
                 val apiError = (failure as? RegistrationApiProblem)?.error
                 val issue = (failure as? RegistrationProblem)?.issue
-                    ?: apiError?.let { registrationIssue(it, mutable.value.pending?.body != null) }
+                    ?: apiError?.let { registrationIssue(it, mutable.value) }
                     ?: if (apiError == null) RegistrationIssue.InvalidResponse else null
                 mutable.update { it.copy(issue = issue, error = apiError?.takeIf { issue == null },
                     retryAfter = if (issue == RegistrationIssue.ServerFailure) now() + REGISTRATION_SERVER_COOLDOWN else null) }

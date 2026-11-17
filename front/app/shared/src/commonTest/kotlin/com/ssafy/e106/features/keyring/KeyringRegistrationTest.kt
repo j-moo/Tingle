@@ -51,14 +51,17 @@ private class RegistrationServer : KeyringRegistrationRepository, OwnedKeyringRe
     val challenges = mutableListOf<String>()
     val receipt = OwnedKeyring(12, "SYNC_PENDING", "0.1.0-registration")
     var items = emptyList<OwnedKeyring>()
-    var listFail = false
+    var listError: AppError? = null
+    var challengeError: AppError? = null
     var challenge = challengeValue
     var onSend: suspend () -> ApiResult<OwnedKeyring> = { items = listOf(receipt); ApiResult.Ok(receipt) }
-    override suspend fun challenge(key: String): ApiResult<KeyringChallenge> { challenges += key; return ApiResult.Ok(challenge) }
+    override suspend fun challenge(key: String): ApiResult<KeyringChallenge> {
+        challenges += key; return challengeError?.let { ApiResult.Fail(it) } ?: ApiResult.Ok(challenge)
+    }
     override suspend fun register(key: String, body: RegisterKeyringBody): ApiResult<OwnedKeyring> {
         sent += key to body; return onSend()
     }
-    override suspend fun list(): ApiResult<List<OwnedKeyring>> = if (listFail) ApiResult.Fail(AppError.Offline) else ApiResult.Ok(items)
+    override suspend fun list(): ApiResult<List<OwnedKeyring>> = listError?.let { ApiResult.Fail(it) } ?: ApiResult.Ok(items)
 }
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -127,9 +130,10 @@ class KeyringRegistrationTest {
     @BeforeTest fun before() = Dispatchers.setMain(dispatcher)
     @AfterTest fun after() { models.clear(); Dispatchers.resetMain() }
     private fun model(server: RegistrationServer, prefs: RegistrationPrefs = RegistrationPrefs(),
-        session: TestSession = TestSession(OnboardingStatus.KEYRING_REQUIRED), name: String = "registration") =
+        session: TestSession = TestSession(OnboardingStatus.KEYRING_REQUIRED), name: String = "registration",
+        now: () -> Instant = { Instant.parse("2026-11-04T12:00:00Z") }) =
         KeyringRegistrationViewModel(server, server, KeyringRegistrationStore(prefs), session, KeyringSyncStore(prefs), KeyringResetStore(prefs),
-            { Instant.parse("2026-11-04T12:00:00Z") }).also { models.put(name, it) }
+            now).also { models.put(name, it) }
 
     @Test fun readyScreenNeverRegistersUntilExplicitStartAndChecksOwnership() = runTest(dispatcher) {
         val server = RegistrationServer(); val prefs = RegistrationPrefs(); val m = model(server, prefs)
@@ -222,11 +226,8 @@ class KeyringRegistrationTest {
         assertEquals(2, server.challenges.distinct().size); assertEquals(server.receipt, m.state.value.confirmed)
     }
     @Test fun challengeExpiringDuringProofClearsRequestAndNeverPosts() = runTest(dispatcher) {
-        val server = RegistrationServer(); val prefs = RegistrationPrefs()
-        var now = Instant.parse("2026-11-04T12:00:00Z")
-        val m = KeyringRegistrationViewModel(server, server, KeyringRegistrationStore(prefs), TestSession(OnboardingStatus.KEYRING_REQUIRED),
-            KeyringSyncStore(prefs), KeyringResetStore(prefs), { now }).also { models.put("late", it) }
-        runCurrent()
+        val server = RegistrationServer(); var now = Instant.parse("2026-11-04T12:00:00Z")
+        val m = model(server, now = { now }); runCurrent()
         // 증명을 받는 사이 5분이 지나면 보내지 않고 기록을 지운다
         m.start("XIAO-test") { now = Instant.parse("2026-11-04T12:06:00Z"); proofBody(it) }; runCurrent()
         assertEquals(RegistrationIssue.ExpiredChallenge, m.state.value.issue)
@@ -257,16 +258,14 @@ class KeyringRegistrationTest {
         assertEquals(2L, m.state.value.owner); assertNull(m.state.value.pending); assertNull(m.state.value.confirmed)
     }
     @Test fun serverFiveHundredKeepsRequestButExplicitProofRejectionClearsIt() = runTest(dispatcher) {
-        val server = RegistrationServer(); val prefs = RegistrationPrefs()
-        var now = Instant.parse("2026-11-04T12:00:00Z")
-        val m = KeyringRegistrationViewModel(server, server, KeyringRegistrationStore(prefs), TestSession(OnboardingStatus.KEYRING_REQUIRED),
-            KeyringSyncStore(prefs), KeyringResetStore(prefs), { now }).also { models.put("server", it) }
-        runCurrent()
+        val server = RegistrationServer(); var now = Instant.parse("2026-11-04T12:00:00Z")
+        val m = model(server, now = { now }); runCurrent()
         server.onSend = { ApiResult.Fail(AppError.Server(503, "SERVICE_UNAVAILABLE", "retry")) }
         m.start("XIAO-test") { proofBody(it) }; runCurrent()
         // 5xx는 같은 요청으로 다시 시도할 수 있게 증명까지 보존한다. 새 등록으로 덮어쓰지 않는다
         val kept = m.state.value.pending; assertNotNull(kept?.body)
         assertEquals(RegistrationIssue.ServerFailure, m.state.value.issue); assertNull(m.state.value.error)
+        assertEquals(now + REGISTRATION_SERVER_COOLDOWN, m.state.value.retryAfter)
         // 서버 처리 실패 직후에는 같은 요청도 바로 다시 보내지 않는다
         m.start("XIAO-test") { error("No new proof") }; m.retry { error("No new proof") }; runCurrent()
         assertEquals(1, server.sent.size); assertEquals(kept, m.state.value.pending)
@@ -289,18 +288,55 @@ class KeyringRegistrationTest {
         m.start("XIAO-test") { throw BleCommandException("REGISTRATION_WINDOW_CLOSED") }; runCurrent()
         assertEquals(RegistrationIssue.WindowClosed, m.state.value.issue); assertTrue(server.sent.isEmpty())
     }
-    @Test fun registrationErrorsAreClassifiedByCause() {
+    @Test fun registrationErrorsAreClassifiedByStage() {
         fun server(status: Int, code: String) = AppError.Server(status, code, "")
-        assertEquals(RegistrationIssue.ProofRejected, registrationIssue(server(422, "INVALID_DEVICE_PROOF"), true))
-        assertEquals(RegistrationIssue.ProofRejected, registrationIssue(server(400, "INVALID_REQUEST"), true))
-        assertEquals(RegistrationIssue.DeviceBound, registrationIssue(server(409, "DEVICE_ALREADY_BOUND"), true))
-        assertEquals(RegistrationIssue.ServerFailure, registrationIssue(server(500, "INTERNAL_SERVER_ERROR"), true))
-        assertEquals(RegistrationIssue.ServerFailure, registrationIssue(server(503, "SERVICE_UNAVAILABLE"), false))
-        assertEquals(RegistrationIssue.Confirming, registrationIssue(AppError.Offline, true))
-        // 증명을 보내기 전 연결 실패는 확인 중이 아니다(서버 문구를 그대로 보여 준다)
-        assertNull(registrationIssue(AppError.Offline, false))
-        assertNull(registrationIssue(AppError.SessionExpired, true))
-        assertNull(registrationIssue(server(409, "IDEMPOTENCY_CONFLICT"), true))
+        val prepare = LiveRegistrationState(pending = PendingKeyringRegistration(1, "XIAO-test", "c", "r"))
+        val sent = prepare.copy(pending = prepare.pending!!.copy(body = proofBody()))
+        val received = sent.copy(pending = sent.pending!!.copy(receipt = OwnedKeyring(12, "SYNC_PENDING", "1")))
+        val confirmed = LiveRegistrationState(confirmed = OwnedKeyring(12, "SYNC_PENDING", "1"))
+        val down = server(500, "INTERNAL_SERVER_ERROR")
+        assertEquals(RegistrationIssue.ProofRejected, registrationIssue(server(422, "INVALID_DEVICE_PROOF"), sent))
+        assertEquals(RegistrationIssue.ProofRejected, registrationIssue(server(400, "INVALID_REQUEST"), sent))
+        assertEquals(RegistrationIssue.DeviceBound, registrationIssue(server(409, "DEVICE_ALREADY_BOUND"), sent))
+        // 증명 전(challenge) 5xx: 대기 없는 서버 오류 / 증명 후 영수증 전 5xx: 대기 후 같은 요청
+        assertEquals(RegistrationIssue.ServerUnavailable, registrationIssue(down, prepare))
+        assertEquals(RegistrationIssue.ServerUnavailable, registrationIssue(down, LiveRegistrationState()))
+        assertEquals(RegistrationIssue.ServerFailure, registrationIssue(down, sent))
+        assertEquals(RegistrationIssue.Confirming, registrationIssue(AppError.Offline, sent))
+        // 등록 POST가 성공한 뒤의 목록 조회 실패는 서버 오류가 아니라 확인 중이다
+        assertEquals(RegistrationIssue.Confirming, registrationIssue(down, received))
+        assertEquals(RegistrationIssue.Confirming, registrationIssue(AppError.Offline, received))
+        // 등록이 확인된 뒤(다음 단계 갱신 실패)는 등록 안내를 붙이지 않는다
+        assertNull(registrationIssue(down, confirmed))
+        assertNull(registrationIssue(AppError.Offline, prepare))
+        assertNull(registrationIssue(AppError.SessionExpired, sent))
+        assertNull(registrationIssue(server(409, "IDEMPOTENCY_CONFLICT"), sent))
+    }
+    @Test fun ownedListFailureAfterReceiptIsConfirmingWithoutCooldown() = runTest(dispatcher) {
+        val server = RegistrationServer().apply { onSend = { ApiResult.Ok(receipt) }; listError = AppError.Server(503, "SERVICE_UNAVAILABLE", "") }
+        val m = model(server); runCurrent()
+        m.start("XIAO-test") { proofBody(it) }; runCurrent()
+        assertEquals(RegistrationIssue.Confirming, m.state.value.issue); assertNull(m.state.value.retryAfter)
+        server.listError = null; server.items = listOf(server.receipt)
+        m.retry { error("No new proof") }; runCurrent()
+        assertEquals(1, server.sent.size); assertEquals(server.receipt, m.state.value.confirmed)
+    }
+    @Test fun onboardingRefreshFailureAfterSuccessShowsNoRegistrationIssue() = runTest(dispatcher) {
+        val session = TestSession(OnboardingStatus.KEYRING_REQUIRED).apply {
+            refreshResult = ApiResult.Fail(AppError.Server(500, "INTERNAL_SERVER_ERROR", ""))
+        }
+        val server = RegistrationServer(); val m = model(server, session = session); runCurrent()
+        m.start("XIAO-test") { proofBody(it) }; runCurrent()
+        assertEquals(server.receipt, m.state.value.confirmed); assertNull(m.state.value.issue); assertNull(m.state.value.retryAfter)
+    }
+    @Test fun challengeServerErrorDoesNotBlockAnotherKeyring() = runTest(dispatcher) {
+        val server = RegistrationServer().apply { challengeError = AppError.Server(500, "INTERNAL_SERVER_ERROR", "") }
+        val m = model(server); runCurrent()
+        m.start("XIAO-first") { error("No proof before challenge") }; runCurrent()
+        assertEquals(RegistrationIssue.ServerUnavailable, m.state.value.issue); assertNull(m.state.value.retryAfter)
+        server.challengeError = null
+        m.start("XIAO-second") { proofBody(it, "XIAO-second") }; runCurrent()
+        assertEquals(server.receipt, m.state.value.confirmed)
     }
     @Test fun boundDeviceRejectionClearsRequestSoAnotherBoardCanRegister() = runTest(dispatcher) {
         val server = RegistrationServer(); val prefs = RegistrationPrefs(); val m = model(server, prefs); runCurrent()

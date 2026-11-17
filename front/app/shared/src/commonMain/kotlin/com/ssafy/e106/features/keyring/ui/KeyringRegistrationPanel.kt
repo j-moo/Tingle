@@ -86,6 +86,7 @@ import kotlin.time.Clock
             RegistrationIssue.WindowClosed -> Res.string.registration_live_window
             RegistrationIssue.ProofRejected -> Res.string.registration_live_rejected
             RegistrationIssue.ServerFailure -> Res.string.registration_live_server
+            RegistrationIssue.ServerUnavailable -> Res.string.registration_live_server_prepare
         }), color = MaterialTheme.colorScheme.error, textAlign = center) }
         when {
             state.confirmed != null -> {
@@ -93,12 +94,14 @@ import kotlin.time.Clock
                 AppButton(stringResource(Res.string.registration_live_continue), full, enabled = !state.busy && !syncBusy, onClick = onContinue)
             }
             // 서버로 보낸 증명이 남은 요청: 화면에 들어오면 자동으로 이어서 하고, 실패했을 때만 다시 시도를 보여 준다
-            pending?.body != null -> if (!state.busy) AppButton(stringResource(Res.string.registration_live_retry), full,
+            // 확인 중이면 새로 보내는 것이 아니라 결과를 다시 확인한다
+            pending?.body != null -> if (!state.busy) AppButton(stringResource(if (state.issue in setOf(RegistrationIssue.Confirming,
+                RegistrationIssue.NotInOwnedList)) Res.string.registration_live_check_again else Res.string.registration_live_retry), full,
                 enabled = state.loaded && !syncBusy && !cooling, onClick = { onRetry(pending.serial) })
             // 증명 전에 멈춘 요청은 새 등록과 같다(같은 보드면 같은 요청을 이어서, 다른 보드면 새로 시작한다)
             serial != null && bleState.info.supportsRegistration && blocked == null -> {
                 AppButton(stringResource(Res.string.registration_live_review), full, enabled = state.loaded && !state.busy &&
-                    !bleState.busy && bleState.connected && !syncBusy && !cooling, onClick = { confirm = true })
+                    !bleState.busy && bleState.connected && !syncBusy, onClick = { confirm = true })
             }
         }
     }
