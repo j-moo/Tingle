@@ -15,6 +15,8 @@ import com.ssafy.e106.core.ui.components.*
 import com.ssafy.e106.resources.*
 import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.viewmodel.koinViewModel
+import kotlinx.coroutines.delay
+import kotlin.time.Clock
 
 /** 가입과 내 키링에서 같은 서버 등록 경로를 사용한다. */
 @Composable fun ConnectedKeyringSetupRoute(onBack: () -> Unit, managedConnection: Boolean = false,
@@ -62,6 +64,9 @@ import org.koin.compose.viewmodel.koinViewModel
             resumed = pending.registerKey; onRetry(pending.serial)
         }
     }
+    // 서버 처리 실패 직후에는 같은 요청을 바로 다시 보내지 않는다. 대기 시간이 지나면 버튼을 다시 켠다
+    var cooling by remember(state.retryAfter) { mutableStateOf(state.retryAfter != null) }
+    LaunchedEffect(state.retryAfter) { state.retryAfter?.let { delay(it - Clock.System.now()) }; cooling = false }
     // 위쪽 키링 선택 묶음과 맞춰 패널 글자 · 로딩 원도 가운데 정렬
     val center = TextAlign.Center
     Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally,
@@ -74,11 +79,13 @@ import org.koin.compose.viewmodel.koinViewModel
             RegistrationIssue.Storage -> Res.string.registration_live_storage
             RegistrationIssue.ExpiredChallenge -> Res.string.registration_live_expired
             RegistrationIssue.Device -> Res.string.registration_live_device
-            RegistrationIssue.NotInOwnedList -> Res.string.registration_live_unconfirmed
+            RegistrationIssue.NotInOwnedList, RegistrationIssue.Confirming -> Res.string.registration_live_unconfirmed
             RegistrationIssue.InvalidResponse -> Res.string.registration_live_invalid
             RegistrationIssue.ResetPending -> Res.string.registration_reset_pending
             RegistrationIssue.DeviceBound -> Res.string.registration_live_bound
             RegistrationIssue.WindowClosed -> Res.string.registration_live_window
+            RegistrationIssue.ProofRejected -> Res.string.registration_live_rejected
+            RegistrationIssue.ServerFailure -> Res.string.registration_live_server
         }), color = MaterialTheme.colorScheme.error, textAlign = center) }
         when {
             state.confirmed != null -> {
@@ -87,11 +94,11 @@ import org.koin.compose.viewmodel.koinViewModel
             }
             // 서버로 보낸 증명이 남은 요청: 화면에 들어오면 자동으로 이어서 하고, 실패했을 때만 다시 시도를 보여 준다
             pending?.body != null -> if (!state.busy) AppButton(stringResource(Res.string.registration_live_retry), full,
-                enabled = state.loaded && !syncBusy, onClick = { onRetry(pending.serial) })
+                enabled = state.loaded && !syncBusy && !cooling, onClick = { onRetry(pending.serial) })
             // 증명 전에 멈춘 요청은 새 등록과 같다(같은 보드면 같은 요청을 이어서, 다른 보드면 새로 시작한다)
             serial != null && bleState.info.supportsRegistration && blocked == null -> {
                 AppButton(stringResource(Res.string.registration_live_review), full, enabled = state.loaded && !state.busy &&
-                    !bleState.busy && bleState.connected && !syncBusy, onClick = { confirm = true })
+                    !bleState.busy && bleState.connected && !syncBusy && !cooling, onClick = { confirm = true })
             }
         }
     }

@@ -10,10 +10,27 @@ import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 import kotlin.time.Clock
 import kotlin.time.Instant
+import kotlin.time.Duration.Companion.seconds
 import kotlin.uuid.ExperimentalUuidApi
 import kotlin.uuid.Uuid
 
-enum class RegistrationIssue { Storage, ExpiredChallenge, InvalidResponse, Device, NotInOwnedList, ResetPending, DeviceBound, WindowClosed }
+enum class RegistrationIssue { Storage, ExpiredChallenge, InvalidResponse, Device, NotInOwnedList, ResetPending, DeviceBound, WindowClosed,
+    ProofRejected, ServerFailure, Confirming }
+
+/** 서버 처리 실패 뒤 같은 요청을 다시 보내기까지 기다리는 시간. 짧은 간격의 반복 등록 요청을 막는다 */
+internal val REGISTRATION_SERVER_COOLDOWN = 30.seconds
+
+/**
+ * 등록 HTTP 실패를 안내 종류로 나눈다. null이면 서버 문구를 그대로 보여 준다(세션 만료 등).
+ * [proofSent]: 키링 증명을 저장해 서버로 보낸 요청이다. 결과를 모르는 실패는 거절이 아니라 확인 중이다.
+ */
+internal fun registrationIssue(error: AppError, proofSent: Boolean): RegistrationIssue? = when {
+    error is AppError.Server && error.code == "DEVICE_ALREADY_BOUND" -> RegistrationIssue.DeviceBound
+    error is AppError.Server && error.code in setOf("INVALID_DEVICE_PROOF", "INVALID_REQUEST") -> RegistrationIssue.ProofRejected
+    error is AppError.Server && error.status >= 500 -> RegistrationIssue.ServerFailure
+    proofSent && (error is AppError.Offline || error is AppError.Unknown) -> RegistrationIssue.Confirming
+    else -> null
+}
 
 /** 기기의 소유 상태는 현재 계정 소유라는 증명이 아니다. 신규 증명 요청만 막고 서버 조회/HTTP 복구는 유지한다. */
 internal fun registrationBlock(info: BleDeviceInfo?): RegistrationIssue? = when (info?.ownerState) {
@@ -23,7 +40,9 @@ internal fun registrationBlock(info: BleDeviceInfo?): RegistrationIssue? = when 
 }
 data class LiveRegistrationState(val owner: Long? = null, val loaded: Boolean = false, val busy: Boolean = false,
     val pending: PendingKeyringRegistration? = null, val confirmed: OwnedKeyring? = null,
-    val issue: RegistrationIssue? = null, val error: AppError? = null)
+    val issue: RegistrationIssue? = null, val error: AppError? = null,
+    // 서버 처리 실패 뒤 이 시각 전에는 다시 보내지 않는다
+    val retryAfter: Instant? = null)
 
 /**
  * 등록 HTTP와 기기 통신을 조정한다. BLE 연결은 별도 모델 소유이며, 이 모델은 응답 유실 복구 기록을 관리한다.
@@ -65,7 +84,7 @@ class KeyringRegistrationViewModel(private val api: KeyringRegistrationRepositor
      */
     fun start(serial: String, proof: suspend (KeyringChallenge) -> RegisterKeyringBody) {
         val previous = mutable.value.pending
-        if (!mutable.value.loaded || previous?.body != null || mutable.value.confirmed != null || !KeyringRegistrationProtocol.serial(serial)) return
+        if (!mutable.value.loaded || previous?.body != null || mutable.value.confirmed != null || !KeyringRegistrationProtocol.serial(serial) || coolingDown()) return
         if (previous?.serial == serial) return retry(proof)
         runAction { operation ->
             operation.requireResetFinished(serial)
@@ -81,7 +100,7 @@ class KeyringRegistrationViewModel(private val api: KeyringRegistrationRepositor
     /** 증명이 저장된 요청은 BLE 재연결 없이 같은 키·본문으로 복구한다. 만료 후에도 서버 replay를 먼저 확인한다. */
     fun retry(proof: suspend (KeyringChallenge) -> RegisterKeyringBody) {
         val pending = mutable.value.pending ?: return
-        if (!mutable.value.loaded) return
+        if (!mutable.value.loaded || coolingDown()) return
         runAction { operation ->
             if (pending.owner != operation.owner) throw CancellationException()
             operation.requireResetFinished(pending.serial)
@@ -137,7 +156,6 @@ class KeyringRegistrationViewModel(private val api: KeyringRegistrationRepositor
             // 입력 · 귀속 · 증명의 명시적 거절은 같은 요청을 다시 보내도 결과가 같다. 기록을 지워 다음 시도가
             // "이 키링 등록하기"의 새 요청으로 시작되게 한다(키링의 1분 등록 시간을 낡은 요청으로 쓰지 않는다)
             if (code in setOf("INVALID_REQUEST", "DEVICE_ALREADY_BOUND", "INVALID_DEVICE_PROOF")) operation.save(null)
-            if (code == "DEVICE_ALREADY_BOUND") throw RegistrationProblem(RegistrationIssue.DeviceBound)
         }
         val receipt = operation.unwrap(response)
         if (!KeyringRegistrationProtocol.validReceipt(receipt) ||
@@ -209,11 +227,17 @@ class KeyringRegistrationViewModel(private val api: KeyringRegistrationRepositor
             catch (cancelled: CancellationException) { throw cancelled }
             catch (failure: Exception) {
                 operation.ensure()
-                mutable.update { it.copy(issue = (failure as? RegistrationProblem)?.issue ?: if (failure is RegistrationApiProblem) null else RegistrationIssue.InvalidResponse,
-                    error = (failure as? RegistrationApiProblem)?.error) }
+                val apiError = (failure as? RegistrationApiProblem)?.error
+                val issue = (failure as? RegistrationProblem)?.issue
+                    ?: apiError?.let { registrationIssue(it, mutable.value.pending?.body != null) }
+                    ?: if (apiError == null) RegistrationIssue.InvalidResponse else null
+                mutable.update { it.copy(issue = issue, error = apiError?.takeIf { issue == null },
+                    retryAfter = if (issue == RegistrationIssue.ServerFailure) now() + REGISTRATION_SERVER_COOLDOWN else null) }
             } finally { if (operation.stamp == generation) mutable.update { it.copy(busy = false) } }
         }
     }
+
+    private fun coolingDown() = mutable.value.retryAfter?.let { now() < it } == true
 
     fun pause() {
         generation++; job?.cancel(); job = null
