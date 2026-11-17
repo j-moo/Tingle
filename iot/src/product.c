@@ -1,4 +1,6 @@
 #include "product.h"
+#include "diagnostics.h"
+#include "matching.h"
 #include "battery.h"
 #include "storage.h"
 #include "monocypher.h"
@@ -279,6 +281,124 @@ static bool allow_peer(void *ctx, const struct kr_peer_verified *remote, uint64_
 			(peer != remote->device || !scope_equal(&p->scopes[i], remote))) { return false; }
 	}
 	return true;
+}
+
+static bool diag_recent(const struct kr_product *p, const struct kr_peer_session *s, uint64_t now)
+{
+	return s->authenticated && now && p->policy_loaded && s->last_seen && s->last_seen <= now &&
+		now - s->last_seen <= p->policy.presence_seconds;
+}
+static enum kr_diag_effect diag_effect(const struct kr_product *p, unsigned index, uint64_t peer, uint64_t now)
+{
+	if (index < KR_RECORDS && kr_quarantined(p->engine, index)) { return KR_DIAG_QUARANTINED; }
+	if (peer >> 63) { return KR_DIAG_ERROR_KEY; }
+	if (index < KR_RECORDS && kr_retired_reason(p->engine->records[index].reason)) { return KR_DIAG_RETIRED; }
+	if (index >= KR_RECORDS && p->duplicate_suppression[index - KR_RECORDS]) { return KR_DIAG_DUPLICATE_REF; }
+	if (failed_input_changed(p, index, NULL)) { return KR_DIAG_INPUT_CHANGED; }
+	if (!has_ref(p->scopes[index].tag)) { return KR_DIAG_UNKNOWN_SCOPE; }
+	const struct kr_peer_session *latest = NULL;
+	if (p->peers) {
+		for (unsigned i = 0; i < KR_PEERS; ++i) {
+			const struct kr_peer_session *s = &p->peers->sessions[i];
+			if (s->remote.device == peer && diag_recent(p, s, now) && (!latest || s->last_seen > latest->last_seen)) { latest = s; }
+		}
+	}
+	if (!latest) { return KR_DIAG_UNKNOWN_PEER; }
+	if (failed_input_changed(p, index, &latest->remote)) { return KR_DIAG_INPUT_CHANGED; }
+	return scope_equal(&p->scopes[index], &latest->remote) ? KR_DIAG_SAME_SCOPE : KR_DIAG_OWNER_CHANGED;
+}
+static void diag_frozen_inputs(const struct kr_record *r, struct kr_diag_row *row, struct kr_diag_inputs *input)
+{
+	struct kr_profile remote;
+	if (r->peer >> 63 || r->peer_len < 52 || r->peer_len > sizeof(r->peer_wire) ||
+		!kr_packet_valid(r->peer_wire, r->peer_len) || r->peer_wire[3] != 1 ||
+		kr_get64(r->peer_wire + 6) != r->peer || !kr_profile_decode(&remote, r->peer_wire + 14, r->peer_len - 18)) { return; }
+	row->peer_revision = remote.revision;
+	if (r->own.policy != KR_MATCH_POLICY || remote.policy != KR_MATCH_POLICY ||
+		r->own.rule != KR_MATCH_RULE || remote.rule != KR_MATCH_RULE || r->own.data_len > sizeof(r->own.data)) { return; }
+	input->eligibility = (int16_t)kr_match_eligibility(r->own.data, r->own.data_len, remote.data, remote.data_len);
+	struct kr_pair_score score;
+	if (!kr_match_score(r->own.data, r->own.data_len, remote.data, remote.data_len, &score)) { return; }
+	input->score_ab = score.ab.has_score ? (int16_t)(score.ab.score * 100) : -1;
+	input->score_ba = score.ba.has_score ? (int16_t)(score.ba.score * 100) : -1;
+	input->coverage_ab = (int16_t)(score.ab.coverage * 10000); input->coverage_ba = (int16_t)(score.ba.coverage * 10000);
+	input->strict_ab = (uint8_t)score.ab.excluded; input->strict_ba = (uint8_t)score.ba.excluded;
+	input->unresolved_ab = (uint8_t)score.ab.unresolved; input->unresolved_ba = (uint8_t)score.ba.unresolved;
+}
+void kr_product_diag_capture(const struct kr_product *p, bool records, uint64_t filter, struct kr_diag_snapshot *out)
+{
+	memset(out, 0, sizeof(*out)); out->records = records; out->filter = filter;
+	if (!p->application_attached || !p->core || !p->engine) { return; }
+	out->available = true; out->uptime_ms = uptime(p); out->now = kr_product_now(p);
+	memcpy(out->serial, p->core->identity.serial, sizeof(out->serial)); out->serial[sizeof(out->serial) - 1] = 0;
+	out->device_id = p->core->current.device_id; out->epoch = p->core->reset.ownership_epoch;
+	out->stored_version = p->core->current.version; out->applied_version = p->applied_version;
+	out->applied = kr_product_applied(p); out->time_ready = out->now != 0; out->ready = kr_product_ready(p);
+	out->missing_accounts = missing_accounts(p); out->quarantined = p->engine->quarantined_records;
+	out->can_insert = kr_can_insert(p->engine, KR_MATCH);
+	out->candidates = kr_count(p->engine, KR_MATCH); out->confirmed = kr_count(p->engine, KR_CONFIRMED);
+	out->review = kr_count(p->engine, KR_REVIEW);
+	if (!p->core->current.magic) { out->gates |= KR_DIAG_NO_OWNER; }
+	if (p->core->reset.phase == KR_RESETTING) { out->gates |= KR_DIAG_RESET; }
+	if (p->core->storage_error || p->engine->storage_error) { out->gates |= KR_DIAG_STORAGE; }
+	if (p->core->settings_recovery_required) { out->gates |= KR_DIAG_RECOVERY; }
+	if (!p->policy_loaded) { out->gates |= KR_DIAG_NO_POLICY; }
+	if (!out->applied) { out->gates |= KR_DIAG_NOT_APPLIED; }
+	if (!out->time_ready) { out->gates |= KR_DIAG_NO_TIME; }
+	if (p->policy_loaded) {
+		if (!p->policy.complete) { out->gates |= KR_DIAG_INCOMPLETE; }
+		if (!p->policy.enabled) { out->gates |= KR_DIAG_DISABLED; }
+		if (!(p->policy.profile[195] & 1)) { out->gates |= KR_DIAG_OFF; }
+		if (out->now && out->now >= p->policy.valid_until) { out->gates |= KR_DIAG_EXPIRED; }
+	}
+	if (!p->peers || !p->peers->active) { out->gates |= KR_DIAG_PEER_INACTIVE; }
+	if (!p->peers || !p->peers->own.policy_ready) { out->gates |= KR_DIAG_PEER_UNREADY; }
+	if (p->quarantine_unresolved) { out->gates |= KR_DIAG_QUARANTINE; }
+	if (out->missing_accounts) { out->gates |= KR_DIAG_ACCOUNT_LOCK; }
+	if (!p->engine->ready) { out->gates |= KR_DIAG_ENGINE_UNREADY; }
+	if (p->peers) {
+		out->authenticated = p->peers->authenticated; out->exchanged = p->peers->exchanged;
+		out->rejected = p->peers->rejected; out->overflow = p->peers->overflow;
+		if (records) {
+			for (unsigned i = 0; i < KR_PEERS; ++i) {
+				const struct kr_peer_session *s = &p->peers->sessions[i];
+				if (!s->authenticated || (filter && filter != s->remote.device)) { continue; }
+				struct kr_diag_peer *d = &out->peers[out->peer_count++];
+				d->peer = s->remote.device; d->epoch = s->remote.ownership_epoch; d->revision = s->remote.revision;
+				d->last_seen = s->last_seen; d->valid_until = s->remote.valid_until;
+				d->authenticated = true; d->recent = diag_recent(p, s, out->now); d->policy_ready = s->remote.policy_ready;
+				d->allowed = d->recent && allow_peer((void *)p, &s->remote, out->now);
+			}
+		}
+	}
+	for (unsigned i = 0; i < KR_RECORDS + KR_SUPPRESSIONS; ++i) {
+		bool suppression = i >= KR_RECORDS;
+		const struct kr_record *r = suppression ? NULL : &p->engine->records[i];
+		const struct kr_suppression *s = suppression ? &p->engine->suppressed[i - KR_RECORDS] : NULL;
+		uint64_t peer = suppression ? s->peer : r->peer;
+		if (suppression && peer) { ++out->suppressions; }
+		if (!records || (suppression ? !peer : !r->kind && !kr_quarantined(p->engine, i)) || (filter && peer != filter)) { continue; }
+		struct kr_diag_row *row = &out->rows[out->row_count++];
+		row->peer = peer; row->epoch = p->scopes[i].epoch;
+		row->flags = (suppression ? KR_DIAG_LEDGER : 0) | (has_ref(p->scopes[i].tag) ? KR_DIAG_SCOPE_KNOWN : 0) |
+			(has_ref(p->accounts[i]) ? KR_DIAG_ACCOUNT_KNOWN : 0);
+		row->effect = (uint8_t)diag_effect(p, i, peer, out->now);
+		row->slot = (uint8_t)(suppression ? i - KR_RECORDS : i);
+		row->peer_revision = p->peer_revisions[i];
+		if (suppression) {
+			row->own_revision = s->own_revision;
+			if (!row->peer_revision) { row->peer_revision = s->peer_revision; }
+			row->kind = s->peer_revision ? KR_CONFIRMED : KR_REVIEW;
+			row->phase = s->phase;
+		} else {
+			struct kr_diag_inputs *input = &out->inputs[i]; input->sequence = r->sequence;
+			input->eligibility = input->score_ab = input->score_ba = input->coverage_ab = input->coverage_ba = -1;
+			row->own_revision = r->own.revision;
+			row->kind = r->kind; row->phase = r->phase; row->reason = r->reason;
+			if (r->feedback_claimed) { row->flags |= KR_DIAG_FEEDBACK_CLAIMED; }
+			if (!kr_quarantined(p->engine, i)) { diag_frozen_inputs(r, row, input); }
+		}
+	}
 }
 static bool admit_peer(void *ctx, const struct kr_peer_verified *remote)
 {

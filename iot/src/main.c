@@ -1,4 +1,5 @@
 #include "keyring.h"
+#include "diagnostics.h"
 #include "carrier.h"
 #include "board.h"
 #include "power.h"
@@ -21,6 +22,7 @@
 #include <zephyr/init.h>
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
+#include <zephyr/logging/log_ctrl.h>
 #include <zephyr/pm/device.h>
 #include <zephyr/random/random.h>
 #include <zephyr/settings/settings.h>
@@ -844,13 +846,44 @@ static int enable_lab(void)
 	return 0;
 }
 
+/* One public snapshot, paced outside the core/runtime locks. No Flash writes. */
+static struct kr_diag_snapshot usb_diag;
+static bool usb_diag_active;
+static unsigned usb_diag_line;
+static int64_t usb_diag_next;
+
+static bool usb_diag_open(const struct device *console)
+{
+	uint32_t dtr;
+	return !uart_line_ctrl_get(console, UART_LINE_CTRL_DTR, &dtr) && dtr;
+}
+static void usb_diag_poll(const struct device *console)
+{
+	if (!usb_diag_active) { return; }
+	if (!usb_diag_open(console)) { usb_diag_active = false; return; }
+	int64_t now = k_uptime_get();
+	if (now < usb_diag_next) { return; }
+	/* A long row can fill half of the deferred logger's 1 KiB buffer.
+	 * Let the logger drain before producing another row, and wake it explicitly
+	 * instead of waiting for its ten-message/one-second batch threshold.
+	 * Do not flush synchronously: a disconnected host must not stall matching. */
+	if (log_buffered_cnt()) { log_thread_trigger(); return; }
+	char text[KR_DIAG_LINE_BYTES];
+	if (!kr_diag_format(&usb_diag, usb_diag_line++, text)) { usb_diag_active = false; return; }
+	printk("%s\n", text);
+	log_thread_trigger();
+	unsigned end = usb_diag.available ? 6 + usb_diag.peer_count + usb_diag.row_count : 2;
+	if (usb_diag_line == end) { usb_diag_active = false; }
+	usb_diag_next = now + 25;
+}
 static bool poll_usb_commands(bool allow_lab, bool radio_ready)
 {
 	static const char forget[] = "BLE FORGET ";
-	static char line[sizeof("BLE FORGET 01234567\r")];
+	static char line[64];
 	static size_t length;
 	static bool invalid;
 	const struct device *console = DEVICE_DT_GET(DT_CHOSEN(zephyr_console));
+	usb_diag_poll(console);
 	unsigned char byte;
 	for (unsigned i = 0; i < 64 && !uart_poll_in(console, &byte); ++i) {
 		if (byte != '\n') {
@@ -864,6 +897,23 @@ static bool poll_usb_commands(bool allow_lab, bool radio_ready)
 		length = 0;
 		invalid = false;
 		if (!valid) { continue; }
+		uint64_t filter;
+		enum kr_diag_command diagnostic = kr_diag_parse(line, &filter);
+		if (diagnostic != KR_DIAG_NONE) {
+			if (!usb_diag_open(console)) { continue; }
+			if (diagnostic == KR_DIAG_INVALID) {
+				printk("MATCH ERROR use=MATCH_STATUS_or_MATCH_RECORDS_[XIAO-serial] dbIdFilter=UNSUPPORTED\n");
+			} else if (usb_diag_active) {
+				printk("MATCH BUSY waitFor=MATCH_END\n");
+			} else {
+				(void)kr_nus_diag_snapshot(diagnostic == KR_DIAG_RECORDS, filter, &usb_diag);
+				usb_diag.scan_enabled = atomic_get(&service_scan_enabled) != 0;
+				usb_diag.exchange_enabled = atomic_get(&peer_exchange_enabled) != 0;
+				usb_diag.lab_enabled = atomic_get(&lab_enabled) != 0;
+				usb_diag_active = true; usb_diag_line = 0; usb_diag_next = 0;
+			}
+			continue;
+		}
 		if (allow_lab && !strcmp(line, "LAB ENABLE")) { return true; }
 		if (!strcmp(line, "STORAGE CHECK")) {
 			uint32_t dtr;
