@@ -66,8 +66,8 @@ internal object KeyringBoardSync {
             info.storedSettingsVersion != run.settingsVersion || info.storedPayloadHash != run.payloadHash ||
             board.settingsRecoveryRequired == true) return true
         // 저장소 오류 보드는 다시 보내도 applied=false로 남는다. 이번 부팅에서 이미 서명 시간을 받았으면(재전송 뒤)
-        // 같은 설정을 반복하지 않는다. 격리 기록만 있는 보드는 동기화로 적용되므로 막지 않는다.
-        if (board.storageHealthy == false && board.timeReady == true && board.recordsRecoveryRequired != true) return false
+        // 같은 설정을 반복하지 않는다. 재부팅 직후(timeReady=false)에는 한 번 보내며, 격리 기록만 있는 보드는 그 뒤 applied=true가 된다.
+        if (board.storageHealthy == false && board.timeReady == true) return false
         // 이전 ON/OFF·196B 형식은 두 플래그를 적용 판단에 쓰지 않는다(시험 빌드는 항상 false). TSV3만 대조한다.
         return run.payloadFormat == BleOwnerFlowInfo.FULL_SETTINGS_FORMAT && (board.applied != true || board.timeReady != true)
     }

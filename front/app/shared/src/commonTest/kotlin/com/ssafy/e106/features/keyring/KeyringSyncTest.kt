@@ -1223,6 +1223,8 @@ class KeyringSyncTest {
         assertTrue(KeyringBoardSync.needsResync(storage(board(run, false, false, false), true), run))
         // 기록 저장소 오류만 있는 보드도 재부팅(시간 미확보) 뒤에는 한 번 보낸다.
         assertTrue(KeyringBoardSync.needsResync(storage(board(run, false, false, false), false), run))
+        // 격리 기록과 기록 저장소 오류가 겹쳐 적용 뒤에도 applied=false인 보드는 시간을 받은 뒤 반복해 보내지 않는다.
+        assertFalse(KeyringBoardSync.needsResync(storage(board(run, false, true, false), true), run))
         assertEquals(KeyringMatchReadiness.Ready,
             KeyringBoardSync.readiness(storage(board(run, true, true, true), true).readiness, true, false))
         val server = tsv3Server(); val store = KeyringSyncStore(SyncPrefs()); store.rememberTarget(1, syncRun.deviceId, "XIAO-test")
