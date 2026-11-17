@@ -13,7 +13,7 @@ import com.e106.tingle.proposal.explanation.dto.ExplanationStatus;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
-/** 신뢰된 과거 원본 어댑터·등록 artifact·규칙 전송이 모두 준비된 경우에만 설명을 제공한다. */
+/** 신뢰된 과거 원본 어댑터·규칙 전송이 모두 준비된 경우에만 설명을 제공한다. */
 @Component
 public class HistoricalRuleExplanationProvider implements RuleExplanationProvider {
 
@@ -26,20 +26,18 @@ public class HistoricalRuleExplanationProvider implements RuleExplanationProvide
 	private static final Set<String> KINDS = Set.of("MUTUAL_PREFERENCE_FIT", "SHARED_REPORTED_BEHAVIOR",
 		"ONE_WAY_PREFERENCE_FIT", "DIFFERENCE");
 	private final HistoricalExplanationSource source;
-	private final ExplanationArtifactCatalog catalog;
 	private final RuleExplanationTransport transport;
 	private final ObjectMapper mapper;
 
 	@Autowired
 	public HistoricalRuleExplanationProvider(ObjectProvider<HistoricalExplanationSource> source,
-		ExplanationArtifactCatalog catalog, ObjectProvider<RuleExplanationTransport> transport, ObjectMapper mapper) {
-		this(source.getIfUnique(), catalog, transport.getIfUnique(), mapper);
+		ObjectProvider<RuleExplanationTransport> transport, ObjectMapper mapper) {
+		this(source.getIfUnique(), transport.getIfUnique(), mapper);
 	}
 
-	public HistoricalRuleExplanationProvider(HistoricalExplanationSource source, ExplanationArtifactCatalog catalog,
-		RuleExplanationTransport transport, ObjectMapper mapper) {
+	public HistoricalRuleExplanationProvider(HistoricalExplanationSource source, RuleExplanationTransport transport,
+		ObjectMapper mapper) {
 		this.source = source;
-		this.catalog = catalog;
 		this.transport = transport;
 		this.mapper = mapper;
 	}
@@ -58,7 +56,7 @@ public class HistoricalRuleExplanationProvider implements RuleExplanationProvide
 			}
 			JsonNode manifest = mapper.valueToTree(found.get().manifest());
 			JsonNode bundle = mapper.valueToTree(found.get().contextBundle());
-			if (!catalog.supports(manifest) || !validBundle(input, manifest, bundle)) {
+			if (!ExplanationManifest.validManifest(manifest) || !validBundle(input, manifest, bundle)) {
 				return unavailable();
 			}
 			ExplanationStatus result = transport.explain(new RuleExplanationTransport.Request(input.attemptId(),
@@ -77,17 +75,17 @@ public class HistoricalRuleExplanationProvider implements RuleExplanationProvide
 	}
 
 	private static boolean validBundle(Input input, JsonNode manifest, JsonNode bundle) {
-		if (!ExplanationArtifactCatalog.hasFields(bundle, Set.of("context", "scope"))) {
+		if (!ExplanationManifest.hasFields(bundle, Set.of("context", "scope"))) {
 			return false;
 		}
 		JsonNode context = bundle.get("context");
 		JsonNode scope = bundle.get("scope");
-		if (!ExplanationArtifactCatalog.hasFields(context, CONTEXT_FIELDS)
-			|| !ExplanationArtifactCatalog.hasFields(scope, SCOPE_FIELDS)) {
+		if (!ExplanationManifest.hasFields(context, CONTEXT_FIELDS)
+			|| !ExplanationManifest.hasFields(scope, SCOPE_FIELDS)) {
 			return false;
 		}
 		JsonNode reference = context.get("reference");
-		if (!ExplanationArtifactCatalog.hasFields(reference, Set.of("encounter_id", "evaluation_ref", "version_ref"))
+		if (!ExplanationManifest.hasFields(reference, Set.of("encounter_id", "evaluation_ref", "version_ref"))
 			|| !reference.get("encounter_id").isIntegralNumber() || !reference.get("encounter_id").canConvertToLong()
 			|| reference.get("encounter_id").longValue() != input.proposalId()
 			|| !reference.path("evaluation_ref").isString()
@@ -104,12 +102,12 @@ public class HistoricalRuleExplanationProvider implements RuleExplanationProvide
 		}
 		Set<String> ids = new HashSet<>();
 		for (JsonNode record : evidence) {
-			if (!ExplanationArtifactCatalog.hasFields(record, Set.of("reference", "source_ref", "evidence"))
+			if (!ExplanationManifest.hasFields(record, Set.of("reference", "source_ref", "evidence"))
 				|| !reference.equals(record.get("reference")) || !text(record.get("source_ref"), 200)) {
 				return false;
 			}
 			JsonNode item = record.get("evidence");
-			if (!ExplanationArtifactCatalog.hasFields(item, EVIDENCE_FIELDS) || !text(item.get("id"), 4)
+			if (!ExplanationManifest.hasFields(item, EVIDENCE_FIELDS) || !text(item.get("id"), 4)
 				|| !item.get("id").asString().matches("e[1-9][0-9]{0,2}") || !ids.add(item.get("id").asString())
 				|| !text(item.get("topic"), 40) || !TOPICS.contains(item.get("topic").asString())
 				|| !text(item.get("kind"), 40) || !KINDS.contains(item.get("kind").asString())

@@ -232,7 +232,7 @@ class JpaHistoricalExplanationSourceTest {
 
 	private Fixture fixture() {
 		Map<String, String> manifest = new LinkedHashMap<>();
-		for (String key : ExplanationArtifactCatalog.MANIFEST_FIELDS) {
+		for (String key : ExplanationManifest.MANIFEST_FIELDS) {
 			manifest.put(key, "synthetic-v1");
 		}
 		manifest.put("releaseId", "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa");

@@ -70,7 +70,7 @@ class ExplanationAiHttpSmokeTest {
 		byte[] artifact = "{\"synthetic\":true}".getBytes(StandardCharsets.UTF_8);
 		Files.write(temporary.resolve("artifact.json"), artifact);
 		Map<String, Object> values = new HashMap<>();
-		for (String field : ExplanationArtifactCatalog.MANIFEST_FIELDS) {
+		for (String field : ExplanationManifest.MANIFEST_FIELDS) {
 			values.put(field, "synthetic-v1");
 		}
 		values.put("releaseId", UUID.randomUUID().toString());
@@ -145,7 +145,7 @@ class ExplanationAiHttpSmokeTest {
 	}
 
 	@Test
-	void unregisteredHistoricalReleaseCannotProduceAnExplanation() {
+	void releaseThatDiffersFromTheBundleReferenceCannotProduceAnExplanation() {
 		RuleExplanationTransport.Request valid = request();
 		ObjectNode other = (ObjectNode)manifest.deepCopy();
 		other.put("releaseId", UUID.randomUUID().toString());
