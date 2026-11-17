@@ -154,7 +154,7 @@ REVIEW의 상대 원문이 비어 있지 않으면 인증된 상대 credential�
 - 원 제출 기기의 당시 소유 구간·epoch·credential을 검증하고 원문을 영속 저장한다.
 - 동결 credential의 키 폐기 시각 이후 증명은 거부한다. 이미 양도된 기기라는 이유로 과거 정상 소유 구간을
   현재 소유 값으로 교체하지 않는다.
-- REVIEW는 정상 만남과 구분한다(현재는 접수 거절, 아래 활성화·검증 경계). 불완전/옛 LAB 증명을 정상 만남으로 승격하지 않는다.
+- REVIEW는 정상 만남과 구분한다(REVIEW_QUARANTINED로 보관, 아래 활성화·검증 경계). 불완전/옛 LAB 증명을 정상 만남으로 승격하지 않는다.
 - 같은 submission/원문 재시도와 응답 유실은 기존 receipt를 복구하고, 같은 제출 ID의 다른 원문은 충돌한다.
 - 내구 저장 commit 뒤 해당 원문·기기·소유 세대에 결속된 receipt만 발급한다. boolean
   canDeleteLocalRecord만으로 기기 원본을 삭제하지 않는다.
@@ -219,8 +219,9 @@ FE는 이 null 필드까지 그대로 BLE 명령에 넣지 않고, 해당 proofP
 켜고 끄는 `app.keyring.peer.*` 승인 스위치는 없다. 정책 값(`policy-version`·`rule-version`·`lease-seconds`·
 `opportunity-seconds`·`presence-gap-seconds`·`server-public-key-hex`)은 필수이며 비었거나 펌웨어 값과 다르면 서버가 기동하지 않는다.
 
-- REVIEW(검토) 접수는 모든 환경에서 POLICY_UNRESOLVED로 거절한다. 검토 승인 행을 만드는 판정 도구가 생기면 연다.
-  그전에는 REVIEW_QUARANTINED가 새로 생기지 않는다.
+- REVIEW(검토)는 모든 환경에서 접수해 원문을 REVIEW_QUARANTINED로 보관하고 삭제 receipt를 발급한다(2026-11-17, S15P31E106-408).
+  거절하면 키링이 같은 기록을 계속 다시 보내 미전송으로 남는다. 검토 행은 정상 만남의 상대 원본으로 짝짓지 않고 매칭으로 승격하지 않는다.
+  다시 판정하는 도구(검토 승인 행)와 보관 기한은 아직 없다. 상대 인증 없이 상대 원문만 실린 REVIEW는 계속 보류한다.
 
 peer 테이블은 엔티티가 아니라 JPA가 만들거나 검사하지 않는다. 서버는 기동할 때 표가 있는지 확인하고 없으면 멈춘다.
 개발·운영 DB 반영본은 `infra/db/prod-changes/2026-11-17-env-parity-407.sql`(이전 `2026-11-06-peer-flow-270.sql` 포함)이며
