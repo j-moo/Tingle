@@ -1,10 +1,13 @@
 package com.ssafy.e106.features.keyring
 
+import com.ssafy.e106.core.ble.BleException
+import com.ssafy.e106.core.ble.BleFailure
 import com.ssafy.e106.core.network.ApiResult
 import com.ssafy.e106.core.network.AppError
 import com.ssafy.e106.core.storage.ProtectedRead
 import com.ssafy.e106.core.storage.ProtectedRecordStore
 import com.ssafy.e106.features.keyring.data.*
+import com.ssafy.e106.features.keyring.data.KeyringRecordRelease.Outcome
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.*
 import kotlin.test.*
@@ -13,6 +16,7 @@ import kotlin.test.*
 class KeyringRecordReleaseTest {
     private val generation = "33333333-3333-4333-8333-333333333333"
     private val receipt = "55555555-5555-4555-8555-555555555555"
+    private val otherReceipt = "66666666-6666-4666-8666-666666666666"
     private val identity = SyncIdentity("11111111-1111-4111-8111-111111111111", 4, generation, 1, "a".repeat(64),
         "n", "key", "TSV3", ownershipEpoch = 2, proofProtocolVersion = KeyringRegistrationProtocol.VERSION_2)
     private val proof = KeyringEncounterProof("tingle-record-receipt-v2", "key-1", 4, generation, 2,
@@ -28,93 +32,120 @@ class KeyringRecordReleaseTest {
         override suspend fun remove(key: String, expectedValue: String) = values.remove(key) == expectedValue
     }
 
-    private class Server(var create: ApiResult<KeyringReleaseCommand>, var get: ApiResult<KeyringReleaseCommand>) :
-        KeyringReleaseRepository {
-        val calls = mutableListOf<String>()
+    private inner class Server(var response: ApiResult<KeyringReleaseCommand>) : KeyringReleaseRepository {
+        val keys = mutableListOf<String>()
         override suspend fun create(deviceId: Long, key: String, body: KeyringReleaseRequest): ApiResult<KeyringReleaseCommand> {
             assertEquals(KeyringReleaseProtocol.RESULT, body.command)
-            calls += "POST $key"; return create
-        }
-        override suspend fun get(deviceId: Long, key: String): ApiResult<KeyringReleaseCommand> {
-            calls += "GET $key"; return get
+            keys += key
+            return (response as? ApiResult.Ok)?.let { ApiResult.Ok(it.value.copy(receiptId = body.receiptId)) } ?: response
         }
     }
 
     private var clock = 1_000L
-    private val store = Store()
-    private val journal = KeyringReleaseJournal(store)
+    private val journal = KeyringReleaseJournal(Store())
     private fun release(server: Server) = KeyringRecordRelease(server, journal) { clock }
-    private fun policy() = ApiResult.Fail(AppError.Server(422, "POLICY_UNRESOLVED", "x"))
+    private fun serverError(status: Int, code: String) = ApiResult.Fail(AppError.Server(status, code, "x"))
 
     @Test fun releasedRemovesPendingAndRepeatedEnqueueKeepsSameKey() = runTest {
-        val server = Server(ApiResult.Ok(command), policy())
+        val server = Server(ApiResult.Ok(command))
         val release = release(server)
         release.enqueue(1, proof)
         release.enqueue(1, proof)
         val key = journal.read(1, 4).single().requestKey
         val sent = mutableListOf<KeyringReleaseCommand>()
-        assertEquals(mapOf(receipt to KeyringRecordRelease.Outcome.Released), release.releaseDue(1, identity) { sent += it })
+        assertEquals(mapOf(receipt to Outcome.Released), release.releaseDue(1, identity) { sent += it })
         assertEquals(listOf(command), sent)
-        assertEquals(listOf("POST $key"), server.calls)
+        assertEquals(listOf(key), server.keys)
         assertTrue(journal.read(1, 4).isEmpty())
     }
 
-    @Test fun departureNotConfirmedStaysPendingWithSameKeyForNextSync() = runTest {
-        val server = Server(ApiResult.Ok(command), policy())
+    @Test fun departureNotConfirmedWaitsShortIntervalWithoutCountingFailure() = runTest {
+        val server = Server(ApiResult.Ok(command))
         val release = release(server)
         release.enqueue(1, proof)
-        val before = journal.read(1, 4).single()
-        repeat(2) {
-            assertEquals(mapOf(receipt to KeyringRecordRelease.Outcome.DepartureNotConfirmed),
-                release.releaseDue(1, identity) { throw BleCommandException("DEPARTURE_NOT_CONFIRMED") })
-        }
-        // 백오프 없이 다음 동기화에서 같은 키로 바로 재시도한다.
-        assertEquals(listOf(before), journal.read(1, 4))
-        assertEquals(listOf("POST ${before.requestKey}", "POST ${before.requestKey}"), server.calls)
-    }
-
-    @Test fun policyUnresolvedAndOtherFailuresBackOffWithoutBlockingOthers() = runTest {
-        val server = Server(policy(), policy())
-        val release = release(server)
-        release.enqueue(1, proof)
-        assertEquals(mapOf(receipt to KeyringRecordRelease.Outcome.PolicyUnresolved),
-            release.releaseDue(1, identity) { fail("Must not reach keyring") })
+        val notDeparted: suspend (KeyringReleaseCommand) -> Unit = { throw BleCommandException("DEPARTURE_NOT_CONFIRMED") }
+        assertEquals(mapOf(receipt to Outcome.DepartureNotConfirmed), release.releaseDue(1, identity, notDeparted))
         val waiting = journal.read(1, 4).single()
-        assertEquals(1, waiting.failures)
-        assertEquals(clock + 60, waiting.notBefore)
-        // 대기 시간 안에는 서버를 다시 부르지 않는다.
+        assertEquals(0, waiting.failures)
+        assertEquals(clock + KeyringRecordRelease.DEPARTURE_RETRY_SECONDS, waiting.notBefore)
+        // 간격 안의 동기화는 서버·키링을 부르지 않는다.
         assertTrue(release.releaseDue(1, identity) { fail() }.isEmpty())
-        clock += 60
-        server.create = ApiResult.Ok(command)
-        assertEquals(mapOf(receipt to KeyringRecordRelease.Outcome.Failed),
-            release.releaseDue(1, identity) { throw BleCommandException("RELEASE_CONFLICT") })
-        assertEquals(clock + 120, journal.read(1, 4).single().notBefore)
+        clock += KeyringRecordRelease.DEPARTURE_RETRY_SECONDS
+        assertEquals(mapOf(receipt to Outcome.Released), release.releaseDue(1, identity) {})
+        assertEquals(List(2) { waiting.requestKey }, server.keys)
     }
 
-    @Test fun lostResponseIsReplayedWithSameRequestKey() = runTest {
-        val server = Server(ApiResult.Fail(AppError.Offline), ApiResult.Ok(command))
+    @Test fun policyUnresolvedAndTransientFailuresBackOff() = runTest {
+        val server = Server(serverError(422, "POLICY_UNRESOLVED"))
+        val release = release(server)
+        release.enqueue(1, proof)
+        assertEquals(mapOf(receipt to Outcome.PolicyUnresolved), release.releaseDue(1, identity) { fail() })
+        assertEquals(clock + 60, journal.read(1, 4).single().notBefore)
+        clock += 60
+        server.response = serverError(429, "TOO_MANY_REQUESTS")
+        assertEquals(mapOf(receipt to Outcome.Failed), release.releaseDue(1, identity) { fail() })
+        clock += 120
+        server.response = ApiResult.Ok(command)
+        assertEquals(mapOf(receipt to Outcome.Failed),
+            release.releaseDue(1, identity) { throw BleCommandException("OWNER_SESSION_REQUIRED") })
+        assertEquals(3, journal.read(1, 4).single().failures)
+        assertEquals(clock + 240, journal.read(1, 4).single().notBefore)
+    }
+
+    @Test fun permanentFailuresAreDroppedImmediately() = runTest {
+        val permanent = listOf<Pair<ApiResult<KeyringReleaseCommand>, suspend (KeyringReleaseCommand) -> Unit>>(
+            serverError(409, "OWNER_MISMATCH") to { fail() },
+            serverError(404, "RESOURCE_NOT_FOUND") to { fail() },
+            serverError(400, "INVALID_REQUEST") to { fail() },
+            ApiResult.Ok(command) to { throw BleCommandException("INVALID_RELEASE") },
+            ApiResult.Ok(command) to { throw BleCommandException("RELEASE_CONFLICT") },
+            ApiResult.Ok(command) to { throw BleCommandException("INVALID_SERVER_PROOF") },
+            // 상위 비트가 켜진 오류 fingerprint는 이탈 해제 명령으로 보내지 않는다.
+            ApiResult.Ok(command.copy(peerDeviceRefHex = "8123456789abcdef")) to { fail() },
+            ApiResult.Ok(command.copy(ownershipEpoch = 3)) to { fail() },
+        )
+        for ((response, send) in permanent) {
+            val release = release(Server(response))
+            release.enqueue(1, proof)
+            assertEquals(mapOf(receipt to Outcome.Dropped), release.releaseDue(1, identity, send))
+            assertTrue(journal.read(1, 4).isEmpty())
+        }
+    }
+
+    @Test fun lostResponseRetriesSamePostKey() = runTest {
+        val server = Server(ApiResult.Fail(AppError.Offline))
         val release = release(server)
         release.enqueue(1, proof)
         val key = journal.read(1, 4).single().requestKey
-        assertEquals(mapOf(receipt to KeyringRecordRelease.Outcome.Released), release.releaseDue(1, identity) {})
-        assertEquals(listOf("POST $key", "GET $key"), server.calls)
-
-        // 조회 결과가 없으면 같은 키로 다시 발급을 요청한다.
-        server.calls.clear(); server.get = ApiResult.Fail(AppError.Server(404, "RESOURCE_NOT_FOUND", "x"))
-        release.enqueue(1, proof)
-        val next = journal.read(1, 4).single().requestKey
-        release.releaseDue(1, identity) {}
-        assertEquals(listOf("POST $next", "GET $next", "POST $next"), server.calls)
+        assertEquals(mapOf(receipt to Outcome.Failed), release.releaseDue(1, identity) { fail() })
+        clock += 60
+        server.response = ApiResult.Ok(command)
+        assertEquals(mapOf(receipt to Outcome.Released), release.releaseDue(1, identity) {})
+        assertEquals(listOf(key, key), server.keys)
     }
 
-    @Test fun mismatchedCommandOrOldGenerationIsNeverSent() = runTest {
-        val server = Server(ApiResult.Ok(command.copy(receiptId = "66666666-6666-4666-8666-666666666666")), policy())
+    @Test fun bleDisconnectStopsLoopWithoutCountingFailure() = runTest {
+        val server = Server(ApiResult.Ok(command))
         val release = release(server)
         release.enqueue(1, proof)
-        assertEquals(KeyringRecordRelease.Outcome.Failed, release.releaseDue(1, identity) { fail() }[receipt])
+        release.enqueue(1, proof.copy(receiptId = otherReceipt))
+        val before = journal.read(1, 4)
+        assertEquals(mapOf(receipt to Outcome.Interrupted),
+            release.releaseDue(1, identity) { throw BleException(BleFailure.Disconnected) })
+        assertEquals(1, server.keys.size)
+        assertEquals(before, journal.read(1, 4))
+    }
+
+    @Test fun changedOwnerGenerationOrEpochDropsWithoutRequest() = runTest {
+        val server = Server(ApiResult.Ok(command))
+        val release = release(server)
+        release.enqueue(1, proof)
+        assertTrue(release.releaseDue(1, identity.copy(ownershipEpoch = 3)) { fail() }.isEmpty())
+        release.enqueue(1, proof)
         assertTrue(release.releaseDue(1, identity.copy(ownerGeneration = "77777777-7777-4777-8777-777777777777")) {
             fail()
         }.isEmpty())
+        assertTrue(server.keys.isEmpty())
         assertTrue(journal.read(1, 4).isEmpty())
     }
 

@@ -359,6 +359,142 @@ class BleProbeViewModelTest {
         } finally { client.close() }
     }
 
+    /** 해제는 전송 결과를 보여 준 뒤 시도한다. 실패·단절·미지원이어도 표시 상태와 원본 정리를 되돌리지 않는다. */
+    @Test fun recordReleaseNeverChangesShownTransferResult() = runTest(dispatcher) {
+        val unsupported = releaseAfterTransfer(supported = false, settled = { _, _ -> true }) { error("Unexpected release") }
+        assertEquals(EncounterTransferState.ConfirmedStored, unsupported.state)
+        assertFalse("PROTECTED_RELEASE_RECORD" in unsupported.commands)
+        assertTrue(unsupported.paths.none { "record-commands" in it })
+        assertEquals(1, unsupported.pending.size)
+
+        val refused = releaseAfterTransfer(supported = true, settled = { pending, _ -> pending.singleOrNull()?.failures == 1 }) {
+            request -> buildJsonObject {
+                put("protocolVersion", 1); put("type", "ERROR"); put("requestId", request.getValue("requestId"))
+                put("code", "RELEASE_NOT_READY")
+            }
+        }
+        assertEquals(EncounterTransferState.ConfirmedStored, refused.state)
+        assertEquals(1, refused.commands.count { it == "PROTECTED_RELEASE_RECORD" })
+
+        lateinit var port: ProbeFixture
+        val dropped = releaseAfterTransfer(supported = true, setup = { port = it },
+            settled = { _, commands -> "PROTECTED_RELEASE_RECORD" in commands }) {
+            port.linkState.value = BleLinkState.Closed
+            throw BleException(BleFailure.Disconnected)
+        }
+        assertEquals(EncounterTransferState.ConfirmedStored, dropped.state)
+        assertEquals(0, dropped.pending.single().failures)
+
+        val released = releaseAfterTransfer(supported = true, settled = { pending, _ -> pending.isEmpty() }) {
+            request -> buildJsonObject {
+                put("protocolVersion", 1); put("type", "RELEASE_RESULT"); put("requestId", request.getValue("requestId"))
+                put("result", "RELEASED")
+            }
+        }
+        assertEquals(EncounterTransferState.ConfirmedStored, released.state)
+        assertTrue(released.paths.any { it.endsWith("/keyrings/4/record-commands") })
+    }
+
+    private class ReleaseRun(val state: EncounterTransferState, val commands: List<String>, val paths: List<String>,
+        val pending: List<PendingRelease>)
+
+    private suspend fun TestScope.releaseAfterTransfer(
+        supported: Boolean,
+        setup: (ProbeFixture) -> Unit = {},
+        settled: (List<PendingRelease>, List<String>) -> Boolean,
+        releaseReply: (JsonObject) -> JsonObject,
+    ): ReleaseRun {
+        val port = ownerPort().also(setup)
+        val functions = listOf("GET_STATUS", "GET_OWNER_CHALLENGE", "AUTHORIZE_OWNER", "GET_RECORD", "READ_RECORD_CHUNK",
+            "ACK_RECORD") + listOfNotNull("RELEASE_RECORD".takeIf { supported })
+        port.extraInfo = port.extraInfo + ("supportedFunctions" to JsonArray(functions.map(::JsonPrimitive)))
+        val session = TestSession(OnboardingStatus.READY)
+        val ble = model(port, session)
+        val sync = KeyringSyncStore(ResetPrefs())
+        sync.rememberTarget(1, ownerIdentity.deviceId, port.serial)
+        sync.save(1, sync.read(1).single().copy(identity = ownerIdentity, complete = true))
+        val authorizer = KeyringOwnerAuthorizer(object : KeyringOwnerSessionRepository {
+            override suspend fun create(deviceId: Long, key: String, body: KeyringOwnerGrantRequest) = ApiResult.Ok(ownerGrant(body))
+            override suspend fun get(deviceId: Long, key: String): ApiResult<KeyringOwnerGrant> = error("Unexpected lookup")
+        })
+        val base64 = Base64.UrlSafe.withPadding(Base64.PaddingOption.ABSENT)
+        val data = "TER2".encodeToByteArray() + ByteArray(1161)
+        val epoch = "a".repeat(32)
+        val header = KeyringEncounterHeader(epoch, 1, "CONFIRMED", "11111111-1111-4111-8111-111111111111",
+            "22222222-2222-4222-8222-222222222222", ownerIdentity.deviceId, ownerIdentity.ownerGeneration, 2,
+            1793934000, 1793937600, "tingle-policy-v2", "r2-c-20261106", "44444444-4444-4444-8444-444444444444",
+            base64.encode(ByteArray(357)), "tingle-encounter-v2", data.size, data.toByteString().sha256().hex())
+        var stored = true
+        val originalReply = requireNotNull(port.commandReply)
+        port.commandReply = { request ->
+            fun reply(type: String, fields: JsonObjectBuilder.() -> Unit) = buildJsonObject {
+                put("protocolVersion", 1); put("type", type); put("requestId", request.getValue("requestId")); fields()
+            }
+            when (request.getValue("type").jsonPrimitive.content) {
+                "GET_STATUS" -> reply("STATUS") { put("ownerAuthorized", true); put("recordCursorEpoch", epoch) }
+                "GET_RECORD" -> {
+                    val next = stored && request.getValue("afterSequence").jsonPrimitive.long == 0L
+                    reply(if (next) "RECORD" else "RECORD_END") {
+                        put("recordCursorEpoch", epoch)
+                        if (next) ApiJson.encodeToJsonElement(KeyringEncounterHeader.serializer(), header).jsonObject
+                            .forEach { (k, v) -> put(k, v) }
+                    }
+                }
+                "READ_RECORD_CHUNK" -> reply("RECORD_CHUNK") {
+                    val offset = request.getValue("offset").jsonPrimitive.int
+                    val length = request.getValue("length").jsonPrimitive.int
+                    put("sequence", 1); put("offset", offset); put("totalBytes", data.size)
+                    put("envelopeHash", header.envelopeHash); put("data", base64.encode(data.copyOfRange(offset, offset + length)))
+                }
+                "ACK_RECORD" -> reply("RECORD_ACK") { stored = false; put("result", "REMOVED_OR_ALREADY_REMOVED") }
+                "RELEASE_RECORD" -> releaseReply(request)
+                else -> originalReply(request)
+            }
+        }
+        val receipt = "55555555-5555-4555-8555-555555555555"
+        val proof = KeyringEncounterProof("tingle-record-receipt-v2", "server-key", header.deviceId, header.ownerGeneration,
+            2, header.eventId, header.submissionId, header.envelopeHash, receipt, 1793934001, "STORED", "DELETE_ORIGINAL",
+            "A".repeat(86))
+        val command = KeyringReleaseCommand(KeyringReleaseProtocol.VERSION, "server-key", header.deviceId,
+            header.ownerGeneration, 2, header.eventId, receipt, "0123456789abcdef", 1793934001,
+            KeyringReleaseProtocol.RESULT, "A".repeat(86))
+        val paths = mutableListOf<String>()
+        val client = createHttpClient("https://test/dev/api/", httpLog = false, engine = MockEngine { request ->
+            paths += request.url.encodedPath
+            val body = if ("record-commands" in request.url.encodedPath) {
+                ApiJson.encodeToString(KeyringReleaseCommand.serializer(), command)
+            } else ApiJson.encodeToString(KeyringEncounterResponse.serializer(), KeyringEncounterResponse(listOf(
+                KeyringEncounterResponse.Receipt(header.submissionId, header.eventId, "STORED", receipt,
+                    retryable = false, serverProof = proof))))
+            respond(body, HttpStatusCode.OK, headersOf(HttpHeaders.ContentType, "application/json"))
+        })
+        val records = object : ProtectedRecordStore {
+            private val values = mutableMapOf<String, String>()
+            override suspend fun read(key: String) = values[key]?.let { ProtectedRead.Found(it) } ?: ProtectedRead.Missing
+            override suspend fun write(key: String, value: String) { values[key] = value }
+            override suspend fun remove(key: String, expectedValue: String) = values.remove(key) == expectedValue
+        }
+        val releaseJournal = KeyringReleaseJournal(records)
+        try {
+            val vm = KeyringEncounterViewModel(session, sync, authorizer, KeyringEncounterRepository(client),
+                KeyringEncounterJournal(records), KeyringRecordRelease(HttpKeyringReleaseRepository(client), releaseJournal))
+            store.put("encounters", vm)
+            ble.scan(); runCurrent(); ble.connect(port.currentId); runCurrent()
+            vm.update(KeyringEncounterViewModel.Target(1, port.serial, requireNotNull(ble.state.value.connectionGeneration)),
+                false, null, ble)
+            assertEquals(EncounterTransferState.ConfirmedStored, vm.state.first { it != EncounterTransferState.Sending })
+            // 해제 결과가 반영된 뒤에도 표시 상태가 그대로인지 본다. HTTP 모의 엔진은 테스트 시계 밖에서 돈다.
+            var rounds = 0
+            while (!settled(releaseJournal.read(1, ownerIdentity.deviceId), port.commands.toList())) {
+                check(rounds++ < 500) { "Release did not settle" }
+                advanceUntilIdle()
+                withContext(Dispatchers.Default) { delay(5) }
+            }
+            advanceUntilIdle()
+            return ReleaseRun(vm.state.value, port.commands.toList(), paths.toList(), releaseJournal.read(1, ownerIdentity.deviceId))
+        } finally { client.close() }
+    }
+
     /** 이전 허가가 늦게 도착해도 자동 복구한 연결과 그 연결의 새 작업을 유지한다. */
     @Test fun lateOwnerGrantCannotClearReconnectedBoardOrBusyState() = runTest(dispatcher) {
         val port = ownerPort()
