@@ -2,7 +2,6 @@ package com.e106.tingle.encounter.peer;
 
 import java.util.List;
 
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 
@@ -17,8 +16,6 @@ import lombok.RequiredArgsConstructor;
 
 /** Converts the actual cryptographic/historical TER2 verifier's result, not HTTP success flags. */
 @Component
-@ConditionalOnProperty(name = {"app.keyring.peer.enabled", "app.keyring.peer.encounters-enabled",
-	"app.keyring.peer.business-intake-enabled"}, havingValue = "true")
 @RequiredArgsConstructor
 public class Ter2BusinessProofVerifier implements EncounterSubmissionProofVerifier {
 

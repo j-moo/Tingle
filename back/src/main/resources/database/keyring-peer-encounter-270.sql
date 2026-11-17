@@ -1,6 +1,6 @@
--- Optional peer evidence store. Apply explicitly before enabling peer encounter intake.
+-- TSV3 만남 증거 표(엔티티 아님). 개발·운영 모두 필요하다. 운영 적용본: infra/db/prod-changes/2026-11-17-env-parity-407.sql
 -- Nullable evidence columns permit consent retirement without reusing an old event/submission identity.
-create table keyring_peer_encounter (
+create table if not exists keyring_peer_encounter (
     receipt_id uuid primary key,
     owner_user_id bigint not null,
     peer_user_id bigint,
@@ -22,5 +22,5 @@ create table keyring_peer_encounter (
     constraint uq_keyring_peer_event unique(device_id, owner_generation, event_id),
     constraint ck_keyring_peer_encounter_epoch check(ownership_epoch >= 0)
 );
-create index ix_keyring_peer_encounter_pair on keyring_peer_encounter(event_id,owner_user_id,peer_user_id);
-create index ix_keyring_peer_encounter_owner on keyring_peer_encounter(owner_user_id,peer_user_id);
+create index if not exists ix_keyring_peer_encounter_pair on keyring_peer_encounter(event_id,owner_user_id,peer_user_id);
+create index if not exists ix_keyring_peer_encounter_owner on keyring_peer_encounter(owner_user_id,peer_user_id);

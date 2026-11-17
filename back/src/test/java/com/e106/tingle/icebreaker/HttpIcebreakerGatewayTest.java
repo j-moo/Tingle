@@ -410,7 +410,7 @@ class HttpIcebreakerGatewayTest {
 		AiServiceTokenProvider tokens = mock(AiServiceTokenProvider.class);
 		when(tokens.issue()).thenReturn("synthetic-service-token");
 		String base = endpoint.substring(0, endpoint.indexOf("/internal/"));
-		return new AiInternalClient(new AiServiceProperties(true, "test", "synthetic", "", base),
+		return new AiInternalClient(new AiServiceProperties("test", "synthetic", "", base),
 			tokens, JsonMapper.builder().build());
 	}
 

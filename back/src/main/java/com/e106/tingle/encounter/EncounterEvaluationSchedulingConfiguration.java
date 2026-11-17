@@ -3,17 +3,15 @@ package com.e106.tingle.encounter;
 import java.util.concurrent.Semaphore;
 
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.scheduling.annotation.EnableScheduling;
 
 import lombok.extern.slf4j.Slf4j;
 
-/** 만남 평가를 켠 환경은 채팅 안내 설정과 독립적으로 예약 실행을 활성화한다. */
+/** 만남 평가 예약 실행을 채팅 안내 설정과 독립적으로 활성화한다. */
 @Slf4j
 @Configuration(proxyBeanMethods = false)
 @EnableScheduling
-@ConditionalOnProperty(name = "app.encounter.evaluation.enabled", havingValue = "true")
 public class EncounterEvaluationSchedulingConfiguration {
 
 	/** 즉시 평가가 DB 연결을 다 차지하지 않게 동시 실행 수를 막는다. 자리가 없으면 주기 확인이 집는다. */

@@ -10,7 +10,8 @@ import lombok.RequiredArgsConstructor;
 @Configuration
 @EnableScheduling
 @RequiredArgsConstructor
-@ConditionalOnProperty(name = {"app.risk.external-enabled", "app.risk.scheduling-enabled"}, havingValue = "true")
+// 개발·운영은 늘 켠다. 통합 테스트만 끈다(application-test.yml). Release 가 없으면 매 주기 아무것도 보내지 않고 끝난다.
+@ConditionalOnProperty(name = "app.risk.scheduling-enabled", havingValue = "true", matchIfMissing = true)
 public class RiskAnalysisScheduler {
 
 	private final RiskAnalysisDispatcher dispatcher;

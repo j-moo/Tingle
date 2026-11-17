@@ -12,8 +12,6 @@ class Settings(BaseSettings):
     gms_api_key: SecretStr = SecretStr("")
     icebreaker_release_descriptor_file: str = ""
     risk_release_descriptor_file: str = ""
-    # Legacy Safety GMS assembly only; local rules do not consume this switch.
-    risk_local_rules_enabled: bool = False
     risk_local_rules_descriptor_sha256: str = ""
 
     model_config = SettingsConfigDict(

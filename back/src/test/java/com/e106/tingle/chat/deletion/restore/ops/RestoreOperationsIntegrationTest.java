@@ -337,7 +337,6 @@ class RestoreOperationsIntegrationTest {
 		env.put("SPRING_DATASOURCE_URL", POSTGRES.getJdbcUrl());
 		env.put("SPRING_DATASOURCE_USERNAME", POSTGRES.getUsername());
 		env.put("SPRING_DATASOURCE_PASSWORD", POSTGRES.getPassword());
-		env.put("APP_BACKUP_EVIDENCE_ENABLED", "true");
 		env.put("APP_BACKUP_EVIDENCE_FILE", temporary.resolve("inventory.json").toString());
 		env.put("APP_BACKUP_EVIDENCE_GENERATION_FILE", temporary.resolve("restore-generation").toString());
 		env.put("APP_BACKUP_EVIDENCE_NAMESPACE", namespace);

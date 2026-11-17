@@ -50,7 +50,10 @@ class JpaWholeStorageIntegrationTest {
 			}
 		}
 		List<String> actual = jdbc.query("select table_name,column_name,udt_name,character_maximum_length,"
-			+ "is_nullable from information_schema.columns where table_schema='public'", (rs, row) -> {
+			+ "is_nullable from information_schema.columns where table_schema='public'"
+			+ " and table_name not in ('keyring_reset_run','keyring_peer_owner','keyring_peer_ownership',"
+			+ "'keyring_peer_owner_grant','keyring_peer_record_command','keyring_peer_review_resolution',"
+			+ "'keyring_peer_encounter')", (rs, row) -> {
 				String type = rs.getString(3);
 				if ("varchar".equals(type)) {
 					type += ":" + rs.getInt(4);
@@ -61,14 +64,19 @@ class JpaWholeStorageIntegrationTest {
 			.contains("chat_message.push_state:jsonb:NO", "keyring_sync_run.server_proofs:jsonb:YES",
 				"keyring.ownership_epoch:int8:YES", "keyring_sync_run.ownership_epoch:int8:YES");
 		List<Map<String, Object>> epochs = jdbc.queryForList("select table_name,data_type,is_nullable,column_default"
-			+ " from information_schema.columns where table_schema='public' and column_name='ownership_epoch'");
+			+ " from information_schema.columns where table_schema='public' and column_name='ownership_epoch'"
+			+ " and table_name in ('keyring','keyring_sync_run')");
 		assertThat(epochs).hasSize(2).allSatisfy(column -> assertThat(column).containsEntry("data_type", "bigint")
 			.containsEntry("is_nullable", "YES").containsEntry("column_default", null));
 		assertThat(jdbc.queryForObject("select column_default from information_schema.columns "
 			+ "where table_schema='public' and table_name='chat_message' and column_name='push_state'",
 			String.class)).isEqualTo("'{}'::jsonb");
 		assertThat(jdbc.queryForObject("select count(*) from information_schema.tables "
-			+ "where table_schema='public' and table_type='BASE TABLE'", Integer.class)).isEqualTo(35);
+			+ "where table_schema='public' and table_type='BASE TABLE'"
+			// 엔티티가 아닌 키링 초기화·TSV3 표(RequiredSchemaCheck)는 설계 DDL 수에서 뺀다.
+			+ " and table_name not in ('keyring_reset_run','keyring_peer_owner','keyring_peer_ownership',"
+			+ "'keyring_peer_owner_grant','keyring_peer_record_command','keyring_peer_review_resolution',"
+			+ "'keyring_peer_encounter')", Integer.class)).isEqualTo(35);
 		assertThat(jdbc.queryForObject("select count(*) from information_schema.table_constraints "
 			+ "where constraint_schema='public' and constraint_type='FOREIGN KEY'", Integer.class)).isZero();
 	}

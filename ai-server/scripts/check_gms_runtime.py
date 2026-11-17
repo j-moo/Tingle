@@ -176,7 +176,7 @@ def verify(image: str, report: Path | None = None):
                 docker("run", "--detach", "--rm", "--network", "none", "--name", container,
                        "--mount", f"type=bind,source={directory},target=/run/gms-test,readonly",
                        "-e", f"APP_ENV={environment}", "-e", "GMS_API_KEY=synthetic-image-only",
-                       "-e", "PYTHONPATH=/run/gms-test:/app", "-e", "RISK_LOCAL_RULES_ENABLED=false",
+                       "-e", "PYTHONPATH=/run/gms-test:/app",
                        "-e", 'AI_SERVICE_PUBLIC_KEYS={"synthetic-gms":"/run/gms-test/public.pem"}',
                        "-e", "RISK_RELEASE_DESCRIPTOR_FILE=/run/gms-test/" + safety.descriptor.name,
                        "-e", "RISK_LOCAL_RULES_DESCRIPTOR_SHA256=" + safety.test_descriptor_pin,

@@ -15,7 +15,6 @@ import java.util.UUID;
 
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -37,7 +36,6 @@ import lombok.RequiredArgsConstructor;
 
 /** Receipt ACK and relationship release are distinct. No current peer metadata is used to reconstruct old scope. */
 @Service
-@ConditionalOnProperty(prefix = "app.keyring.peer", name = {"enabled", "encounters-enabled"}, havingValue = "true")
 @RequiredArgsConstructor
 public class PeerRecordCommandService {
 
@@ -52,8 +50,6 @@ public class PeerRecordCommandService {
 	private final Clock clock;
 	@Value("${app.keyring.peer.server-public-key-hex:}")
 	private String expectedServerPublicKey;
-	@Value("${app.keyring.peer.release-policy-approved:false}")
-	private boolean releasePolicyApproved;
 
 	@Transactional
 	public Command create(long user, UUID family, long deviceId, UUID requestKey, UUID receiptId, String kind) {
@@ -147,9 +143,6 @@ public class PeerRecordCommandService {
 	}
 
 	private void requireReleasePolicy(Stored stored, String kind) {
-		if (!releasePolicyApproved) {
-			throw error(ErrorCode.POLICY_UNRESOLVED);
-		}
 		if ("ERROR_REVIEWED".equals(kind)) {
 			if (!"REVIEW_QUARANTINED".equals(stored.encounterStatus()) || !Boolean.TRUE.equals(jdbc.queryForObject(
 				"select exists(select 1 from keyring_peer_review_resolution where receipt_id=? "

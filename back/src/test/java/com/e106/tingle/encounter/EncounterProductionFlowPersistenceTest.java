@@ -61,6 +61,7 @@ import com.e106.tingle.proposal.evaluation.HistoricalEvaluationEvidence;
 import com.e106.tingle.proposal.evaluation.HistoricalEvaluationStore;
 import com.e106.tingle.proposal.evaluation.HistoricalEvidenceVerifier;
 import com.e106.tingle.settings.snapshot.SettingsSnapshotJson;
+import com.e106.tingle.withdrawal.WithdrawalIdentityService;
 
 import tools.jackson.databind.json.JsonMapper;
 
@@ -69,7 +70,7 @@ import tools.jackson.databind.json.JsonMapper;
 	"spring.main.web-application-type=none", "spring.profiles.active=test",
 	"spring.jpa.hibernate.ddl-auto=none", "spring.docker.compose.enabled=false",
 	"spring.sql.init.mode=always", "spring.sql.init.schema-locations=classpath:database/schema.sql",
-	"app.encounter.evaluation.retry-seconds=30", "app.encounter.evaluation.enabled=true",
+	"app.encounter.evaluation.retry-seconds=30",
 	"app.agreement.items[0].type=TERMS",
 	"app.agreement.items[0].version=test", "app.agreement.items[0].required=true"
 })
@@ -107,6 +108,9 @@ class EncounterProductionFlowPersistenceTest {
 	private EncounterEvaluationWorker worker;
 	@MockitoSpyBean
 	private EncounterProposalPublisher publisher;
+	// 새 제안 판단의 탈퇴 관계 제한. 이 시험은 탈퇴 기록이 없다.
+	@MockitoBean
+	private WithdrawalIdentityService withdrawalIdentities;
 	@MockitoBean
 	private HistoricalEvidenceVerifier verifier;
 	@MockitoSpyBean
@@ -350,19 +354,6 @@ class EncounterProductionFlowPersistenceTest {
 	}
 
 	@Test
-	void disabledWorkerDoesNotRunTheExpirySweep() {
-		completeWithoutProposal();
-		List<String> completed = successfulEvidence();
-		Environment disabled = mock(Environment.class);
-		when(disabled.getProperty("app.encounter.evaluation.enabled", Boolean.class, false)).thenReturn(false);
-		clock.set(NOW.plusSeconds(1800));
-		restartedWorker(disabled).poll();
-		assertWaitingWithoutProposal();
-		assertThat(successfulEvidence()).containsExactlyElementsOf(completed);
-		assertEvidencePreserved();
-	}
-
-	@Test
 	void transientGatewayFailureRetriesThenPublishesExactlyOnce() {
 		AtomicInteger calls = new AtomicInteger();
 		GATEWAY.set((captured, hash) -> {
@@ -593,7 +584,7 @@ class EncounterProductionFlowPersistenceTest {
 	private EncounterEvaluationWorker restartedWorker(Environment settings) {
 		return new EncounterEvaluationWorker(jdbc, mapper, clock, receipts, mock(ObjectProvider.class),
 			mock(ObjectProvider.class), mock(ObjectProvider.class), settings, transactions,
-			new MemberAccessRepository(jdbc, settings));
+			new MemberAccessRepository(jdbc, settings, mock(WithdrawalIdentityService.class)));
 	}
 
 	private void assertPublishedAt(Instant first) {

@@ -110,7 +110,7 @@ public class EncounterEvaluationWorker {
 	}
 
 	/**
-	 * 접수가 커밋된 직후 할 일을 연결한다. 예약 실행을 켠 서버만 연결하며(EncounterEvaluationSchedulingConfiguration),
+	 * 접수가 커밋된 직후 할 일을 연결한다(EncounterEvaluationSchedulingConfiguration).
 	 * 연결하지 않으면 아무 일도 하지 않고 주기 확인이 처리한다.
 	 */
 	public void wakeAfterEnqueue(LongConsumer wake) {
@@ -152,13 +152,10 @@ public class EncounterEvaluationWorker {
 		}
 	}
 
-	/** 운영 폴링은 명시적으로 켜며 기한 종료는 평가 결과·검증기 유무와 독립적으로 처리한다. */
+	/** 기한 종료는 평가 결과·검증기 유무와 독립적으로 처리한다. */
 	// 새 만남은 접수 커밋 직후 바로 평가한다(wakeAfterEnqueue). 이 주기 확인은 재시도·기한 종료·놓친 작업 복구용이다.
 	@Scheduled(fixedDelayString = "${app.encounter.evaluation.poll-ms:15000}")
 	public void poll() {
-		if (!environment.getProperty("app.encounter.evaluation.enabled", Boolean.class, false)) {
-			return;
-		}
 		expireUnproposed();
 		if (gateways.getIfAvailable() == null) {
 			return;

@@ -37,8 +37,7 @@ final class RestoreOperationsVerifier {
 
 	static boolean verify(VerificationOptions options, Map<String, String> environment,
 		FileDeletionJournal journal, JsonMapper mapper) throws Exception {
-		if (!"true".equals(required(environment, "APP_BACKUP_EVIDENCE_ENABLED"))
-			|| !options.namespace().equals(required(environment, "APP_BACKUP_EVIDENCE_NAMESPACE"))) {
+		if (!options.namespace().equals(required(environment, "APP_BACKUP_EVIDENCE_NAMESPACE"))) {
 			throw new IllegalArgumentException();
 		}
 		String scope = required(environment, "APP_BACKUP_EVIDENCE_SCOPE_ID");

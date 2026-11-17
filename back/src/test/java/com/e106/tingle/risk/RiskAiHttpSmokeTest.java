@@ -170,7 +170,7 @@ class RiskAiHttpSmokeTest {
 	}
 
 	private AiServiceProperties properties(String environment, Path file) {
-		return new AiServiceProperties(true, environment, "synthetic-key", file.toString(), base);
+		return new AiServiceProperties(environment, "synthetic-key", file.toString(), base);
 	}
 
 	private AiServiceTokenProvider issuer(String environment, Path file) {

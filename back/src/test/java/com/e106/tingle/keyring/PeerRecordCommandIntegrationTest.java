@@ -41,10 +41,7 @@ import com.e106.tingle.keyring.proof.PeerCommandTranscripts.Binding;
 import tools.jackson.databind.JsonNode;
 
 /** Real PostgreSQL/API policy checks. Only the already-verified TER2 source lookup is mocked. */
-@SpringBootTest(properties = {"app.keyring.peer.enabled=true", "app.keyring.peer.encounters-enabled=true",
-	"spring.sql.init.schema-locations=classpath:database/schema.sql,"
-		+ "classpath:database/keyring-peer-ownership-270.sql,classpath:database/keyring-peer-commands-270.sql,"
-		+ "classpath:database/keyring-peer-encounter-270.sql"})
+@SpringBootTest
 @AutoConfigureMockMvc
 @ActiveProfiles({"test", "erd"})
 @Import({TestcontainersConfiguration.class, DevSettingsIntegrationTest.SigningConfiguration.class})
@@ -64,7 +61,6 @@ class PeerRecordCommandIntegrationTest extends IntegrationTestSupport {
 		given(clock.instant()).willReturn(now);
 		ReflectionTestUtils.setField(service, "expectedServerPublicKey",
 			HexFormat.of().formatHex(settingsServerKeys.getPublic().getEncoded(), 12, 44));
-		ReflectionTestUtils.setField(service, "releasePolicyApproved", false);
 	}
 
 	@Test
@@ -117,7 +113,6 @@ class PeerRecordCommandIntegrationTest extends IntegrationTestSupport {
 		Fixture fixture = fixture("WAITING_COUNTERPART");
 		UUID key = UUID.randomUUID();
 		command(fixture, key, "RELEASE_AFTER_DEPARTURE", 422);
-		ReflectionTestUtils.setField(service, "releasePolicyApproved", true);
 		command(fixture, key, "RELEASE_AFTER_DEPARTURE", 422);
 		stub(fixture, "VERIFIED_BOTH", fixture.source().rawPayload());
 		command(fixture, key, "RELEASE_AFTER_DEPARTURE", 422);
@@ -133,7 +128,6 @@ class PeerRecordCommandIntegrationTest extends IntegrationTestSupport {
 	@Test
 	void blocksProposalOrChatEvidenceCannotBeBypassedByReleaseSigning() throws Exception {
 		Fixture fixture = fixture("VERIFIED_BOTH");
-		ReflectionTestUtils.setField(service, "releasePolicyApproved", true);
 		long relation = relation(fixture);
 		jdbc.update("insert into user_block(id,owner_id,target_id,matching_id,created_at) values (?,?,?,?,?)",
 			UUID.randomUUID(), fixture.user(), fixture.peer(), relation, Timestamp.from(now));
@@ -151,7 +145,6 @@ class PeerRecordCommandIntegrationTest extends IntegrationTestSupport {
 	@Test
 	void errorReleaseRequiresAnActualReviewResolutionAndErrorFingerprint() throws Exception {
 		Fixture fixture = fixture("REVIEW_QUARANTINED");
-		ReflectionTestUtils.setField(service, "releasePolicyApproved", true);
 		byte[] reviewed = fixture.source().rawPayload();
 		reviewed[55] |= (byte)0x80;
 		stub(fixture, "REVIEW_QUARANTINED", reviewed);

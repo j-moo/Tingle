@@ -2,7 +2,6 @@ package com.e106.tingle.keyring;
 
 import java.util.UUID;
 
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.CacheControl;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -28,7 +27,6 @@ import jakarta.validation.constraints.Positive;
 import lombok.RequiredArgsConstructor;
 
 @RestController
-@ConditionalOnProperty(name = "app.keyring.peer.enabled", havingValue = "true")
 @RequestMapping("/api/keyrings/{deviceId}/owner-session-grants")
 @RequiredArgsConstructor
 public class PeerOwnerSessionController {

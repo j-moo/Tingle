@@ -1,4 +1,4 @@
--- Manual review/apply only. No application startup execution or shared DB changes.
+-- TSV3 소유 세션·기록 명령 표(엔티티 아님). 개발·운영 모두 필요하다. 운영 적용본: infra/db/prod-changes/2026-11-17-env-parity-407.sql
 CREATE TABLE IF NOT EXISTS keyring_peer_owner_grant (
     user_id bigint NOT NULL,
     keyring_id bigint NOT NULL,

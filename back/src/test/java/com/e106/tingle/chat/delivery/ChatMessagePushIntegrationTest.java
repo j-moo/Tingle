@@ -44,8 +44,7 @@ import com.e106.tingle.push.PushGateway;
 import tools.jackson.databind.JsonNode;
 
 @SpringBootTest(properties = {
-	"app.push.token-encryption-key=MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=",
-	"app.chat-message-push.scheduling-enabled=false"})
+	"app.push.token-encryption-key=MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY="})
 @AutoConfigureMockMvc
 @ActiveProfiles({"test", "erd"})
 @Import(TestcontainersConfiguration.class)

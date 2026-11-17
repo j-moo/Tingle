@@ -128,7 +128,6 @@ class Ter2BusinessPromotionTest {
 		service.accept(2, 101, submission(counterpart(raw)));
 		publishSyntheticRelease();
 		releases = new Ter2BusinessReleaseResolver(jdbc, mapper);
-		ReflectionTestUtils.setField(releases, "approved", true);
 		ReflectionTestUtils.setField(releases, "configuredRelease", releaseId.toString());
 		String candidate = jdbc.queryForObject("select approval_hash from rule_release where id=?", String.class,
 			releaseId);
@@ -306,7 +305,6 @@ class Ter2BusinessPromotionTest {
 			org.mockito.ArgumentMatchers.<Object>any()))
 			.thenThrow(new org.springframework.dao.QueryTimeoutException("timeout"));
 		var resolver = new Ter2BusinessReleaseResolver(broken, mapper);
-		ReflectionTestUtils.setField(resolver, "approved", true);
 		ReflectionTestUtils.setField(resolver, "configuredRelease", releaseId.toString());
 		ReflectionTestUtils.setField(resolver, "configuredHash", "a".repeat(64));
 		assertThatThrownBy(() -> resolver.resolve("tingle-policy-v2", "r2-c-20261106", metAt))

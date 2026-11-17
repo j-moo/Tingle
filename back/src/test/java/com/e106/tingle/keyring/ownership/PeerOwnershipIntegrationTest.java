@@ -39,9 +39,7 @@ import com.e106.tingle.user.UserRepository;
 import tools.jackson.databind.JsonNode;
 
 /** Disposable PostgreSQL; reset transport is synthetic, registration signatures use isolated JCA keys. */
-@SpringBootTest(properties = {"app.keyring.peer.enabled=true", "app.keyring-reset.enabled=true",
-	"spring.sql.init.schema-locations=classpath:database/schema.sql,classpath:database/keyring-reset-249.sql,"
-		+ "classpath:database/keyring-peer-ownership-270.sql"})
+@SpringBootTest
 @AutoConfigureMockMvc
 @ActiveProfiles({"test", "erd"})
 @Import(TestcontainersConfiguration.class)

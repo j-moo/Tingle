@@ -95,7 +95,7 @@ MVP에서는 통계 대시보드·전체 사용자 대화 검색·AI 신고 우�
 
 현재 상태의 gauge는 total(대상 수), pending(진행/대기), retrying(재시도 중), failed(종료 실패), blocked(차단 상태), fallback(고정 대체 결과), overdue(기록한 다음 실행/기한 경과), missing_due(기한 근거 없음), invalid(미지원 상태/잘못된 시간), max_delay_seconds(확인 가능한 최대 지연)다. 단조 증가 counter나 전체 처리량으로 해석하지 않는다. 설명의 RULE_FALLBACK은 정상 결과이며 위험 판정 실패를 안전 판정으로 바꾸지 않는다. 기한이 없으면 지연을 추정하지 않고 missing_due로 구분한다.
 
-기본 60초 간격, DB SELECT 시간 제한 5초로 수집하며 기존 작업 상태를 바꾸거나 재시도/삭제를 실행하지 않는다. 수집 실패는 `event=async_jobs_collect_failed`로 구분하고 정상 0건으로 표시하지 않는다. `app.async-observation.enabled=false`로 중지할 수 있다. 개발 환경 후보 규칙은 `back/scripts/observability/async-jobs-dev-rules.yml`을 사용한다. 지연/종료 실패 5분 지속, 잘못된 상태/수집 실패 2분 지속 조건이며 수신자와 실제 운영 임계치는 인프라 담당 검토 후 적용한다.
+기본 60초 간격, DB SELECT 시간 제한 5초로 수집하며 기존 작업 상태를 바꾸거나 재시도/삭제를 실행하지 않는다. 수집 실패는 `event=async_jobs_collect_failed`로 구분하고 정상 0건으로 표시하지 않는다. `app.async-observation.enabled=false`로 중지할 수 있다. Grafana 경보 규칙은 `infra/monitoring/grafana/alerting/async-jobs-dev.json`(개발)과 `async-jobs-prod.json`(운영)이다(일시정지 상태로 등록). 지연/종료 실패 5분 지속, 잘못된 상태/수집 실패 2분 지속 조건이며 수신자와 실제 운영 임계치는 인프라 담당 검토 후 적용한다.
 
 적용 순서는 BE 배포·기존 로그 수집 확인 → Grafana 조회/후보 규칙 검토·등록 → 실제 알림 전달 검증이다. 격리 PostgreSQL 집계 및 Loki 3.5.5의 합성 조건 일치/정상 복구 확인은 운영 규칙 등록·수신자 알림 발송·배포 완료와 구분한다.
 

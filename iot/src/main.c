@@ -770,7 +770,6 @@ static int apply_service_peer(void *ctx, const struct kr_peer_plan *plan)
 		return result;
 	}
 	if (plan->peer.valid) {
-#ifdef KR_DEV_SERVER_KEY_HEX
 		uint8_t public_key[32];
 		if (hex2bin(KR_DEV_SERVER_KEY_HEX, 64, public_key, sizeof(public_key)) != sizeof(public_key)) { return -EINVAL; }
 		kr_runtime_owner_lock();
@@ -791,9 +790,6 @@ static int apply_service_peer(void *ctx, const struct kr_peer_plan *plan)
 			kr_runtime_owner_unlock(); return result;
 		}
 		return 0;
-#else
-		return -ENOTSUP;
-#endif
 	}
 	const struct bt_data ad = BT_DATA(BT_DATA_SVC_DATA128, plan->service_data, plan->length);
 	result = bt_le_ext_adv_set_data(peer_adv, &ad, 1, NULL, 0);

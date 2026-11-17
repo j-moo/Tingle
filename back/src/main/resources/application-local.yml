@@ -3,10 +3,12 @@ spring:
   docker:
     compose:
       enabled: true
-  # local은 JPA update만 사용한다. 설계 SQL로 선생성하거나 DDL 오류를 무시하지 않는다.
+  # 엔티티 표는 JPA update 로 만든다. 엔티티가 아닌 키링 초기화·TSV3 표만 시작 SQL 로 만든다(외래 키 없음, 다시 실행해도 안전).
+  # 개발·운영 DB 는 같은 표를 infra/db/prod-changes 로 만들며, 없으면 기동하지 않는다(RequiredSchemaCheck).
   sql:
     init:
-      mode: never
+      mode: always
+      schema-locations: classpath:database/keyring-reset-249.sql,classpath:database/keyring-peer-ownership-270.sql,classpath:database/keyring-peer-commands-270.sql,classpath:database/keyring-peer-encounter-270.sql
   jpa:
     hibernate:
       ddl-auto: update
@@ -15,3 +17,28 @@ app:
   auth:
     # 개발 앱(com.ssafy.tingle.dev)은 네이버 콜백을 /dev 경로로 받는다(운영 앱과 나눔).
     naver-redirect-uri: ${NAVER_REDIRECT_URI:https://k15e106.p.ssafy.io/dev/auth/naver/callback}
+  # 아래는 로컬에서 서버를 띄우기 위한 시험용 값이다(실제 비밀값 아님). 개발·운영 서버는 환경변수로 받는다(application.yml).
+  # 서명 키는 저장소의 테스트 전용 키(src/test/resources/keyring/test-only-*)를 쓴다. 실제 키링은 이 키를 믿지 않는다.
+  withdrawal:
+    identity-secret: ${WITHDRAWAL_IDENTITY_SECRET:public-example-withdrawal_identity_secret...}
+    receipt-secret: ${WITHDRAWAL_RECEIPT_SECRET:public-example-withdrawal_receipt_secret....}
+  keyring:
+    dev-settings:
+      private-key-file: ${KEYRING_DEV_SETTINGS_PRIVATE_KEY_FILE:src/test/resources/keyring/test-only-settings-private.pem}
+      public-key-file: ${KEYRING_DEV_SETTINGS_PUBLIC_KEY_FILE:src/test/resources/keyring/test-only-settings-public.pem}
+    peer:
+      policy-version: ${KEYRING_PEER_POLICY_VERSION:1380991793}
+      rule-version: ${KEYRING_PEER_RULE_VERSION:268439809}
+      lease-seconds: ${KEYRING_PEER_LEASE_SECONDS:86400}
+      opportunity-seconds: ${KEYRING_PEER_OPPORTUNITY_SECONDS:604800}
+      presence-gap-seconds: ${KEYRING_PEER_PRESENCE_GAP_SECONDS:30}
+      server-public-key-hex: ${KEYRING_PEER_SERVER_PUBLIC_KEY_HEX:03a107bff3ce10be1d70dd18e74bc09967e4d6309ba50d5f1ddc8664125531b8}
+  # local 은 FCM 대신 보내지 않는 게이트웨이를 쓴다(LocalPushConfiguration).
+  push:
+    token-encryption-key: ${PUSH_TOKEN_ENCRYPTION_KEY:MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDA=}
+  chat-message-push:
+    poll-ms: ${CHAT_MESSAGE_PUSH_POLL_MS:1000}
+  ai:
+    service:
+      # local 은 AI 서버 없이 뜬다(키가 없으면 AI 요청은 대기). 붙이려면 APP_AI_SERVICE_* 를 넣는다.
+      environment: ${APP_AI_SERVICE_ENVIRONMENT:local}

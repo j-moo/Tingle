@@ -19,7 +19,6 @@ import java.util.UUID;
 
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -46,7 +45,6 @@ import tools.jackson.databind.json.JsonMapper;
 
 /** Durable cryptographic intake only. STORED/VERIFIED_BOTH are not matching approval or a created proposal. */
 @Service
-@ConditionalOnProperty(name = {"app.keyring.peer.enabled", "app.keyring.peer.encounters-enabled"}, havingValue = "true")
 public class Ter2ReceiptService {
 
 	private final JdbcTemplate jdbc;
@@ -59,8 +57,6 @@ public class Ter2ReceiptService {
 	private final Ter2ProofVerifier verifier = new Ter2ProofVerifier();
 	@Value("${app.keyring.peer.server-public-key-hex:}")
 	private String expectedServerPublicKeyHex;
-	@Value("${app.keyring.peer.review-intake-approved:false}")
-	private boolean reviewIntakeApproved;
 
 	public Ter2ReceiptService(JdbcTemplate jdbc, PeerOwnershipService ownership,
 		ObjectProvider<DevSettingsIssuer> issuers, Clock clock, JsonMapper mapper, SettingsSnapshotJson snapshots,
@@ -233,7 +229,9 @@ public class Ter2ReceiptService {
 		if (result.occurredAt().isAfter(clock.instant())) {
 			throw invalid();
 		}
-		if (result.kind() == Kind.REVIEW && !reviewIntakeApproved) {
+		// 검토(REVIEW) 기록은 판정 도구(keyring_peer_review_resolution 을 쓰는 곳)가 생길 때까지 모든 환경에서 받지 않는다.
+		// 받으면 REVIEW_QUARANTINED 행이 풀 길 없이 쌓인다. 도구가 생기면 이 거절을 지운다(끄고 켜는 설정은 두지 않는다).
+		if (result.kind() == Kind.REVIEW) {
 			throw unresolved();
 		}
 		Scope ownScope = signedScope(result.own(), result.occurredAt());

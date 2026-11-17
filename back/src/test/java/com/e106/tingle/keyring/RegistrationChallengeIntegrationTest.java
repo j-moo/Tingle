@@ -77,7 +77,7 @@ class RegistrationChallengeIntegrationTest extends IntegrationTestSupport {
 		assertThat(UUID.fromString(response.path("challengeId").asString()).version()).isEqualTo(4);
 		assertThat(Base64.getUrlDecoder().decode(response.path("nonce").asString())).hasSize(32);
 		assertThat(Instant.parse(response.path("expiresAt").asString())).isEqualTo(now.plusSeconds(300));
-		assertThat(response.path("proofProtocolVersion").asString()).isEqualTo("tingle-device-proof-v1");
+		assertThat(response.path("proofProtocolVersion").asString()).isEqualTo("tingle-device-proof-v2");
 		String stored = jdbc.queryForObject("select nonce from registration_challenge "
 			+ "where user_id=? and request_key=?", String.class, userIdOf(user), key);
 		assertThat(stored).isEqualTo(response.path("nonce").asString());

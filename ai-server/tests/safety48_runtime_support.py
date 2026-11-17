@@ -94,7 +94,7 @@ def request_for(release, messages=None):
             "contextBundle": messages if messages is not None else [message("합성 대화")]}
 
 
-def isolated_environment(directory: Path, *, environment="test", enabled=True, release=None, public_keys=None):
+def isolated_environment(directory: Path, *, environment="test", release=None, public_keys=None):
     # No project .env, real credentials, model endpoint or caller AI switches.
     env = {key: value for key, value in os.environ.items()
            if key.upper() in {"SYSTEMROOT", "WINDIR", "PATH", "TEMP", "TMP"}}
@@ -105,7 +105,7 @@ def isolated_environment(directory: Path, *, environment="test", enabled=True, r
     except ImportError:
         pass
     env.update({
-        "APP_ENV": environment, "RISK_LOCAL_RULES_ENABLED": "true" if enabled else "false",
+        "APP_ENV": environment,
         "RISK_RELEASE_DESCRIPTOR_FILE": str(release.descriptor) if release else "",
         "RISK_LOCAL_RULES_DESCRIPTOR_SHA256": release.test_descriptor_pin if release else "",
         "AI_SERVICE_PUBLIC_KEYS": json.dumps(public_keys or {}),

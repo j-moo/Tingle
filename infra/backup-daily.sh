@@ -14,7 +14,8 @@ for db in tingle tingle_dev; do
   docker exec tingle-db-1 sh -c "pg_dump -U \"\$POSTGRES_USER\" -Fc $db" > "daily-$db-$day.dump.tmp"
   mv "daily-$db-$day.dump.tmp" "daily-$db-$day.dump"
 done
-tar czf "daily-uploads-$day.tar.gz" -C /data uploads
+# 채팅 삭제 저널(사진 볼륨 안 .chat-deletion-journal)은 백업하지 않는다. 옛 사본으로 되돌리면 지운 채팅이 되살아난다(docker-compose.yml back-env 주석).
+tar czf "daily-uploads-$day.tar.gz" --exclude='.chat-deletion-journal' -C /data uploads
 # 업로드 사진은 DB 백업과 별도 수명이다. 기존 사진 정리 범위만 유지한다.
 find /backup -maxdepth 1 -type f -name 'daily-uploads-*.tar.gz' -mtime +6 -delete
 if [ -n "${BACKUP_EVIDENCE_DIR:-}" ]; then

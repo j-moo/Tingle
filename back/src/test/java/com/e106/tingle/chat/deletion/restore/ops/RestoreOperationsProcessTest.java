@@ -71,7 +71,6 @@ class RestoreOperationsProcessTest {
 			Map.entry("SPRING_DATASOURCE_URL", "jdbc:postgresql://127.0.0.1:1/tingle_dev"),
 			Map.entry("TINGLE_CHAT_RESTORE_GENERATION", generation),
 			Map.entry("TINGLE_CHAT_RESTORE_MARKER_FILE", marker.toString()),
-			Map.entry("APP_BACKUP_EVIDENCE_ENABLED", "true"),
 			Map.entry("APP_BACKUP_EVIDENCE_NAMESPACE", "tingle_dev"),
 			Map.entry("APP_BACKUP_EVIDENCE_SCOPE_ID", "test-db"),
 			Map.entry("APP_BACKUP_EVIDENCE_APPROVAL_ID", "test-approval"),

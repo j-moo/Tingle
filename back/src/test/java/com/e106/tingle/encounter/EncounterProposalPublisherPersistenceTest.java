@@ -37,6 +37,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 import com.e106.tingle.SharedPostgres;
 import com.e106.tingle.auth.MemberAccessRepository;
 import com.e106.tingle.proposal.ProposalPushNotifier;
+import com.e106.tingle.withdrawal.WithdrawalIdentityService;
 
 import tools.jackson.databind.json.JsonMapper;
 
@@ -46,9 +47,7 @@ import tools.jackson.databind.json.JsonMapper;
 	"spring.jpa.hibernate.ddl-auto=none", "spring.docker.compose.enabled=false",
 	"spring.sql.init.mode=always", "spring.sql.init.schema-locations=classpath:database/schema.sql",
 	"app.agreement.items[0].type=TERMS", "app.agreement.items[0].version=test",
-	"app.agreement.items[0].required=true",
-	// 이 시험의 회원은 키링 행 없이 만든다. 키링 없는 회원 제외는 MemberAccessReadinessPersistenceTest 에서 본다
-	"app.signup.keyring-required=false"
+	"app.agreement.items[0].required=true"
 })
 class EncounterProposalPublisherPersistenceTest {
 	private static final Instant NOW = Instant.parse("2026-10-29T03:00:00Z");
@@ -72,6 +71,9 @@ class EncounterProposalPublisherPersistenceTest {
 
 	@Autowired
 	private EncounterProposalPublisher publisher;
+	// 새 제안 판단의 탈퇴 관계 제한. 이 시험은 탈퇴 기록이 없다.
+	@MockitoBean
+	private WithdrawalIdentityService withdrawalIdentities;
 	@MockitoBean
 	private ProposalPushNotifier pushes;
 	@Autowired
@@ -106,6 +108,9 @@ class EncounterProposalPublisherPersistenceTest {
 				Timestamp.from(NOW.minusSeconds(30)), Timestamp.from(NOW.minusSeconds(20)), "{}");
 			jdbc.update("insert into matching_preference(user_id,matching_enabled,age_preference_mode,"
 				+ "photo_required) values (?,true,false,false)", user);
+			// 새 제안은 키링이 있는 회원만 받는다. 키링 없는 회원 제외는 MemberAccessReadinessPersistenceTest 에서 본다
+			jdbc.update("insert into keyring(serial_number,firmware_version,state,owner_user_id) "
+				+ "values (?,'test','REGISTERED',?)", "publisher-" + user, user);
 		}
 		state = new LinkedHashMap<>();
 		state.put("safety:test", "preserved");
